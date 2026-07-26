@@ -30,6 +30,7 @@ export default defineNuxtConfig({
   routeRules: {
     '/': { ssr: false },
     '/alertas': { ssr: false },
+    '/comunicados': { ssr: false },
     '/auth/**': { ssr: false },
     '/automation': { ssr: false },
     '/banco': { ssr: false },
@@ -49,6 +50,8 @@ export default defineNuxtConfig({
     '/feedback': { ssr: false },
     '/finance': { ssr: false },
     '/inteligencia': { ssr: false },
+    '/inteligencia-clientes': { ssr: false },
+    '/inteligencia-clientes/**': { ssr: false },
     '/manage/**': { ssr: false },
     '/meta-ads': { ssr: false },
     '/meus-feedbacks': { ssr: false },

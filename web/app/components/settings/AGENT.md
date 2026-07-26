@@ -4,33 +4,71 @@
 
 Componentes administrativos de configuracoes em `web/app/components/settings/`.
 
-## Padrao Atual
+## Padrao atual
 
-- `SettingsWorkspace.vue` e o host das abas.
+- `SettingsWorkspace.vue` hospeda somente as abas visiveis **Operacao**,
+  **Modal**, **Motivos e cadastros** e **Gamificacao**.
+- Workspace, cabecalho, aviso tenant-wide e tabs usam densidade compacta:
+  paddings e gaps curtos, sem perder hover, foco ou responsividade.
 - Secoes novas ficam em `web/app/components/settings/sections/`.
-- `useSettingsWorkspace.js` concentra store actions, permissao, validacoes e helpers do modal.
-- `settings-workspace-data.js` concentra tabs, configuracoes estaticas e listas de campos.
-- `SettingsOptionManager.vue`, `SettingsProductManager.vue` e `SettingsConsultantManager.vue` seguem como componentes especializados.
-  - `SettingsProductManager.vue` e `SettingsConsultantManager.vue` organizam o conteudo em blocos colapsaveis (`<details class="settings-collapse">` nativo, SEM `open` = todos fechados ao abrir a aba, sem memoria), seguindo a REGRA de accordion do skill de engenharia (`references/frontend.md`) e o padrao de `sections/SettingsCrmGoalsSection.vue`. Cada aba tem dois collapses por categoria: **Produtos** = "Produtos cadastrados" (meta = contagem de produtos, ex: "12 produtos") + "Adicionar produto" (meta "Novo"); **Consultores** = "Consultores cadastrados" (meta = contagem de consultores) + "Adicionar consultor" (meta "Novo"). Nenhum campo/evento removido (add/update/remove/archive intactos); Consultores mantem o `disabled`/`canEditConsultants`. As classes `settings-collapse*` vem de `assets/styles/components/settings.css` (nao editar, so reutilizar).
-- `sections/SettingsCrmGoalsSection.vue` edita a politica comercial do CRM: faixas de uso da lista, pedidos minimos para destaque e recebimento por atingimento de meta (grupos Consultor/Gerente/Caixa e auxiliar).
-  - As faixas de recebimento usam **rascunho local por grupo** com `_id` estavel: o usuario digita livremente (valor 0/vazio transitorio NAO derruba a linha) e a persistencia so acontece em acao explicita (`blur` do input, `change` do select de tipo, botao "Salvar faixas" e na remocao) — nunca a cada tecla. A ordenacao por threshold so ocorre no save. `:key` e o `_id` local (nunca `rule.threshold`), evitando perda de foco/reordenacao no meio da digitacao. Validacao amigavel (threshold/valor invalido, duplicado) via `ui.error`. Grupos sao accordion (`<details>/<summary>` + classes `settings-collapse*`) com resumo de nº de faixas. Remover desce ate zero faixas (persiste array vazio — depende de `normalizeCrmGoalPayoutPolicy` preservar `[]`, ver `crm-performance-policy.ts`). Save via nova `saveCrmGoalPayoutGroup` em `useSettingsWorkspace.js`.
-- A persistencia da politica comercial usa `settingsStore.updateCrmCommercialPolicy()` enviando apenas esses campos em `settings` para `PATCH /v1/settings/operation`, mantendo compatibilidade com backends que ainda nao registraram o endpoint dedicado.
-- `sections/SettingsOperationSection.vue` (aba Operacao) organiza os campos em **accordion** `<details class="settings-collapse">` FECHADO por padrao (sem `open`, sem persistencia de estado), uma categoria por bloco: **Capacidade e fila** (simultaneos/por consultor), **Tempos e alertas** (fechamento rapido/demorado/venda baixa), **Comportamento do atendimento** (janela de cancelamento + toggles modo teste/auto modal) e **Score 360** (pesos). Cada `settings-collapse__meta` mostra resumo via computed (`capacitySummary`, `timingsSummary`, `behaviorSummary`, `scoreSummary`). Nenhum campo/binding foi removido — so reagrupado. Padrao espelhado de `SettingsCrmGoalsSection.vue`; classes globais em `assets/styles/components/settings.css` (nao editar).
-- `SettingsOperationTemplateManager.vue` (seletor de templates da aba Operacao, no topo) tambem virou **accordion fechado** ("Templates de operacao", meta = label do template ativo via computed `activeTemplateLabel`, ou "Nenhum aplicado"). Dentro do corpo, os cards de template ficam **lado a lado** num grid proprio `.operation-templates` (`repeat(auto-fit, minmax(220px, 1fr))`, colapsa para coluna em tela estreita) — NAO usa `.settings-card` para os cards internos porque `.settings-card` tem `grid-column: 1 / -1` (empilha full-width). Card ativo ganha `.is-active` (borda/fundo `--primary`). Estilo em `<style scoped>` com tokens (`--line-soft`/`--surface-2`/`--primary`), sem hex.
-- `sections/SettingsModalSection.vue` (aba Modal / modal de encerramento) organiza os campos em **accordion** `<details class="settings-collapse">` FECHADO por padrao (sem `open`, sem persistencia de estado), uma categoria por bloco top-level: **Fluxo de fechamento** (modo do modal + placeholder do codigo da compra), **Campos e validacoes** (matriz de switches por campo — sub-accordion interno por secao de `modalFieldSections`, tambem fechado), **Regras de interesses** (opcao "nenhum", justificativa e textos dos detalhes) e **Textos do modal** (sub-accordion interno por `modalTextSections`). Cada `settings-collapse__meta` mostra resumo via computed local: `finishFlowMeta` (label do modo atual), `fieldSectionsMeta` (`N categorias - X/Y campos visiveis`), `interestRulesMeta` (opcao "nenhum" liberada/bloqueada) e `textSectionsMeta` (`N blocos - X/Y preenchidos`); os sub-accordions internos mantem `getModalFieldSectionSummary`/`getModalTextSectionSummary`. Refactor foi so de MARKUP: nenhum campo/binding/evento removido, so reagrupado (os sub-collapses internos perderam o `:open="section.defaultOpen"` para nascer fechados). Espelho de comportamento com o board card (memoria "Modal e board card espelhados") NAO se aplica aqui pois nada de campo/logica mudou. Classes globais em `assets/styles/components/settings.css` (nao editar).
-- `sections/SettingsReasonInputSection.vue` (abas **Cancelamento** e **Parada**): o card de config do campo virou accordion (`<details class="settings-collapse">` fechado, sem `open`) com titulo = `config.title`, texto = `config.text` e meta = modo atual do campo (`currentModeLabel`, resolvido em `reasonInputModeOptions`). A lista de motivos fica no `SettingsOptionManager` (que tem os proprios collapses). Categorias por aba: **Campo de cancelamento/parada** (config) + **Cadastrados** e **Adicionar** (do manager).
-- `sections/SettingsOptionTabSection.vue` (abas de **Opcoes**: Motivos, Pausas, Fora da vez, Perdas, Origens, Profissoes): o card "Comportamento do campo" (so quando ha `selectionKey`) virou accordion fechado, meta = modo de selecao atual (`selectionModeLabel`, resolvido em `fieldSelectionOptions`). O restante vem do `SettingsOptionManager`.
-- `SettingsOptionManager.vue`: reorganizado em dois accordions fechados por categoria — **Cadastrados** (lista ordenavel + inline edit/remove, meta = `itemCountLabel` = contagem de opcoes) e **Adicionar** (form de nova opcao). Nenhum evento mudou (add/update/remove/reorder preservados); so o markup foi agrupado em `<details class="settings-collapse">` reutilizando as classes de `settings.css` (sem editar o CSS).
-- Padrao accordion admin: seguir a REGRA OBRIGATORIA em `.claude/skills/principios-engenharia/references/frontend.md` ("Blocos de edicao colapsaveis"). Todos fechados por padrao (sem atributo `open`), um collapse por categoria, meta com resumo util (contagem/modo). Classes `settings-collapse*` ja existem em `assets/styles/components/settings.css` — reutilizar, nunca cravar hex.
-- `sections/SettingsScoreWeightsCard.vue` exibe os 5 sliders de pesos do Score 360 (Conversao/Valor vendido/Qualidade/P.A./Disciplina de fila) na aba Gamificacao. Persiste via `ctx.updateNumericSetting` (mesmo caminho da aba Operacao: `PATCH /v1/settings/operation` com `settings.scoreWeight*`). Mostra total em tempo real; aviso visual quando soma != 100.
-  - O card e um accordion (`<details>/<summary>` + classes `settings-collapse*`), **fechado por padrao** (sem atributo `open`). O `settings-collapse__meta` mostra o total dos pesos (ex.: `100%`, ou `85% — ajuste` quando != 100) ja com a classe de cor `--ok`/`--warn`, para o aviso aparecer com o bloco fechado. O footer com o texto completo do aviso ("deve ser 100 para salvar corretamente") permanece dentro do corpo.
-- **Aba Gamificacao (`sections/SettingsGamificationSection.vue`)** organiza o conteudo em collapses fechados por categoria (regra de accordion de aba admin): (1) **Pesos do Score 360** (o `SettingsScoreWeightsCard` acima, meta = total dos pesos); (2) **Badges de gamificacao** (meta = `N/M ativos`, contando badges com `enabled`). Nenhum campo/evento removido — so o markup foi reagrupado.
-- **Aba Alertas (`sections/SettingsAlertsSection.vue`)** segue o mesmo padrao com dois collapses fechados: (1) **Conversao e fila** (`alertMinConversionRate`, `alertMaxQueueJumpRate`); (2) **Valores por atendimento** (`alertMinPaScore`, `alertMinTicketAverage`). O `settings-collapse__meta` mostra quantos limites estao ativos (valor > 0), ex.: `1/2 ativos`. Persistencia inalterada via `ctx.updateNumericSetting`.
+- `useSettingsWorkspace.js` concentra store actions, permissao, validacoes e
+  helpers. Componentes de secao nao chamam stores diretamente.
+- `settings-workspace-data.js` concentra tabs, configuracoes estaticas e listas
+  de campos.
+- Produtos e Consultores nao possuem aba visual na Config. O catalogo manual
+  de produtos e o backend de consultores continuam preservados porque sao
+  usados pela Operacao.
+- `SettingsCrmGoalsSection.vue` e renderizado no bloco Metas de
+  `MultiStoreWorkspace.vue`. A politica persiste por tenant e nao pertence mais
+  a uma aba separada da Config.
 
-## Regras Locais
+## Layout das quatro abas
+
+- `SettingsCatalogsSection.vue` reune motivos da visita, cancelamentos, pausas,
+  perdas, fora da vez, origens e profissoes em um sidebar no desktop e
+  navegacao horizontal em telas menores. Apenas o tipo ativo ocupa o painel.
+- `SettingsReasonInputSection.vue` e `SettingsOptionTabSection.vue` exibem o
+  comportamento do campo sempre aberto e inline. Cancelamento ocupa uma unica
+  linha com cinco controles no desktop.
+- `SettingsOptionManager.vue` exibe a lista cadastrada sem dropdown. O botao de
+  adicionar aparece acima e abaixo do ultimo item, sempre com tooltip, e abre
+  o cadastro inline no ponto acionado. CRUD e ordenacao continuam reais.
+- `SettingsOperationSection.vue` mantem **Capacidade e fila**,
+  **Tempos e alertas** e **Comportamento do atendimento** sempre abertos, com
+  titulo/resumo na coluna esquerda e campos na mesma linha a direita no
+  desktop. O Score 360 nao aparece nessa aba: sua superficie visual
+  autoritativa e Gamificacao.
+- `SettingsOperationTemplateManager.vue` e o unico bloco colapsavel da aba
+  Operacao. Os cards ficam lado a lado. Aplicar template altera somente
+  configuracoes operacionais e do modal e preserva os pesos do Score.
+- `SettingsModalSection.vue` usa sidebar para **Fluxo**, **Campos e
+  validacoes**, **Interesses** e **Textos**, exibindo somente um topico por vez.
+  Dentro de Campos e Textos, os subgrupos sao accordions compactos fechados por
+  padrao. Fluxo e Interesses mantem seus controles em linha no desktop.
+- `SettingsScoreWeightsCard.vue` exibe as cinco metricas reais do Score 360 em
+  uma linha no desktop: Conversao, Valor vendido, Qualidade, P.A. e Disciplina
+  de fila. Remover persiste peso zero; adicionar reativa uma metrica suportada
+  pelo calculo. Nao oferecer criterio arbitrario sem fonte, normalizacao e
+  avaliador reais. O total alerta quando for diferente de 100%.
+- `SettingsGamificationSection.vue` mantem pesos e badges abertos. Os cinco
+  badges possuem IDs de avaliador fixos e aparecem em uma linha no desktop,
+  com ativacao, titulo e Top N editaveis.
+- Regra de densidade: varios topicos independentes na mesma pagina usam sidebar
+  quando houver largura ou accordions quando a leitura for sequencial. Poucos
+  controles relacionados ficam abertos e em linha. Evitar card dentro de card,
+  padding duplicado e descricoes ocupando uma linha sozinha sem necessidade.
+- A antiga aba Alertas nao e exibida. Seus thresholds legados permanecem no
+  contrato por compatibilidade; a central autoritativa fica em `/alertas`.
+
+## Regras locais
 
 - Nao chamar stores diretamente dentro de componentes de secao.
 - Manter cada secao abaixo de 500 linhas e preferir props simples via `ctx`.
-- Preservar contratos de `settingsStore` e `consultantsStore`; mudancas de persistencia devem ficar no store.
-- `sections/SettingsCrmGoalsSection.vue` so deve habilitar edicao quando `ctx.canEditCrmCommercialPolicy` for verdadeiro (`platform_admin` ou `director`).
-- Para validar alteracoes, abrir `/configuracoes`, alternar abas e testar uma alteracao reversivel.
+- Preservar contratos de `settingsStore` e `consultantsStore`; mudancas de
+  persistencia ficam no store.
+- `SettingsCrmGoalsSection.vue` so habilita edicao quando
+  `ctx.canEditCrmCommercialPolicy` for verdadeiro.
+- Novos componentes de Score ou badges exigem fonte, normalizacao e avaliador
+  reais antes de serem oferecidos na interface.
+- Validar alteracoes em `/configuracoes` com mutacao reversivel; respeitar
+  solicitacao explicita de nao usar Playwright.

@@ -15,7 +15,13 @@ const MODULE_GATED_FALLBACK_PATH = '/perfil'
 //
 // Espelha as tags moduleId do nav.config.ts. Se mover/renomear rota la, atualizar
 // aqui — drift gera "menu esconde item mas rota direta ainda abre".
-const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
+export interface ModulePathGuard {
+  prefix: string
+  moduleId?: string
+  anyModuleIds?: readonly string[]
+}
+
+export const MODULE_PATH_GUARDS: ModulePathGuard[] = [
   { prefix: '/tasks', moduleId: 'tasks' },
   { prefix: '/calendario', moduleId: 'calendar' },
   // omnichannel — inbox de atendimento. DEPENDE do modulo 'omnichannel' existir
@@ -23,6 +29,19 @@ const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   // nas contas is_agency. Enquanto o shell Go nao existir, NENHUMA conta tem o
   // modulo em enabledModules e /omnichannel cai em /perfil por este guard.
   { prefix: '/omnichannel', moduleId: 'omnichannel' },
+  // O workspace de clientes agrega dois modulos independentes. As rotas
+  // especializadas exigem o owner correto; overview/perfil continuam acessiveis
+  // com Customer Data mesmo quando a inteligencia opcional estiver desligada.
+  { prefix: '/inteligencia-clientes/segmentos', moduleId: 'customer_data' },
+  { prefix: '/inteligencia-clientes/fontes', moduleId: 'customer_intelligence' },
+  { prefix: '/inteligencia-clientes/prompts', moduleId: 'customer_intelligence' },
+  { prefix: '/inteligencia-clientes/atendimentos', moduleId: 'customer_intelligence' },
+  { prefix: '/inteligencia-clientes/auditoria', moduleId: 'customer_intelligence' },
+  { prefix: '/inteligencia-clientes/portfolio', moduleId: 'customer_intelligence' },
+  {
+    prefix: '/inteligencia-clientes',
+    anyModuleIds: ['customer_data', 'customer_intelligence'],
+  },
   { prefix: '/crm', moduleId: 'crm' },
   { prefix: '/erp', moduleId: 'crm' },
   { prefix: '/site/leads', moduleId: 'site' },
@@ -38,8 +57,11 @@ const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/tools', moduleId: 'tools' },
   // queue — paginas de uso da Fila/operacao. Conta sem o modulo queue nao acessa
   // (espelha as tags moduleId:'queue' no nav.config.ts). /operacao cobre tambem
-  // /operacao/usuarios e /operacao/clientes (gestao da Fila).
+  // /operacao/usuarios.
   { prefix: '/operacao', moduleId: 'queue' },
+  { prefix: '/transcricoes', moduleId: 'queue' },
+  { prefix: '/comunicados', moduleId: 'queue' },
+  { prefix: '/campanhas', moduleId: 'queue' },
   { prefix: '/consultor', moduleId: 'queue' },
   { prefix: '/ranking', moduleId: 'queue' },
   { prefix: '/dados', moduleId: 'queue' },
@@ -48,11 +70,34 @@ const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/multiloja', moduleId: 'queue' },
   { prefix: '/configuracoes', moduleId: 'queue' },
   { prefix: '/alertas', moduleId: 'queue' },
+  { prefix: '/suporte', moduleId: 'queue' },
   { prefix: '/feedback', moduleId: 'queue' },
+  { prefix: '/meus-chamados', moduleId: 'queue' },
+  { prefix: '/meus-feedbacks', moduleId: 'queue' },
   // core, notifications e banco nao dependem de modulo contratado. Superficies
   // internas como roadmap/themes/manage global sao tratadas separadamente pela
   // politica agencyOnly abaixo.
 ]
+
+export function pathMatchesModulePrefix(path: string, prefix: string): boolean {
+  const normalizedPath = String(path || '').replace(/\/+$/, '') || '/'
+  const normalizedPrefix = String(prefix || '').replace(/\/+$/, '') || '/'
+  return normalizedPath === normalizedPrefix || normalizedPath.startsWith(`${normalizedPrefix}/`)
+}
+
+export function findModulePathGuard(path: string): ModulePathGuard | undefined {
+  return MODULE_PATH_GUARDS.find((guard) => pathMatchesModulePrefix(path, guard.prefix))
+}
+
+export function isModulePathGuardEnabled(
+  guard: ModulePathGuard,
+  enabledModules: ReadonlySet<string>,
+): boolean {
+  if (guard.moduleId) {
+    return enabledModules.has(guard.moduleId)
+  }
+  return Boolean(guard.anyModuleIds?.some((moduleId) => enabledModules.has(moduleId)))
+}
 
 // Paths de admin-global (Manage da plataforma): so acessiveis na conta-agencia
 // (activeAccount.isAgency). Em qualquer conta-cliente (view-as do admin) esses
@@ -80,9 +125,7 @@ export default defineNuxtRouteMiddleware((to) => {
     }
   }
 
-  const guard =
-    findEditorModulePathGuard(to.path) ||
-    MODULE_PATH_GUARDS.find((g) => to.path.startsWith(g.prefix))
+  const guard = findEditorModulePathGuard(to.path) || findModulePathGuard(to.path)
   if (!guard) return
   // Sem account ativa (fail-closed espelhando o useDashboardNav):
   //  - Durante o hidrate inicial (accountsLoaded false) NAO bloqueia — auth.global
@@ -106,7 +149,7 @@ export default defineNuxtRouteMiddleware((to) => {
   // isentando platform_admin de proposito; e o bloqueio de rota aqui que impede
   // o admin de ABRIR a pagina gated da conta que nao contratou o modulo.
   const enabledModules = new Set(account.enabledModules)
-  if (!enabledModules.has(guard.moduleId)) {
+  if (!isModulePathGuardEnabled(guard, enabledModules)) {
     // Modulo nao habilitado para esta account → leva para um fallback SEGURO e
     // NUNCA-gated. Nao usamos '/' porque index.vue resolve para auth.homePath,
     // que para o admin e '/operacao' (gated por `queue`); se a conta ativa nao

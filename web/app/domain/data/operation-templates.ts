@@ -2,14 +2,6 @@ import { cloneValue } from '../utils/object'
 
 export const DEFAULT_OPERATION_TEMPLATE_ID = 'joalheria-padrao'
 
-export const DEFAULT_SCORE_WEIGHTS = {
-  scoreWeightConversion: 35,
-  scoreWeightSoldValue: 25,
-  scoreWeightQuality: 20,
-  scoreWeightPa: 15,
-  scoreWeightQueueDiscipline: 5,
-}
-
 export const DEFAULT_FIELD_JUSTIFICATION_CONFIG = {
   requireCustomerNameJustification: false,
   customerNameJustificationMinChars: 20,
@@ -86,7 +78,6 @@ export const operationTemplates = [
     label: 'Joalheria padrao',
     description: 'Equilibrio entre qualidade de atendimento, captura de lead e disciplina de fila.',
     settings: {
-      ...DEFAULT_SCORE_WEIGHTS,
       maxConcurrentServices: 10,
       maxConcurrentServicesPerConsultant: 1,
       serviceCancelWindowSeconds: 30,
@@ -162,7 +153,6 @@ export const operationTemplates = [
     label: 'Joalheria relacionamento',
     description: 'Mais foco em relacao de longo prazo e coleta completa de dados do cliente.',
     settings: {
-      ...DEFAULT_SCORE_WEIGHTS,
       maxConcurrentServices: 8,
       maxConcurrentServicesPerConsultant: 1,
       serviceCancelWindowSeconds: 30,
@@ -234,7 +224,6 @@ export const operationTemplates = [
     label: 'Joalheria fluxo rapido',
     description: 'Operacao de alto fluxo com fechamento mais objetivo e formulario mais leve.',
     settings: {
-      ...DEFAULT_SCORE_WEIGHTS,
       maxConcurrentServices: 12,
       maxConcurrentServicesPerConsultant: 1,
       serviceCancelWindowSeconds: 30,

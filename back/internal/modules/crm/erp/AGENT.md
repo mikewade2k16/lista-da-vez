@@ -173,3 +173,19 @@ Filtro server-side (base toda, com paginacao), so para `order`/`ordercanceled`. 
 - usar ordenação cronológica por `ExtractedAt` do nome do arquivo quando presente; no layout real do FTP, usar `ModTime` da listagem remota como fallback
 - idempotência continua baseada em `(tenant_id, store_id, data_type, source_name, checksum_sha256)`
 - o parser CSV deve calcular checksum em cima dos bytes originais do arquivo
+
+## Fachada para Customer Intelligence (2026-07-23)
+
+- `customer_intelligence_evidence.go` e a fachada publica, somente leitura, do
+  owner ERP. Ela consulta apenas tabelas do proprio modulo e exige o
+  `client_account_id` exato.
+- A composition root so chama a fachada depois de Customer Data devolver um
+  `source_link` deterministico com `source_module=erp`. Nao existe busca por
+  nome, telefone, e-mail, CPF ou similaridade.
+- Entidades permitidas: `customer` por `original_id` exato e
+  `order|order_canceled` por `order_id` exato. Novos tipos exigem contrato
+  owner-owned, allowlist e testes.
+- A projecao e minimizada e limitada pela `field_allowlist` da fonte; nao expoe
+  CPF, e-mail, telefone, endereco de rua nem payload bruto.
+- Customer Intelligence nao pode consultar SQL/tabelas de ERP diretamente.
+  Falha ou evidencia ausente degrada somente a fonte e nao bloqueia o chat.

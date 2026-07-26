@@ -333,6 +333,13 @@ erDiagram
         text notes
         jsonb campaign_matches_json
         numeric campaign_bonus_total
+        text close_reason
+        text validation_status
+        uuid validated_by
+        bigint validated_at
+        integer snooze_count
+        text cancel_reason
+        text validation_reason
         timestamptz created_at
     }
 
@@ -723,6 +730,30 @@ erDiagram
   - trilha append-only das transicoes de status
 - `operation_service_history`
   - historico append-only do fechamento operacional
+- `attendance_recordings`
+  - metadados autoritativos da gravacao por conta, loja e atendimento
+  - status separados para gravacao, transcricao pelo Whisper local e analise via n8n
+  - solicitacao, retry, lease e tentativas formam o job duravel da transcricao
+  - `summary_text`, `analysis_report` e o snapshot da configuracao preservam o resultado auditavel
+  - guarda apenas a chave do audio privado, hash e tamanho; nunca o binario
+- `attendance_recording_chunks`
+  - manifesto idempotente dos blocos por `account_id + recording_id + sequence`
+  - guarda chave privada, MIME, tamanho e SHA-256 de cada parte
+- `attendance_live_transcription_segments`
+  - jobs duraveis das janelas quase ao vivo, limitadas a 25 segundos novos
+  - registra sequencias, sobreposicao de 2,5 segundos, lease, retry e texto parcial
+  - a previa agregada fica em `attendance_recordings.live_transcript_text`; a passagem final vence
+- `attendance_analysis_configs`
+  - configuracao por conta do Whisper, credencial global, modelo de resumo, temperatura e prompt soberano
+  - `credential_id` e uma referencia opaca ao cofre account-scoped `messaging.ai_credentials`
+- `attendance_analysis_secrets`
+  - legado de rollback da primeira versao do MVP; nenhuma leitura ocorre no runtime
+- `communications`
+  - comunicados account-scoped com titulo, resumo, conteudo, vigencia, publicacao e ordem
+  - `archived_at` implementa exclusao logica sem apagar o historico
+- `communication_stores`
+  - destinos quando o comunicado nao vale para todas as lojas
+  - FKs compostas repetem `account_id` e impedem associacao cross-tenant
 - `site.webhook_sources`
   - fontes externas do modulo Site; `entity_type` aceita `leads`, `products` e `tracking`
   - `secret` fica em claro porque e chave HMAC; nunca deve aparecer em listagens ou logs
@@ -781,6 +812,11 @@ erDiagram
 - `messaging.contact_touchpoints`: trilha de origem por contato/conversa/mensagem, com
   canal, provider, landing page, campanha e metadados. Evento externo é idempotente por
   conta + provider.
+- `messaging.customer_data_outbox`: evento de integração ID-only criado atomicamente com cada
+  inbound novo cujo snapshot `channel_client_binding` esteja `resolved`. As FKs compostas fixam
+  conta, cliente, contato, conversa, mensagem e binding; o payload repete esses IDs sob checks
+  de igualdade. A lane tem FIFO por contato e retry/dead-letter próprios, sem competir com
+  `messaging.outbox` (efeito no canal) ou `messaging.intelligence_outbox` (resultado de IA).
 - `messaging.contact_notes`: notas humanas persistidas e tenant-scoped.
 - O webhook inbound cria contato, identidade, touchpoint, conversa e mensagem na mesma
   transação da deduplicação. O n8n nunca escreve diretamente nessas tabelas.
@@ -855,20 +891,25 @@ erDiagram
 
 ## Social publishing - agendamento e analytics
 
-- `social_publishing.connections`: uma conexao Instagram por `account_id`. Guarda identidade
-  profissional, status e somente o ciphertext `v1:` do `platform/secretbox`; revogacao e soft e
-  zera o ciphertext sem apagar o historico.
+- `social_publishing.connections`: historico de conexoes Instagram por `account_id`, com indice
+  parcial que permite apenas uma conexao `connected`. Guarda identidade profissional, status e
+  somente o ciphertext `v1:` do `platform/secretbox`; revogacao e soft e zera o ciphertext sem
+  apagar o historico nem redirecionar posts para outro perfil.
 - `social_publishing.posts`: agregado autoritativo do conteudo e do envio. A FK composta
   `(account_id, connection_id)` impede vinculo cross-tenant; `source_type + source_ref` fornece
   idempotencia para futuros consumidores sem criar FK para Calendar ou Crow Assistant.
 - `schedule_revision` invalida jobs de uma revisao antiga e `version` sustenta optimistic locking.
-  Os estados persistidos sao `draft|scheduled|publishing|published|failed|cancelled`.
+  `publish_attempted_at` impede repeticao automatica quando o resultado de `media_publish` e
+  ambiguo. Os estados persistidos sao `draft|scheduled|publishing|published|failed|cancelled`.
 - `social_publishing.post_analytics`: projecao corrente 1:1 por post com `views`, `reach`,
   `total_interactions`, `likes`, `comments`, `saved`, `shares` e instante de captura.
 - `social_publishing.analytics_snapshots`: historico append-only das mesmas metricas, com FK
-  composta para o post e dedupe por instante de captura.
-- `social_publishing.outbox`: tabela propria, coluna-a-coluna compativel com `platform/jobs`;
-  possui idempotencia por conta, FIFO por `ordering_key`, `run_after`, retry e dead letter.
+  composta para o post e dedupe por `job_key` imutavel da outbox. O default `legacy:<uuid>` e a
+  unique por instante de captura permanecem como compatibilidade de rollback do binario.
+- `social_publishing.outbox` e `social_publishing.analytics_outbox`: lanes fisicamente
+  separadas, ambas coluna-a-coluna compativeis com `platform/jobs`. Cada uma possui idempotencia
+  por conta, FIFO por `ordering_key`, `run_after`, retry e dead letter; uma rajada de insights
+  nunca atrasa claim ou execucao de publicacao.
 
 ## Seeds atuais
 
@@ -914,3 +955,41 @@ A migration de seed cria:
   - terminal de loja como conta fixa com operacao completa da propria unidade
   - futuras amarras de dispositivo/origem por loja
   - editor de grants/overrides aproveitando `access_permissions` e `user_access_overrides`
+
+## Customer Intelligence (migrations 0242, 0243, 0246, 0248, 0250, 0251, 0254 e 0255)
+
+- O schema `intelligence` separa fontes/evidencias/fatos do runtime de prompts, agentes e modelos.
+- Todas as linhas individuais repetem `account_id + client_account_id`; ingestion e runtime
+  deduplicam por esse mesmo escopo.
+- `source_ingestion_runs` usa unique
+  `(account_id, client_account_id, idempotency_key)`.
+- `source_observations.classification` fecha o escopo: `customer_relationship` exige
+  `subject_id + relationship_id`; `client_business_context` exige ambos nulos. A leitura para
+  contexto inclui a relação autorizada e o contexto empresarial do mesmo cliente, nunca de outro
+  client.
+- Cada observação inserida gera `intelligence.audit_events` metadata-only; snapshot, ciphertext,
+  external entity id e idempotency key ficam fora do audit log.
+- `runtime_runs` referencia process definition/config, prompt binding, agent/model, context
+  snapshot e, desde 0246, pipeline definition/version e `execution_mode=active|shadow`.
+- `conversation.triage` e `conversation.reply` usam configs v2 publicadas com schemas fechados.
+  Os demais processos permanecem `deprecated`, sem config ativa, ate receberem contrato proprio.
+- Capability, source, prompt binding, agente e modelo nascem desligados/ausentes; migration nao
+  ativa IA nem writer.
+- `accepted_outcomes` deduplica por account + client + event/decision. Seu payload pode carregar
+  descritores tipados de claims, nunca uma segunda cópia do valor extraído.
+- `claims` liga a claim ao outcome/ordinal, prompt binding e runtime run, registra revisão/reviewer
+  e nasce `candidate + unverified + llm`.
+- A revisão `accepted` não materializa `facts`; fatos manuais/verificados continuam intocados.
+  `claim_evidence` só recebe observações do mesmo account/client/subject/relationship.
+- `source_configs` aponta uma versão imutável e publicada de `retention_policy_versions`;
+  policies novas nascem `draft` e a publicação exige CAS, ator, reason code e referência de
+  aprovação. Publicar não reponta fontes nem reescreve expiração histórica.
+- `observation_legal_holds` referencia `source_observations` por
+  `(account_id, client_account_id, observation_id)`. Um hold ativo é único por observação e
+  impede tombstone/crypto-shred; liberação preserva a linha e gera auditoria.
+- `context_snapshots` usa `retention_state=active|crypto_shredded`; após `expires_at`, o worker
+  limpa payload, versão de chave e hash sem remover a linha referenciada. `tombstoned_at` e
+  `retention_reason_code` conservam somente o estado auditável.
+- `context_snapshot_legal_holds` repete `(account_id, client_account_id, context_snapshot_id)` e
+  possui lifecycle auditado `active→released`. Holds de observações do mesmo subject/relationship
+  — ou de contexto empresarial do cliente — também bloqueiam a retenção do snapshot.

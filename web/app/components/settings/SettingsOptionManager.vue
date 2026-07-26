@@ -1,6 +1,6 @@
 <script setup>
-import { ArrowDown, ArrowUp } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { ArrowDown, ArrowUp, Plus, X } from 'lucide-vue-next'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
   title: {
@@ -34,6 +34,9 @@ const drafts = ref({})
 const updateErrors = ref({})
 const newLabel = ref('')
 const addError = ref('')
+const addPosition = ref('')
+const topInputRef = ref(null)
+const bottomInputRef = ref(null)
 
 const itemCountLabel = computed(() => {
   const count = props.items?.length || 0
@@ -83,6 +86,26 @@ function submitAdd() {
   addError.value = ''
   emit('add', trimmed)
   newLabel.value = ''
+  addPosition.value = ''
+}
+
+function openAdd(position) {
+  if (props.disabled) {
+    return
+  }
+
+  addError.value = ''
+  addPosition.value = position
+  nextTick(() => {
+    const input = position === 'top' ? topInputRef.value : bottomInputRef.value
+    input?.focus()
+  })
+}
+
+function closeAdd() {
+  addError.value = ''
+  newLabel.value = ''
+  addPosition.value = ''
 }
 
 function submitUpdate(id) {
@@ -120,194 +143,169 @@ function moveItem(itemId, direction) {
 </script>
 
 <template>
-  <article class="settings-card">
-    <header class="settings-card__header">
-      <h3 class="settings-card__title">{{ title }}</h3>
-      <p class="settings-card__text">{{ description }}</p>
+  <article class="settings-option-manager">
+    <header class="settings-option-manager__header">
+      <div class="settings-option-manager__heading">
+        <div class="settings-option-manager__title-row">
+          <h3>{{ title }}</h3>
+          <span>{{ itemCountLabel }}</span>
+        </div>
+        <p>{{ description }}</p>
+      </div>
+
+      <button
+        class="option-add-trigger option-add-trigger--top"
+        type="button"
+        :disabled="disabled"
+        aria-label="Adicionar nova opcao no inicio da lista"
+        title="Adicionar nova opcao"
+        data-tooltip="Adicionar nova opcao"
+        @click="openAdd('top')"
+      >
+        <Plus :size="18" :stroke-width="2.4" aria-hidden="true" />
+      </button>
     </header>
 
-    <details class="settings-collapse">
-      <summary class="settings-collapse__summary">
-        <div class="settings-collapse__title-wrap">
-          <strong class="settings-collapse__title">Cadastrados</strong>
-          <span class="settings-collapse__text">
-            A ordem abaixo define como o select aparece no sistema.
-          </span>
-        </div>
-        <span class="settings-collapse__meta">{{ itemCountLabel }}</span>
-        <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
-          expand_more
-        </span>
-      </summary>
+    <form v-if="addPosition === 'top'" class="option-add-inline" @submit.prevent="submitAdd">
+      <input
+        ref="topInputRef"
+        v-model="newLabel"
+        class="option-add-inline__input"
+        type="text"
+        :placeholder="addPlaceholder"
+        :disabled="disabled"
+        :data-testid="testid ? `${testid}-add-input` : undefined"
+        aria-label="Nome da nova opcao"
+        @input="addError = ''"
+        @keydown.esc.prevent="closeAdd"
+      />
+      <button
+        class="option-add__button option-add-inline__submit"
+        type="submit"
+        :disabled="disabled || !newLabel.trim()"
+        :data-testid="testid ? `${testid}-add-btn` : undefined"
+      >
+        Adicionar
+      </button>
+      <button
+        class="option-add-inline__cancel"
+        type="button"
+        aria-label="Cancelar nova opcao"
+        @click="closeAdd"
+      >
+        <X :size="17" :stroke-width="2.2" aria-hidden="true" />
+      </button>
+      <span v-if="addError" class="option-add-inline__error">{{ addError }}</span>
+    </form>
 
-      <div class="settings-collapse__body">
-        <div class="option-list">
-          <span v-if="!items.length" class="insight-empty">Sem opcoes cadastradas.</span>
+    <div class="option-list">
+      <span v-if="!items.length" class="settings-option-manager__empty">
+        Sem opcoes cadastradas.
+      </span>
 
-          <form
-            v-for="(item, index) in items"
-            :key="item.id"
-            class="option-row option-row--sortable"
-            @submit.prevent="submitUpdate(item.id)"
-          >
-            <div class="option-row__order">
-              <span class="option-row__index">{{ index + 1 }}</span>
-              <div class="option-row__order-actions">
-                <button
-                  class="option-row__move"
-                  type="button"
-                  :disabled="disabled || index === 0"
-                  :aria-label="`Mover ${item.label} para cima`"
-                  @click="moveItem(item.id, -1)"
-                >
-                  <ArrowUp :size="14" :stroke-width="2.2" />
-                </button>
-                <button
-                  class="option-row__move"
-                  type="button"
-                  :disabled="disabled || index === items.length - 1"
-                  :aria-label="`Mover ${item.label} para baixo`"
-                  @click="moveItem(item.id, 1)"
-                >
-                  <ArrowDown :size="14" :stroke-width="2.2" />
-                </button>
-              </div>
-            </div>
-
-            <input
-              v-model="drafts[item.id]"
-              class="option-row__input"
-              type="text"
-              :disabled="disabled"
-              @input="updateErrors[item.id] = ''"
-            />
-            <button class="option-row__save" type="submit" :disabled="disabled">Salvar</button>
+      <form
+        v-for="(item, index) in items"
+        :key="item.id"
+        class="option-row option-row--sortable"
+        @submit.prevent="submitUpdate(item.id)"
+      >
+        <div class="option-row__order">
+          <span class="option-row__index">{{ index + 1 }}</span>
+          <div class="option-row__order-actions">
             <button
-              class="option-row__remove"
+              class="option-row__move"
               type="button"
-              :disabled="disabled"
-              @click="$emit('remove', item.id)"
+              :disabled="disabled || index === 0"
+              :aria-label="`Mover ${item.label} para cima`"
+              @click="moveItem(item.id, -1)"
             >
-              Excluir
+              <ArrowUp :size="14" :stroke-width="2.2" />
             </button>
-            <span v-if="updateErrors[item.id]" class="option-row__error">
-              {{ updateErrors[item.id] }}
-            </span>
-          </form>
+            <button
+              class="option-row__move"
+              type="button"
+              :disabled="disabled || index === items.length - 1"
+              :aria-label="`Mover ${item.label} para baixo`"
+              @click="moveItem(item.id, 1)"
+            >
+              <ArrowDown :size="14" :stroke-width="2.2" />
+            </button>
+          </div>
         </div>
-      </div>
-    </details>
 
-    <details class="settings-collapse">
-      <summary class="settings-collapse__summary">
-        <div class="settings-collapse__title-wrap">
-          <strong class="settings-collapse__title">Adicionar</strong>
-          <span class="settings-collapse__text">Cadastre uma nova opcao para a lista.</span>
-        </div>
-        <span class="settings-collapse__meta">{{ itemCountLabel }}</span>
-        <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
-          expand_more
+        <input
+          v-model="drafts[item.id]"
+          class="option-row__input"
+          type="text"
+          :disabled="disabled"
+          :aria-label="`Editar ${item.label}`"
+          @input="updateErrors[item.id] = ''"
+        />
+        <button class="option-row__save" type="submit" :disabled="disabled">Salvar</button>
+        <button
+          class="option-row__remove"
+          type="button"
+          :disabled="disabled"
+          @click="$emit('remove', item.id)"
+        >
+          Excluir
+        </button>
+        <span v-if="updateErrors[item.id]" class="option-row__error">
+          {{ updateErrors[item.id] }}
         </span>
-      </summary>
+      </form>
+    </div>
 
-      <div class="settings-collapse__body">
-        <form class="option-add" @submit.prevent="submitAdd">
-          <input
-            v-model="newLabel"
-            class="option-add__input"
-            type="text"
-            :placeholder="addPlaceholder"
-            :disabled="disabled"
-            :data-testid="testid ? `${testid}-add-input` : undefined"
-            @input="addError = ''"
-          />
-          <button
-            class="option-add__button"
-            type="submit"
-            :disabled="disabled"
-            :data-testid="testid ? `${testid}-add-btn` : undefined"
-          >
-            Adicionar
-          </button>
-        </form>
-        <span v-if="addError" class="option-add__error">{{ addError }}</span>
-      </div>
-    </details>
+    <form
+      v-if="addPosition === 'bottom'"
+      class="option-add-inline option-add-inline--bottom"
+      @submit.prevent="submitAdd"
+    >
+      <input
+        ref="bottomInputRef"
+        v-model="newLabel"
+        class="option-add-inline__input"
+        type="text"
+        :placeholder="addPlaceholder"
+        :disabled="disabled"
+        :data-testid="testid ? `${testid}-add-input` : undefined"
+        aria-label="Nome da nova opcao"
+        @input="addError = ''"
+        @keydown.esc.prevent="closeAdd"
+      />
+      <button
+        class="option-add__button option-add-inline__submit"
+        type="submit"
+        :disabled="disabled || !newLabel.trim()"
+        :data-testid="testid ? `${testid}-add-btn` : undefined"
+      >
+        Adicionar
+      </button>
+      <button
+        class="option-add-inline__cancel"
+        type="button"
+        aria-label="Cancelar nova opcao"
+        @click="closeAdd"
+      >
+        <X :size="17" :stroke-width="2.2" aria-hidden="true" />
+      </button>
+      <span v-if="addError" class="option-add-inline__error">{{ addError }}</span>
+    </form>
+
+    <div class="settings-option-manager__bottom-action">
+      <button
+        class="option-add-trigger option-add-trigger--bottom"
+        type="button"
+        :disabled="disabled"
+        aria-label="Adicionar nova opcao ao final da lista"
+        title="Adicionar nova opcao"
+        data-tooltip="Adicionar nova opcao"
+        @click="openAdd('bottom')"
+      >
+        <Plus :size="18" :stroke-width="2.4" aria-hidden="true" />
+      </button>
+    </div>
   </article>
 </template>
 
-<style scoped>
-.option-row--sortable {
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center;
-}
-
-.option-row__order {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.option-row__index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid rgb(var(--ring) / 0.18);
-  border-radius: 999px;
-  background: rgb(var(--primary) / 0.08);
-  color: rgb(var(--primary));
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.option-row__order-actions {
-  display: inline-flex;
-  gap: 6px;
-}
-
-.option-row__move {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid rgb(var(--border) / 0.72);
-  border-radius: 10px;
-  background: rgb(var(--surface-2) / 0.7);
-  color: rgb(var(--text) / 0.9);
-  cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
-}
-
-.option-row__move:hover:not(:disabled) {
-  border-color: rgb(var(--ring) / 0.32);
-  background: rgb(var(--primary) / 0.12);
-  color: rgb(var(--primary));
-}
-
-.option-row__move:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.option-row__error {
-  grid-column: 2 / -1;
-}
-
-@media (max-width: 720px) {
-  .option-row--sortable {
-    grid-template-columns: 1fr;
-  }
-
-  .option-row__order {
-    justify-content: space-between;
-  }
-}
-</style>
+<style scoped src="./settings-option-manager.css"></style>

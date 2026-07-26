@@ -20,8 +20,11 @@ package secretbox
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -69,7 +72,8 @@ type Status struct {
 // Box cifra e decifra segredos com uma chave AES-256-GCM. Seguro para uso
 // concorrente: cipher.AEAD e stateless e o nonce e sorteado por operacao.
 type Box struct {
-	aead cipher.AEAD
+	aead      cipher.AEAD
+	opaqueKey [sha256.Size]byte
 }
 
 // New constroi um Box a partir da chave CRUA de 32 bytes. Chave de tamanho
@@ -87,7 +91,11 @@ func New(key []byte) (*Box, error) {
 	if err != nil {
 		return nil, fmt.Errorf("secretbox: inicializar GCM: %w", err)
 	}
-	return &Box{aead: aead}, nil
+	opaqueKey := hmac.New(sha256.New, key)
+	_, _ = opaqueKey.Write([]byte("omni.secretbox.opaque-fingerprint.v1"))
+	box := &Box{aead: aead}
+	copy(box.opaqueKey[:], opaqueKey.Sum(nil))
+	return box, nil
 }
 
 // FromEnv le OMNI_SECRETS_KEY (32 bytes em base64) e constroi o Box. Ausente ou
@@ -145,6 +153,29 @@ func (b *Box) Decrypt(encoded string) (string, error) {
 		return "", ErrDecrypt
 	}
 	return string(plaintext), nil
+}
+
+// OpaqueFingerprint devolve uma referencia HMAC-SHA256 estavel, sem expor os
+// valores usados para deriva-la. A chave e separada por dominio da chave AES
+// durante New; os campos tambem recebem framing por tamanho para evitar
+// ambiguidades de concatenacao. O namespace deve ser especifico do consumidor.
+func (b *Box) OpaqueFingerprint(namespace string, values ...string) string {
+	if b == nil {
+		return ""
+	}
+	mac := hmac.New(sha256.New, b.opaqueKey[:])
+	writeOpaqueFingerprintField(mac, namespace)
+	for _, value := range values {
+		writeOpaqueFingerprintField(mac, value)
+	}
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func writeOpaqueFingerprintField(mac interface{ Write([]byte) (int, error) }, value string) {
+	var length [8]byte
+	binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+	_, _ = mac.Write(length[:])
+	_, _ = mac.Write([]byte(value))
 }
 
 // Mask converte o segredo cru no status mascarado, com a MESMA regra do calendario

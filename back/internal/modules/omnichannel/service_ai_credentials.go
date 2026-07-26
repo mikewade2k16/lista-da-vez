@@ -115,6 +115,33 @@ func (s *AIService) credentialAPIKey(ctx context.Context, accountID, credentialI
 	return strings.TrimSpace(raw), nil
 }
 
+// ResolveRuntimeCredential resolves a vault entry for an explicitly injected
+// server-side consumer. A credential from the agency account can be shared only
+// with active client accounts in the same organization. It never exposes the
+// secret through an HTTP view.
+func (s *AIService) ResolveRuntimeCredential(ctx context.Context, accountID, credentialID string) (RuntimeAICredential, error) {
+	row, err := s.store.GetSharedRuntimeAICredential(
+		ctx,
+		strings.TrimSpace(accountID),
+		strings.TrimSpace(credentialID),
+	)
+	if err != nil {
+		return RuntimeAICredential{}, err
+	}
+	if s.box == nil {
+		return RuntimeAICredential{}, ErrAIProviderKeyMissing
+	}
+	apiKey, err := s.box.Decrypt(row.SecretCiphertext)
+	if err != nil || strings.TrimSpace(apiKey) == "" {
+		return RuntimeAICredential{}, ErrAIProviderKeyMissing
+	}
+	return RuntimeAICredential{
+		ID:       row.ID,
+		Provider: row.Provider,
+		APIKey:   strings.TrimSpace(apiKey),
+	}, nil
+}
+
 func (s *AIService) versionAPIKey(ctx context.Context, accountID string, agent agentRow, version versionRow) (string, error) {
 	if version.ResponseCredentialID != nil && strings.TrimSpace(*version.ResponseCredentialID) != "" {
 		return s.credentialAPIKey(ctx, accountID, *version.ResponseCredentialID, version.Provider)

@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+func TestInstagramProviderDefaultsToGraphV24AndPreservesOverride(t *testing.T) {
+	provider := NewInstagramGraphProvider("")
+	if provider.baseURL != "https://graph.instagram.com/v24.0" {
+		t.Fatalf("default baseURL = %q", provider.baseURL)
+	}
+
+	override := NewInstagramGraphProvider(" https://graph.example.test/custom/ ")
+	if override.baseURL != "https://graph.example.test/custom" {
+		t.Fatalf("override baseURL = %q", override.baseURL)
+	}
+}
+
 func TestInstagramProviderUsesBearerAndPublishesImage(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

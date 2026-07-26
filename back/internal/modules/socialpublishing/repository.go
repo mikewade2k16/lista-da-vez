@@ -9,6 +9,7 @@ import (
 
 type connectionRepository interface {
 	GetConnection(ctx context.Context, accountID string) (ConnectionRecord, error)
+	GetConnectionTarget(ctx context.Context, accountID, connectionID string) (connectionTarget, error)
 	SaveConnection(
 		ctx context.Context,
 		accountID, userID string,
@@ -25,18 +26,40 @@ type postRepository interface {
 	UpdatePost(ctx context.Context, command updatePostCommand) (Post, error)
 	SchedulePost(ctx context.Context, command schedulePostCommand) (Post, error)
 	CancelPost(ctx context.Context, accountID, postID, userID string, version int) (Post, error)
-	ListPublishedPostIDs(ctx context.Context, accountID string, limit int) ([]string, error)
+	ListPublishedPostIDs(ctx context.Context, accountID string) ([]string, error)
 }
 
 type analyticsRepository interface {
 	Overview(ctx context.Context, accountID string, now time.Time) (Overview, error)
-	ListAnalytics(ctx context.Context, accountID string, limit int) ([]Analytics, error)
+	Summary(ctx context.Context, accountID string, now time.Time) (Summary, error)
+	ListAnalytics(ctx context.Context, accountID string, filter ListAnalyticsFilter) ([]Analytics, error)
 	RuntimeContext(ctx context.Context, accountID string, now time.Time) (RuntimeContext, error)
+}
+
+type portfolioRepository interface {
+	PublishingScope(
+		ctx context.Context,
+		accountID, userID string,
+		platformAdmin bool,
+	) (PublishingScope, error)
+	ListPortfolio(
+		ctx context.Context,
+		accountIDs []string,
+		now time.Time,
+	) ([]portfolioClientRecord, error)
+}
+
+type analyticsWorkerRepository interface {
 	AnalyticsTarget(ctx context.Context, accountID, postID string) (analyticsTarget, error)
-	SaveAnalytics(ctx context.Context, accountID, postID string, analytics Analytics) error
+	SaveAnalytics(
+		ctx context.Context,
+		accountID, postID, jobKey string,
+		analytics Analytics,
+	) error
 }
 
 type workerRepository interface {
+	ProtectPublishOutcome(ctx context.Context, accountID, postID string, revision int) (bool, error)
 	PreparePublish(ctx context.Context, accountID, postID string, revision int) (publishTarget, bool, error)
 	SaveCreationID(ctx context.Context, accountID, postID string, revision int, creationID string) error
 	MarkPublishAttempted(ctx context.Context, accountID, postID string, revision int) (bool, error)
@@ -54,6 +77,8 @@ type serviceRepository interface {
 	connectionRepository
 	postRepository
 	analyticsRepository
+	portfolioRepository
+	analyticsWorkerRepository
 }
 
 type jobEnqueuer interface {

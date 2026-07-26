@@ -578,6 +578,11 @@ func TestApplyOperationTemplatePersistsTemplateAsSingleMutation(t *testing.T) {
 					ServiceCancelWindowSeconds:         30,
 					TestModeEnabled:                    true,
 					AutoFillFinishModal:                true,
+					ScoreWeightConversion:              40,
+					ScoreWeightSoldValue:               20,
+					ScoreWeightQuality:                 20,
+					ScoreWeightPa:                      12,
+					ScoreWeightQueueDiscipline:         8,
 				},
 				AlertSettings: AlertSettings{
 					AlertMinConversionRate: 42,
@@ -629,8 +634,8 @@ func TestApplyOperationTemplatePersistsTemplateAsSingleMutation(t *testing.T) {
 	if applied.OperationSection.CoreSettings.MaxConcurrentServices != 12 {
 		t.Fatalf("expected template max concurrent 12, got %d", applied.OperationSection.CoreSettings.MaxConcurrentServices)
 	}
-	if applied.OperationSection.CoreSettings.ScoreWeightConversion != 35 || applied.OperationSection.CoreSettings.ScoreWeightPa != 15 {
-		t.Fatalf("expected template score weights 35/15, got conversion=%v pa=%v", applied.OperationSection.CoreSettings.ScoreWeightConversion, applied.OperationSection.CoreSettings.ScoreWeightPa)
+	if applied.OperationSection.CoreSettings.ScoreWeightConversion != 40 || applied.OperationSection.CoreSettings.ScoreWeightPa != 12 {
+		t.Fatalf("expected gamification score weights to be preserved, got conversion=%v pa=%v", applied.OperationSection.CoreSettings.ScoreWeightConversion, applied.OperationSection.CoreSettings.ScoreWeightPa)
 	}
 	if !applied.OperationSection.CoreSettings.TestModeEnabled || !applied.OperationSection.CoreSettings.AutoFillFinishModal {
 		t.Fatalf("expected test/auto-fill flags to be preserved")

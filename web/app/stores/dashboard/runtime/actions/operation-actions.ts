@@ -342,32 +342,42 @@ export function createOperationActions({ getState, updateState }) {
       })
     },
 
-    openFinishModal(serviceId) {
+    openFinishModal(serviceId, pendingCandidate = null) {
       const state = getState()
-      const activeService = findActiveServiceAcrossStores(state, serviceId)
+      const normalizedServiceId = String(serviceId || '').trim()
+      const activeService = findActiveServiceAcrossStores(state, normalizedServiceId)
 
       if (!activeService) {
         // Pendencia de auto-encerramento (2h): o servico ja saiu de activeServices,
         // mas a gestao encerra pelo MESMO modal (o controller resolve o service-like
         // a partir de pendingValidations). Sem draft aleatorio: o form nasce limpo.
-        const pending = findPendingValidationAcrossStores(state, serviceId)
+        // No painel integrado, a lista vem do overview de todas as lojas e pode nao
+        // existir nos snapshots operacionais ja carregados. Nesse caso preservamos
+        // a pendencia selecionada como contexto transitorio do modal.
+        const candidateServiceId = String(pendingCandidate?.serviceId || '').trim()
+        const pending =
+          findPendingValidationAcrossStores(state, normalizedServiceId) ||
+          (candidateServiceId === normalizedServiceId ? pendingCandidate : null)
         if (!pending) {
-          return
+          return false
         }
 
         updateState({
           ...state,
-          finishModalServiceId: serviceId,
+          finishModalServiceId: normalizedServiceId,
           finishModalDraft: null,
+          finishModalPendingValidation: pending,
         })
-        return
+        return true
       }
 
       updateState({
         ...state,
-        finishModalServiceId: serviceId,
+        finishModalServiceId: normalizedServiceId,
         finishModalDraft: buildRandomFinishModalDraft(state, activeService),
+        finishModalPendingValidation: null,
       })
+      return true
     },
 
     closeFinishModal() {
@@ -377,6 +387,7 @@ export function createOperationActions({ getState, updateState }) {
         ...state,
         finishModalServiceId: null,
         finishModalDraft: null,
+        finishModalPendingValidation: null,
       })
     },
 
@@ -484,6 +495,7 @@ export function createOperationActions({ getState, updateState }) {
         serviceHistory: [...state.serviceHistory, finalizedHistoryEntry],
         finishModalServiceId: null,
         finishModalDraft: null,
+        finishModalPendingValidation: null,
         ...applyStatusTransitions(state, statusTransitions, now),
       })
     },

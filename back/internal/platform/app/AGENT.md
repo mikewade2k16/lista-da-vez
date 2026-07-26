@@ -66,3 +66,16 @@ Gateados: `queue` (`/v1/operations,/v1/alerts,/v1/reports,/v1/analytics,/v1/feed
 - [platform/httpapi/AGENT.md](../httpapi/AGENT.md)
 - [platform/modules/AGENT.md](../modules/AGENT.md)
 - [modules/core/AGENT.md](../../modules/core/AGENT.md)
+
+## Wiring das fontes de Customer Intelligence (2026-07-23)
+
+- `app.go` registra os adapters owner-owned de Calendar, ERP, Site e BI no
+  `customerintelligence.Service`.
+- ERP e Site passam primeiro por Customer Data e so consultam o owner para
+  `source_link` exato. Calendar produz Business Context sem escopo pessoal. BI
+  faz apenas health/validacao local e nao dispara chamada externa.
+- Os adapters vivem neste pacote para preservar a direcao de dependencias:
+  modulos nao importam Customer Intelligence nem um ao outro.
+- Erro permanente de contrato/configuracao e classificado por reason code e nao
+  entra em retry; indisponibilidade de qualquer fonte permanece isolada do
+  runtime de chat.

@@ -19,6 +19,17 @@ func TestAIDispatchIdempotencyKeyIsStableAndContainsNoPII(t *testing.T) {
 	}
 }
 
+func TestAIDispatchOrderingKeyDoesNotBlockConversationIngress(t *testing.T) {
+	const conversationID = "11111111-1111-4111-8111-111111111111"
+	got := aiDispatchOrderingKey(conversationID)
+	if got == conversationID {
+		t.Fatal("AI dispatch must not share the ingress FIFO head-of-line")
+	}
+	if got != "ai-dispatch:"+conversationID {
+		t.Fatalf("ordering key = %q", got)
+	}
+}
+
 func TestAIDispatchStatusesAreClosed(t *testing.T) {
 	valid := []AIDispatchStatus{
 		AIDispatchBuffering, AIDispatchQueued, AIDispatchProcessing,

@@ -42,8 +42,10 @@ type Module struct {
 	toolRegistry *AIToolRegistry
 	// clientCatalog reutiliza a lista permission-scoped de clientes da plataforma.
 	// businessContext projeta o perfil estrategico do Calendario por interface explicita.
-	clientCatalog   AutomationClientCatalog
-	businessContext AutomationBusinessContextProvider
+	clientCatalog        AutomationClientCatalog
+	businessContext      AutomationBusinessContextProvider
+	customerIntelligence CustomerIntelligenceBridge
+	customerDataIngest   CustomerDataInboundBridge
 }
 
 // Option configura o Module na composicao (padrao calendar.New).
@@ -73,6 +75,18 @@ func WithAutomationBusinessContext(provider AutomationBusinessContextProvider) O
 	return func(m *Module) { m.businessContext = provider }
 }
 
+// WithCustomerIntelligence injects the optional headless intelligence module.
+// The default is nil/off and preserves the complete legacy chat runtime.
+func WithCustomerIntelligence(bridge CustomerIntelligenceBridge) Option {
+	return func(m *Module) { m.customerIntelligence = bridge }
+}
+
+// WithCustomerDataIngest injects the independent deterministic relationship
+// resolver. It consumes the integration outbox even when all AI modes are off.
+func WithCustomerDataIngest(bridge CustomerDataInboundBridge) Option {
+	return func(m *Module) { m.customerDataIngest = bridge }
+}
+
 // New cria um Module pronto para registrar no Registry.
 func New(opts ...Option) *Module {
 	m := &Module{}
@@ -86,11 +100,12 @@ func (m *Module) ID() string { return "omnichannel" }
 
 func (m *Module) Metadata() modules.Metadata {
 	return modules.Metadata{
-		SchemaName:  "messaging",
-		Label:       "Omnichannel",
-		Description: "Atendimento WhatsApp: inbox, setores/filas e triagem por IA.",
-		IsCore:      false,
-		SortOrder:   47,
+		SchemaName:      "messaging",
+		Label:           "Omnichannel",
+		Description:     "Atendimento WhatsApp: inbox, setores/filas e triagem por IA.",
+		IsCore:          false,
+		OptionalModules: []string{"customer_data", "customer_intelligence"},
+		SortOrder:       47,
 	}
 }
 
@@ -241,14 +256,12 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	purgeHandler := NewPurgeHandler(NewRetentionResolver(deps.Pool), retStore, outboxStore, MediaDirFromEnv(), deps.Logger)
 	worker.Register(PurgeAccountJobKind, purgeHandler)
 	worker.Register(PurgeMediaOrphanJobKind, purgeHandler)
-	// Contexto de vida do worker: cancelado no Handle.Close (shutdown limpo).
-	workerCtx, cancelWorker := context.WithCancel(context.Background())
-
 	// service e send em locais: o ActionsService (F7) depende dos dois (forward reusa o send;
 	// status/assign passam pela FSM via o Service).
 	svc := NewService(store)
 	svc.setGroupMetadataResolver(newGroupMetadataResolver(store, registry, m.secretBox, deps.Logger))
 	automationSvc := NewAutomationService(store, svc, m.clientCatalog, m.businessContext, svc)
+	channelBindingSvc := NewChannelClientBindingService(store, svc, m.clientCatalog)
 	sendSvc := NewSendService(store, media, m.publisher, deps.Logger)
 	durableAIDispatch, probeErr := store.AIDispatchSchemaAvailable(context.Background())
 	if probeErr != nil {
@@ -259,13 +272,50 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	}
 	store.SetAIDispatchV2Enabled(durableAIDispatch)
 	if deps.Logger != nil {
+		if !durableAIDispatch {
+			deps.Logger.Error(
+				"omnichannel_ai_dispatch_disabled",
+				"fallback", "human_routing",
+			)
+		}
 		requestedExecutor := strings.TrimSpace(os.Getenv("OMNI_AI_EXECUTOR"))
 		if strings.EqualFold(requestedExecutor, "n8n") && brainExec == nil {
 			requestedExecutor = "native (n8n aguardando gateway brain.v2)"
 		}
 		deps.Logger.Info("omnichannel_ai_dispatch_runtime", "durable_dispatch", durableAIDispatch, "executor", requestedExecutor)
 	}
-	worker.Register(AIDispatchJobKind, newAIDispatchHandler(store, aiSvc, svc, sendSvc, deps.Logger))
+	worker.Register(AIDispatchJobKind, newAIDispatchHandler(
+		store, aiSvc, svc, sendSvc, m.customerIntelligence, deps.Logger,
+	))
+	worker.Register(AIInboundJobKind, newAIInboundHandler(store, svc, deps.Logger))
+	intelligenceOutboxStore, err := jobs.NewPostgresStore(
+		deps.Pool, "messaging.intelligence_outbox",
+	)
+	if err != nil {
+		return nil, err
+	}
+	intelligenceWorker := jobs.New(
+		intelligenceOutboxStore,
+		jobs.Config{WorkerID: "omnichannel-intelligence", Batch: 10, Logger: deps.Logger},
+	)
+	intelligenceWorker.Register(
+		intelligenceAcceptedJobKind,
+		intelligenceAcceptedHandler{bridge: m.customerIntelligence},
+	)
+	customerDataOutboxStore, err := jobs.NewPostgresStore(
+		deps.Pool, "messaging.customer_data_outbox",
+	)
+	if err != nil {
+		return nil, err
+	}
+	customerDataWorker := jobs.New(
+		customerDataOutboxStore,
+		jobs.Config{WorkerID: "omnichannel-customer-data", Batch: 20, Logger: deps.Logger},
+	)
+	customerDataWorker.Register(
+		customerDataRelationshipJobKind,
+		customerDataInboundHandler{bridge: m.customerDataIngest},
+	)
 	mediaBaseURL := strings.TrimSpace(os.Getenv("OMNI_INTERNAL_API_BASE_URL"))
 	if mediaBaseURL == "" {
 		mediaBaseURL = "http://api:8080"
@@ -280,17 +330,26 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 			deps.Logger.Warn("omnichannel_n8n_media_analyzer_not_configured")
 		}
 	}
+	// Contexto de vida dos workers: criado somente depois das inicializações
+	// falíveis e cancelado no Handle.Close (shutdown limpo).
+	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	worker.Start(workerCtx)
+	intelligenceWorker.Start(workerCtx)
+	if m.customerDataIngest != nil {
+		customerDataWorker.Start(workerCtx)
+	} else if deps.Logger != nil {
+		deps.Logger.Warn("omnichannel_customer_data_ingest_bridge_unavailable")
+	}
 	StartRetentionScheduler(workerCtx, retStore, outboxStore, deps.Logger)
 	StartSLAScheduler(workerCtx, store, deps.Logger)
-	inbound := NewInboundService(store, registry, m.secretBox, m.publisher, qr, aiSvc, svc, sendSvc, deps.Logger)
-	inbound.SetDurableAIDispatch(durableAIDispatch)
+	inbound := NewInboundService(store, registry, m.secretBox, m.publisher, qr, svc, deps.Logger)
 
 	m.handle = &handle{
 		service:    svc,
 		automation: automationSvc,
-		// Auto-disparo da IA no inbound (F5->F9->F8): o InboundService recebe o aiSvc (triagem) e o
-		// svc (maquina de estados/motor). Ambos ja construidos acima. Fire-and-forget pos-persistencia.
+		bindings:   channelBindingSvc,
+		// F5->F9->F8: o inbound grava um intento no outbox na mesma transacao da
+		// mensagem; o worker revalida a FSM e cria o dispatch duravel.
 		inbound: inbound,
 		session: NewSessionService(store, registry, m.secretBox, limitReader, qr, deps.Logger),
 		ai:      aiSvc,
@@ -303,16 +362,18 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		// Acoes do inbox (F7): reaction/forward/delete/status/assign. status/assign passam pela FSM (F8).
 		actions: NewActionsService(store, svc, sendSvc, registry, m.publisher, deps.Logger, WithActionsSecretBox(m.secretBox)),
 		// Custo de LLM por conta (F13): agrega ai_runs (usage/cost) por conta+periodo.
-		cost:           NewCostService(deps.Pool, limitReader),
-		worker:         worker,
-		cancelWorker:   cancelWorker,
-		webhookLimiter: newRateLimiter(),
-		authMiddleware: deps.AuthMiddleware,
-		brainGateway:   brainGateway,
-		toolGateway:    newAIToolCallGateway(m.secretBox, store, toolRegistry),
-		mediaGateway:   mediaAnalysisGateway,
-		cloud:          cloudService,
-		instagram:      instagramService,
+		cost:               NewCostService(deps.Pool, limitReader),
+		worker:             worker,
+		intelligenceWorker: intelligenceWorker,
+		customerDataWorker: customerDataWorker,
+		cancelWorker:       cancelWorker,
+		webhookLimiter:     newRateLimiter(),
+		authMiddleware:     deps.AuthMiddleware,
+		brainGateway:       brainGateway,
+		toolGateway:        newAIToolCallGateway(m.secretBox, store, toolRegistry),
+		mediaGateway:       mediaAnalysisGateway,
+		cloud:              cloudService,
+		instagram:          instagramService,
 	}
 	return m.handle, nil
 }
@@ -326,31 +387,44 @@ func (m *Module) Service() *Service {
 	return m.handle.service
 }
 
+// AIService exposes the account-scoped AI vault/runtime facade to adapters
+// wired by platform/app. Satellite modules must not import the Store or query
+// messaging.* directly.
+func (m *Module) AIService() *AIService {
+	if m.handle == nil {
+		return nil
+	}
+	return m.handle.ai
+}
+
 // ============================================================================
 // Handle
 // ============================================================================
 
 type handle struct {
-	service        *Service
-	automation     *AutomationService
-	inbound        *InboundService
-	session        *SessionService
-	ai             *AIService
-	send           *SendService
-	media          *MediaService
-	gif            *GifService
-	stickers       *StickerService
-	actions        *ActionsService
-	cost           *CostService
-	worker         *jobs.Worker
-	cancelWorker   context.CancelFunc
-	webhookLimiter *rateLimiter
-	authMiddleware *auth.Middleware
-	brainGateway   *BrainGateway
-	toolGateway    *aiToolCallGateway
-	mediaGateway   *MediaAnalysisGateway
-	cloud          *WhatsAppCloudService
-	instagram      *InstagramService
+	service            *Service
+	automation         *AutomationService
+	bindings           *ChannelClientBindingService
+	inbound            *InboundService
+	session            *SessionService
+	ai                 *AIService
+	send               *SendService
+	media              *MediaService
+	gif                *GifService
+	stickers           *StickerService
+	actions            *ActionsService
+	cost               *CostService
+	worker             *jobs.Worker
+	intelligenceWorker *jobs.Worker
+	customerDataWorker *jobs.Worker
+	cancelWorker       context.CancelFunc
+	webhookLimiter     *rateLimiter
+	authMiddleware     *auth.Middleware
+	brainGateway       *BrainGateway
+	toolGateway        *aiToolCallGateway
+	mediaGateway       *MediaAnalysisGateway
+	cloud              *WhatsAppCloudService
+	instagram          *InstagramService
 }
 
 func (h *handle) ID() string { return "omnichannel" }
@@ -381,6 +455,9 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterKnowledgeRoutes(mux, h.ai, h.authMiddleware)
 	// MVP de automacao: cliente -> numero -> agente + policy configuravel de encerramento.
 	RegisterAutomationRoutes(mux, h.automation, h.authMiddleware)
+	// Ownership operacional canal -> cliente independe da IA. Conversas e
+	// touchpoints guardam snapshot; reatribuicao nunca move historico.
+	RegisterChannelClientBindingRoutes(mux, h.bindings, h.authMiddleware)
 	// Envio + mídia (F6): POST conversations/{id}/messages (outbox) + GET .../media (stream+Range).
 	RegisterSendRoutes(mux, h.send, h.media, h.authMiddleware)
 	// Ações do inbox (F7): reaction/forward/delete/status/assign + group/sync/contatos.
@@ -408,8 +485,19 @@ func (h *handle) Close() error {
 	if h.cancelWorker != nil {
 		h.cancelWorker()
 	}
+	var firstErr error
 	if h.worker != nil {
-		return h.worker.Close()
+		firstErr = h.worker.Close()
 	}
-	return nil
+	if h.intelligenceWorker != nil {
+		if err := h.intelligenceWorker.Close(); firstErr == nil {
+			firstErr = err
+		}
+	}
+	if h.customerDataWorker != nil {
+		if err := h.customerDataWorker.Close(); firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }

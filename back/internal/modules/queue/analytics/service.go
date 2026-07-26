@@ -72,6 +72,13 @@ func (service *Service) Data(ctx context.Context, principal auth.Principal, stor
 
 	combinedHistory := combineHistory(bundles)
 	labelSettings := combineSettingsLabels(bundles)
+	validatorNames, err := service.repository.ResolveUserDisplayNames(
+		ctx,
+		collectAutoCloseValidatorIDs(bundles),
+	)
+	if err != nil {
+		return DataResponse{}, err
+	}
 	return DataResponse{
 		StoreID:           scope.storeID,
 		TenantID:          scope.tenantID,
@@ -83,6 +90,7 @@ func (service *Service) Data(ctx context.Context, principal auth.Principal, stor
 		Professions:       buildProfessions(combinedHistory),
 		OutcomeSummary:    buildOutcomeSummary(combinedHistory),
 		HourlySales:       buildHourlySales(combinedHistory),
+		AutoClose:         buildAutoCloseData(bundles, validatorNames),
 	}, nil
 }
 

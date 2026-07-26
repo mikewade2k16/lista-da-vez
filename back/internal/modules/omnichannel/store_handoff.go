@@ -93,6 +93,9 @@ func (s *Store) CreateHandoff(ctx context.Context, accountID, conversationID, ac
 		where account_id=$1::uuid and conversation_id=$2::uuid
 		  and status in ('requested','queued','accepted') order by created_at desc, id desc limit 1`, accountID, conversationID))
 	if err == nil {
+		if in.IntelligenceAcceptance != nil {
+			return HandoffView{}, ErrConflict
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return HandoffView{}, err
 		}
@@ -157,6 +160,19 @@ func (s *Store) CreateHandoff(ctx context.Context, accountID, conversationID, ac
 		update.PreserveAIMessageID = message.ID
 		customerNoticeMessage = &message
 		customerNoticeCreated = created
+	}
+	if in.IntelligenceAcceptance != nil {
+		event := *in.IntelligenceAcceptance
+		event.AccountID = accountID
+		event.ConversationID = conversationID
+		event.Generation = in.CapturedGeneration
+		event.Outcome = "handoff"
+		if customerNoticeMessage != nil {
+			event.MessageID = customerNoticeMessage.ID
+		}
+		if err := insertIntelligenceAcceptanceTx(ctx, tx, event); err != nil {
+			return HandoffView{}, err
+		}
 	}
 	if err := applyStateUpdateTx(ctx, tx, accountID, conversationID, update, s.AIDispatchV2Enabled()); err != nil {
 		return HandoffView{}, err

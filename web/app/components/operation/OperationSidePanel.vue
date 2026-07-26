@@ -1,60 +1,33 @@
 <script setup lang="ts">
-// Coluna lateral da operacao com dois blocos — Comunicados (topo, ainda PREVIA
-// sem backend) e Omni Chat (rodape, agora LIGADO ao endpoint Go POST
-// /v1/omni-chat/ask via useOmniChat). O bloco Comunicados segue stub visual ate
-// ter dados/backend; mantido com badge "Previa".
+// Coluna lateral da operacao com Comunicados tenant-safe e o Omni Chat.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useOmniChat } from '~/composables/useOmniChat'
+import { communicationPeriod, type QueueCommunication } from '~/domain/operation/communications'
 import { useAuthStore } from '~/stores/auth'
-import OperationOmniPersonaEditor from '~/components/operation/OperationOmniPersonaEditor.vue'
+import { useCommunicationsStore } from '~/stores/communications'
+import OperationOmniChatConfigDrawer from '~/components/operation/OperationOmniChatConfigDrawer.vue'
 
-// Conteudo de exemplo so para dar forma ao template. Nao vem de API.
-const communications = [
+const props = withDefaults(
+  defineProps<{
+    storeIds?: string[]
+    accountId?: string
+  }>(),
   {
-    id: 'campaign-progressiva',
-    label: 'Campanha Progressiva',
-    hint: '📅 Vigência: até 26/07',
-    modalTitle: 'Campanha Progressiva',
-    modalSubtitle: '📅 Vigência: até 26/07',
-    modalBody: `Desconto progressivo válido para joias e relógios, conforme a quantidade de itens comprados dentro do mesmo segmento.
-
-Segmentos válidos:
-
-* Prata com Prata
-* Ouro com Ouro
-* Relógio com Relógio
-
-Condições de pagamento:
-
-À vista:
-1 item = 10% OFF
-2 itens = 20% OFF
-3 itens ou mais = 30% OFF
-
-Cartão:
-1 item = 5% OFF
-2 itens = 10% OFF
-3 itens ou mais = 20% OFF
-
-❗Importante: os itens não podem ser somados entre segmentos diferentes para aumentar o desconto.
-
-Exemplo: 2 peças em Prata + 1 peça em Ouro não contam como 3 itens para desconto progressivo.`,
+    storeIds: () => [],
+    accountId: '',
   },
-  //{ id: 'messages', label: 'Mensagens', hint: 'Sem mensagens no momento' },
-  // { id: 'notices', label: 'Avisos', hint: 'Sem avisos publicados' },
-]
+)
 
-const chatTopics = [
-  'Atendimento',
-  'Produtos',
-  'Pesquisa',
-  'Operacional',
-  'Duvidas gerais',
-  'Pesquisa de mercado',
-]
-
-const chat = useOmniChat()
+const chat = useOmniChat(() => props.accountId)
 const chatStreamRef = ref<HTMLElement | null>(null)
+const communicationsStore = useCommunicationsStore()
+const communications = computed(() => communicationsStore.publishedItems)
+const normalizedStoreIds = computed(() =>
+  Array.from(
+    new Set((props.storeIds || []).map((storeId) => String(storeId || '').trim()).filter(Boolean)),
+  ),
+)
+let communicationsPollTimer: number | null = null
 
 // Edicao da persona (prompt/sistema) do Omni Chat. So aparece para admin da
 // plataforma; o chat em si continua para todos. Gating no mesmo padrao do
@@ -62,21 +35,21 @@ const chatStreamRef = ref<HTMLElement | null>(null)
 // dito (carregar/salvar) mora em OperationOmniPersonaEditor.vue.
 const auth = useAuthStore()
 const canEditPersona = computed(() => auth.role === 'platform_admin')
-const isPersonaEditorOpen = ref(false)
-const activeCommunication = ref<(typeof communications)[number] | null>(null)
+const isOmniConfigOpen = ref(false)
+const activeCommunication = ref<QueueCommunication | null>(null)
 
 function openPersonaEditor() {
   if (!canEditPersona.value) {
     return
   }
-  isPersonaEditorOpen.value = true
+  isOmniConfigOpen.value = true
 }
 
 function closePersonaEditor() {
-  isPersonaEditorOpen.value = false
+  isOmniConfigOpen.value = false
 }
 
-function openCommunication(item: (typeof communications)[number]) {
+function openCommunication(item: QueueCommunication) {
   activeCommunication.value = item
 }
 
@@ -117,12 +90,24 @@ watch(activeCommunication, (item) => {
   syncBodyScrollLock(Boolean(item))
 })
 
+watch(
+  normalizedStoreIds,
+  (storeIds) => {
+    void communicationsStore.loadPublishedForStores(storeIds)
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   document.addEventListener('keydown', handleEscape)
+  communicationsPollTimer = window.setInterval(() => {
+    void communicationsStore.loadPublishedForStores(normalizedStoreIds.value)
+  }, 30_000)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleEscape)
+  if (communicationsPollTimer !== null) window.clearInterval(communicationsPollTimer)
   syncBodyScrollLock(false)
 })
 </script>
@@ -134,15 +119,26 @@ onBeforeUnmount(() => {
       <header class="operation-side__head">
         <h3 class="operation-side__title">Comunicados</h3>
       </header>
-      <ul class="operation-side__comms-list">
-        <li v-for="item in communications" :key="item.id">
+      <p
+        v-if="communicationsStore.publishedLoading && communications.length === 0"
+        class="operation-side__comms-empty"
+      >
+        Carregando…
+      </p>
+      <p v-else-if="communications.length === 0" class="operation-side__comms-empty">
+        Nenhum comunicado publicado.
+      </p>
+      <ul v-else class="operation-side__comms-list">
+        <li v-for="item in communications" :key="`${item.accountId}:${item.id}`">
           <button
             type="button"
             class="operation-side__comms-item operation-side__comms-button"
             @click="openCommunication(item)"
           >
-            <span class="operation-side__comms-label">{{ item.label }}</span>
-            <span class="operation-side__comms-hint">{{ item.hint }}</span>
+            <span class="operation-side__comms-label">{{ item.title }}</span>
+            <span class="operation-side__comms-hint">
+              {{ item.excerpt || communicationPeriod(item) }}
+            </span>
           </button>
         </li>
       </ul>
@@ -167,23 +163,17 @@ onBeforeUnmount(() => {
             v-if="canEditPersona"
             type="button"
             class="operation-side__persona-toggle"
-            :class="{ 'operation-side__persona-toggle--is-active': isPersonaEditorOpen }"
-            :aria-pressed="isPersonaEditorOpen"
-            aria-label="Editar persona do Omni"
-            title="Editar persona do Omni"
-            @click="isPersonaEditorOpen ? closePersonaEditor() : openPersonaEditor()"
+            :class="{ 'operation-side__persona-toggle--is-active': isOmniConfigOpen }"
+            :aria-pressed="isOmniConfigOpen"
+            aria-label="Configurar Omni Chat"
+            title="Configurar Omni Chat"
+            @click="isOmniConfigOpen ? closePersonaEditor() : openPersonaEditor()"
           >
             <span class="material-icons-round">tune</span>
           </button>
           <span class="operation-side__preview-tag">Prévia</span>
         </div>
       </header>
-
-      <!-- Editor inline da persona (so admin). Abre via engrenagem no cabecalho. -->
-      <OperationOmniPersonaEditor
-        v-if="canEditPersona && isPersonaEditorOpen"
-        @close="closePersonaEditor()"
-      />
 
       <!--<div class="operation-side__chat-topics">
         <button
@@ -302,10 +292,10 @@ onBeforeUnmount(() => {
                   :id="`operation-side-comm-title-${activeCommunication.id}`"
                   class="operation-side__modal-title"
                 >
-                  {{ activeCommunication.modalTitle }}
+                  {{ activeCommunication.title }}
                 </h4>
                 <p class="operation-side__modal-subtitle">
-                  {{ activeCommunication.modalSubtitle }}
+                  {{ communicationPeriod(activeCommunication) }}
                 </p>
               </div>
               <button
@@ -320,7 +310,7 @@ onBeforeUnmount(() => {
 
             <div class="operation-side__modal-body">
               <p
-                v-for="paragraph in activeCommunication.modalBody.split('\n\n')"
+                v-for="paragraph in activeCommunication.body.split('\n\n')"
                 :key="paragraph"
                 class="operation-side__modal-paragraph"
               >
@@ -332,4 +322,11 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
   </Teleport>
+
+  <OperationOmniChatConfigDrawer
+    v-if="canEditPersona"
+    :open="isOmniConfigOpen"
+    :account-id="props.accountId"
+    @update:open="isOmniConfigOpen = $event"
+  />
 </template>

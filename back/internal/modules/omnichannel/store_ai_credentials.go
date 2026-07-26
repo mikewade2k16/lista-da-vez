@@ -44,6 +44,27 @@ func (s *Store) GetAICredential(ctx context.Context, accountID, credentialID str
 	return row, err
 }
 
+func (s *Store) GetSharedRuntimeAICredential(ctx context.Context, consumerAccountID, credentialID string) (aiCredentialRow, error) {
+	row, err := scanAICredential(s.pool.QueryRow(ctx, `select `+aiCredentialColumns+`
+		from messaging.ai_credentials credential
+		where credential.id=$2::uuid
+		  and exists (
+			select 1
+			from core.accounts consumer
+			join core.accounts owner
+			  on owner.id=credential.account_id
+			 and owner.organization_id=consumer.organization_id
+			where consumer.id=$1::uuid
+			  and consumer.is_active
+			  and owner.is_active
+			  and (owner.id=consumer.id or owner.is_agency)
+		  )`, consumerAccountID, credentialID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return aiCredentialRow{}, ErrNotFound
+	}
+	return row, err
+}
+
 func (s *Store) CreateAICredential(ctx context.Context, accountID, userID, name, provider, ciphertext, last4 string) (aiCredentialRow, error) {
 	return scanAICredential(s.pool.QueryRow(ctx, `insert into messaging.ai_credentials
 		(account_id,name,provider,secret_ciphertext,secret_last4,created_by)

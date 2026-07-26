@@ -131,10 +131,10 @@ async function handleSubmit() {
     })
 
     if (result.ok) {
-      ui.success('Feedback enviado com sucesso!')
+      ui.success('Chamado de suporte enviado com sucesso!')
       closeModal()
     } else {
-      ui.error(result.message || 'Erro ao enviar feedback')
+      ui.error(result.message || 'Erro ao abrir chamado')
     }
   } finally {
     submitting.value = false
@@ -151,7 +151,7 @@ async function handleSubmit() {
             <div class="feedback-form-modal__header">
               <div class="feedback-form-modal__copy">
                 <p class="feedback-form-modal__eyebrow">Comunicação</p>
-                <h2 class="feedback-form-modal__title">Enviar Feedback</h2>
+                <h2 class="feedback-form-modal__title">Abrir chamado de suporte</h2>
               </div>
               <button
                 class="feedback-form-modal__close-btn"
@@ -250,7 +250,7 @@ async function handleSubmit() {
                   class="feedback-form-modal__btn feedback-form-modal__btn--primary"
                   :disabled="submitting || !kind || !subject.trim() || !body.trim()"
                 >
-                  {{ submitting ? 'Enviando...' : 'Enviar' }}
+                  {{ submitting ? 'Enviando...' : 'Abrir chamado' }}
                 </button>
               </div>
             </form>

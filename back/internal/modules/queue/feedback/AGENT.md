@@ -6,7 +6,10 @@ Estas instrucoes valem para `back/internal/modules/feedback`.
 
 ## Responsabilidade do modulo
 
-O modulo `feedback` cuida do canal de comunicacao onde usuarios enviam sugestoes, duvidas e relatos de problemas. Administradores acessam uma tela dedicada para visualizar, classificar e responder essas mensagens.
+O modulo interno `feedback` cuida do canal de suporte onde usuarios abrem
+chamados com sugestoes, duvidas e relatos de problemas. O nome publico da tela
+e **Suporte**; rotas, tabelas e permissoes internas permanecem `feedback` para
+manter compatibilidade.
 
 Hoje ele deve responder por:
 

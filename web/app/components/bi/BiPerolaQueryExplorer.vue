@@ -6,7 +6,11 @@ import { AlertCircle, DatabaseZap, Filter, RefreshCw, Search } from 'lucide-vue-
 import BiPerolaQueryFilters from '~/components/bi/BiPerolaQueryFilters.vue'
 import BiPerolaQueryResults from '~/components/bi/BiPerolaQueryResults.vue'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
-import { buildPerolaQueryFilters, createInitialPerolaFilterDrafts } from '~/domain/bi/perola-query'
+import {
+  PEROLA_STATIC_DATASETS,
+  buildPerolaQueryFilters,
+  createInitialPerolaFilterDrafts,
+} from '~/domain/bi/perola-query'
 import type {
   PerolaDatasetCatalogItem,
   PerolaDatasetQueryInput,
@@ -25,7 +29,7 @@ const {
   apiBlocked,
 } = storeToRefs(biStore)
 
-const selectedDatasetId = ref('')
+const selectedDatasetId = ref(PEROLA_STATIC_DATASETS[0]?.id || 'item')
 const orderField = ref('')
 const orderDirection = ref<'ASC' | 'DESC'>('DESC')
 const pageLimit = ref('25')
@@ -37,8 +41,13 @@ const catalogRequested = ref(datasetCatalog.value.length > 0 || Boolean(datasetC
 const activeDataset = computed(
   () => datasetCatalog.value.find((dataset) => dataset.id === selectedDatasetId.value) || null,
 )
+const activeStaticDataset = computed(
+  () =>
+    PEROLA_STATIC_DATASETS.find((dataset) => dataset.id === selectedDatasetId.value) ||
+    PEROLA_STATIC_DATASETS[0],
+)
 const datasetOptions = computed(() =>
-  datasetCatalog.value.map((dataset) => ({
+  PEROLA_STATIC_DATASETS.map((dataset) => ({
     value: dataset.id,
     label: dataset.label,
     meta: dataset.description,
@@ -80,6 +89,16 @@ async function loadCatalog(force = false) {
   const result = await biStore.loadPerolaDatasetCatalog(force)
   if (!result.ok || selectedDatasetId.value || !result.data?.[0]) return
   selectedDatasetId.value = result.data[0].id
+}
+
+async function unlockAndLoadCatalog(force = false) {
+  if (!apiBlocked.value) {
+    await loadCatalog(force)
+    return
+  }
+
+  biStore.setApiBlocked(false)
+  await loadCatalog(force)
 }
 
 async function submitQuery() {
@@ -125,8 +144,18 @@ function resetFilters() {
   applyDatasetDefaults(activeDataset.value)
 }
 
+watch(
+  activeDataset,
+  (dataset) => {
+    if (dataset) applyDatasetDefaults(dataset)
+  },
+  { immediate: true },
+)
+
 watch(selectedDatasetId, () => {
-  if (activeDataset.value) applyDatasetDefaults(activeDataset.value)
+  validationError.value = ''
+  lastSubmittedQuery.value = null
+  biStore.clearPerolaDatasetQuery()
 })
 
 watch(
@@ -162,9 +191,26 @@ watch(
       <AlertCircle :size="18" aria-hidden="true" />
       <span>
         <strong>Consultas bloqueadas.</strong>
-        Desative “Bloquear chamadas” no cabeçalho para liberar ações explícitas.
+        Desative “Interromper API” no cabeçalho para liberar ações explícitas.
       </span>
     </div>
+
+    <section class="bi-query__table-picker omni-glass">
+      <AppSelectField
+        v-model="selectedDatasetId"
+        label="Tabela da entidade"
+        :options="datasetOptions"
+        searchable
+        testid="bi-query-dataset"
+      />
+      <div>
+        <strong>Seis tabelas com o contrato completo</strong>
+        <span>
+          Trocar a entidade aqui é local e não chama a API. As colunas completas aparecem logo
+          abaixo, mesmo sem carregar registros.
+        </span>
+      </div>
+    </section>
 
     <div
       v-if="!catalogRequested && !activeDataset"
@@ -175,17 +221,12 @@ watch(
       <div>
         <strong>Nenhum dado solicitado</strong>
         <span>
-          O catálogo contém apenas as regras permitidas de consulta. Ele só será carregado quando
-          você autorizar.
+          A tabela e as colunas já estão visíveis abaixo. Carregue apenas as regras seguras para
+          habilitar os filtros e a consulta paginada.
         </span>
       </div>
-      <button
-        type="button"
-        :disabled="apiBlocked"
-        data-testid="bi-query-load-catalog"
-        @click="loadCatalog()"
-      >
-        Carregar catálogo de consultas
+      <button type="button" data-testid="bi-query-load-catalog" @click="unlockAndLoadCatalog()">
+        {{ apiBlocked ? 'Desbloquear e carregar catálogo' : 'Carregar catálogo de consultas' }}
       </button>
     </div>
 
@@ -195,11 +236,7 @@ watch(
         <strong>Catálogo indisponível</strong>
         <span>{{ datasetCatalogError }}</span>
       </div>
-      <button
-        type="button"
-        :disabled="datasetCatalogLoading || apiBlocked"
-        @click="loadCatalog(true)"
-      >
+      <button type="button" :disabled="datasetCatalogLoading" @click="unlockAndLoadCatalog(true)">
         <RefreshCw :size="15" aria-hidden="true" />
         Tentar novamente
       </button>
@@ -212,13 +249,6 @@ watch(
     <template v-else-if="activeDataset">
       <section class="bi-query__form omni-glass">
         <div class="bi-query__selectors">
-          <AppSelectField
-            v-model="selectedDatasetId"
-            label="Entidade"
-            :options="datasetOptions"
-            searchable
-            testid="bi-query-dataset"
-          />
           <AppSelectField
             v-model="orderField"
             label="Ordenar por"
@@ -279,15 +309,17 @@ watch(
           </button>
         </footer>
       </section>
-
-      <BiPerolaQueryResults
-        :response="datasetQueryResponse"
-        :loading="datasetQueryLoading"
-        :disabled="apiBlocked"
-        :error="datasetQueryError"
-        @page="changePage"
-      />
     </template>
+
+    <BiPerolaQueryResults
+      :dataset-id="selectedDatasetId"
+      :dataset-label="activeStaticDataset?.label || selectedDatasetId"
+      :response="datasetQueryResponse"
+      :loading="datasetQueryLoading"
+      :disabled="apiBlocked"
+      :error="datasetQueryError"
+      @page="changePage"
+    />
   </section>
 </template>
 
@@ -366,9 +398,35 @@ watch(
   border-radius: var(--radius-lg);
 }
 
+.bi-query__table-picker {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.45fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: end;
+  padding: 1rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+}
+
+.bi-query__table-picker > div {
+  display: grid;
+  gap: 0.25rem;
+  padding-bottom: 0.15rem;
+}
+
+.bi-query__table-picker strong {
+  color: var(--text-main);
+}
+
+.bi-query__table-picker span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .bi-query__selectors {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(160px, 0.55fr));
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
   gap: 0.7rem;
 }
 
@@ -499,6 +557,7 @@ watch(
 
 @media (max-width: 960px) {
   .bi-query__hero,
+  .bi-query__table-picker,
   .bi-query__selectors {
     grid-template-columns: 1fr 1fr;
   }
@@ -506,6 +565,7 @@ watch(
 
 @media (max-width: 620px) {
   .bi-query__hero,
+  .bi-query__table-picker,
   .bi-query__selectors {
     grid-template-columns: 1fr;
   }

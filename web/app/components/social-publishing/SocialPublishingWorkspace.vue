@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
+
 import { useCoreAccountStore } from '../../../layers/core/stores/account'
 import type {
   SocialPublishingPost,
   SocialPublishingPostInput,
 } from '~/domain/social-publishing/model'
 import { useAuthStore } from '~/stores/auth'
-import { useSocialPublishingStore } from '~/stores/social-publishing'
+import { useSocialPublishingPortfolioStore } from '~/stores/social-publishing-portfolio'
+import { SOCIAL_PUBLISHING_PAGE_SIZE, useSocialPublishingStore } from '~/stores/social-publishing'
 import { useUiStore } from '~/stores/ui'
+import SocialPublishingPortfolioView from './SocialPublishingPortfolio.vue'
+import SocialPublishingWorkspaceHeader from './SocialPublishingWorkspaceHeader.vue'
+import { useSocialPublishingPolling } from './useSocialPublishingPolling'
 
 type WorkspaceTab = 'queue' | 'content' | 'analytics' | 'connection'
 
@@ -20,6 +25,7 @@ interface WorkspaceTabOption {
 const auth = useAuthStore()
 const accountStore = useCoreAccountStore()
 const store = useSocialPublishingStore()
+const portfolioStore = useSocialPublishingPortfolioStore()
 const ui = useUiStore()
 const {
   connection,
@@ -27,14 +33,36 @@ const {
   overview,
   initialized,
   loading,
+  refreshing,
+  queueLoading,
+  contentLoading,
   error,
   savingPost,
   connectionBusy,
   analyticsSyncing,
+  analyticsSyncPending,
   busyPostIds,
+  queuePage,
+  contentPage,
+  queueHasNext,
+  contentHasNext,
   scheduledPosts,
   contentPosts,
+  hasPollingWork,
+  nextPollingWakeAt,
 } = storeToRefs(store)
+const {
+  scope,
+  portfolio,
+  selectedClientId,
+  scopeResolved,
+  loadingScope,
+  loadingPortfolio,
+  switching,
+  error: portfolioError,
+  scopeHostId,
+  portfolioMode,
+} = storeToRefs(portfolioStore)
 
 const activeTab = ref<WorkspaceTab>('queue')
 const composerOpen = ref(false)
@@ -53,6 +81,32 @@ const canConnect = computed(
 const canAnalytics = computed(
   () => isPlatformAdmin.value || permissionKeys.value.includes('social_publishing.analytics'),
 )
+const individualMode = computed(
+  () =>
+    scopeResolved.value &&
+    Boolean(scope.value) &&
+    (!scope.value?.canSelect || Boolean(selectedClientId.value)),
+)
+const clientOptions = computed(() => [
+  { value: '', label: 'Todos os clientes' },
+  ...(scope.value?.clients || []).map((client) => ({
+    value: client.id,
+    label: client.name,
+  })),
+])
+const scopeError = computed(() => (scopeResolved.value && !scope.value ? portfolioError.value : ''))
+const pollingEnabled = computed(
+  () => canView.value && individualMode.value && !switching.value && hasPollingWork.value,
+)
+const pollingWakeAt = computed(() =>
+  canView.value && individualMode.value && !switching.value ? nextPollingWakeAt.value : null,
+)
+
+useSocialPublishingPolling({
+  enabled: pollingEnabled,
+  wakeAt: pollingWakeAt,
+  poll: store.poll,
+})
 
 const tabs = computed<WorkspaceTabOption[]>(() => {
   const options: WorkspaceTabOption[] = [
@@ -65,16 +119,19 @@ const tabs = computed<WorkspaceTabOption[]>(() => {
   options.push({ id: 'connection', label: 'Conexão', icon: 'i-lucide-plug' })
   return options
 })
-
 const activeTabLabel = computed(
   () => tabs.value.find((tab) => tab.id === activeTab.value)?.label || 'Postagens',
 )
+
+let contextVersion = 0
+let internalAccountSwitch = false
+
 function isConfirmed(value: unknown): boolean {
   return Boolean(value && typeof value === 'object' && 'confirmed' in value && value.confirmed)
 }
 
 function openComposer(post: SocialPublishingPost | null = null): void {
-  if (!canManage.value) return
+  if (!canManage.value || !individualMode.value) return
   store.clearError()
   selectedPost.value = post
   composerOpen.value = true
@@ -85,40 +142,58 @@ function closeComposer(): void {
   selectedPost.value = null
 }
 
+function reconcileWorkspace(): void {
+  if (individualMode.value) void store.refreshWorkspace()
+}
+
 async function savePost(input: SocialPublishingPostInput): Promise<void> {
+  if (!individualMode.value) return
   const result = await store.savePost(input, selectedPost.value?.id)
   if (!result) return
   closeComposer()
+  reconcileWorkspace()
   ui.success('Rascunho salvo.')
 }
 
 async function schedulePost(input: SocialPublishingPostInput): Promise<void> {
+  if (!individualMode.value) return
   const result = await store.saveAndSchedule(input, selectedPost.value?.id)
   if (!result) return
   closeComposer()
   activeTab.value = 'queue'
+  reconcileWorkspace()
   ui.success('Publicação agendada.')
 }
 
 async function cancelPost(post: SocialPublishingPost): Promise<void> {
+  if (!individualMode.value) return
   const answer = await ui.confirm({
     title: 'Cancelar agendamento?',
     message: 'A publicação deixará a fila e não será enviada no horário programado.',
     confirmLabel: 'Cancelar agendamento',
   })
   if (!isConfirmed(answer)) return
-  if (await store.cancel(post)) ui.success('Agendamento cancelado.')
+  if (await store.cancel(post)) {
+    reconcileWorkspace()
+    ui.success('Agendamento cancelado.')
+  }
 }
 
 async function retryPost(post: SocialPublishingPost): Promise<void> {
-  if (await store.retry(post)) ui.success('Nova tentativa solicitada.')
+  if (!individualMode.value) return
+  if (await store.retry(post)) {
+    reconcileWorkspace()
+    ui.success('Nova tentativa solicitada.')
+  }
 }
 
 async function connect(accessToken: string): Promise<void> {
+  if (!individualMode.value) return
   if (await store.connect(accessToken)) ui.success('Instagram conectado.')
 }
 
 async function disconnect(): Promise<void> {
+  if (!individualMode.value) return
   const answer = await ui.confirm({
     title: 'Desconectar Instagram?',
     message: 'Novas publicações não poderão ser enviadas até uma nova conexão.',
@@ -129,26 +204,102 @@ async function disconnect(): Promise<void> {
 }
 
 async function syncAnalytics(): Promise<void> {
-  if (await store.refreshAnalytics()) ui.success('Sincronização de analytics enfileirada.')
+  if (!individualMode.value) return
+  const queued = await store.refreshAnalytics()
+  if (queued === null) return
+  if (queued > 0) ui.success('Sincronização de analytics enfileirada.')
+  else ui.info('Não há publicações aguardando sincronização.', 'Analytics')
+}
+
+async function initializePublishingContext(): Promise<void> {
+  const version = ++contextVersion
+  closeComposer()
+  store.setPortfolioMode(true)
+  store.suspend()
+  portfolioStore.reset()
+
+  if (!canView.value || !accountStore.activeAccountId) return
+  const nextScope = await portfolioStore.loadScope()
+  if (version !== contextVersion || !nextScope) return
+
+  if (portfolioStore.portfolioMode) {
+    if (canAnalytics.value) await portfolioStore.loadPortfolio()
+    return
+  }
+  store.setPortfolioMode(false)
+  await store.initialize({ includeAnalytics: canAnalytics.value })
+}
+
+async function selectPublishingClient(clientId: string): Promise<void> {
+  const normalized = String(clientId || '').trim()
+  const previousClientId = selectedClientId.value
+  if (!portfolioStore.selectClient(normalized)) return
+
+  const version = ++contextVersion
+  closeComposer()
+  store.setPortfolioMode(true)
+  store.suspend()
+  portfolioStore.prepareAccountSwitch()
+  portfolioStore.setSwitching(true)
+
+  const targetAccountId = normalized || scopeHostId.value
+  const targetExists = accountStore.accounts.some((account) => account.id === targetAccountId)
+  if (!targetAccountId || !targetExists) {
+    portfolioStore.selectClient(previousClientId)
+    portfolioStore.setError('Não foi possível localizar a conta selecionada.')
+    portfolioStore.setSwitching(false)
+    return
+  }
+
+  try {
+    internalAccountSwitch = true
+    if (targetAccountId !== accountStore.activeAccountId) {
+      await accountStore.switchAccount(targetAccountId)
+    }
+    if (version !== contextVersion) return
+
+    if (normalized) {
+      store.setPortfolioMode(false)
+      await store.initialize({ includeAnalytics: canAnalytics.value })
+    } else if (canAnalytics.value) {
+      await portfolioStore.loadPortfolio()
+    }
+  } catch {
+    portfolioStore.selectClient(previousClientId)
+    portfolioStore.setError('Não foi possível trocar o contexto de postagens.')
+  } finally {
+    internalAccountSwitch = false
+    portfolioStore.setSwitching(false)
+  }
 }
 
 function reload(): void {
-  void store.initialize({ includeAnalytics: canAnalytics.value })
+  if (!scope.value) {
+    void initializePublishingContext()
+    return
+  }
+  if (portfolioMode.value) {
+    if (canAnalytics.value) void portfolioStore.loadPortfolio()
+    return
+  }
+  if (initialized.value) void store.refreshWorkspace()
+  else void store.initialize({ includeAnalytics: canAnalytics.value })
 }
 
 watch(
-  () => [canView.value, canAnalytics.value] as const,
-  ([allowed, includeAnalytics]) => {
-    if (allowed) void store.initialize({ includeAnalytics })
+  () => [canView.value, canAnalytics.value, accountStore.activeAccountId] as const,
+  () => {
+    closeComposer()
+    if (!internalAccountSwitch) void initializePublishingContext()
   },
   { immediate: true },
 )
-
-watch(
-  () => accountStore.activeAccountId,
-  () => closeComposer(),
-)
-
+watch(posts, (nextPosts) => {
+  const selectedId = selectedPost.value?.id
+  if (!composerOpen.value || !selectedId) return
+  const current = nextPosts.find((post) => post.id === selectedId)
+  if (current) selectedPost.value = current
+})
 watch(tabs, (options) => {
   if (!options.some((tab) => tab.id === activeTab.value)) activeTab.value = 'queue'
 })
@@ -156,21 +307,22 @@ watch(tabs, (options) => {
 
 <template>
   <main class="sp-workspace">
-    <div class="sp-workspace__top">
-      <AdminPageHeader
-        eyebrow="Instagram"
-        title="Agendamento de postagens"
-        description="Prepare, agende e acompanhe publicações do cliente em um só lugar."
-      />
-      <UButton
-        v-if="canView && canManage"
-        type="button"
-        color="primary"
-        icon="i-lucide-plus"
-        label="Nova publicação"
-        @click="openComposer()"
-      />
-    </div>
+    <SocialPublishingWorkspaceHeader
+      :can-view="canView"
+      :can-manage="canManage"
+      :can-connect="canConnect"
+      :can-select-client="scope?.canSelect === true"
+      :individual-mode="individualMode"
+      :connected="connection?.connected === true"
+      :username="connection?.username || ''"
+      :selected-client-id="selectedClientId"
+      :client-options="clientOptions"
+      :switching="switching"
+      :loading-scope="loadingScope"
+      @select-client="selectPublishingClient"
+      @new-publication="openComposer()"
+      @open-connection="activeTab = 'connection'"
+    />
 
     <section v-if="!canView" class="sp-workspace__state omni-glass" aria-labelledby="sp-denied">
       <UIcon name="i-lucide-shield-x" aria-hidden="true" />
@@ -183,9 +335,9 @@ watch(tabs, (options) => {
     </section>
 
     <template v-else>
-      <div v-if="error && !composerOpen" class="sp-workspace__error" role="alert">
+      <div v-if="scopeError" class="sp-workspace__error" role="alert">
         <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
-        <span>{{ error }}</span>
+        <span>{{ scopeError }}</span>
         <UButton
           type="button"
           color="error"
@@ -196,258 +348,171 @@ watch(tabs, (options) => {
         />
       </div>
 
-      <div v-if="loading && !initialized" class="sp-workspace__loading" aria-live="polite">
+      <div
+        v-if="loadingScope || switching || !scopeResolved"
+        class="sp-workspace__loading"
+        aria-live="polite"
+      >
         <span class="sp-workspace__spinner" aria-hidden="true"></span>
-        <p>Carregando postagens deste cliente…</p>
+        <p>{{ switching ? 'Trocando cliente…' : 'Carregando clientes de postagens…' }}</p>
       </div>
 
-      <template v-else>
-        <SocialPublishingSummaryCards :posts="posts" :connection="connection" />
+      <section
+        v-else-if="portfolioMode && !canAnalytics"
+        class="sp-workspace__state omni-glass"
+        aria-labelledby="sp-analytics-required"
+      >
+        <UIcon name="i-lucide-chart-no-axes-column" aria-hidden="true" />
+        <h2 id="sp-analytics-required">Analytics necessário para o consolidado</h2>
+        <p>
+          Selecione um cliente acima ou solicite a permissão
+          <code>social_publishing.analytics</code>
+          para visualizar todos os clientes.
+        </p>
+      </section>
 
-        <div v-if="!connection?.connected" class="sp-workspace__connection-note">
-          <div>
-            <UIcon name="i-lucide-unplug" aria-hidden="true" />
-            <span>
-              O Instagram está desconectado. Rascunhos podem ser preparados, mas o envio depende de
-              uma conexão ativa.
-            </span>
-          </div>
+      <SocialPublishingPortfolioView
+        v-else-if="portfolioMode"
+        :portfolio="portfolio"
+        :loading="loadingPortfolio"
+        :error="portfolioError"
+        @retry="portfolioStore.loadPortfolio"
+        @select="selectPublishingClient"
+      />
+
+      <template v-else-if="individualMode">
+        <div v-if="error && !composerOpen" class="sp-workspace__error" role="alert">
+          <UIcon name="i-lucide-circle-alert" aria-hidden="true" />
+          <span>{{ error }}</span>
           <UButton
             type="button"
-            color="neutral"
-            variant="soft"
+            color="error"
+            variant="ghost"
             size="sm"
-            label="Ver conexão"
-            @click="activeTab = 'connection'"
+            label="Tentar novamente"
+            @click="reload"
           />
         </div>
 
-        <nav class="sp-tabs" aria-label="Áreas do módulo" role="tablist">
-          <button
-            v-for="tab in tabs"
-            :id="`sp-tab-${tab.id}`"
-            :key="tab.id"
-            type="button"
-            role="tab"
-            class="sp-tabs__item"
-            :class="{ 'sp-tabs__item--active': activeTab === tab.id }"
-            :aria-selected="activeTab === tab.id"
-            :aria-controls="`sp-panel-${tab.id}`"
-            @click="activeTab = tab.id"
-          >
-            <UIcon :name="tab.icon" aria-hidden="true" />
-            <span>{{ tab.label }}</span>
-          </button>
-        </nav>
+        <div v-if="loading && !initialized" class="sp-workspace__loading" aria-live="polite">
+          <span class="sp-workspace__spinner" aria-hidden="true"></span>
+          <p>Carregando postagens deste cliente…</p>
+        </div>
 
-        <section
-          :id="`sp-panel-${activeTab}`"
-          class="sp-workspace__panel"
-          role="tabpanel"
-          :aria-labelledby="`sp-tab-${activeTab}`"
-          :aria-label="activeTabLabel"
-          tabindex="0"
-        >
-          <SocialPublishingPostList
-            v-if="activeTab === 'queue'"
-            :posts="scheduledPosts"
-            mode="queue"
-            :can-manage="canManage"
-            :busy-post-ids="busyPostIds"
-            @edit="openComposer"
-            @cancel="cancelPost"
-            @retry="retryPost"
-          />
-          <SocialPublishingPostList
-            v-else-if="activeTab === 'content'"
-            :posts="contentPosts"
-            mode="content"
-            :can-manage="canManage"
-            :busy-post-ids="busyPostIds"
-            @edit="openComposer"
-            @cancel="cancelPost"
-            @retry="retryPost"
-          />
-          <SocialPublishingAnalytics
-            v-else-if="activeTab === 'analytics' && canAnalytics"
-            :overview="overview"
-            :posts="posts"
-            :syncing="analyticsSyncing"
-            :can-sync="canAnalytics"
-            @sync="syncAnalytics"
-          />
-          <SocialPublishingConnectionCard
-            v-else-if="activeTab === 'connection'"
-            :connection="connection"
-            :busy="connectionBusy"
-            :can-connect="canConnect"
-            @connect="connect"
-            @disconnect="disconnect"
-          />
-        </section>
+        <template v-else>
+          <SocialPublishingSummaryCards :overview="overview" :connection="connection" />
+
+          <div v-if="!connection?.connected" class="sp-workspace__connection-note">
+            <div>
+              <UIcon name="i-lucide-unplug" aria-hidden="true" />
+              <span>
+                O Instagram está desconectado. Rascunhos podem ser preparados, mas o envio depende
+                de uma conexão ativa.
+              </span>
+            </div>
+            <UButton
+              type="button"
+              color="neutral"
+              variant="soft"
+              size="sm"
+              label="Ver conexão"
+              @click="activeTab = 'connection'"
+            />
+          </div>
+
+          <nav class="sp-tabs" aria-label="Áreas do módulo" role="tablist">
+            <button
+              v-for="tab in tabs"
+              :id="`sp-tab-${tab.id}`"
+              :key="tab.id"
+              type="button"
+              role="tab"
+              class="sp-tabs__item"
+              :class="{ 'sp-tabs__item--active': activeTab === tab.id }"
+              :aria-selected="activeTab === tab.id"
+              :aria-controls="`sp-panel-${tab.id}`"
+              @click="activeTab = tab.id"
+            >
+              <UIcon :name="tab.icon" aria-hidden="true" />
+              <span>{{ tab.label }}</span>
+            </button>
+          </nav>
+
+          <section
+            :id="`sp-panel-${activeTab}`"
+            class="sp-workspace__panel"
+            role="tabpanel"
+            :aria-labelledby="`sp-tab-${activeTab}`"
+            :aria-label="activeTabLabel"
+            tabindex="0"
+          >
+            <SocialPublishingPagedList
+              v-if="activeTab === 'queue'"
+              :posts="scheduledPosts"
+              mode="queue"
+              :page-index="queuePage"
+              :page-size="SOCIAL_PUBLISHING_PAGE_SIZE"
+              :has-next="queueHasNext"
+              :loading="queueLoading"
+              :refreshing="refreshing"
+              :can-manage="canManage"
+              :busy-post-ids="busyPostIds"
+              @page="store.loadPage('queue', $event)"
+              @refresh="store.refreshWorkspace"
+              @edit="openComposer"
+              @cancel="cancelPost"
+              @retry="retryPost"
+            />
+            <SocialPublishingPagedList
+              v-else-if="activeTab === 'content'"
+              :posts="contentPosts"
+              mode="content"
+              :page-index="contentPage"
+              :page-size="SOCIAL_PUBLISHING_PAGE_SIZE"
+              :has-next="contentHasNext"
+              :loading="contentLoading"
+              :refreshing="refreshing"
+              :can-manage="canManage"
+              :busy-post-ids="busyPostIds"
+              @page="store.loadPage('content', $event)"
+              @refresh="store.refreshWorkspace"
+              @edit="openComposer"
+              @cancel="cancelPost"
+              @retry="retryPost"
+            />
+            <SocialPublishingAnalytics
+              v-else-if="activeTab === 'analytics' && canAnalytics"
+              :overview="overview"
+              :posts="posts"
+              :syncing="analyticsSyncing"
+              :pending="analyticsSyncPending"
+              :can-sync="canAnalytics"
+              @sync="syncAnalytics"
+            />
+            <SocialPublishingConnectionCard
+              v-else-if="activeTab === 'connection'"
+              :connection="connection"
+              :busy="connectionBusy"
+              :can-connect="canConnect"
+              @connect="connect"
+              @disconnect="disconnect"
+            />
+          </section>
+        </template>
       </template>
     </template>
 
     <SocialPublishingComposerDrawer
-      v-if="canManage"
+      v-if="canManage && individualMode"
       v-model="composerOpen"
       :post="selectedPost"
-      :busy="savingPost"
+      :busy="savingPost || Boolean(selectedPost && busyPostIds.includes(selectedPost.id))"
       :error="error"
+      :can-schedule="connection?.connected === true"
       @save="savePost"
       @schedule="schedulePost"
     />
   </main>
 </template>
 
-<style scoped>
-.sp-workspace {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.35rem;
-}
-.sp-workspace__top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-.sp-workspace__state,
-.sp-workspace__loading {
-  display: grid;
-  min-height: 18rem;
-  place-content: center;
-  justify-items: center;
-  padding: 2rem;
-  color: rgb(var(--muted));
-  text-align: center;
-}
-.sp-workspace__state {
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-card);
-  background: rgb(var(--surface));
-}
-.sp-workspace__state :deep(svg) {
-  width: 2rem;
-  height: 2rem;
-  color: rgb(var(--danger));
-}
-.sp-workspace__state h2 {
-  margin: 0.8rem 0 0;
-  color: rgb(var(--text));
-  font-size: 1rem;
-}
-.sp-workspace__state p {
-  margin: 0.3rem 0 0;
-  font-size: 0.82rem;
-}
-.sp-workspace__error,
-.sp-workspace__connection-note,
-.sp-workspace__connection-note > div {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-}
-.sp-workspace__error {
-  padding: 0.65rem 0.75rem;
-  border-radius: var(--radius-xs);
-  color: rgb(var(--danger));
-  background: rgb(var(--danger) / 0.1);
-  font-size: 0.8rem;
-}
-.sp-workspace__error span {
-  flex: 1;
-}
-.sp-workspace__connection-note {
-  justify-content: space-between;
-  padding: 0.65rem 0.8rem;
-  border: 1px solid rgb(var(--warning) / 0.3);
-  border-radius: var(--radius-xs);
-  color: rgb(var(--text));
-  background: rgb(var(--warning) / 0.1);
-  font-size: 0.78rem;
-}
-.sp-workspace__spinner {
-  width: 1.8rem;
-  height: 1.8rem;
-  border: 2px solid rgb(var(--border));
-  border-top-color: rgb(var(--primary));
-  border-radius: 999px;
-  animation: sp-spin 0.8s linear infinite;
-}
-.sp-workspace__loading p {
-  margin: 0.7rem 0 0;
-  font-size: 0.82rem;
-}
-.sp-tabs {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  overflow-x: auto;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-soft);
-  background: rgb(var(--surface-2) / 0.68);
-}
-.sp-tabs__item {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  min-height: 2.4rem;
-  padding: 0 0.8rem;
-  border: 0;
-  border-radius: var(--radius-xs);
-  color: rgb(var(--muted));
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 650;
-  white-space: nowrap;
-}
-.sp-tabs__item:hover {
-  color: rgb(var(--text));
-  background: rgb(var(--surface) / 0.7);
-}
-.sp-tabs__item--active {
-  color: rgb(var(--primary));
-  background: rgb(var(--surface));
-  box-shadow: var(--shadow-xs);
-}
-.sp-tabs__item:focus-visible,
-.sp-workspace__panel:focus-visible {
-  outline: 2px solid rgb(var(--ring));
-  outline-offset: 2px;
-}
-.sp-workspace__panel {
-  min-width: 0;
-  outline: none;
-}
-@keyframes sp-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sp-workspace__spinner {
-    animation: none;
-  }
-}
-@media (max-width: 640px) {
-  .sp-workspace {
-    padding: 1rem;
-  }
-  .sp-workspace__top,
-  .sp-workspace__connection-note {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .sp-tabs__item {
-    flex: 1 0 auto;
-  }
-}
-</style>
+<style scoped src="./SocialPublishingWorkspace.css"></style>

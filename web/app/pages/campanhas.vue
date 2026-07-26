@@ -1,14 +1,14 @@
 <script setup>
 import { computed, watch } from 'vue'
-import CampaignWorkspace from '~/components/campaigns/CampaignWorkspace.vue'
+import CampaignHubWorkspace from '~/components/campaigns/CampaignHubWorkspace.vue'
 import { storeToRefs } from 'pinia'
-import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { canUseAllStoresScope, getAllowedWorkspaces } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
 import { useCampaignsStore } from '~/stores/campaigns'
 
 definePageMeta({
   layout: 'dashboard',
-  workspaceId: 'campanhas',
+  workspaceId: 'comunicados',
   alias: ['/operacao/campanhas'],
   supportsAllStoresScope: true,
 })
@@ -17,7 +17,12 @@ const auth = useAuthStore()
 const campaignsStore = useCampaignsStore()
 const { state, integratedHistory, integratedPending, integratedError } = storeToRefs(campaignsStore)
 const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
-const integratedScope = computed(() => canSeeIntegrated.value)
+const canSeeCampaigns = computed(() =>
+  getAllowedWorkspaces(auth.role, auth.effectivePermissionKeys, auth.permissionsResolved).includes(
+    'campanhas',
+  ),
+)
+const integratedScope = computed(() => canSeeCampaigns.value && canSeeIntegrated.value)
 const storeOptions = computed(() => auth.storeContext || [])
 
 watch(
@@ -47,7 +52,7 @@ watch(
 
 <template>
   <div class="page-workspace">
-    <CampaignWorkspace
+    <CampaignHubWorkspace
       :state="state"
       :integrated-scope="integratedScope"
       :integrated-history="integratedHistory"

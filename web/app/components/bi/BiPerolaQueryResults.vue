@@ -8,6 +8,8 @@ import type { PerolaDatasetQueryResponse } from '~/domain/bi/perola-query'
 
 const props = withDefaults(
   defineProps<{
+    datasetId: string
+    datasetLabel: string
     response?: PerolaDatasetQueryResponse | null
     loading?: boolean
     disabled?: boolean
@@ -26,11 +28,13 @@ const emit = defineEmits<{
 }>()
 
 const pageSearch = ref('')
-const columns = computed(() => perolaQueryResultColumns(props.response?.records || []))
-const totalPages = computed(() => Math.max(1, props.response?.totalPages || 0))
-const isSensitiveDataset = computed(() =>
-  ['nota', 'nota-item'].includes(props.response?.datasetId || ''),
+const effectiveDatasetId = computed(() => props.response?.datasetId || props.datasetId)
+const effectiveDatasetLabel = computed(() => props.response?.datasetLabel || props.datasetLabel)
+const columns = computed(() =>
+  perolaQueryResultColumns(effectiveDatasetId.value, props.response?.records || []),
 )
+const totalPages = computed(() => Math.max(1, props.response?.totalPages || 0))
+const isSensitiveDataset = computed(() => ['nota', 'nota-item'].includes(effectiveDatasetId.value))
 const filteredRows = computed(() => {
   const term = pageSearch.value.trim().toLocaleLowerCase('pt-BR')
   const records = props.response?.records || []
@@ -46,7 +50,7 @@ const filteredRows = computed(() => {
 })
 
 function rowKey(row: Record<string, unknown>, index: number) {
-  return String(row.id || `${props.response?.datasetId || 'dataset'}-${index}`)
+  return String(row.id || `${effectiveDatasetId.value || 'dataset'}-${index}`)
 }
 
 watch(
@@ -139,14 +143,34 @@ watch(
       </footer>
     </template>
 
-    <div v-else-if="loading" class="bi-query-results__loading" aria-live="polite">
-      Consultando uma página na Pérola BI...
-    </div>
+    <template v-else-if="!error">
+      <header class="bi-query-results__summary">
+        <div>
+          <span>Tabela pronta para consulta</span>
+          <h4>{{ effectiveDatasetLabel }}</h4>
+        </div>
+        <span class="bi-query-results__column-count">{{ columns.length }} colunas mapeadas</span>
+      </header>
 
-    <div v-else-if="!error" class="bi-query-results__empty">
-      <strong>Nenhuma consulta executada</strong>
-      <span>Escolha os filtros e use “Consultar” para carregar somente uma página.</span>
-    </div>
+      <div v-if="isSensitiveDataset" class="bi-query-results__sensitive">
+        <ShieldAlert :size="16" aria-hidden="true" />
+        Esta entidade pode conter dados pessoais e fiscais. Use somente para a finalidade
+        autorizada.
+      </div>
+
+      <AppEntityGrid
+        :columns="columns"
+        :rows="[]"
+        :row-key="rowKey"
+        search-value=""
+        :loading="loading"
+        search-placeholder="A pesquisa local ficará disponível após a consulta..."
+        empty-title="Nenhum dado carregado"
+        empty-text="Preencha os filtros e use “Consultar” para buscar somente a primeira página."
+        :storage-key="`bi-query-columns-${effectiveDatasetId}`"
+        testid="bi-query-result-grid"
+      />
+    </template>
   </section>
 </template>
 
@@ -198,6 +222,12 @@ watch(
 }
 
 .bi-query-results__metrics > span {
+  padding: 0.38rem 0.58rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+}
+
+.bi-query-results__column-count {
   padding: 0.38rem 0.58rem;
   border: 1px solid var(--line-soft);
   border-radius: 999px;

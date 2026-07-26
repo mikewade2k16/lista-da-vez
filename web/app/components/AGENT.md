@@ -139,7 +139,8 @@ Area cross-account de plataforma (so `platform_admin`), backed pela API real
 ### `multistore`
 
 - [MultiStoreWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/multistore/MultiStoreWorkspace.vue)
-  Workspace administrativo de lojas e comparativo multiloja.
+  Workspace administrativo de lojas, comparativo multiloja, metas operacionais
+  e politica comercial do CRM.
 - [MultiStoreLojasSection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/multistore/MultiStoreLojasSection.vue)
   Grid de cadastro/edicao inline de lojas (nome, codigo, cidade, `storeType` Shopping/Bairro, template, status). Fonte autoritativa = `useMultiStoreStore.managedStores` (de `GET /v1/stores`, que inclui `storeType` do banco `queue.stores`). O draft de cada linha e' SEMPRE re-hidratado do servidor; so se preserva enquanto `touched`/`rowBusy` (edicao pendente). Nao semear draft de fonte parcial (contexto sem `storeType`) — senao o select reverte para 'bairro' no reload mesmo com o banco em 'shopping'.
 - [MultiStoreUserAccessCard.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/multistore/MultiStoreUserAccessCard.vue)
@@ -176,22 +177,28 @@ explicito de override por loja.
 
 - [SettingsWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsWorkspace.vue)
   Workspace principal de configuracoes. Mostra um banner permanente
-  reforcando o escopo tenant-wide. Os payloads enviados pela
+  reforcando o escopo tenant-wide em uma linha compacta. Os payloads enviados pela
   `useSettingsStore` nao incluem `storeId` ate que um override por loja seja
   modelado.
 - [SettingsTabs.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsTabs.vue)
   Navegacao interna por abas de configuracao.
-- [SettingsConsultantManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsConsultantManager.vue)
-  CRUD de consultores/configuracao do roster.
 - [SettingsCrmGoalsSection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/sections/SettingsCrmGoalsSection.vue)
-  Politica comercial do CRM: faixas de uso da lista, minimo de pedidos para destaque e recebimento por meta. Edicao apenas para `platform_admin` e `director`.
+  Politica comercial do CRM renderizada dentro de Multi-loja: faixas de uso da
+  lista, minimo de pedidos para destaque e recebimento por meta. Edicao apenas
+  para `platform_admin` e `director`.
+- [SettingsCatalogsSection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/sections/SettingsCatalogsSection.vue)
+  Reune motivos, cancelamentos, pausas, perdas, fora da vez, origens e profissoes
+  em um sidebar por tipo, com comportamento e lista sempre abertos.
 - [SettingsOperationTemplateManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsOperationTemplateManager.vue)
-  Aplicacao e gerenciamento de templates operacionais.
+  Aplicacao e gerenciamento de templates operacionais. Templates preservam os
+  pesos do Score 360, cuja configuracao visual pertence a Gamificacao.
 - [SettingsOptionManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsOptionManager.vue)
-  CRUD de catalogos simples como motivos, origens, pausas, fora da vez, perdas e profissao.
-  Tambem concentra a ordenacao manual exibida nos selects operacionais.
-- [SettingsProductManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsProductManager.vue)
-  CRUD do catalogo de produtos.
+  CRUD inline de catalogos simples, com lista aberta, ordenacao e atalhos de
+  adicao acima e abaixo dos itens.
+- [SettingsModalSection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/sections/SettingsModalSection.vue)
+  Configuracao do modal por sidebar de topicos. Campos e Textos usam
+  subgrupos colapsaveis para limitar a rolagem; controles do grupo ativo ficam
+  compactos e em linha no desktop.
 
 ### `bi`
 
@@ -201,10 +208,6 @@ explicito de override por loja.
   datasets e inteligencia continuam responsaveis pelo overview legado. A autenticacao padrao e
   automatica no backend; o formulario manual fica recolhido no botao secundario
   `Diagnostico de conexao`.
-- [BiApiSchemaGrid.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiApiSchemaGrid.vue)
-  Grade local das colunas observadas nas seis entidades. Reusa `AppEntityGrid`
-  e `AppSelectField`, com busca, filtros por entidade/grupo/tipo, seletor de
-  colunas e paginacao local; nunca chama API.
 - [BiGapAnalysis.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiGapAnalysis.vue)
   Lista filtravel das 18 lacunas auditadas entre o ERP atual e a API Perola, com prioridades
   P0/P1/P2, evidencia observada e texto objetivo para solicitar a fornecedora. A fonte tipada e
@@ -212,10 +215,12 @@ explicito de override por loja.
 - [BiPerolaQueryExplorer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiPerolaQueryExplorer.vue) +
   [BiPerolaQueryFilters.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiPerolaQueryFilters.vue) +
   [BiPerolaQueryResults.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiPerolaQueryResults.vue)
-  Consulta real das seis entidades pela rota tipada da Fase 3. A aba nasce passiva e ate o catalogo
-  exige clique explicito; filtros obrigatorios, operadores, periodo, limite e ordenacao sao
-  validados no front e novamente no backend. Cada acao busca uma pagina e Anterior/Proxima
-  preservam o ultimo payload submetido.
+  Consulta real das seis entidades pela rota tipada da Fase 3. O seletor e as
+  tabelas com todas as colunas mapeadas funcionam localmente e permanecem
+  visiveis mesmo com o bloqueio absoluto ativo. O catalogo de regras exige
+  clique explicito; filtros obrigatorios, operadores, periodo, limite e
+  ordenacao sao validados no front e novamente no backend. Cada acao busca uma
+  pagina e Anterior/Proxima preservam o ultimo payload submetido.
 - [BiApiCatalog.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiApiCatalog.vue) +
   [BiApiEntityDetail.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiApiEntityDetail.vue)
   Catalogo visual estatico das seis entidades confirmadas da API Perola BI. Exibe endpoint,
@@ -244,23 +249,25 @@ explicito de override por loja.
   Fonte tipada das leituras possiveis e da matriz entre Perola, ERP e Fila. Registra tambem os gaps
   de join para impedir que a UI atribua estoque, margem ou nota ao registro errado.
 
-### `feedback`
+### `feedback` (nome publico: Suporte)
 
 - [FeedbackFormModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/feedback/FeedbackFormModal.vue)
-  Modal flutuante para usuarios enviarem sugestoes, duvidas ou reportarem problemas.
-  Acessivel via botao flutuante no layout do dashboard. Qualquer usuario autenticado pode enviar feedback.
+  Modal flutuante para usuarios abrirem chamados. Acessivel via botao flutuante
+  no layout do dashboard.
 - [FeedbackWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/feedback/FeedbackWorkspace.vue)
-  Workspace administrativo para visualizar, filtrar e responder feedbacks.
+  Workspace `/suporte` para visualizar, filtrar e responder chamados.
   Permitir filtros por tipo (sugestao, duvida, problema) e status (aberto, em analise, resolvido, fechado).
   Acessivel apenas para owner, manager e platform_admin.
 
 ### `omnichannel`
 
 Inbox de atendimento WhatsApp (rota `/omnichannel`, workspace `omnichannel`,
-modulo `omnichannel` em `core.account_modules`). **PORT VERBATIM** do painel
-legado — copiado byte a byte na F1: **nao reformatar, nao splitar, nao "arrumar"
-estilo**; o refactor e a F14. Estado atual: **SEM BACKEND** (o Go ainda nao tem
-rotas — todo request 404, e um badge avisa isso na pagina).
+modulo `omnichannel` em `core.account_modules`). O port inicial já evoluiu para
+um workspace integrado ao backend Go: inbox, conversas, mensagens, CRM, filas,
+handoff, mídia, configurações, adapters e outbox possuem rotas reais. Customer
+Data e Customer Intelligence se integram por contratos próprios; a IA nunca
+envia diretamente ao provider. Preservar os limites e invariantes descritos no
+AGENT específico do módulo.
 
 Detalhe completo (estrutura, costura, os 5 repontados e as dividas conscientes)
 em [omnichannel/AGENT.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/omnichannel/AGENT.md).

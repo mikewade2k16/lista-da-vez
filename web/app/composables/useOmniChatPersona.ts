@@ -14,14 +14,24 @@ import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 // (igual ao /v1/omni-chat/ask); accountId NUNCA vai no body.
 
 export interface OmniChatPersona {
+  enabled: boolean
   systemPrompt: string
   isDefault: boolean
+  credentialId: string
+  provider: 'openai' | 'gemini' | 'glm'
+  model: string
+  temperature: number
   historyWindow: number
 }
 
 interface OmniChatPersonaResponse {
+  enabled?: boolean
   systemPrompt?: string
   isDefault?: boolean
+  credentialId?: string
+  provider?: string
+  model?: string
+  temperature?: number
   historyWindow?: number
 }
 
@@ -42,24 +52,42 @@ function clampWindow(n: number): number {
 }
 
 function normalizePersona(response: OmniChatPersonaResponse | null): OmniChatPersona {
+  const provider = ['openai', 'gemini', 'glm'].includes(String(response?.provider))
+    ? (String(response?.provider) as OmniChatPersona['provider'])
+    : 'openai'
   return {
+    enabled: response?.enabled !== false,
     systemPrompt: String(response?.systemPrompt || ''),
     isDefault: Boolean(response?.isDefault),
+    credentialId: String(response?.credentialId || ''),
+    provider,
+    model: String(response?.model || 'gpt-4.1-mini'),
+    temperature: Math.min(1, Math.max(0, Number(response?.temperature) || 0.2)),
     historyWindow: clampWindow(Number(response?.historyWindow)),
   }
 }
 
-export function useOmniChatPersona() {
+export function useOmniChatPersona(accountId?: () => string) {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
+  function accountHeaders(): Record<string, string> | undefined {
+    const value = String(accountId?.() || '').trim()
+    return value ? { 'X-Account-Id': value } : undefined
+  }
+
   // Texto em edicao no <textarea>. Re-hidratado da resposta do back a cada
   // fetchPersona; so persiste enquanto ha edicao do usuario.
   const draft = ref('')
+  const enabled = ref(true)
   // Reflete o estado de fabrica do prompt vigente (mostra o aviso "usando o
   // texto padrao"). Vem do banco; nunca cravado no front.
   const isDefault = ref(true)
+  const credentialId = ref('')
+  const provider = ref<OmniChatPersona['provider']>('openai')
+  const model = ref('gpt-4.1-mini')
+  const temperature = ref(0.2)
   // Janela de memoria em edicao (interacoes que o n8n mantem). Re-hidratada do back.
   const historyWindow = ref(HISTORY_WINDOW_DEFAULT)
   const loading = ref(false)
@@ -85,22 +113,33 @@ export function useOmniChatPersona() {
     successMessage.value = ''
 
     try {
-      const response = (await apiRequest('/v1/omni-chat/persona', {
+      const response = (await apiRequest('/v1/omni-chat/config', {
         method: 'GET',
+        headers: accountHeaders(),
         signal: controller.signal,
         dedupe: false,
       })) as OmniChatPersonaResponse
 
       const persona = normalizePersona(response)
+      enabled.value = persona.enabled
       draft.value = persona.systemPrompt
       isDefault.value = persona.isDefault
+      credentialId.value = persona.credentialId
+      provider.value = persona.provider
+      model.value = persona.model
+      temperature.value = persona.temperature
       historyWindow.value = persona.historyWindow
       return persona
     } catch (error) {
       if (isAbortError(error)) {
         return {
+          enabled: enabled.value,
           systemPrompt: draft.value,
           isDefault: isDefault.value,
+          credentialId: credentialId.value,
+          provider: provider.value,
+          model: model.value,
+          temperature: temperature.value,
           historyWindow: historyWindow.value,
         }
       }
@@ -119,10 +158,6 @@ export function useOmniChatPersona() {
 
   async function savePersona(systemPrompt: string): Promise<void> {
     const trimmed = String(systemPrompt || '').trim()
-    if (!trimmed) {
-      errorMessage.value = 'O prompt nao pode ficar vazio.'
-      return
-    }
     if (trimmed.length > PERSONA_MAX_LENGTH) {
       errorMessage.value = `O prompt passou de ${PERSONA_MAX_LENGTH} caracteres. Resuma e tente de novo.`
       return
@@ -136,18 +171,31 @@ export function useOmniChatPersona() {
     successMessage.value = ''
 
     try {
-      const response = (await apiRequest('/v1/omni-chat/persona', {
+      const response = (await apiRequest('/v1/omni-chat/config', {
         method: 'PUT',
-        body: { systemPrompt: trimmed, historyWindow: clampWindow(historyWindow.value) },
+        headers: accountHeaders(),
+        body: {
+          enabled: enabled.value,
+          systemPrompt: trimmed,
+          credentialId: credentialId.value,
+          model: model.value.trim(),
+          temperature: Math.min(1, Math.max(0, Number(temperature.value) || 0)),
+          historyWindow: clampWindow(historyWindow.value),
+        },
       })) as OmniChatPersonaResponse
 
       // Re-hidrata do que o back devolveu (fonte de verdade), nao do que
       // mandamos: o servidor pode normalizar o texto e a janela (clamp).
       const persona = normalizePersona(response)
+      enabled.value = persona.enabled
       draft.value = persona.systemPrompt
       isDefault.value = persona.isDefault
+      credentialId.value = persona.credentialId
+      provider.value = persona.provider
+      model.value = persona.model
+      temperature.value = persona.temperature
       historyWindow.value = persona.historyWindow
-      successMessage.value = 'Persona salva.'
+      successMessage.value = 'Configuração salva para toda a conta.'
     } catch (error) {
       errorMessage.value = getApiErrorMessage(
         error,
@@ -170,7 +218,12 @@ export function useOmniChatPersona() {
 
   return {
     draft,
+    enabled,
     isDefault,
+    credentialId,
+    provider,
+    model,
+    temperature,
     historyWindow,
     loading,
     saving,

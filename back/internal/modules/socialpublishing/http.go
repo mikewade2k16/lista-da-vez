@@ -48,6 +48,8 @@ func RegisterRoutes(
 	mux.Handle("GET /v1/social-publishing/connection", wrap(PermissionView, handleConnectionGet(service)))
 	mux.Handle("POST /v1/social-publishing/connection", wrap(PermissionConnect, handleConnectionPost(service)))
 	mux.Handle("DELETE /v1/social-publishing/connection", wrap(PermissionConnect, handleConnectionDelete(service)))
+	mux.Handle("GET /v1/social-publishing/scope", wrap(PermissionView, handlePublishingScope(service)))
+	mux.Handle("GET /v1/social-publishing/portfolio", wrap(PermissionAnalytics, handlePortfolio(service)))
 	mux.Handle("GET /v1/social-publishing/posts", wrap(PermissionView, handlePostsGet(service)))
 	mux.Handle("POST /v1/social-publishing/posts", wrap(PermissionManage, handlePostsPost(service)))
 	mux.Handle("GET /v1/social-publishing/posts/{id}", wrap(PermissionView, handlePostGet(service)))
@@ -55,9 +57,34 @@ func RegisterRoutes(
 	mux.Handle("POST /v1/social-publishing/posts/{id}/schedule", wrap(PermissionManage, handlePostSchedule(service)))
 	mux.Handle("POST /v1/social-publishing/posts/{id}/cancel", wrap(PermissionManage, handlePostCancel(service)))
 	mux.Handle("POST /v1/social-publishing/posts/{id}/retry", wrap(PermissionManage, handlePostRetry(service)))
+	mux.Handle("GET /v1/social-publishing/summary", wrap(PermissionView, handleSummary(service)))
 	mux.Handle("GET /v1/social-publishing/overview", wrap(PermissionAnalytics, handleOverview(service)))
 	mux.Handle("GET /v1/social-publishing/analytics/posts", wrap(PermissionAnalytics, handleAnalyticsPosts(service)))
 	mux.Handle("POST /v1/social-publishing/analytics/sync", wrap(PermissionAnalytics, handleAnalyticsSync(service)))
+}
+
+func handlePublishingScope(service *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, _ := auth.PrincipalFromContext(r.Context())
+		scope, err := service.PublishingScope(r.Context(), principal)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, scope)
+	}
+}
+
+func handlePortfolio(service *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, _ := auth.PrincipalFromContext(r.Context())
+		portfolio, err := service.Portfolio(r.Context(), principal)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, portfolio)
+	}
 }
 
 func handleConnectionGet(service *Service) http.HandlerFunc {
@@ -112,10 +139,22 @@ func handlePostsGet(service *Service) http.HandlerFunc {
 		principal, _ := auth.PrincipalFromContext(r.Context())
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		statuses, err := parseStatusesQuery(r.URL.Query().Get("statuses"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		order, err := parsePostOrderQuery(r.URL.Query().Get("order"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
 		posts, err := service.ListPosts(r.Context(), principal.AccountID, ListPostsFilter{
-			Status: PostStatus(strings.TrimSpace(r.URL.Query().Get("status"))),
-			Limit:  limit,
-			Offset: offset,
+			Status:   PostStatus(strings.TrimSpace(r.URL.Query().Get("status"))),
+			Statuses: statuses,
+			Order:    order,
+			Limit:    limit,
+			Offset:   offset,
 		})
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -123,6 +162,27 @@ func handlePostsGet(service *Service) http.HandlerFunc {
 		}
 		httpapi.WriteJSON(w, http.StatusOK, posts)
 	}
+}
+
+func parseStatusesQuery(raw string) ([]PostStatus, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	statuses := make([]PostStatus, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, ErrInvalidInput
+		}
+		statuses = append(statuses, PostStatus(part))
+	}
+	return statuses, nil
+}
+
+func parsePostOrderQuery(raw string) (PostListOrder, error) {
+	return normalizePostListOrder(PostListOrder(raw))
 }
 
 func handlePostsPost(service *Service) http.HandlerFunc {
@@ -279,6 +339,18 @@ func handleOverview(service *Service) http.HandlerFunc {
 	}
 }
 
+func handleSummary(service *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, _ := auth.PrincipalFromContext(r.Context())
+		summary, err := service.Summary(r.Context(), principal.AccountID)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, summary)
+	}
+}
+
 func handleAnalyticsSync(service *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, _ := auth.PrincipalFromContext(r.Context())
@@ -295,13 +367,39 @@ func handleAnalyticsPosts(service *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, _ := auth.PrincipalFromContext(r.Context())
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		analytics, err := service.ListAnalytics(r.Context(), principal.AccountID, limit)
+		postIDs, err := parsePostIDsQuery(r.URL.Query().Get("postIds"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		analytics, err := service.ListAnalytics(
+			r.Context(),
+			principal.AccountID,
+			ListAnalyticsFilter{PostIDs: postIDs, Limit: limit},
+		)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusOK, analytics)
 	}
+}
+
+func parsePostIDsQuery(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	postIDs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, ErrInvalidInput
+		}
+		postIDs = append(postIDs, part)
+	}
+	return postIDs, nil
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, destination any) error {
@@ -326,6 +424,14 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Recurso nao encontrado.")
 	case errors.Is(err, ErrNotConnected):
 		httpapi.WriteError(w, r, http.StatusConflict, "instagram_not_connected", "Conecte uma conta profissional do Instagram.")
+	case errors.Is(err, ErrConnectionTarget):
+		httpapi.WriteError(
+			w,
+			r,
+			http.StatusConflict,
+			"instagram_target_changed",
+			"A conexao ativa pertence a outra conta do Instagram. Reconecte a conta original.",
+		)
 	case errors.Is(err, ErrForbidden):
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para esta acao.")
 	case errors.Is(err, ErrConflict), errors.Is(err, ErrInvalidState):

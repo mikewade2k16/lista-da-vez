@@ -2,6 +2,10 @@
 import OperationProductPicker from '~/components/operation/OperationProductPicker.vue'
 
 defineProps({
+  isPendingValidation: {
+    type: Boolean,
+    default: false,
+  },
   shouldUseLegacyClosedProductField: {
     type: Boolean,
     default: false,
@@ -309,6 +313,12 @@ const emit = defineEmits([
     :class="isStep1Ready ? 'finish-form__quality--complete' : 'finish-form__quality--incomplete'"
   >
     <div class="finish-form__quality-dots">
+      <span
+        v-if="isPendingValidation"
+        class="finish-form__quality-dot finish-form__quality-dot--notes"
+        :class="{ 'is-filled': formStep1Quality.checks.validationReason }"
+        title="Justificativa do encerramento pendente"
+      ></span>
       <span
         class="finish-form__quality-dot"
         :class="{ 'is-filled': formStep1Quality.checks.outcome }"

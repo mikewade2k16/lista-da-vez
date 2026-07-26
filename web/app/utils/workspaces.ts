@@ -1,5 +1,7 @@
 export const WORKSPACES = [
   { id: 'operacao', label: 'Operacao', icon: 'pending_actions', path: '/operacao' },
+  { id: 'transcricoes', label: 'Transcrições', icon: 'mic', path: '/transcricoes' },
+  { id: 'comunicados', label: 'Campanhas', icon: 'campaign', path: '/campanhas' },
   // ATENCAO: `icon` aqui e ligature do Material Icons Round (o
   // DashboardWorkspaceNav renderiza <span class="material-icons-round">{{ icon }}</span>),
   // NAO chave do NAV_ICON_MAP. Usar 'messages' (a chave do nav.config.ts) renderiza
@@ -17,8 +19,14 @@ export const WORKSPACES = [
   { id: 'ranking', label: 'Ranking', icon: 'leaderboard', path: '/ranking' },
   { id: 'dados', label: 'Dados', icon: 'bar_chart', path: '/dados' },
   { id: 'inteligencia', label: 'Inteligencia', icon: 'psychology', path: '/inteligencia' },
+  {
+    id: 'customer_intelligence',
+    label: 'Inteligencia de clientes',
+    icon: 'psychology',
+    path: '/inteligencia-clientes',
+  },
   { id: 'relatorios', label: 'Relatorios', icon: 'description', path: '/relatorios' },
-  { id: 'campanhas', label: 'Campanhas', icon: 'campaign', path: '/campanhas' },
+  { id: 'campanhas', label: 'Campanhas', icon: 'campaign', path: '/campanhas?secao=campanhas' },
   {
     id: 'site_produtos_web',
     label: 'Produtos do Site',
@@ -49,7 +57,6 @@ export const WORKSPACES = [
     icon: 'dashboard_customize',
     path: '/cardapio',
   },
-  { id: 'clientes', label: 'Clientes', icon: 'apartment', path: '/operacao/clientes' },
   {
     id: 'clientes_web',
     label: 'Clientes Web',
@@ -78,7 +85,7 @@ export const WORKSPACES = [
   { id: 'menu_layout', label: 'Organização do Menu', icon: 'tune', path: '/manage/menu-layout' },
   { id: 'themes', label: 'Temas', icon: 'palette', path: '/themes' },
   { id: 'alertas', label: 'Alertas', icon: 'warning', path: '/alertas' },
-  { id: 'feedback', label: 'Feedback', icon: 'chat_bubble', path: '/feedback' },
+  { id: 'feedback', label: 'Suporte', icon: 'chat_bubble', path: '/suporte' },
   { id: 'tools', label: 'Tools', icon: 'build', path: '/editor' },
   { id: 'banco', label: 'Banco', icon: 'storage', path: '/banco' },
   { id: 'automation', label: 'Automacao', icon: 'psychology', path: '/automation' },
@@ -89,19 +96,16 @@ export const WORKSPACES = [
 
 export const QUEUE_WORKSPACES = [
   { id: 'operacao', label: 'Operacao', icon: 'pending_actions', path: '/operacao' },
+  { id: 'transcricoes', label: 'Transcrições', icon: 'mic', path: '/transcricoes' },
+  { id: 'comunicados', label: 'Campanhas', icon: 'campaign', path: '/campanhas' },
   { id: 'consultor', label: 'Consultor', icon: 'person', path: '/operacao/consultor' },
   { id: 'ranking', label: 'Ranking', icon: 'leaderboard', path: '/operacao/ranking' },
-  { id: 'dados', label: 'Dados', icon: 'bar_chart', path: '/operacao/dados' },
-  { id: 'inteligencia', label: 'Inteligencia', icon: 'psychology', path: '/operacao/inteligencia' },
-  { id: 'relatorios', label: 'Relatorios', icon: 'description', path: '/operacao/relatorios' },
-  { id: 'campanhas', label: 'Campanhas', icon: 'campaign', path: '/operacao/campanhas' },
-  { id: 'clientes', label: 'Clientes', icon: 'apartment', path: '/operacao/clientes' },
   { id: 'erp', label: 'ERP', icon: 'inventory_2', path: '/operacao/erp' },
   { id: 'crm', label: 'CRM', icon: 'insights', path: '/operacao/crm' },
   { id: 'multiloja', label: 'Multi-loja', icon: 'store', path: '/operacao/multiloja' },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/operacao/configuracoes' },
   { id: 'alertas', label: 'Alertas', icon: 'warning', path: '/operacao/alertas' },
-  { id: 'feedback', label: 'Feedback', icon: 'chat_bubble', path: '/operacao/feedback' },
+  { id: 'feedback', label: 'Suporte', icon: 'chat_bubble', path: '/suporte' },
 ]
 
 const AUXILIARY_WORKSPACES = [{ id: 'bi', label: 'BI', icon: 'bar_chart', path: '/bi' }]

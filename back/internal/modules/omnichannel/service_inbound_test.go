@@ -16,7 +16,7 @@ import (
 func TestIngest_QRWebhookCachesQR(t *testing.T) {
 	qr := newQRCache()
 	reg := channel.NewRegistry(evolution.New("", ""))
-	svc := NewInboundService(nil, reg, nil, nil, qr, nil, nil, nil, nil)
+	svc := NewInboundService(nil, reg, nil, nil, qr, nil, nil)
 
 	body := []byte(`{"event":"qrcode.updated","instance":"omni-main",` +
 		`"data":{"qrcode":{"base64":"data:image/png;base64,QRWEBHOOK"}}}`)
@@ -43,7 +43,7 @@ func TestIngest_ConnectionUpdateClearsQR(t *testing.T) {
 	qr := newQRCache()
 	qr.set("acc-1", "omni-main", "data:image/png;base64,STALE")
 	reg := channel.NewRegistry(evolution.New("", ""))
-	svc := NewInboundService(nil, reg, nil, nil, qr, nil, nil, nil, nil)
+	svc := NewInboundService(nil, reg, nil, nil, qr, nil, nil)
 
 	body := []byte(`{"event":"connection.update","instance":"omni-main",` +
 		`"data":{"state":"open","ownerJid":"5511999998888@s.whatsapp.net"}}`)

@@ -13,7 +13,6 @@ import {
 } from 'lucide-vue-next'
 
 import BiApiEntityDetail from '~/components/bi/BiApiEntityDetail.vue'
-import BiApiSchemaGrid from '~/components/bi/BiApiSchemaGrid.vue'
 import { BI_API_ENTITIES, biApiEntityFieldCount } from '~/domain/bi/api-catalog'
 import type { BiApiEntity } from '~/domain/bi/api-catalog'
 
@@ -71,13 +70,11 @@ const totalFields = computed(() =>
       <div>
         <strong>Catálogo local · nenhuma chamada de API</strong>
         <span>
-          As seis entidades e todas as colunas abaixo vêm do contrato já mapeado. Consultas reais
-          permanecem separadas e sob bloqueio do cabeçalho.
+          As seis entidades e seus campos vêm do contrato já mapeado. As tabelas de registros,
+          filtros e paginação ficam na aba Consultas.
         </span>
       </div>
     </div>
-
-    <BiApiSchemaGrid />
 
     <nav class="bi-catalog__entity-tabs" role="tablist" aria-label="Entidades da API Pérola BI">
       <button

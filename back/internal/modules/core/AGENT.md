@@ -86,7 +86,7 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 | PATCH | `/v1/admin/accounts/{id}` | `AccountAdminView` | patch semantico (campos nil ignorados). Aceita `active` (toggle status) desde C9 |
 | DELETE | `/v1/admin/accounts/{id}` | 204 | soft delete (is_active=false) |
 | GET | `/v1/admin/accounts/{id}/modules` | `AdminModulesResponse` | lista todos os modulos com enabled/disabled |
-| PUT | `/v1/admin/accounts/{id}/modules` | `AdminModulesResponse` | habilita/desabilita; invalida cache do guard; publica account.modules.changed |
+| PUT | `/v1/admin/accounts/{id}/modules` | `AdminModulesResponse` | habilita/desabilita; invalida cache do guard; publica account.modules.changed. Valida dependência: `customer_intelligence` não pode ficar ativo sem `customer_data`. |
 | GET | `/v1/admin/accounts/{id}/stores` | `AdminStoresResponse` | lojas da account com billing_amount por loja |
 | PUT | `/v1/admin/accounts/{id}/stores` | `AdminStoresResponse` | atualiza billing_amount por loja (modo per_store) |
 | POST | `/v1/admin/accounts/{id}/webhook/rotate` | `AdminWebhookRotateResponse` | gera novo webhook_key (64 hex chars) |
@@ -233,6 +233,25 @@ PATCH exige **platform_admin**.
 - Quando a linha `menu_layout` ainda não existe, o GET devolve o default vazio
   `{ "layout": {"version":1,"sections":[],"items":{}}, "updatedAt": null, "updatedBy": null }` (sem erro).
 
+### /v1/platform/experimental-features — rollout GLOBAL experimental
+
+Config de **NÍVEL PLATAFORMA**, persistida em `core.platform_settings` sob a
+chave `experimental_features`. A leitura é autenticada e global para permitir
+que consumidores gateiem o produto. A escrita exige `platform_admin`.
+
+| Verbo | Path | Auth | Resposta |
+|---|---|---|---|
+| GET | `/v1/platform/experimental-features` | `RequireAuth` (todos) | `ExperimentalFeaturesResponse` |
+| PUT | `/v1/platform/experimental-features` | `RequireAuth` + `requirePlatformAdmin` | `ExperimentalFeaturesResponse` |
+
+- Body do PUT: `{ "features": { "version": 1, "attendanceAudioRecording": bool } }`.
+- Resposta: `{ "features": <Features>, "updatedAt": <RFC3339|null>, "updatedBy": <userId|null> }`.
+- `attendanceAudioRecording` nasce `false`. Consumidores devem falhar fechados
+  enquanto a leitura não tiver sido confirmada pelo backend.
+- Este contrato controla somente rollout. Captura, upload em blocos e
+  transcrição pertencem aos módulos próprios e não podem depender da
+  disponibilidade do serviço de IA para preservar o áudio.
+
 #### Tabela `core.platform_settings` (migration 0160)
 
 Key-value **singleton por chave** de configuração global da plataforma
@@ -363,6 +382,13 @@ Teste de contrato + traducao de erro em `store_postgres_test.go`.
 - `platform_settings_repository.go` — `PostgresPlatformSettingsRepository` (mesmo `*pgxpool.Pool` dos demais repos core): `GetByKey` (linha ausente → nil/nil/nil sem erro) e `Upsert` (`insert ... on conflict (key) do update ... returning updated_at`). `updated_at`/`updated_by` scaneados como ponteiros (nullable).
 - `platform_settings_service.go` — `PlatformSettingsService`: `GetMenuLayout` (default vazio quando não persistido) e `SaveMenuLayout` (valida placements → `ErrValidationFailed`, normaliza, marshal, upsert). Injeção via construtor.
 - `platform_settings_http.go` — `RegisterPlatformSettingsRoutes`: `GET /v1/platform/menu-layout` (RequireAuth, todos) e `PATCH` (RequireAuth + `requirePlatformAdmin`). userID do autor via `auth.PrincipalFromContext`. Placement inválido → 400 `validation_error`.
+- `platform_features_{model,service,http}.go` — rollout GLOBAL de recursos
+  experimentais, na chave `experimental_features` de `core.platform_settings`.
+  `GET /v1/platform/experimental-features` é autenticado; `PUT` exige
+  `platform_admin`. A primeira flag é `attendanceAudioRecording`, sempre
+  desligada na ausência de configuração persistida.
+- `platform_features_test.go` — cobre default fail-closed, leitura persistida e
+  escrita/reidratação autoritativa na chave dedicada.
 - `platform_appearance_{model,service,http}.go` — **aparência GLOBAL da plataforma** (tema visual), config de NÍVEL PLATAFORMA como o `menu_layout`, guardada em `core.platform_settings` sob a chave `appearance` (reusa `PostgresPlatformSettingsRepository`). **Desacoplada do módulo `queue`** (antes o appearance vivia em `queue/settings`, tenant-scoped — por isso não persistia para platform_admin de tenant vazio). `Appearance{Version, ActiveTheme, CustomThemeName, Overrides map[tema]map[varCSS]valor}`; **SEM enum fechado de tema** — `ActiveTheme` validado só como slug (`^[a-z][a-z0-9-]{0,39}$`), o catálogo de temas é fonte de verdade no FRONT (adicionar tema, ex.: `liquidglass`, não toca Go). `AppearanceService` (`GetAppearance` default dark quando não persistido / `SaveAppearance` valida slug → `ErrValidationFailed`, normaliza overrides). `RegisterAppearanceRoutes`: `GET /v1/platform/appearance` (RequireAuth, todos) e `PUT` (RequireAuth + `requirePlatformAdmin`). Sem migration (tabela `core.platform_settings` já existe — 0160).
 - `admin_role_templates_model.go` — DTOs do CRUD de papéis-padrão: `RoleTemplate` (camelCase), `CreateRoleTemplateInput`/`PatchRoleTemplateInput`/`ReplaceRoleTemplatePermissionsInput`, `RoleTemplatesListResponse` (reusa `AvailablePermission` de `admin_overrides_model.go`). Charset do id (`isValidRoleTemplateID`) + sentinels `ErrRoleTemplateConflict`/`ErrRoleTemplateSystem`/`ErrRoleTemplateInvalidID`/`ErrRoleTemplateLabelRequired`. Constantes `roleTemplateCustomModuleID='core'`/`roleTemplateCustomSortOrder=200`.
 - `admin_role_templates_repository.go` — `PostgresRoleTemplateAdminRepository` (mesmo `*pgxpool.Pool` dos demais repos core). Catálogo GLOBAL (sem filtro por account). `ListRoleTemplates` (agrega `permissionKeys` via `array_agg ... filter`), `ListAvailablePermissions` (`deprecated_at is null and scope <> 'platform'`), `FindRoleTemplate`, `InvalidPermissionKeys`, `CreateRoleTemplate` (tx: insert template fixando `is_system=false`/`module_id`/`sort_order` + permissões), `PatchRoleTemplate` (SET dinâmico parametrizado), `ReplaceTemplatePermissions` (tx delete+insert via unnest), `DeleteRoleTemplate` (cascade FK). SQL exposto como `const` p/ teste de contrato. Reusa `pgxQuerier` de `admin_users_links_repository.go`.

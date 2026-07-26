@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import OmniEntityDrawer from '~/components/ui/OmniEntityDrawer.vue'
 import {
   createSocialPublishingIdempotencyKey,
   isHttpsMediaUrl,
@@ -13,6 +14,7 @@ const props = defineProps<{
   post: SocialPublishingPost | null
   busy: boolean
   error: string
+  canSchedule: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,7 +22,6 @@ const emit = defineEmits<{
   save: [input: SocialPublishingPostInput]
   schedule: [input: SocialPublishingPostInput]
 }>()
-
 const drawerMode = ref<DrawerMode>('side')
 const drawerWidth = ref(720)
 const caption = ref('')
@@ -30,7 +31,6 @@ const scheduledLocal = ref('')
 const timezone = ref('UTC')
 const idempotencyKey = ref('')
 const validationError = ref('')
-
 const open = computed({
   get: () => props.modelValue,
   set: (value: boolean) => emit('update:modelValue', value),
@@ -42,7 +42,6 @@ const draftButtonLabel = computed(() =>
 )
 const counterLabel = computed(() => `${caption.value.length}/2.200`)
 const minSchedule = computed(() => toLocalInput(new Date(Date.now() + 60_000).toISOString()))
-
 function resolveTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -50,7 +49,6 @@ function resolveTimezone(): string {
     return 'UTC'
   }
 }
-
 function toLocalInput(value: string | null): string {
   if (!value) return ''
   const date = new Date(value)
@@ -68,7 +66,6 @@ function toLocalInput(value: string | null): string {
     pad(date.getMinutes()),
   ].join('')
 }
-
 function resetForm(): void {
   const post = props.post
   caption.value = post?.caption || ''
@@ -79,14 +76,9 @@ function resetForm(): void {
   idempotencyKey.value = createSocialPublishingIdempotencyKey()
   validationError.value = ''
 }
-
 function buildInput(status: 'draft' | 'scheduled'): SocialPublishingPostInput | null {
   const normalizedCaption = caption.value.trim()
   const normalizedUrl = mediaUrl.value.trim()
-  if (!normalizedCaption) {
-    validationError.value = 'Escreva a legenda da publicação.'
-    return null
-  }
   if (!isHttpsMediaUrl(normalizedUrl)) {
     validationError.value = 'Informe uma URL pública que comece com HTTPS.'
     return null
@@ -105,7 +97,6 @@ function buildInput(status: 'draft' | 'scheduled'): SocialPublishingPostInput | 
     }
     scheduledFor = date.toISOString()
   }
-
   validationError.value = ''
   return {
     idempotencyKey: idempotencyKey.value,
@@ -119,17 +110,18 @@ function buildInput(status: 'draft' | 'scheduled'): SocialPublishingPostInput | 
     version: props.post?.version,
   }
 }
-
 function submitDraft(): void {
   const input = buildInput('draft')
   if (input) emit('save', input)
 }
-
 function submitSchedule(): void {
+  if (!props.canSchedule) {
+    validationError.value = 'Conecte o Instagram antes de agendar a publicação.'
+    return
+  }
   const input = buildInput('scheduled')
   if (input) emit('schedule', input)
 }
-
 watch(
   () => [props.modelValue, props.post?.id] as const,
   ([isOpen]) => {
@@ -138,7 +130,6 @@ watch(
   { immediate: true },
 )
 </script>
-
 <template>
   <OmniEntityDrawer
     v-model="open"
@@ -206,7 +197,6 @@ watch(
             rows="7"
             maxlength="2200"
             :disabled="busy"
-            required
             aria-describedby="sp-caption-counter"
           ></textarea>
           <small id="sp-caption-counter">{{ counterLabel }}</small>
@@ -250,6 +240,9 @@ watch(
             <input v-model="timezone" type="text" readonly aria-readonly="true" />
           </label>
         </div>
+        <p v-if="!canSchedule" class="sp-composer__schedule-note">
+          Conecte o Instagram para habilitar o agendamento. Você ainda pode salvar o rascunho.
+        </p>
       </section>
 
       <p v-if="validationError || error" class="sp-composer__error" role="alert">
@@ -284,6 +277,7 @@ watch(
             icon="i-lucide-calendar-check"
             label="Salvar e agendar"
             :loading="busy"
+            :disabled="busy || !canSchedule"
             @click="submitSchedule"
           />
         </div>
@@ -291,7 +285,6 @@ watch(
     </template>
   </OmniEntityDrawer>
 </template>
-
 <style scoped>
 .sp-composer {
   display: grid;
@@ -412,6 +405,12 @@ watch(
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 0.65rem;
+}
+.sp-composer__schedule-note {
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius-xs);
+  color: rgb(var(--text));
+  background: rgb(var(--warning) / 0.12);
 }
 .sp-composer__error {
   display: flex;

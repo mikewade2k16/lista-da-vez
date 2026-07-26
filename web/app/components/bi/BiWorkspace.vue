@@ -9,6 +9,7 @@ import BiGapAnalysis from '~/components/bi/BiGapAnalysis.vue'
 import BiIntelligencePanel from '~/components/bi/BiIntelligencePanel.vue'
 import BiManualConnection from '~/components/bi/BiManualConnection.vue'
 import BiPerolaQueryExplorer from '~/components/bi/BiPerolaQueryExplorer.vue'
+import BiRecentSales from '~/components/bi/sales/BiRecentSales.vue'
 import AdminPageHeader from '../../../layers/core/components/admin/AdminPageHeader.vue'
 import SettingsTabs from '~/components/settings/SettingsTabs.vue'
 import AppToggleSwitch from '~/components/ui/AppToggleSwitch.vue'
@@ -38,6 +39,7 @@ const tabs = computed(() => [
   { id: 'entidades', label: 'Entidades', icon: 'database' },
   { id: 'lacunas', label: 'Lacunas ERP × API', icon: 'difference' },
   { id: 'consultas', label: 'Consultas', icon: 'search' },
+  { id: 'vendas', label: 'Vendas', icon: 'receipt_long' },
   { id: 'visao', label: 'Visão', icon: 'dashboard' },
   ...tables.value.map((table) => ({
     id: table.key,
@@ -94,10 +96,21 @@ async function refresh() {
   )
 }
 
+async function ensureOverviewLoaded() {
+  if (apiBlocked.value) {
+    biStore.setApiBlocked(false)
+  }
+  await refresh()
+}
+
 watch(
   tables,
   () => {
-    if (['entidades', 'lacunas', 'consultas', 'visao', 'inteligencia'].includes(activeTab.value))
+    if (
+      ['entidades', 'lacunas', 'consultas', 'vendas', 'visao', 'inteligencia'].includes(
+        activeTab.value,
+      )
+    )
       return
     if (!activeTable.value) activeTab.value = 'entidades'
   },
@@ -111,7 +124,7 @@ watch(
       <AdminPageHeader
         eyebrow="BI"
         title="Business Intelligence"
-        description="A página abre sem consultar o BI. Catálogo e registros só são carregados por uma ação explícita."
+        description="As seis tabelas completas estão em Consultas. Nenhum registro é carregado sem filtro e clique."
       />
 
       <div class="bi-panel__actions">
@@ -128,7 +141,7 @@ watch(
           </div>
           <AppToggleSwitch
             :model-value="apiBlocked"
-            label="Bloquear chamadas"
+            label="Interromper API"
             compact
             @update:model-value="biStore.setApiBlocked"
           />
@@ -154,14 +167,28 @@ watch(
           v-if="usesOverview"
           class="bi-panel__button bi-panel__button--primary"
           type="button"
-          :disabled="loading || apiBlocked"
-          @click="refresh"
+          :disabled="loading"
+          @click="ensureOverviewLoaded"
         >
           <RefreshCw :size="15" aria-hidden="true" />
-          {{ loading ? 'Atualizando...' : 'Atualizar dados' }}
+          {{
+            apiBlocked
+              ? 'Desbloquear API e carregar visao'
+              : loading
+                ? 'Atualizando...'
+                : 'Atualizar dados'
+          }}
         </button>
       </div>
     </header>
+
+    <div v-if="usesOverview && !overview && !loading" class="bi-panel__empty-state">
+      <RefreshCw :size="15" aria-hidden="true" />
+      <span>
+        Nenhum dado carregado ainda. Clique em Desbloquear API e carregar visao para buscar dados da
+        Perola BI.
+      </span>
+    </div>
 
     <div v-if="apiBlocked" class="bi-panel__api-blocked" data-testid="bi-api-blocked">
       <ShieldCheck :size="17" aria-hidden="true" />
@@ -182,6 +209,7 @@ watch(
     <BiApiCatalog v-if="activeTab === 'entidades'" />
     <BiGapAnalysis v-else-if="activeTab === 'lacunas'" />
     <BiPerolaQueryExplorer v-else-if="activeTab === 'consultas'" />
+    <BiRecentSales v-else-if="activeTab === 'vendas'" />
 
     <template v-else>
       <section v-if="metrics.length" class="bi-panel__metrics" aria-label="Resumo Pérola BI">
@@ -366,6 +394,18 @@ watch(
   border: 1px solid color-mix(in srgb, rgb(var(--danger)) 30%, var(--line-soft));
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, rgb(var(--danger)) 7%, var(--bg-panel));
+}
+
+.bi-panel__empty-state {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  color: var(--accent-success);
+  border: 1px solid color-mix(in srgb, var(--accent-success) 34%, var(--line-soft));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-success) 7%, var(--bg-panel));
 }
 
 .bi-panel__api-blocked {

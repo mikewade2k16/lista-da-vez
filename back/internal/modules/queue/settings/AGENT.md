@@ -121,8 +121,13 @@ As badge rules de gamificacao sao persistidas em `public.tenant_gamification_set
 - Permissao de escrita: `settings.write` (mesmo padrao das demais secoes — `canEditSettings`)
 - Fallback: quando nenhuma linha existe para o tenant, retorna os defaults definidos em
   `defaultBadgeRules()` (espelho dos `DEFAULT_BADGES` do frontend)
-- Os pesos do Score 360 (`scoreWeight*`) NAO foram alterados — continuam em
-  `tenant_operation_core_settings` como antes
+- A superficie visual autoritativa dos pesos do Score 360 e a aba
+  **Gamificacao**. Os cinco campos `scoreWeight*` continuam temporariamente em
+  `tenant_operation_core_settings` e no patch operacional por compatibilidade
+  com o bundle e o Ranking. A migracao futura exige destino, backfill,
+  dual-read e corte validado.
+- Templates operacionais nao carregam nem sobrescrevem os pesos do Score 360.
+  Aplicar template deve preservar os cinco valores atuais.
 
 ## Arquitetura alvo da refatoracao
 
@@ -175,7 +180,9 @@ Regra critica de UX/plataforma:
   - `POST /v1/settings/templates/{templateId}/apply` aplica template em uma unica transacao
   - create/update/delete de options no frontend usam `POST`, `PATCH` e `DELETE`; `PUT` ficou para reorder/importacao
   - catalogo manual segue granular para create/update/delete
-  - `ApplyOperationTemplate` preserva alertas/test-mode/autofill e troca core/modal/motivos/origens do template
+  - `ApplyOperationTemplate` preserva alertas/test-mode/autofill e pesos do
+    Score 360; troca somente core operacional/modal/motivos/origens definidos
+    pelo template
   - proximo: Fase 8 (leitura segura por nome e reducao de `scan` manual)
 - fase 6 dessa refatoracao foi entregue em `2026-04-30` com dual-read/write do core operacional:
   - `getCoreSettingsFromNew`: le 10 campos de `tenant_operation_core_settings`

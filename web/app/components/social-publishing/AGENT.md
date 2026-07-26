@@ -15,6 +15,15 @@ Escopo isolado do módulo `social_publishing`. Herda as regras de
   formatos futuros informativos, sem ações falsas.
 - Analytics Instagram v23: `views`, `reach`, `totalInteractions`, `likes`,
   `comments`, `saved` e `shares`.
+- Fila e Conteúdo são páginas remotas independentes de 24 itens. Fila consulta
+  `scheduled,publishing,failed` com `order=scheduled`; Conteúdo consulta
+  `draft,published,cancelled` na ordem padrão do backend.
+- O frontend busca um item adicional para determinar `hasNext`; nunca calcula
+  totais a partir da página atual. Totais vêm somente de `overview`.
+- Polling usa intervalo de 30 segundos apenas com a página visível e enquanto
+  houver publicação em processamento, agendamento a até cinco minutos do horário
+  ou sincronização de analytics pendente. Agendamentos distantes usam um timer de
+  despertar; listeners e timers devem ser removidos no unmount.
 - Não integrar com Calendário nesta fase. O vínculo futuro deve consumir a API
   pública do módulo, sem duplicar agendamento no frontend.
 

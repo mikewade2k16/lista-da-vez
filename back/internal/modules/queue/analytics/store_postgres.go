@@ -99,3 +99,33 @@ func (repository *PostgresRepository) LoadSettings(ctx context.Context, storeID 
 
 	return settings, nil
 }
+
+func (repository *PostgresRepository) ResolveUserDisplayNames(ctx context.Context, userIDs []string) (map[string]string, error) {
+	names := make(map[string]string, len(userIDs))
+	if len(userIDs) == 0 {
+		return names, nil
+	}
+
+	rows, err := repository.pool.Query(ctx, `
+		select
+			id::text,
+			coalesce(nullif(trim(display_name), ''), nullif(trim(nick), ''), email)
+		from core.users
+		where id = any($1::uuid[]);
+	`, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID string
+		var displayName string
+		if err := rows.Scan(&userID, &displayName); err != nil {
+			return nil, err
+		}
+		names[strings.TrimSpace(userID)] = strings.TrimSpace(displayName)
+	}
+
+	return names, rows.Err()
+}

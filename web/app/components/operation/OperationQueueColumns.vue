@@ -3,11 +3,14 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { buildNickname } from '~/domain/utils/person-display'
 import OperationActiveServiceCard from '~/components/operation/OperationActiveServiceCard.vue'
+import OperationAudioRecordingStatus from '~/components/operation/OperationAudioRecordingStatus.vue'
 import OperationConsultantAvatarRing from '~/components/operation/OperationConsultantAvatarRing.vue'
 import OperationSidePanel from '~/components/operation/OperationSidePanel.vue'
 import OperationPendingListModal from '~/components/operation/OperationPendingListModal.vue'
+import { useAttendanceAudioRecordingStore } from '~/stores/attendanceAudioRecording'
 import { useAuthStore } from '~/stores/auth'
 import { useOperationsStore } from '~/stores/operations'
+import { usePlatformFeaturesStore } from '~/stores/platformFeatures'
 import { useUiStore } from '~/stores/ui'
 
 const props = defineProps({
@@ -27,14 +30,22 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  omniChatAccountId: {
+    type: String,
+    default: '',
+  },
 })
 
 const operationsStore = useOperationsStore()
+const platformFeaturesStore = usePlatformFeaturesStore()
+const audioRecordingStore = useAttendanceAudioRecordingStore()
 const ui = useUiStore()
 const now = ref(0)
 const isClockReady = ref(false)
 let timerId = null
+let recordingRefreshTimerId = null
 const CLOCK_REFRESH_MS = 250
+const RECORDING_REFRESH_MS = 5_000
 
 const waitingList = computed(() => props.state.waitingList || [])
 const activeServices = computed(() => props.state.activeServices || [])
@@ -73,6 +84,17 @@ const stopReasonOptions = computed(() =>
   Array.isArray(props.state.stopReasonOptions) ? props.state.stopReasonOptions : [],
 )
 const isLimitReached = computed(() => activeServices.value.length >= maxConcurrentServices.value)
+const audioRecordingEnabled = computed(
+  () => !props.readOnly && platformFeaturesStore.attendanceAudioRecordingEnabled,
+)
+const recordingServiceIds = computed(() => {
+  const ids = new Set(audioRecordingStore.activeRecordingServiceIds || [])
+  ;(audioRecordingStore.localRecordingServiceIds || []).forEach((serviceId) => {
+    const normalizedServiceId = String(serviceId || '').trim()
+    if (normalizedServiceId) ids.add(normalizedServiceId)
+  })
+  return Array.from(ids)
+})
 const actionModal = ref({
   open: false,
   action: '',
@@ -339,22 +361,70 @@ function resolveActionReason() {
 }
 
 async function startFirstService() {
+  const previousServiceIds = activeServiceIds()
   const result = await operationsStore.startService('', props.operatingStoreId)
 
   if (result?.ok === false) {
     ui.error(result.message)
   } else {
     ui.success('Atendimento iniciado!')
+    await startAudioForNewService(previousServiceIds)
   }
 }
 
 async function startSpecificService(personId) {
+  const previousServiceIds = activeServiceIds()
   const result = await operationsStore.startService(personId, props.operatingStoreId)
 
   if (result?.ok === false) {
     ui.error(result.message)
   } else {
     ui.success('Atendimento iniciado!')
+    await startAudioForNewService(previousServiceIds)
+  }
+}
+
+function activeServiceIds() {
+  return new Set(
+    activeServices.value.map((service) => String(service?.serviceId || '').trim()).filter(Boolean),
+  )
+}
+
+async function startAudioForNewService(previousServiceIds) {
+  if (!platformFeaturesStore.loaded) {
+    await platformFeaturesStore.load()
+  }
+  if (!audioRecordingEnabled.value) {
+    return
+  }
+
+  const newService = activeServices.value.find((service) => {
+    const serviceId = String(service?.serviceId || '').trim()
+    return serviceId && !previousServiceIds.has(serviceId)
+  })
+  if (!newService) {
+    ui.info(
+      'O atendimento iniciou, mas o novo registro ainda nao apareceu para vincular a gravacao.',
+      'Gravacao experimental',
+    )
+    return
+  }
+
+  const recordingResult = await audioRecordingStore.startForService(newService)
+  if (recordingResult?.ok === false) {
+    ui.info(
+      recordingResult.message || 'O atendimento iniciou sem gravacao de audio.',
+      'Gravacao experimental',
+    )
+  }
+}
+
+async function refreshRecordingIndicators() {
+  if (!platformFeaturesStore.loaded) {
+    await platformFeaturesStore.load()
+  }
+  if (platformFeaturesStore.attendanceAudioRecordingEnabled) {
+    await audioRecordingStore.refreshActiveRecordings()
   }
 }
 
@@ -411,6 +481,24 @@ async function keepServiceOpen(serviceOrId) {
 // normal — fica registrado que foi pelo gerente, quando, e com a justificativa
 // obrigatoria de por que o consultor nao encerrou (base das metricas de cobranca).
 const auth = useAuthStore()
+const communicationStoreIds = computed(() => {
+  const storeIds = new Set()
+  const addStoreId = (value) => {
+    const storeId = String(value || '').trim()
+    if (storeId) storeIds.add(storeId)
+  }
+
+  addStoreId(props.operatingStoreId)
+  addStoreId(props.state?.activeStoreId)
+  ;[...waitingList.value, ...activeServices.value].forEach((item) => addStoreId(item?.storeId))
+
+  if (props.integratedMode) {
+    ;(auth.accessibleStoreIds || []).forEach(addStoreId)
+  }
+  if (storeIds.size === 0) addStoreId(auth.activeStoreId)
+
+  return Array.from(storeIds)
+})
 const pendingValidations = computed(() =>
   Array.isArray(props.state.pendingValidations) ? props.state.pendingValidations : [],
 )
@@ -419,19 +507,30 @@ const canFinishPending = computed(() =>
   ['manager', 'owner', 'platform_admin'].includes(String(auth.role || '')),
 )
 const pendingListOpen = ref(false)
+const pendingOpeningServiceId = ref('')
 
-function openPendingFinish(item) {
+async function openPendingFinish(item) {
   const serviceId = String(item?.serviceId || '').trim()
-  if (!serviceId) {
+  if (!serviceId || pendingOpeningServiceId.value) {
     return
   }
+
+  pendingOpeningServiceId.value = serviceId
+  const opened = await operationsStore.openFinishModal(serviceId, item)
+  pendingOpeningServiceId.value = ''
+
+  if (!opened) {
+    ui.error('Nao foi possivel abrir o encerramento deste atendimento.')
+    return
+  }
+
   pendingListOpen.value = false
-  void operationsStore.openFinishModal(serviceId)
 }
 
 async function startParallelService(personId) {
   const consultant = props.state.roster?.find((item) => item.id === personId)
   const consultantName = displayName(consultant) || 'Consultor'
+  const previousServiceIds = activeServiceIds()
   const result = await operationsStore.startParallelService(
     personId,
     props.operatingStoreId || consultant?.storeId || '',
@@ -443,6 +542,7 @@ async function startParallelService(personId) {
     const parallelCount =
       (activeServices.value.filter((item) => item.id === personId).length || 0) + 1
     ui.success(`Abrindo ${parallelCount}o atendimento em aberto de ${consultantName}`)
+    await startAudioForNewService(previousServiceIds)
   }
 }
 
@@ -517,11 +617,17 @@ async function assignTask(person) {
 }
 
 onMounted(() => {
+  void platformFeaturesStore.load()
+  void refreshRecordingIndicators()
   now.value = Date.now()
   isClockReady.value = true
   timerId = window.setInterval(() => {
     now.value = Date.now()
   }, CLOCK_REFRESH_MS)
+  recordingRefreshTimerId = window.setInterval(
+    () => void refreshRecordingIndicators(),
+    RECORDING_REFRESH_MS,
+  )
 })
 
 watch(activeServices, () => {
@@ -531,6 +637,9 @@ watch(activeServices, () => {
 onBeforeUnmount(() => {
   if (timerId) {
     window.clearInterval(timerId)
+  }
+  if (recordingRefreshTimerId) {
+    window.clearInterval(recordingRefreshTimerId)
   }
 })
 </script>
@@ -544,6 +653,11 @@ onBeforeUnmount(() => {
       no modal.
     </p>
   </div>
+
+  <OperationAudioRecordingStatus
+    :enabled="audioRecordingEnabled"
+    :active-services="activeServices"
+  />
 
   <div class="queue-grid" data-testid="operation-board">
     <section class="queue-column queue-column--waiting" data-testid="operation-waiting-column">
@@ -686,6 +800,7 @@ onBeforeUnmount(() => {
               :integrated-mode="props.integratedMode"
               :max-concurrent-per-consultant="maxConcurrentPerConsultant"
               :cancel-window-seconds="cancelWindowSeconds"
+              :recording-service-ids="recordingServiceIds"
               @finish="openFinishModal"
               @stop="openStopModal"
               @start-parallel="startParallelService"
@@ -703,12 +818,13 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <OperationSidePanel />
+    <OperationSidePanel :store-ids="communicationStoreIds" :account-id="props.omniChatAccountId" />
   </div>
 
   <OperationPendingListModal
     :open="pendingListOpen"
     :items="pendingValidations"
+    :opening-service-id="pendingOpeningServiceId"
     @close="pendingListOpen = false"
     @finish="openPendingFinish"
   />

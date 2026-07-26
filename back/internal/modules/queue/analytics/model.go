@@ -24,6 +24,7 @@ type Repository interface {
 	LoadSnapshotWithHistorySince(ctx context.Context, storeID string, historySinceMillis int64) (operations.SnapshotState, error)
 	ListRoster(ctx context.Context, storeID string) ([]operations.ConsultantProfile, error)
 	LoadSettings(ctx context.Context, storeID string) (StoreSettings, error)
+	ResolveUserDisplayNames(ctx context.Context, userIDs []string) (map[string]string, error)
 }
 
 type StoreFinder interface {
@@ -79,6 +80,59 @@ type DataResponse struct {
 	Professions       []CountRow       `json:"professions"`
 	OutcomeSummary    []CountRow       `json:"outcomeSummary"`
 	HourlySales       []HourlySalesRow `json:"hourlySales"`
+	AutoClose         AutoCloseData    `json:"autoClose"`
+}
+
+type AutoCloseData struct {
+	Summary      AutoCloseSummary         `json:"summary"`
+	ByConsultant []AutoCloseConsultantRow `json:"byConsultant"`
+	ByStore      []AutoCloseStoreRow      `json:"byStore"`
+	Recent       []AutoCloseAuditRow      `json:"recent"`
+}
+
+type AutoCloseSummary struct {
+	Total       int `json:"total"`
+	Pending     int `json:"pending"`
+	Validated   int `json:"validated"`
+	Cancelled   int `json:"cancelled"`
+	SnoozeCount int `json:"snoozeCount"`
+}
+
+type AutoCloseConsultantRow struct {
+	ConsultantID   string `json:"consultantId"`
+	ConsultantName string `json:"consultantName"`
+	StoreID        string `json:"storeId"`
+	StoreName      string `json:"storeName"`
+	Total          int    `json:"total"`
+	Pending        int    `json:"pending"`
+	Validated      int    `json:"validated"`
+	Cancelled      int    `json:"cancelled"`
+	SnoozeCount    int    `json:"snoozeCount"`
+}
+
+type AutoCloseStoreRow struct {
+	StoreID     string `json:"storeId"`
+	StoreName   string `json:"storeName"`
+	Total       int    `json:"total"`
+	Pending     int    `json:"pending"`
+	Validated   int    `json:"validated"`
+	Cancelled   int    `json:"cancelled"`
+	SnoozeCount int    `json:"snoozeCount"`
+}
+
+type AutoCloseAuditRow struct {
+	ServiceID      string `json:"serviceId"`
+	ConsultantID   string `json:"consultantId"`
+	ConsultantName string `json:"consultantName"`
+	StoreID        string `json:"storeId"`
+	StoreName      string `json:"storeName"`
+	Status         string `json:"status"`
+	Reason         string `json:"reason"`
+	ClosedByUserID string `json:"closedByUserId,omitempty"`
+	ClosedByName   string `json:"closedByName,omitempty"`
+	AutoClosedAt   int64  `json:"autoClosedAt"`
+	ValidatedAt    int64  `json:"validatedAt,omitempty"`
+	SnoozeCount    int    `json:"snoozeCount"`
 }
 
 type IntelligenceResponse struct {

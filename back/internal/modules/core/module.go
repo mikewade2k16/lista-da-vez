@@ -219,6 +219,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 
 	platformSettingsRepo := NewPostgresPlatformSettingsRepository(deps.Pool)
 	platformSettingsSvc := NewPlatformSettingsService(platformSettingsRepo)
+	experimentalFeaturesSvc := NewExperimentalFeaturesService(platformSettingsRepo)
 
 	// Aparência GLOBAL da plataforma (tema visual). Reusa o mesmo repositório de
 	// platform_settings (chave 'appearance'); desacoplado do módulo queue.
@@ -237,6 +238,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		adminOverridesService:    adminOverridesSvc,
 		adminOrganizationService: adminOrgSvc,
 		platformSettingsService:  platformSettingsSvc,
+		experimentalFeatures:     experimentalFeaturesSvc,
 		appearanceService:        appearanceSvc,
 		roleTemplateService:      roleTemplateSvc,
 		authMiddleware:           deps.AuthMiddleware,
@@ -256,6 +258,7 @@ type handle struct {
 	adminOverridesService    *AdminOverridesService
 	adminOrganizationService *AdminOrganizationService
 	platformSettingsService  *PlatformSettingsService
+	experimentalFeatures     *ExperimentalFeaturesService
 	appearanceService        *AppearanceService
 	roleTemplateService      *RoleTemplateAdminService
 	authMiddleware           *auth.Middleware
@@ -273,6 +276,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterAdminOverridesRoutes(mux, h.adminOverridesService, h.adminUserService, h.authMiddleware)
 	RegisterAdminOrganizationsRoutes(mux, h.adminOrganizationService, h.authMiddleware)
 	RegisterPlatformSettingsRoutes(mux, h.platformSettingsService, h.authMiddleware)
+	RegisterExperimentalFeaturesRoutes(mux, h.experimentalFeatures, h.authMiddleware)
 	RegisterAppearanceRoutes(mux, h.appearanceService, h.authMiddleware)
 	RegisterRoleTemplatesRoutes(mux, h.roleTemplateService, h.authMiddleware)
 }

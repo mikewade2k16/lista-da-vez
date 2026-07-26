@@ -58,6 +58,13 @@ function Get-N8nWorkflowRegistry {
       WorkflowId = "lzhb5JjN5kdcVuRR"
       ExportPath = "automation/export/workflow-whatsapp.json"
       Writable = $true
+    },
+    [PSCustomObject]@{
+      Key = "queue-attendance-analysis"
+      Module = "queue"
+      WorkflowId = "queueattendan001"
+      ExportPath = "automation/export/workflow-queue-attendance-analysis.json"
+      Writable = $true
     }
   )
 }

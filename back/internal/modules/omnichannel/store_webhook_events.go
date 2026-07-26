@@ -27,6 +27,10 @@ type inboundWrite struct {
 	InstanceName    string
 	InstanceID      string // "" quando o evento nao amarra a uma instancia conhecida
 	PayloadMasked   json.RawMessage
+	// EnqueueAutomation writes the durable AI/FSM intent in the same transaction
+	// as a newly-created inbound message. It is ignored for provider-device
+	// (fromMe) messages and idempotent by the internal message ID.
+	EnqueueAutomation bool
 	// Message != nil => evento message_received: cria/atualiza conversa e grava a mensagem.
 	Message *inboundMessageWrite
 	// Status != nil => ACK do provider: atualiza a mensagem existente sem regressao.
@@ -90,8 +94,8 @@ func (s *Store) PersistInbound(ctx context.Context, w inboundWrite) (inboundResu
 }
 
 // PersistInboundWithTransition lets the domain service supply the FSM decision
-// that must commit with a newly-created provider-device message. It is used for
-// fromMe takeover only; duplicate provider echoes never trigger a transition.
+// that must commit with a newly-created message. It covers inbound lifecycle
+// advancement and fromMe takeover; duplicate provider echoes never transition.
 func (s *Store) PersistInboundWithTransition(ctx context.Context, w inboundWrite,
 	decide func(convSnapshot) (stateUpdate, *decisionRecord, error)) (inboundResult, error) {
 	return s.persistInbound(ctx, w, decide)
@@ -143,7 +147,7 @@ func (s *Store) persistInbound(ctx context.Context, w inboundWrite,
 			return inboundResult{}, err
 		}
 		result.MessageCreated = result.MessageID != ""
-		if result.MessageCreated && w.Message.FromMe && decide != nil {
+		if result.MessageCreated && decide != nil {
 			snap, lockErr := lockConversationSnapshotTx(ctx, tx, w.AccountID, result.ConversationID)
 			if lockErr != nil {
 				return inboundResult{}, lockErr
@@ -157,6 +161,13 @@ func (s *Store) persistInbound(ctx context.Context, w inboundWrite,
 			}
 			if decisionErr := insertDecisionTx(ctx, tx, w.AccountID, result.ConversationID, decision); decisionErr != nil {
 				return inboundResult{}, decisionErr
+			}
+		}
+		if result.MessageCreated && !w.Message.FromMe && w.EnqueueAutomation {
+			if err := enqueueAIInboundJobTx(
+				ctx, tx, w.AccountID, result.ConversationID, result.MessageID,
+			); err != nil {
+				return inboundResult{}, err
 			}
 		}
 		if strings.TrimSpace(w.Message.ExternalMessageID) != "" {
@@ -198,14 +209,20 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 		contactStatus = "group"
 		sourceKind = "group_message"
 	}
+	bindingSnapshot, err := s.resolveInboundChannelClientBindingTx(ctx, tx, w)
+	if err != nil {
+		return "", "", err
+	}
 
-	var conversationID string
+	var conversationID, conversationClientID, conversationBindingID, conversationBindingState string
 	err = tx.QueryRow(ctx, `insert into messaging.conversations
 		(account_id, instance_id, instance_scope_key, contact_id, channel, external_id,
-		 contact_name, contact_phone, contact_avatar_url, state, extracted_fields, last_message_at)
+		 contact_name, contact_phone, contact_avatar_url, state, extracted_fields, last_message_at,
+		 client_account_id, channel_client_binding_id, client_binding_state, client_bound_at)
 		values ($1::uuid, nullif($2,'')::uuid, $3, nullif($4,'')::uuid, $5, $6, $7, $8, $9,
 		        'new', jsonb_build_object('crm_contact_status', $10::text, 'source_channel', lower($5::text),
-		        'source_provider', $11::text, 'source_kind', $12::text), $13)
+		        'source_provider', $11::text, 'source_kind', $12::text), $13,
+		        nullif($14,'')::uuid, nullif($15,'')::uuid, $16, $17)
 		on conflict (account_id, external_id, channel, instance_scope_key) do update
 			set last_message_at = greatest(conversations.last_message_at, excluded.last_message_at),
 				contact_id = case when excluded.extracted_fields->>'source_kind'='group_message'
@@ -215,11 +232,21 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 					then null else coalesce(nullif(excluded.contact_phone, ''), conversations.contact_phone) end,
 				contact_avatar_url = coalesce(nullif(excluded.contact_avatar_url, ''), conversations.contact_avatar_url),
 				updated_at = now()
-		returning id::text`,
+		returning
+			id::text,
+			coalesce(client_account_id::text, ''),
+			coalesce(channel_client_binding_id::text, ''),
+			client_binding_state`,
 		w.AccountID, w.InstanceID, w.InstanceName, contactID, m.Channel, m.ContactExternalID,
 		m.ContactName, normalizePhoneDigits(m.ContactPhone), m.ContactAvatarURL, contactStatus,
-		w.Provider, sourceKind, m.OccurredAt,
-	).Scan(&conversationID)
+		w.Provider, sourceKind, m.OccurredAt, bindingSnapshot.ClientAccountID,
+		bindingSnapshot.BindingID, bindingSnapshot.State, bindingSnapshot.BoundAt,
+	).Scan(
+		&conversationID,
+		&conversationClientID,
+		&conversationBindingID,
+		&conversationBindingState,
+	)
 	if err != nil {
 		return "", "", err
 	}
@@ -384,15 +411,35 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 		}
 		_, err = tx.Exec(ctx, `insert into messaging.contact_touchpoints
 			(account_id, contact_id, conversation_id, message_id, channel, provider,
-			 external_event_id, source_kind, occurred_at)
-			values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, nullif($7,''), $8, $9)
+			 external_event_id, source_kind, occurred_at, client_account_id,
+			 channel_client_binding_id, client_binding_state)
+			values (
+				$1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, nullif($7,''), $8, $9,
+				nullif($10,'')::uuid, nullif($11,'')::uuid, $12
+			)
 			on conflict (account_id, provider, external_event_id)
 				where external_event_id is not null and external_event_id <> '' do nothing`,
 			w.AccountID, contactID, conversationID, messageID, m.Channel, w.Provider,
-			w.ExternalEventID, touchpointKind, m.OccurredAt)
+			w.ExternalEventID, touchpointKind, m.OccurredAt, conversationClientID,
+			conversationBindingID, conversationBindingState)
 		if err != nil {
 			return "", "", err
 		}
+	}
+	if err := s.insertCustomerDataInboundEventTx(ctx, tx, customerDataInboundSnapshot{
+		AccountID:              w.AccountID,
+		ClientAccountID:        conversationClientID,
+		ContactID:              contactID,
+		ConversationID:         conversationID,
+		MessageID:              messageID,
+		ChannelClientBindingID: conversationBindingID,
+		Channel:                m.Channel,
+		Provider:               w.Provider,
+		OccurredAt:             m.OccurredAt,
+		BindingState:           conversationBindingState,
+		FromMe:                 m.FromMe,
+	}); err != nil {
+		return "", "", err
 	}
 	return conversationID, messageID, nil
 }

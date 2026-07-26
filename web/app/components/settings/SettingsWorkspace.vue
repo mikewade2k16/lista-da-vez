@@ -1,14 +1,9 @@
 <script setup>
-import SettingsConsultantManager from '~/components/settings/SettingsConsultantManager.vue'
-import SettingsProductManager from '~/components/settings/SettingsProductManager.vue'
 import SettingsTabs from '~/components/settings/SettingsTabs.vue'
-import SettingsCrmGoalsSection from '~/components/settings/sections/SettingsCrmGoalsSection.vue'
-import SettingsAlertsSection from '~/components/settings/sections/SettingsAlertsSection.vue'
+import SettingsCatalogsSection from '~/components/settings/sections/SettingsCatalogsSection.vue'
 import SettingsGamificationSection from '~/components/settings/sections/SettingsGamificationSection.vue'
 import SettingsModalSection from '~/components/settings/sections/SettingsModalSection.vue'
 import SettingsOperationSection from '~/components/settings/sections/SettingsOperationSection.vue'
-import SettingsOptionTabSection from '~/components/settings/sections/SettingsOptionTabSection.vue'
-import SettingsReasonInputSection from '~/components/settings/sections/SettingsReasonInputSection.vue'
 import SettingsWorkspaceHeader from '~/components/settings/sections/SettingsWorkspaceHeader.vue'
 import { useSettingsWorkspace } from '~/composables/useSettingsWorkspace'
 
@@ -23,7 +18,7 @@ const ctx = useSettingsWorkspace(props)
 </script>
 
 <template>
-  <section class="admin-panel" data-testid="settings-panel">
+  <section class="admin-panel settings-workspace" data-testid="settings-panel">
     <SettingsWorkspaceHeader :runtime-settings-notice="ctx.runtimeSettingsNotice" />
 
     <SettingsTabs
@@ -32,49 +27,51 @@ const ctx = useSettingsWorkspace(props)
       @update:active-tab="ctx.activeTab = $event"
     />
 
-    <SettingsOperationSection v-if="ctx.activeTab === 'operacao'" :ctx="ctx" />
+    <div class="settings-workspace__content">
+      <SettingsOperationSection v-if="ctx.activeTab === 'operacao'" :ctx="ctx" />
 
-    <SettingsReasonInputSection
-      v-else-if="ctx.activeTab === 'cancelamento'"
-      :ctx="ctx"
-      :config="ctx.reasonInputSectionConfigs.cancelamento"
-    />
+      <SettingsModalSection v-else-if="ctx.activeTab === 'modal'" :ctx="ctx" />
 
-    <SettingsReasonInputSection
-      v-else-if="ctx.activeTab === 'parada'"
-      :ctx="ctx"
-      :config="ctx.reasonInputSectionConfigs.parada"
-    />
+      <SettingsCatalogsSection v-else-if="ctx.activeTab === 'catalogos'" :ctx="ctx" />
 
-    <SettingsModalSection v-else-if="ctx.activeTab === 'modal'" :ctx="ctx" />
-
-    <SettingsProductManager
-      v-else-if="ctx.activeTab === 'produtos'"
-      :products="ctx.state.productCatalog || []"
-      @add="ctx.addProduct"
-      @update="ctx.updateProduct"
-      @remove="ctx.removeProduct"
-    />
-
-    <SettingsConsultantManager
-      v-else-if="ctx.activeTab === 'consultores'"
-      :consultants="ctx.state.roster || []"
-      :disabled="!ctx.canEditConsultants"
-      @add="ctx.addConsultant"
-      @update="ctx.updateConsultant"
-      @archive="ctx.archiveConsultant"
-    />
-
-    <SettingsCrmGoalsSection v-else-if="ctx.activeTab === 'metas-crm'" :ctx="ctx" />
-
-    <SettingsGamificationSection v-else-if="ctx.activeTab === 'gamificacao'" :ctx="ctx" />
-
-    <SettingsAlertsSection v-else-if="ctx.activeTab === 'alertas'" :ctx="ctx" />
-
-    <SettingsOptionTabSection
-      v-else-if="ctx.optionTabConfigs[ctx.activeTab]"
-      :ctx="ctx"
-      :config="ctx.optionTabConfigs[ctx.activeTab]"
-    />
+      <SettingsGamificationSection v-else-if="ctx.activeTab === 'gamificacao'" :ctx="ctx" />
+    </div>
   </section>
 </template>
+
+<style scoped>
+.admin-panel.settings-workspace {
+  display: flex;
+  flex-direction: column;
+  align-content: normal;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 14px;
+}
+
+.settings-workspace > :deep(.settings-tabs) {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  flex: 0 0 38px;
+  min-height: 38px;
+  overflow-y: hidden;
+}
+
+.settings-workspace__content {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  min-width: 0;
+  isolation: isolate;
+}
+
+@media (max-width: 760px) {
+  .admin-panel.settings-workspace {
+    gap: 6px;
+    padding: 6px;
+    border-radius: 12px;
+  }
+}
+</style>

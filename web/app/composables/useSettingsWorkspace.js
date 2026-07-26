@@ -21,19 +21,13 @@ import {
   normalizeCrmListUsageMinOrders,
   normalizeCrmListUsageTiers,
 } from '~/domain/utils/crm-performance-policy'
-import {
-  canManageCrmCommercialPolicy,
-  canManageConsultants,
-  canManageSettings,
-} from '~/domain/utils/permissions'
+import { canManageCrmCommercialPolicy, canManageSettings } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
-import { useConsultantsStore } from '~/stores/consultants'
 import { useSettingsStore } from '~/stores/settings'
 import { useUiStore } from '~/stores/ui'
 
 export function useSettingsWorkspace(props) {
   const settingsStore = useSettingsStore()
-  const consultantsStore = useConsultantsStore()
   const ui = useUiStore()
   const auth = useAuthStore()
   const gamification = useGamificationConfig()
@@ -55,9 +49,6 @@ export function useSettingsWorkspace(props) {
   )
   const canEditCrmCommercialPolicy = computed(() =>
     canManageCrmCommercialPolicy(auth.role, auth.permissionKeys, auth.permissionsResolved),
-  )
-  const canEditConsultants = computed(() =>
-    canManageConsultants(auth.role, auth.permissionKeys, auth.permissionsResolved),
   )
   const crmListUsageTiers = computed(() =>
     normalizeCrmListUsageTiers(state.value.settings?.crmListUsageTiers),
@@ -455,66 +446,6 @@ export function useSettingsWorkspace(props) {
     )
   }
 
-  async function addProduct(payload) {
-    handleMutationResult(
-      await settingsStore.addCatalogProduct(
-        payload.name,
-        payload.category,
-        payload.basePrice,
-        payload.code,
-      ),
-      'Produto adicionado.',
-      'Nao foi possivel adicionar o produto.',
-    )
-  }
-
-  async function updateProduct(productId, payload) {
-    handleMutationResult(
-      await settingsStore.updateCatalogProduct(productId, payload),
-      'Produto atualizado.',
-      'Nao foi possivel atualizar o produto.',
-    )
-  }
-
-  async function removeProduct(productId) {
-    handleMutationResult(
-      await settingsStore.removeCatalogProduct(productId),
-      'Produto removido.',
-      'Nao foi possivel remover o produto.',
-    )
-  }
-
-  async function addConsultant(payload) {
-    const result = await consultantsStore.createConsultantProfile(payload)
-    if (result?.ok === false) {
-      ui.error(result.message || 'Nao foi possivel criar consultor.')
-      return
-    }
-
-    const accessEmail = String(result?.access?.email || '').trim()
-    const initialPassword = String(result?.access?.initialPassword || '').trim()
-    if (accessEmail && initialPassword) {
-      await ui.prompt({
-        title: 'Acesso do consultor criado',
-        message: `Login padrao: ${accessEmail}\nSenha inicial: ${initialPassword}\nOriente o consultor a trocar a senha em Perfil no primeiro acesso.`,
-        inputLabel: 'Acesso',
-        initialValue: `${accessEmail} | ${initialPassword}`,
-        confirmLabel: 'Fechar',
-      })
-    }
-
-    ui.success('Consultor criado com acesso vinculado.')
-  }
-
-  async function updateConsultant(consultantId, payload) {
-    const result = await consultantsStore.updateConsultantProfile(consultantId, payload)
-    if (result?.ok === false) {
-      ui.error(result.message || 'Nao foi possivel atualizar consultor.')
-      return
-    }
-    ui.success('Consultor atualizado.')
-  }
-
   const gamificationBadges = computed(() => gamification.config.value.badges)
 
   async function updateGamificationBadge(badgeId, patch) {
@@ -528,32 +459,12 @@ export function useSettingsWorkspace(props) {
     }
   }
 
-  async function archiveConsultant(consultantId) {
-    const { confirmed } = await ui.confirm({
-      title: 'Arquivar consultor',
-      message: 'O consultor sera removido da escala ativa. Deseja continuar?',
-      confirmLabel: 'Arquivar',
-    })
-    if (!confirmed) return
-
-    const result = await consultantsStore.archiveConsultantProfile(consultantId)
-    if (result?.ok === false) {
-      ui.error(result.message || 'Nao foi possivel arquivar consultor.')
-      return
-    }
-    ui.success('Consultor arquivado.')
-  }
-
   return reactive({
     activeTab,
     addCrmGoalPayoutRule,
     addCrmListUsageTier,
-    addConsultant,
     addOption,
-    addProduct,
     applyTemplate,
-    archiveConsultant,
-    canEditConsultants,
     canEditCrmCommercialPolicy,
     canEditSettings,
     gamificationBadges,
@@ -590,12 +501,10 @@ export function useSettingsWorkspace(props) {
     saveCrmGoalPayoutGroup,
     removeCrmListUsageTier,
     removeOption,
-    removeProduct,
     reorderOption,
     runtimeSettingsNotice,
     state,
     updateBooleanSetting,
-    updateConsultant,
     updateCrmCommercialPolicy,
     updateCrmGoalPayoutRule,
     updateCrmListUsageMinOrders,
@@ -604,7 +513,6 @@ export function useSettingsWorkspace(props) {
     updateModalConfigValue,
     updateNumericSetting,
     updateOption,
-    updateProduct,
     visibleTabs,
   })
 }

@@ -20,6 +20,8 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm/catalog"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm/erp"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/customerdata"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/customerintelligence"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance"
 	metaads "github.com/mikewade2k16/lista-da-vez/back/internal/modules/meta_ads"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
@@ -28,11 +30,13 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/alerts"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/analytics"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/communications"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/consultants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/feedback"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/reports"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/settings"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/transcriptions"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/roadmap"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/site"
@@ -53,6 +57,10 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	const operationsAlertMonitorInterval = 3 * time.Second
 	const feedbackAttachmentCleanupInterval = 6 * time.Hour
 
+	omnichannelSecretBox, err := secretbox.FromEnv()
+	if err != nil {
+		return nil, err
+	}
 	hasher := auth.NewBcryptHasher(cfg.BcryptCost)
 	userStore := auth.NewPostgresUserStore(pool)
 	tokenManager := auth.NewHMACTokenManager(cfg.AuthTokenSecret, cfg.AuthTokenTTL)
@@ -112,6 +120,41 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	alertsService.SetContextPublisher(realtimeService)
 	operationsRepository := operations.NewPostgresRepository(pool)
 	operationsService := operations.NewService(operationsRepository, realtimeService, newOperationsStoreScopeAdapter(storeService))
+	communicationsRepository := communications.NewPostgresRepository(pool)
+	communicationsService := communications.NewService(communicationsRepository)
+	var omnichannelModule *omnichannel.Module
+	omniChatCredentials := automationCredentialAdapter{
+		service: func() *omnichannel.AIService {
+			if omnichannelModule == nil {
+				return nil
+			}
+			return omnichannelModule.AIService()
+		},
+	}
+	transcriptionsCredentials := queueTranscriptionCredentialAdapter{
+		service: func() *omnichannel.AIService {
+			if omnichannelModule == nil {
+				return nil
+			}
+			return omnichannelModule.AIService()
+		},
+	}
+	transcriptionsRepository := transcriptions.NewPostgresRepository(pool)
+	transcriptionsStorage := transcriptions.NewDiskAudioStorage(transcriptions.AudioDirectoryFromEnv())
+	transcriptionsService := transcriptions.NewService(transcriptionsRepository, transcriptionsStorage, transcriptionsCredentials)
+	transcriptionsWorker := transcriptions.NewWorker(
+		transcriptionsRepository,
+		transcriptionsStorage,
+		transcriptions.NewWhisperClient(transcriptions.WhisperConfigFromEnv()),
+		logger,
+	)
+	go transcriptionsWorker.Run(context.Background())
+	transcriptionsAnalysisWorker := transcriptions.NewAnalysisWorker(
+		transcriptionsRepository,
+		transcriptions.NewN8nAnalyzer(transcriptions.N8nAnalyzerConfigFromEnv()),
+		transcriptionsCredentials,
+		logger,
+	)
 	operationsService.SetAlertCoordinator(alertsService)
 	alertsService.SetOperationsScanner(operationsService)
 	go func() {
@@ -283,6 +326,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"erp",
 				"bi",
 				"users",
+				"customer_data",
+				"customer_intelligence",
 			},
 			"tenantMode":    "owner-is-client",
 			"coreV2Enabled": cfg.CoreV2Enabled,
@@ -304,6 +349,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	settings.RegisterRoutes(mux, settingsService, authMiddleware, cfg.Env)
 	catalog.RegisterRoutes(mux, catalogService, authMiddleware)
 	operations.RegisterRoutes(mux, operationsService, authMiddleware)
+	communications.RegisterRoutes(mux, communicationsService, authMiddleware)
+	transcriptions.RegisterRoutes(mux, transcriptionsService, authMiddleware)
 	alerts.RegisterRoutes(mux, alertsService, authMiddleware)
 	realtime.RegisterRoutes(mux, realtimeService, authMiddleware)
 	reports.RegisterRoutes(mux, reportsService, authMiddleware)
@@ -380,7 +427,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		registry.MustRegister(crm.New())
 		// automation: painel de WhatsApp/IA. Rotas montadas via handle.RegisterRoutes
 		// (loop abaixo); gating em moduleGatingRules (/v1/automation -> automation).
-		registry.MustRegister(automation.New())
+		registry.MustRegister(automation.New(
+			automation.WithOmniChatCredentialResolver(omniChatCredentials),
+		))
 		// meta_ads: painel de Meta/Facebook Ads. Rotas montadas via
 		// handle.RegisterRoutes (loop abaixo); gating em moduleGatingRules
 		// (/v1/meta-ads -> meta_ads).
@@ -418,6 +467,38 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// redirects publicos /s/{slug} e /q/{slug} fora do gate.
 		// Plano: docs/tools/PLANO_MODULO_TOOLS.md.
 		registry.MustRegister(tools.New())
+		// Customer Data e a fonte deterministica de subjects, relacionamentos,
+		// identidades, consentimentos, interacoes offline e segmentos. Customer
+		// Intelligence consome apenas suas fachadas e mantem fatos derivados,
+		// fontes, prompts por processo, runs e recomendacoes em schema proprio.
+		customerDataModule := customerdata.New()
+		registry.MustRegister(customerDataModule)
+		intelligenceScope := customerIntelligenceScopeAdapter{pool: pool}
+		intelligenceRelationshipScope := customerIntelligenceRelationshipScopeAdapter{
+			service: func() *customerdata.Service { return customerDataModule.Service() },
+		}
+		var customerIntelligenceModule *customerintelligence.Module
+		customerIntelligenceBridge := omnichannelCustomerIntelligenceAdapter{
+			customerData: func() *customerdata.Service { return customerDataModule.Service() },
+			runtime: func() customerintelligence.Runtime {
+				if customerIntelligenceModule == nil {
+					return nil
+				}
+				return customerIntelligenceModule.Runtime()
+			},
+		}
+		customerDataIngestBridge := omnichannelCustomerDataIngestAdapter{
+			source: postgresOmnichannelCustomerDataSourceReader{pool: pool},
+			customerData: func() customerDataRelationshipResolver {
+				return customerDataModule.Service()
+			},
+			customerIntelligence: func() customerIntelligenceSourceEventTrigger {
+				if customerIntelligenceModule == nil {
+					return nil
+				}
+				return customerIntelligenceModule.Service()
+			},
+		}
 		// omnichannel: atendimento WhatsApp (inbox + setores/filas + triagem IA),
 		// schema messaging.*. Painel em /v1/omnichannel (gating abaixo); webhook inbound
 		// publico /v1/webhooks/omnichannel/* FORA do gate. Plano: docs/omnichannel/PLANO_ATENDIMENTO.md.
@@ -427,18 +508,69 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// injetado no modulo (WithSecretBox). WithPublisher liga o canal realtime da F5:
 		// o realtimeService e o transporte de omnichannel:account:{id} (spec F5 — o webhook
 		// inbound publica message.created; F6/F7 publicam message.updated/conversation.updated).
-		omnichannelSecretBox, err := secretbox.FromEnv()
-		if err != nil {
-			return nil, err
-		}
-		registry.MustRegister(omnichannel.New(
+		omnichannelModule = omnichannel.New(
 			omnichannel.WithSecretBox(omnichannelSecretBox),
 			omnichannel.WithPublisher(realtimeService),
+			omnichannel.WithCustomerIntelligence(customerIntelligenceBridge),
+			omnichannel.WithCustomerDataIngest(customerDataIngestBridge),
 			omnichannel.WithAutomationClientCatalog(omnichannelClientCatalogAdapter{service: tenantService}),
 			omnichannel.WithAutomationBusinessContext(omnichannelCalendarContextAdapter{
 				service: func() *calendar.Service { return calendarModule.Service() },
 			}),
-		))
+		)
+		registry.MustRegister(omnichannelModule)
+		customerIntelligenceModule = customerintelligence.New(
+			customerintelligence.WithSecretBox(omnichannelSecretBox),
+			customerintelligence.WithModuleClientScopeAuthorizer(intelligenceScope),
+			customerintelligence.WithModuleRelationshipScopeAuthorizer(intelligenceRelationshipScope),
+			customerintelligence.WithModulePortfolioScopeAuthorizer(intelligenceScope),
+			customerintelligence.WithModuleSourceAdapter(
+				"manual.offline",
+				customerDataOfflineSourceAdapter{
+					service: func() *customerdata.Service { return customerDataModule.Service() },
+				},
+			),
+			customerintelligence.WithModuleSourceAdapter(
+				"omnichannel",
+				omnichannelSourceAdapter{
+					customerData: func() *customerdata.Service { return customerDataModule.Service() },
+					omnichannel:  func() *omnichannel.Service { return omnichannelModule.Service() },
+				},
+			),
+			customerintelligence.WithModuleSourceAdapter(
+				"calendar.client_profile",
+				calendarClientProfileSourceAdapter{
+					calendar: func() calendarBusinessContextReader {
+						return calendarModule.Service()
+					},
+				},
+			),
+			customerintelligence.WithModuleSourceAdapter(
+				"erp",
+				erpSourceAdapter{
+					customerData: func() customerDataSourceEvidenceReader {
+						return customerDataModule.Service()
+					},
+					erp: func() erpCustomerEvidenceReader { return erpService },
+				},
+			),
+			customerintelligence.WithModuleSourceAdapter(
+				"site",
+				siteSourceAdapter{
+					customerData: func() customerDataSourceEvidenceReader {
+						return customerDataModule.Service()
+					},
+					site: func() siteCustomerEvidenceReader { return siteService },
+				},
+			),
+			customerintelligence.WithModuleSourceAdapter(
+				"bi.perola",
+				biPerolaSourceAdapter{
+					bi: func() biCustomerIntelligenceHealthReader { return biService },
+				},
+			),
+		)
+		registry.MustRegister(customerIntelligenceModule)
 		// social_publishing: agendamento e analytics de publicacoes organicas.
 		// O piloto e isolado do Calendar/Crow Assistant; a credencial Instagram usa
 		// o mesmo secretbox canonico da plataforma e nunca retorna ao frontend.
@@ -496,6 +628,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 			h.RegisterRoutes(mux)
 			h.RegisterEventHandlers(bus)
 		}
+	}
+	if omnichannelModule != nil {
+		go transcriptionsAnalysisWorker.Run(context.Background())
 	}
 
 	middlewares := []httpapi.Middleware{
@@ -584,6 +719,11 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		// tools (encurtador + QR). So o painel /v1/tools e gateado; os redirects
 		// publicos /s/{slug} e /q/{slug} NAO estao aqui (sao abertos).
 		{Prefix: "/v1/tools", ModuleID: "tools"},
+		// Customer Data e Intelligence possuem gates independentes: o perfil
+		// deterministico continua operacional sem IA, enquanto a Inteligencia
+		// depende do modulo de dados no catalogo e no AdminService.
+		{Prefix: "/v1/customer-data", ModuleID: "customer_data"},
+		{Prefix: "/v1/customer-intelligence", ModuleID: "customer_intelligence"},
 		// omnichannel (atendimento WhatsApp). platform_admin tem bypass; contas sem o
 		// modulo habilitado levam 403 module_disabled. So o painel /v1/omnichannel e
 		// gateado: o webhook inbound (/v1/webhooks/*, F4) e o runtime NAO entram aqui —

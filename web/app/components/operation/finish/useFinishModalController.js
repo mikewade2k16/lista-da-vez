@@ -500,12 +500,19 @@ export function useFinishModalController(props, operationsStore, ui) {
   // gestao encerra pelo MESMO modal. Resolve um service-like a partir da pendencia
   // (timer congelado via effectiveFinishedAt; startMode queue evita o passo de
   // motivo fora-da-vez). O submit vai para POST /validate em vez de /finish.
-  const pendingValidationMatch = computed(
-    () =>
-      (props.state.pendingValidations || []).find(
-        (item) => item.serviceId === props.state.finishModalServiceId,
-      ) || null,
-  )
+  const pendingValidationMatch = computed(() => {
+    const pendingFromList = (props.state.pendingValidations || []).find(
+      (item) => item.serviceId === props.state.finishModalServiceId,
+    )
+    if (pendingFromList) {
+      return pendingFromList
+    }
+
+    const transientPending = props.state.finishModalPendingValidation
+    return transientPending?.serviceId === props.state.finishModalServiceId
+      ? transientPending
+      : null
+  })
   const isPendingValidation = computed(
     () => !activeServiceMatch.value && Boolean(pendingValidationMatch.value),
   )
@@ -1012,6 +1019,10 @@ export function useFinishModalController(props, operationsStore, ui) {
   const formStep1Quality = computed(() => {
     const checks = {
       outcome: !!form.outcome,
+    }
+
+    if (isPendingValidation.value) {
+      checks.validationReason = hasTrimmedText(validationReason.value)
     }
 
     if (showProductSeenField.value && requireProductSeenField.value) {
@@ -1595,6 +1606,12 @@ export function useFinishModalController(props, operationsStore, ui) {
   async function goToStep2() {
     // Tentativa de avancar revela as justificativas pendentes do passo 1.
     step1JustificationsRevealed.value = true
+
+    if (isPendingValidation.value && !validationReason.value.trim()) {
+      await ui.alert('Informe por que este atendimento nao foi encerrado pelo consultor.')
+      globalThis.document?.getElementById('operation-validation-reason')?.focus()
+      return
+    }
 
     if (!form.outcome) {
       await ui.alert('Selecione como o atendimento terminou.')

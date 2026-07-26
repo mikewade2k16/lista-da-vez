@@ -360,11 +360,6 @@ func applyOperationTemplateCoreSettings(base OperationCoreSettings, template Ope
 	next.TimingLongServiceMinutes = template.TimingLongServiceMinutes
 	next.TimingLowSaleAmount = template.TimingLowSaleAmount
 	next.ServiceCancelWindowSeconds = template.ServiceCancelWindowSeconds
-	next.ScoreWeightConversion = template.ScoreWeightConversion
-	next.ScoreWeightSoldValue = template.ScoreWeightSoldValue
-	next.ScoreWeightQuality = template.ScoreWeightQuality
-	next.ScoreWeightPa = template.ScoreWeightPa
-	next.ScoreWeightQueueDiscipline = template.ScoreWeightQueueDiscipline
 	next.CRMListUsageTiers = normalizeRawJSON(template.CRMListUsageTiers, defaultCRMListUsageTiers())
 	next.CRMListUsageMinOrdersForHighlight = maxInt(
 		template.CRMListUsageMinOrdersForHighlight,

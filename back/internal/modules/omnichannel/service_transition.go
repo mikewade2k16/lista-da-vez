@@ -61,6 +61,20 @@ func (s *Service) decideTransition(ctx context.Context, accountID string, ev Eve
 	if err != nil {
 		return stateUpdate{}, nil, err
 	}
+	return s.decideTransitionWithContext(ctx, accountID, ev, payload, snap, tc)
+}
+
+// decideTransitionWithContext applies a caller-resolved transition context.
+// Webhook ingestion uses it to commit msg.inbound and its durable outbox intent
+// together without issuing a pool query from inside the open transaction.
+func (s *Service) decideTransitionWithContext(
+	ctx context.Context,
+	accountID string,
+	ev Event,
+	payload TransitionPayload,
+	snap convSnapshot,
+	tc TransitionContext,
+) (stateUpdate, *decisionRecord, error) {
 	out, err := Apply(snap.State, ev, tc)
 	if err != nil {
 		return stateUpdate{}, nil, err
@@ -194,6 +208,7 @@ func (s *Service) applyEventEffects(ctx context.Context, accountID string, ev Ev
 	switch ev {
 	case EventMsgInbound:
 		upd.BumpLastMessage = true
+		upd.AdvanceAIGeneration = true
 		if snap.State == StateClosed { // nota 1: reabrir zera atribuicao e re-roteia do zero
 			upd.QueueID, upd.DepartmentID, upd.AssignedUserID = nil, nil, nil
 		}

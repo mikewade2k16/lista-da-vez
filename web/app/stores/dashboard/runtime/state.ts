@@ -5,9 +5,9 @@ import {
   DEFAULT_PAUSE_REASON_OPTIONS,
   DEFAULT_QUEUE_JUMP_REASON_OPTIONS,
   DEFAULT_OPERATION_TEMPLATE_ID,
-  DEFAULT_SCORE_WEIGHTS,
   getOperationTemplateById,
 } from '~/domain/data/operation-templates'
+import { DEFAULT_SCORE_WEIGHTS } from '~/domain/data/gamification'
 import { DEFAULT_PROFESSION_OPTIONS } from '~/domain/data/profession-options'
 import { normalizeCampaign } from '~/domain/utils/campaigns'
 import {
@@ -435,6 +435,7 @@ export function createEmptyState() {
     activeServices: scopedState.activeServices,
     roster: scopedState.roster,
     finishModalDraft: null,
+    finishModalPendingValidation: null,
     visitReasonOptions: normalizeVisitReasonOptions(defaultTemplate?.visitReasonOptions || []),
     customerSourceOptions: cloneValue(defaultTemplate?.customerSourceOptions || []),
     pauseReasonOptions: cloneValue(DEFAULT_PAUSE_REASON_OPTIONS),
@@ -825,6 +826,10 @@ export function hydrateState(nextState: LooseRecord = {}) {
         return found
       }
     }
+    const transientPending = sourceState.finishModalPendingValidation
+    if (transientPending?.serviceId === identifier) {
+      return transientPending
+    }
     return null
   }
   const resolvedFinishModalService = sourceFinishModalIdentifier
@@ -868,6 +873,11 @@ export function hydrateState(nextState: LooseRecord = {}) {
     finishModalDraft: finishModalServiceId
       ? cloneValue(sourceState.finishModalDraft || null)
       : null,
+    finishModalPendingValidation:
+      finishModalServiceId &&
+      sourceState.finishModalPendingValidation?.serviceId === finishModalServiceId
+        ? cloneValue(sourceState.finishModalPendingValidation)
+        : null,
     waitingList: resolvedActiveSnapshot.waitingList,
     activeServices: resolvedActiveSnapshot.activeServices,
     roster: resolvedActiveSnapshot.roster,

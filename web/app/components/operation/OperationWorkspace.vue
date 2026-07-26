@@ -63,6 +63,29 @@ const childIntegratedMode = computed(
   () => showIntegratedView.value && !isOperatingSingleStore.value,
 )
 
+// O Omni Chat pertence ao CLIENTE operacional, nao necessariamente a account
+// que o admin da agencia deixou ativa no switcher. Em modo integrado resolvemos
+// a account pelas lojas exibidas; em modo simples, pelo tenantId da loja.
+const omniChatAccountId = computed(() => {
+  const filterStoreId = String(props.integratedStoreId || '').trim()
+  const accountIds = new Set()
+
+  ;(Array.isArray(props.overview?.stores) ? props.overview.stores : []).forEach((store) => {
+    const storeId = String(store?.storeId || '').trim()
+    if (filterStoreId && storeId !== filterStoreId) return
+    const accountId = String(store?.accountId || '').trim()
+    if (accountId) accountIds.add(accountId)
+  })
+  ;(Array.isArray(props.stores) ? props.stores : []).forEach((store) => {
+    const storeId = String(store?.id || '').trim()
+    if (filterStoreId && storeId !== filterStoreId) return
+    const accountId = String(store?.tenantId || '').trim()
+    if (accountId) accountIds.add(accountId)
+  })
+
+  return accountIds.size === 1 ? Array.from(accountIds)[0] : ''
+})
+
 function shouldIncludeStore(storeId) {
   const filterStoreId = String(props.integratedStoreId || '').trim()
   return (
@@ -392,6 +415,7 @@ const isFinishModalOpen = computed(() =>
         :read-only="!canOperate"
         :integrated-mode="childIntegratedMode"
         :operating-store-id="operableStoreId"
+        :omni-chat-account-id="omniChatAccountId"
       />
       <OperationConsultantStrip
         v-if="canOperate"

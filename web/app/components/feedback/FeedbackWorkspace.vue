@@ -13,7 +13,7 @@ provideFeedbackWorkspace(ctx)
 <template>
   <section class="admin-panel admin-feedback" data-testid="feedback-panel">
     <header class="admin-panel__header admin-feedback__header">
-      <h2 class="admin-panel__title">Feedback</h2>
+      <h2 class="admin-panel__title">Suporte</h2>
       <p class="admin-panel__subtitle">
         Acompanhe a conversa dos chamados, responda no mesmo fio e ajuste o status sem sair da tela.
       </p>

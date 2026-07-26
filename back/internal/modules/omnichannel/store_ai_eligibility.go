@@ -18,13 +18,24 @@ func isWhatsAppGroupExternalID(externalID string) bool {
 func aiOutboundAllowedTx(ctx context.Context, tx pgx.Tx, accountID, conversationID string) (bool, error) {
 	var externalID string
 	var instanceID *string
-	if err := tx.QueryRow(ctx, `select external_id, instance_id::text
-		from messaging.conversations
-		where account_id=$1::uuid and id=$2::uuid`, accountID, conversationID).
-		Scan(&externalID, &instanceID); err != nil {
+	var bindingState, bindingMode string
+	if err := tx.QueryRow(ctx, `
+		select
+			c.external_id,
+			c.instance_id::text,
+			c.client_binding_state,
+			coalesce(ac.channel_binding_mode, 'shadow')
+		from messaging.conversations c
+		left join messaging.account_config ac on ac.account_id = c.account_id
+		where c.account_id=$1::uuid and c.id=$2::uuid`,
+		accountID, conversationID,
+	).Scan(&externalID, &instanceID, &bindingState, &bindingMode); err != nil {
 		return false, err
 	}
 	if instanceID == nil || strings.TrimSpace(*instanceID) == "" || isWhatsAppGroupExternalID(externalID) {
+		return false, nil
+	}
+	if bindingMode == "enforced" && bindingState != "resolved" {
 		return false, nil
 	}
 

@@ -1,22 +1,11 @@
 export const settingsTabs = [
   { id: 'operacao', label: 'Operacao', icon: 'tune' },
   { id: 'modal', label: 'Modal', icon: 'edit_note' },
-  { id: 'produtos', label: 'Produtos', icon: 'inventory_2' },
-  { id: 'consultores', label: 'Consultores', icon: 'group' },
-  { id: 'metas-crm', label: 'Metas CRM', icon: 'flag' },
+  { id: 'catalogos', label: 'Motivos e cadastros', icon: 'fact_check' },
   { id: 'gamificacao', label: 'Gamificacao', icon: 'emoji_events' },
-  { id: 'motivos', label: 'Motivos', icon: 'fact_check' },
-  { id: 'cancelamento', label: 'Cancelamento', icon: 'undo' },
-  { id: 'parada', label: 'Parada', icon: 'pause' },
-  { id: 'pausas', label: 'Pausas', icon: 'pause_circle' },
-  { id: 'motivos-perda', label: 'Perdas', icon: 'trending_down' },
-  { id: 'motivos-fora-da-vez', label: 'Fora da vez', icon: 'bolt' },
-  { id: 'origens', label: 'Origens', icon: 'share_location' },
-  { id: 'profissoes', label: 'Profissoes', icon: 'badge' },
-  { id: 'alertas', label: 'Alertas', icon: 'notifications_active' },
 ]
 
-export const hiddenSettingsTabs = new Set(['parada'])
+export const hiddenSettingsTabs = new Set()
 
 export const fieldSelectionOptions = [
   { value: 'single', label: 'Escolha unica' },

@@ -1,4 +1,5 @@
-import { biApiFieldLabel } from './api-catalog'
+import { BI_API_ENTITIES, biApiFieldLabel } from './api-catalog'
+import type { BiApiEntity } from './api-catalog'
 
 export type PerolaFilterValueType = 'string' | 'integer' | 'date' | 'boolean'
 
@@ -79,6 +80,30 @@ export interface PerolaQueryColumn {
   locked?: boolean
   defaultVisible: boolean
 }
+
+export const PEROLA_DATASET_ENTITY_IDS: Record<string, string> = {
+  item: 'item',
+  'imagem-item': 'image-item',
+  'item-saldo-preco-compra': 'purchase-price',
+  nota: 'invoice',
+  'nota-item': 'invoice-item',
+  inventario: 'inventory',
+}
+
+export const PEROLA_STATIC_DATASETS = Object.entries(PEROLA_DATASET_ENTITY_IDS)
+  .map(([datasetId, entityId]) => {
+    const entity = BI_API_ENTITIES.find((candidate) => candidate.id === entityId)
+    return entity ? { id: datasetId, label: entity.label, description: entity.description } : null
+  })
+  .filter(
+    (
+      dataset,
+    ): dataset is {
+      id: string
+      label: string
+      description: string
+    } => Boolean(dataset),
+  )
 
 export const PEROLA_OPERATOR_LABELS: Record<string, string> = {
   eq: 'Igual a',
@@ -366,22 +391,30 @@ export function buildPerolaQueryFilters(
   return dateError ? { filters: [], error: dateError } : { filters, error: '' }
 }
 
+export function perolaDatasetEntity(datasetId: string): BiApiEntity | null {
+  const entityId = PEROLA_DATASET_ENTITY_IDS[datasetId]
+  return BI_API_ENTITIES.find((entity) => entity.id === entityId) || null
+}
+
 export function perolaQueryResultColumns(
+  datasetId: string,
   records: Array<Record<string, unknown>>,
 ): PerolaQueryColumn[] {
-  const keys = Array.from(new Set(records.flatMap((record) => Object.keys(record)))).sort(
-    (a, b) => {
-      if (a === 'id') return -1
-      if (b === 'id') return 1
-      return a.localeCompare(b, 'pt-BR')
-    },
+  const entity = perolaDatasetEntity(datasetId)
+  const schemaKeys =
+    entity?.fieldGroups.flatMap((fieldGroup) => fieldGroup.fields.map((field) => field.key)) || []
+  const returnedKeys = records.flatMap((record) => Object.keys(record))
+  const knownKeys = new Set(schemaKeys)
+  const extraKeys = Array.from(new Set(returnedKeys.filter((key) => !knownKeys.has(key)))).sort(
+    (left, right) => left.localeCompare(right, 'pt-BR'),
   )
+  const keys = Array.from(new Set([...schemaKeys, ...extraKeys]))
 
-  return keys.map((key, index) => ({
+  return keys.map((key) => ({
     id: key,
     label: biApiFieldLabel(key),
     width: key === 'id' ? '100px' : 'minmax(150px, 1fr)',
     locked: key === 'id',
-    defaultVisible: index < 12,
+    defaultVisible: true,
   }))
 }

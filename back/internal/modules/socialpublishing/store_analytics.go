@@ -10,66 +10,7 @@ import (
 )
 
 func (s *Store) Overview(ctx context.Context, accountID string, now time.Time) (Overview, error) {
-	overview := Overview{
-		Counts:   map[string]int64{},
-		Upcoming: []Post{},
-	}
-	connection, err := s.GetConnection(ctx, accountID)
-	if err == nil {
-		view := connection.Connection
-		overview.Connection = &view
-	} else if !errors.Is(err, ErrNotConnected) {
-		return Overview{}, err
-	}
-
-	const countsQuery = `
-		select status, count(*)
-		from social_publishing.posts
-		where account_id = $1::uuid
-		group by status`
-	rows, err := s.pool.Query(ctx, countsQuery, accountID)
-	if err != nil {
-		return Overview{}, fmt.Errorf("social publishing: contar posts: %w", err)
-	}
-	for rows.Next() {
-		var status string
-		var count int64
-		if err := rows.Scan(&status, &count); err != nil {
-			rows.Close()
-			return Overview{}, fmt.Errorf("social publishing: ler contagem: %w", err)
-		}
-		overview.Counts[status] = count
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return Overview{}, fmt.Errorf("social publishing: iterar contagem: %w", err)
-	}
-	rows.Close()
-
-	const upcomingQuery = `
-		select ` + postSelectColumns + `
-		from social_publishing.posts p
-		where p.account_id = $1::uuid
-		  and p.status = 'scheduled'
-		  and p.scheduled_for >= $2
-		order by p.scheduled_for, p.id
-		limit 10`
-	upcomingRows, err := s.pool.Query(ctx, upcomingQuery, accountID, now)
-	if err != nil {
-		return Overview{}, fmt.Errorf("social publishing: listar proximos: %w", err)
-	}
-	defer upcomingRows.Close()
-	for upcomingRows.Next() {
-		post, scanErr := scanPost(upcomingRows)
-		if scanErr != nil {
-			return Overview{}, fmt.Errorf("social publishing: ler proximo: %w", scanErr)
-		}
-		overview.Upcoming = append(overview.Upcoming, post)
-	}
-	if err := upcomingRows.Err(); err != nil {
-		return Overview{}, fmt.Errorf("social publishing: iterar proximos: %w", err)
-	}
-
+	overview := Overview{}
 	const analyticsQuery = `
 		select coalesce(sum(views), 0), coalesce(sum(reach), 0),
 		       coalesce(sum(likes), 0), coalesce(sum(comments), 0),
@@ -78,7 +19,7 @@ func (s *Store) Overview(ctx context.Context, accountID string, now time.Time) (
 		from social_publishing.post_analytics
 		where account_id = $1::uuid`
 	var capturedAt *time.Time
-	err = s.pool.QueryRow(ctx, analyticsQuery, accountID).Scan(
+	err := s.pool.QueryRow(ctx, analyticsQuery, accountID).Scan(
 		&overview.Analytics.Views,
 		&overview.Analytics.Reach,
 		&overview.Analytics.Likes,
@@ -97,19 +38,91 @@ func (s *Store) Overview(ctx context.Context, accountID string, now time.Time) (
 	return overview, nil
 }
 
-func (s *Store) ListAnalytics(
-	ctx context.Context,
-	accountID string,
-	limit int,
-) ([]Analytics, error) {
-	const query = `
+func (s *Store) Summary(ctx context.Context, accountID string, now time.Time) (Summary, error) {
+	result := Summary{
+		Counts:   map[string]int64{},
+		Upcoming: []Post{},
+	}
+	rows, err := s.pool.Query(ctx, summaryCountsQuery, accountID)
+	if err != nil {
+		return Summary{}, fmt.Errorf("social publishing: contar posts: %w", err)
+	}
+	for rows.Next() {
+		var status string
+		var count int64
+		if err := rows.Scan(&status, &count); err != nil {
+			rows.Close()
+			return Summary{}, fmt.Errorf("social publishing: ler contagem: %w", err)
+		}
+		result.Counts[status] = count
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return Summary{}, fmt.Errorf("social publishing: iterar contagem: %w", err)
+	}
+	rows.Close()
+
+	upcomingRows, err := s.pool.Query(ctx, summaryUpcomingQuery, accountID, now)
+	if err != nil {
+		return Summary{}, fmt.Errorf("social publishing: listar proximos agendamentos: %w", err)
+	}
+	defer upcomingRows.Close()
+	for upcomingRows.Next() {
+		post, scanErr := scanPost(upcomingRows)
+		if scanErr != nil {
+			return Summary{}, fmt.Errorf("social publishing: ler proximo agendamento: %w", scanErr)
+		}
+		result.Upcoming = append(result.Upcoming, post)
+	}
+	if err := upcomingRows.Err(); err != nil {
+		return Summary{}, fmt.Errorf("social publishing: iterar proximos agendamentos: %w", err)
+	}
+	return result, nil
+}
+
+const summaryCountsQuery = `
+		select status, count(*)
+		from social_publishing.posts
+		where account_id = $1::uuid
+		group by status`
+
+const summaryUpcomingQuery = `
+		select ` + postSelectColumns + `
+		from social_publishing.posts p
+		where p.account_id = $1::uuid
+		  and p.status = 'scheduled'
+		  and p.scheduled_for >= $2
+		order by p.scheduled_for, p.id
+		limit 10`
+
+const listAnalyticsQuery = `
 		select post_id::text, views, reach, likes, comments, saved, shares,
 		       total_interactions, captured_at
 		from social_publishing.post_analytics
 		where account_id = $1::uuid
+		  and (
+			cardinality($2::text[]) = 0
+			or post_id = any($2::text[]::uuid[])
+		  )
 		order by captured_at desc, post_id
-		limit $2`
-	rows, err := s.pool.Query(ctx, query, accountID, limit)
+		limit $3`
+
+const analyticsSnapshotInsertQuery = `
+		insert into social_publishing.analytics_snapshots (
+			account_id, post_id, job_key, source, views, reach, likes, comments, saved,
+			shares, total_interactions, captured_at
+		)
+		values (
+			$1::uuid, $2::uuid, $3, 'instagram', $4, $5, $6, $7, $8, $9, $10, $11
+		)
+		on conflict do nothing`
+
+func (s *Store) ListAnalytics(
+	ctx context.Context,
+	accountID string,
+	filter ListAnalyticsFilter,
+) ([]Analytics, error) {
+	rows, err := s.pool.Query(ctx, listAnalyticsQuery, accountID, filter.PostIDs, filter.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("social publishing: listar analytics: %w", err)
 	}
@@ -147,13 +160,18 @@ func (s *Store) RuntimeContext(
 	if err != nil {
 		return RuntimeContext{}, err
 	}
-	return RuntimeContext{
+	summary, err := s.Summary(ctx, accountID, now)
+	if err != nil {
+		return RuntimeContext{}, err
+	}
+	result := RuntimeContext{
 		AccountID:   accountID,
 		GeneratedAt: now.UTC(),
-		Counts:      overview.Counts,
-		Upcoming:    overview.Upcoming,
+		Counts:      summary.Counts,
+		Upcoming:    summary.Upcoming,
 		Analytics:   overview.Analytics,
-	}, nil
+	}
+	return result, nil
 }
 
 func (s *Store) AnalyticsTarget(
@@ -193,7 +211,7 @@ func (s *Store) AnalyticsTarget(
 
 func (s *Store) SaveAnalytics(
 	ctx context.Context,
-	accountID, postID string,
+	accountID, postID, jobKey string,
 	analytics Analytics,
 ) error {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -217,7 +235,8 @@ func (s *Store) SaveAnalytics(
 			shares = excluded.shares,
 			total_interactions = excluded.total_interactions,
 			captured_at = excluded.captured_at,
-			updated_at = now()`
+			updated_at = now()
+		where excluded.captured_at >= social_publishing.post_analytics.captured_at`
 	if _, err := tx.Exec(
 		ctx,
 		upsert,
@@ -234,20 +253,12 @@ func (s *Store) SaveAnalytics(
 	); err != nil {
 		return fmt.Errorf("social publishing: salvar analytics atual: %w", err)
 	}
-	const snapshot = `
-		insert into social_publishing.analytics_snapshots (
-			account_id, post_id, source, views, reach, likes, comments, saved,
-			shares, total_interactions, captured_at
-		)
-		values (
-			$1::uuid, $2::uuid, 'instagram', $3, $4, $5, $6, $7, $8, $9, $10
-		)
-		on conflict (account_id, post_id, captured_at) do nothing`
 	if _, err := tx.Exec(
 		ctx,
-		snapshot,
+		analyticsSnapshotInsertQuery,
 		accountID,
 		postID,
+		jobKey,
 		analytics.Views,
 		analytics.Reach,
 		analytics.Likes,

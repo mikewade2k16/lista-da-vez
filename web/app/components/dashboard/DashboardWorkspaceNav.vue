@@ -32,7 +32,7 @@ const { isAuthenticated, canUseAllStores, storeContext } = storeToRefs(auth)
 const { integratedStoreId } = storeToRefs(operationsStore)
 
 // O filtro de loja so existe na PROPRIA pagina de operacao. O nav shell tambem
-// renderiza nas rotas filhas `/operacao/clientes` e `/operacao/usuarios` (mesmo
+// renderiza na rota filha `/operacao/usuarios` (mesmo
 // prefixo), entao gateamos pelo workspace ativo exato, nao pelo path.
 const isOperationWorkspace = computed(() => props.activeWorkspace === 'operacao')
 

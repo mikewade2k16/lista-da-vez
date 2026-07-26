@@ -201,14 +201,19 @@ Ambiente esperado:
 
 ## Social publishing (migration 0237)
 
-- `social_publishing.connections` guarda uma conexao Instagram por conta; token cru nunca e
-  persistido, e disconnect faz soft revoke para preservar posts e auditoria.
+- `social_publishing.connections` guarda historico imutavel e no maximo uma conexao ativa por
+  conta; token cru nunca e persistido, e disconnect faz soft revoke para preservar posts e
+  auditoria sem redirecionar publicacoes antigas.
 - `social_publishing.posts` e a fonte unica do agendamento/publicacao. Integracoes futuras usam
   `source_type + source_ref`; nao existe FK nem SQL direto para `calendar.*`.
 - Analytics corrente vive em `post_analytics`; o historico append-only fica em
-  `analytics_snapshots`. O external media id continua somente em `posts`, evitando drift.
-- `social_publishing.outbox` implementa exatamente o contrato de `platform/jobs` em tabela propria;
-  nunca reutiliza `messaging.outbox`.
+  `analytics_snapshots`, deduplicado pelo `job_key` imutavel da outbox. O external media id
+  continua somente em `posts`, evitando drift.
+- `publish_attempted_at` e gravado antes do efeito externo; resultado ambiguo nunca autoriza retry
+  automatico nem edicao/reagendamento ate existir reconciliacao explicita.
+- `social_publishing.publish_outbox` e `social_publishing.analytics_outbox` implementam
+  separadamente o contrato de `platform/jobs`; rajadas de insights nunca disputam claim/worker
+  com publicacoes e nenhuma lane reutiliza `messaging.outbox`.
 
 ## Omnichannel CRM intelligence (migration 0236)
 
@@ -218,3 +223,76 @@ Ambiente esperado:
   `messaging.messages`; prompt, credencial, documento e dado de pagamento nao podem ser gravados.
 - Atualizacao de memoria precisa compartilhar o gate de `state + ai_generation` da conversa para
   impedir aprendizado vindo de uma resposta atrasada ou cancelada.
+
+## Omnichannel -> Customer Data (migration 0245)
+
+- `messaging.customer_data_outbox` é a lane durável da ingestão determinística de um inbound com
+  binding de cliente resolvido. Ela satisfaz o contrato do `platform/jobs`, possui FIFO por
+  contato e não compartilha claim com envio ao canal ou execução de inteligência.
+- A linha nasce na mesma transação de `messages` e `contact_touchpoints`. Seu payload aceita
+  somente IDs, canal, provider e `occurredAt`, com checks que os amarram às colunas estruturadas;
+  nome, telefone, conteúdo, prompt e credencial são proibidos.
+- As FKs compostas repetem `account_id` e, no binding, `client_account_id`. O consumidor deve
+  reidratar e revalidar a evidência no PostgreSQL antes de resolver o relacionamento.
+- O vínculo `unresolved|quarantined` não produz evento; a conversa humana continua funcionando.
+  Falha do consumidor usa retry/dead-letter desta lane e nunca pode disputar a outbox do sender.
+
+## Customer Intelligence runtime e evidências (migrations 0242, 0243, 0246, 0248, 0250, 0251, 0254 e 0255)
+
+- `intelligence.source_ingestion_runs` deduplica por
+  `(account_id, client_account_id, idempotency_key)`; queries de replay repetem o client.
+- `intelligence.runtime_runs` registra `pipeline_definition_id`, `pipeline_version_id` e
+  `execution_mode=active|shadow`, alem das refs de process/config/binding/agent/model/context.
+- Run conversacional deduplica por
+  `(account_id, client_account_id, request_id, process_key)`.
+- Somente `conversation.triage` e `conversation.reply` possuem config ativa nesta fase, ambas com
+  schema v2 fechado. Processo sem schema definitivo fica `deprecated` e sem active config.
+- Shadow pode persistir run para comparacao, mas nunca autoriza mensagem, handoff, FSM ou outbox.
+- `accepted_outcomes` deduplica event/decision por
+  `(account_id, client_account_id, event_id|decision_id)`.
+- `claims` conserva origem (`source_outcome_event_id + source_claim_ordinal`), prompt/runtime refs,
+  revisão e reviewer. Extração LLM nasce `candidate/unverified/llm`; aceitar a revisão não escreve
+  em `facts` nem altera `verification_state` para verificado.
+- `claim_evidence` só pode apontar para observação reidratada no mesmo
+  account/client/subject/relationship. Valor da claim permanece cifrado e não é copiado para a
+  outbox operacional.
+- A migration `0250_intelligence_observation_audit.sql` audita cada insert de observação com
+  `aggregate_type=source_observation`. O evento guarda somente source key, entity type,
+  sensibilidade e finalidade; snapshot, ciphertext, external entity id e idempotency key nunca
+  entram em `intelligence.audit_events`. A mesma migration fecha os pares válidos de
+  classificação/escopo: `customer_relationship` exige subject+relationship e
+  `client_business_context` exige ambos nulos.
+- Leitura de observação repete `account_id + client_account_id`, valida o relacionamento e reaplica
+  a allowlist atual antes de descriptografar. Registro expirado ou fonte desabilitada não entra no
+  contexto LLM.
+- A migration `0251_intelligence_observation_retention.sql` congela a policy publicada no run e na
+  observação, calcula `expires_at` e preserva a linha como tombstone/crypto-shred metadata-only.
+- A migration `0254_intelligence_retention_governance.sql` proíbe criar policy já publicada,
+  exige transição draft→published com revisão e referência de aprovação e cria
+  `intelligence.observation_legal_holds`.
+- Hold ativo nunca permite tombstone/crypto-shred: scheduler e worker filtram por
+  account+client+observation e um trigger PostgreSQL repete a barreira. Hold é liberado por
+  transição auditada; excluir hold ativo ou reescopar um hold é proibido.
+- A migration `0255_intelligence_context_snapshot_retention.sql` transforma snapshot expirado em
+  tombstone metadata-only: mantém a linha referenciada, mas limpa ciphertext, versão da chave e
+  hash. `context_snapshot_legal_holds` usa o mesmo lifecycle `active→released`; holds de observação
+  relacionados também protegem o contexto, e advisory locks serializam hold e crypto-shred.
+
+## Gravacao experimental de atendimentos (migration 0256)
+
+- `queue.attendance_recordings` e a fonte autoritativa dos metadados e estados
+  de gravacao/transcricao.
+- `queue.attendance_recording_chunks` registra cada parte de forma idempotente
+  por conta, gravacao e sequencia.
+- O audio nao fica no PostgreSQL: as tabelas guardam somente storage key,
+  MIME, tamanho e SHA-256; a entrega ocorre por endpoint autenticado.
+- As duas tabelas repetem `account_id` e nao criam FK de `queue.*` para
+  `core.*`.
+- A migration `0257` torna a transcricao um job duravel na propria gravacao:
+  solicitacao, proxima tentativa, lease, worker e contador ficam no PostgreSQL.
+  O claim usa indice parcial apenas sobre audios prontos solicitados.
+- A migration `0260` adiciona a previa quase ao vivo em
+  `attendance_live_transcription_segments`: janelas duraveis de 25 segundos,
+  sobreposicao util de 2,5 segundos, retry/lease independentes e merge em
+  `attendance_recordings.live_transcript_text`. O texto integral produzido no
+  encerramento continua autoritativo e e o unico enviado para analise.

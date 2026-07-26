@@ -31,6 +31,7 @@ var permissionCatalog = []PermissionDefinition{
 	{Key: PermissionAlertsEdit, Scope: ScopeTenant, Description: "Gerenciar a workspace Alertas."},
 	{Key: PermissionAlertsRulesManage, Scope: ScopeTenant, Description: "Editar regras tenant-wide do modulo de alertas."},
 	{Key: PermissionAlertsActionsManage, Scope: ScopeTenant, Description: "Executar acknowledge e resolucao de alertas operacionais."},
+	{Key: PermissionQueueCommunicationsManage, Scope: ScopeTenant, Description: "Criar, editar, publicar e excluir comunicados da fila."},
 	{Key: PermissionFeedbackView, Scope: ScopeTenant, Description: "Visualizar a workspace Feedback."},
 	{Key: PermissionFeedbackEdit, Scope: ScopeTenant, Description: "Editar feedback e notas administrativas."},
 	{Key: PermissionToolsView, Scope: ScopeTenant, Description: "Visualizar a workspace Tools."},
@@ -59,6 +60,7 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 	auth.RoleManager: {
 		PermissionOperationsView,
 		PermissionOperationsEdit,
+		PermissionQueueCommunicationsManage,
 		PermissionAlertsView,
 		PermissionAlertsActionsManage,
 		PermissionERPView,
@@ -68,6 +70,7 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 	},
 	auth.RoleMarketing: {
 		PermissionOperationsView,
+		PermissionQueueCommunicationsManage,
 		PermissionERPView,
 		PermissionMultiStoreView,
 		PermissionCampaignsView,
@@ -81,6 +84,7 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 	auth.RoleOwner: {
 		PermissionOperationsView,
 		PermissionOperationsEdit,
+		PermissionQueueCommunicationsManage,
 		PermissionConsultantView,
 		PermissionRankingView,
 		PermissionDataView,
@@ -111,6 +115,7 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 	auth.RolePlatformAdmin: {
 		PermissionOperationsView,
 		PermissionOperationsEdit,
+		PermissionQueueCommunicationsManage,
 		PermissionConsultantView,
 		PermissionRankingView,
 		PermissionDataView,

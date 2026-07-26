@@ -415,6 +415,9 @@ aparecer depois de agregacao backend, filtro de periodo e consulta intencional.
 - `GET /v1/bi/perola/datasets` — catalogo publico para a UI montar consultas
   permitidas sem conhecer endpoints externos. Informa limites, ordenacoes,
   filtros, operadores, alternativas obrigatorias e regra de periodo.
+- `GET /v1/bi/perola/sales/recent` — consulta fixa de
+  `/vendas/colaboradores` nos ultimos 31 dias, remove campos sensiveis,
+  ordena pela data disponivel e devolve no maximo as 20 vendas mais recentes.
 - `POST /v1/bi/perola/datasets/{dataset}/query` — consulta tipada de produto
   para `item`, `imagem-item`, `item-saldo-preco-compra`, `nota`, `nota-item`
   ou `inventario`. Autenticacao, endpoint e payload externo ficam no backend.
@@ -429,15 +432,34 @@ aparecer depois de agregacao backend, filtro de periodo e consulta intencional.
 ## Carregamento no front (web/app/components/bi/BiWorkspace.vue)
 
 - O painel NAO dispara nenhuma chamada automatica ao montar.
-- O switch `Bloquear chamadas` inicia ativo. Enquanto estiver ativo, todas as
+- O switch `Interromper API` inicia ativo. Enquanto estiver ativo, todas as
   actions HTTP do store BI retornam bloqueio sem chamar nem a sessao nem uma
   rota `/v1/bi/*`; ativar o switch durante uma leitura aborta o request.
-- Abrir `Consultas` nao chama nenhuma rota do BI. O catalogo interno exige
-  clique em `Carregar catalogo de consultas`; registros externos so sao lidos
-  depois do clique em `Consultar`.
+- Abrir `Consultas`, alternar entre as seis tabelas e ver todas as colunas
+  mapeadas nao chama nenhuma rota do BI. O catalogo interno exige clique em
+  `Carregar catalogo de consultas`; registros externos so sao lidos depois do
+  clique em `Consultar`.
+- Abrir `Vendas` faz uma unica leitura de `/v1/bi/perola/sales/recent` quando
+  o bloqueio global estiver desligado. A aba mostra no maximo 20 registros e
+  permite atualizacao manual; nao recebe credencial nem periodo do browser.
 - O carregamento so ocorre quando o usuario clica em "Atualizar BI" ou
   "Carregar com token". Login manual nao encadeia overview automaticamente.
 - O store `web/app/stores/bi.ts` tambem nao faz fallback recursivo para
   carregar o inventario em background — chamadas a `/v1/bi/perola/overview`
   acontecem 1x por clique do usuario, evitando volume excessivo na API
   externa.
+
+## Contrato com Customer Intelligence (2026-07-23)
+
+- `customer_intelligence_availability.go` valida, sem rede, uma proposta de
+  consulta contra o registry fechado de datasets, filtros, ordenacoes e limites
+  do owner BI.
+- `bi.perola` e somente `on_demand`. O adapter nao chama login, `find`,
+  `overview` nem endpoint externo.
+- O contrato atual do BI nao possui chave deterministica que relacione uma
+  linha ao `subject_id + relationship_id` de Customer Data. Por isso a resposta
+  canonica e `unavailable` com
+  `deterministic_subject_link_unavailable`, mesmo para configuracao valida.
+- Nunca substituir esse estado por query aberta, filtro por nome ou inferencia
+  fuzzy. A ativacao futura exige vinculo deterministico e uma fachada tipada
+  owner-owned; indisponibilidade nao pode bloquear o chat.

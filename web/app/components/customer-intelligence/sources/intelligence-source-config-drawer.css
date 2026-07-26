@@ -1,0 +1,125 @@
+.source-form,
+.source-form__section,
+.source-form__grid,
+.source-form__config,
+.source-form__nested,
+.source-form dl {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.source-form__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.source-form label,
+.source-form__section,
+.source-form__nested {
+  color: rgb(var(--muted));
+  font-size: 0.72rem;
+}
+
+.source-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.source-form input[type='text'],
+.source-form input[type='number'] {
+  min-height: 2.5rem;
+  padding: 0 0.7rem;
+  border: 1px solid rgb(var(--border));
+  border-radius: 0.7rem;
+  background: rgb(var(--surface));
+  color: inherit;
+}
+
+.source-form__privacy,
+.source-form__section {
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px solid rgb(var(--primary) / 0.25);
+  border-radius: 0.8rem;
+}
+
+.source-form__privacy {
+  background: rgb(var(--primary) / 0.06);
+  color: rgb(var(--muted));
+  font-size: 0.78rem;
+}
+
+.source-form__section legend,
+.source-form__nested legend {
+  padding: 0 0.35rem;
+  color: inherit;
+  font-weight: 800;
+}
+
+.source-form__section p,
+.source-form dl {
+  margin: 0;
+}
+
+.source-form__checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.source-form__checks label,
+.source-form__check,
+.source-form__nested label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.source-form__nested {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 0;
+  padding: 0;
+}
+
+.source-form dl div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.4fr) 1fr;
+  gap: 0.6rem;
+}
+
+.source-form dt {
+  font-weight: 700;
+}
+
+.source-form dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.source-form__error {
+  color: rgb(var(--danger));
+  font-weight: 700;
+}
+
+.source-form__error--summary {
+  margin: 0;
+}
+
+.source-form__save {
+  min-height: 2.4rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--primary));
+  color: white;
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .source-form__grid,
+  .source-form__checks {
+    grid-template-columns: 1fr;
+  }
+}

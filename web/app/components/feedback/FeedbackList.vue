@@ -5,7 +5,7 @@ const ctx = useFeedbackWorkspaceContext()
 </script>
 
 <template>
-  <aside class="admin-feedback__list" aria-label="Chamados de feedback">
+  <aside class="admin-feedback__list" aria-label="Chamados de suporte">
     <button
       v-for="feedback in ctx.filteredFeedbacks"
       :key="feedback.id"
@@ -50,7 +50,7 @@ const ctx = useFeedbackWorkspaceContext()
     </button>
 
     <div v-if="!ctx.filteredFeedbacks.length" class="admin-feedback__empty-list">
-      <strong>Nenhum feedback encontrado</strong>
+      <strong>Nenhum chamado encontrado</strong>
       <span>Ajuste os filtros ou aguarde novos chamados.</span>
     </div>
   </aside>

@@ -29,7 +29,13 @@ const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice |
 // indisponiveis" e o estado esperado, nao um erro. O aviso de modo degradado so
 // faz sentido para quem TEM queue (e portanto deveria conseguir carregar /v1/settings).
 const hasQueueModule = computed(() => accountStore.enabledModules.includes('queue'))
-const usesQueueWorkspace = computed(() => String(route.path || '').startsWith('/operacao'))
+const usesQueueWorkspace = computed(
+  () =>
+    String(route.path || '').startsWith('/operacao') ||
+    String(route.path || '').startsWith('/campanhas') ||
+    activeWorkspaceId.value === 'transcricoes' ||
+    activeWorkspaceId.value === 'comunicados',
+)
 
 function handleProfileChange(profileId) {
   void setActiveProfile(profileId)
@@ -85,8 +91,8 @@ function handleProfileChange(profileId) {
 
     <button
       class="dashboard-feedback-btn"
-      title="Enviar feedback para o time"
-      aria-label="Enviar feedback"
+      title="Abrir chamado de suporte"
+      aria-label="Abrir chamado de suporte"
       @click="feedbackModalOpen = true"
     >
       <span class="dashboard-feedback-btn__icon">💬</span>

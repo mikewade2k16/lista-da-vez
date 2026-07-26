@@ -82,6 +82,20 @@ func (s *Store) ApplyAIAutoClose(ctx context.Context, accountID, conversationID 
 			finalMessage = &message
 			finalMessageCreated = created
 		}
+		if in.IntelligenceAcceptance != nil {
+			event := *in.IntelligenceAcceptance
+			event.AccountID = accountID
+			event.ConversationID = conversationID
+			event.Generation = in.CapturedGeneration
+			event.Outcome = "no_reply"
+			if finalMessage != nil {
+				event.MessageID = finalMessage.ID
+				event.Outcome = "reply"
+			}
+			if err := insertIntelligenceAcceptanceTx(ctx, tx, event); err != nil {
+				return AutoCloseDecisionView{}, err
+			}
+		}
 		if err := applyStateUpdateTx(ctx, tx, accountID, conversationID, persist.Update, s.AIDispatchV2Enabled()); err != nil {
 			return AutoCloseDecisionView{}, err
 		}

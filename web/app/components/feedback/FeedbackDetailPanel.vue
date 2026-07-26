@@ -58,7 +58,7 @@ const ctx = useFeedbackWorkspaceContext()
         >
           <img
             :src="message.image_url"
-            alt="Imagem anexada ao feedback"
+            alt="Imagem anexada ao chamado"
             class="admin-feedback__message-image"
           />
         </a>
@@ -80,7 +80,7 @@ const ctx = useFeedbackWorkspaceContext()
       Chamado encerrado. A conversa esta bloqueada para novas mensagens.
     </div>
     <div v-else-if="!ctx.canEditFeedback" class="admin-feedback__readonly">
-      Seu acesso ao feedback esta em modo somente leitura.
+      Seu acesso ao suporte esta em modo somente leitura.
     </div>
 
     <form class="admin-feedback__reply" @submit.prevent="ctx.sendReply">
@@ -157,6 +157,6 @@ const ctx = useFeedbackWorkspaceContext()
 
   <article v-else class="admin-feedback__placeholder">
     <strong>Selecione um chamado</strong>
-    <span>Quando voce abrir um feedback, a conversa aparece aqui.</span>
+    <span>Quando voce abrir um chamado, a conversa aparece aqui.</span>
   </article>
 </template>

@@ -28,6 +28,7 @@ export function createWorkspaceActions({ getState, updateState }) {
         activeWorkspace,
         finishModalServiceId: null,
         finishModalDraft: null,
+        finishModalPendingValidation: null,
       })
     },
 
@@ -60,6 +61,7 @@ export function createWorkspaceActions({ getState, updateState }) {
         ...targetSnapshot,
         finishModalServiceId: null,
         finishModalDraft: null,
+        finishModalPendingValidation: null,
       })
     },
 
@@ -206,6 +208,7 @@ export function createWorkspaceActions({ getState, updateState }) {
         ...nextSnapshot,
         finishModalServiceId: null,
         finishModalDraft: null,
+        finishModalPendingValidation: null,
       })
 
       return { ok: true }

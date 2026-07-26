@@ -46,6 +46,18 @@ func (h *PublishHandler) Handle(ctx context.Context, job jobs.Job) error {
 		strings.TrimSpace(payload.PostID) == "" || payload.Revision <= 0 {
 		return &jobs.StatusError{Unrecoverable: true, Err: jobs.ErrInvalidJob}
 	}
+	protected, err := h.repo.ProtectPublishOutcome(
+		ctx,
+		job.AccountID,
+		payload.PostID,
+		payload.Revision,
+	)
+	if err != nil {
+		return err
+	}
+	if protected {
+		return nil
+	}
 	enabled, err := h.moduleEnabled(ctx, job.AccountID)
 	if err != nil {
 		return err
@@ -280,7 +292,7 @@ func (h *PublishHandler) warn(message, accountID, postID string, err error) {
 
 type AnalyticsHandler struct {
 	repo interface {
-		analyticsRepository
+		analyticsWorkerRepository
 	}
 	provider InstagramProvider
 	secrets  *secretbox.Box
@@ -288,8 +300,38 @@ type AnalyticsHandler struct {
 	now      func() time.Time
 }
 
+type AnalyticsForwardHandler struct {
+	queue jobEnqueuer
+}
+
+func NewAnalyticsForwardHandler(queue jobEnqueuer) *AnalyticsForwardHandler {
+	return &AnalyticsForwardHandler{queue: queue}
+}
+
+func (h *AnalyticsForwardHandler) Handle(ctx context.Context, job jobs.Job) error {
+	var payload analyticsJobPayload
+	if err := json.Unmarshal(job.Payload, &payload); err != nil ||
+		strings.TrimSpace(payload.PostID) == "" ||
+		strings.TrimSpace(job.ID) == "" ||
+		strings.TrimSpace(job.AccountID) == "" {
+		return &jobs.StatusError{Unrecoverable: true, Err: jobs.ErrInvalidJob}
+	}
+	if h.queue == nil {
+		return ErrProviderUnavailable
+	}
+	_, _, err := h.queue.Enqueue(ctx, jobs.NewJob{
+		AccountID:      job.AccountID,
+		OrderingKey:    "analytics:" + payload.PostID + ":legacy",
+		IdempotencyKey: "analytics:legacy:" + job.ID,
+		Kind:           AnalyticsJobKind,
+		Payload:        job.Payload,
+		MaxAttempts:    4,
+	})
+	return err
+}
+
 func NewAnalyticsHandler(
-	repo analyticsRepository,
+	repo analyticsWorkerRepository,
 	provider InstagramProvider,
 	secrets *secretbox.Box,
 	modules moduleEnabledChecker,
@@ -335,7 +377,7 @@ func (h *AnalyticsHandler) Handle(ctx context.Context, job jobs.Job) error {
 	}
 	analytics.PostID = target.PostID
 	analytics.CapturedAt = h.now().UTC()
-	return h.repo.SaveAnalytics(ctx, target.AccountID, target.PostID, analytics)
+	return h.repo.SaveAnalytics(ctx, target.AccountID, target.PostID, job.ID, analytics)
 }
 
 func classifyProviderError(err error) error {

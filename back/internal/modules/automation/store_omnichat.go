@@ -2,73 +2,87 @@ package automation
 
 import (
 	"context"
-	"strconv"
+	"errors"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
-// omniChatPersonaSettingsKey e a chave dentro de automation.automations.settings jsonb
-// onde o systemPrompt customizado do Omni Chat vive (por account, na automacao default).
-// Mesmo padrao das sources (M5): sem migration nova. String vazia/ausente => usa o
-// embed omniChatPersona como default.
-const omniChatPersonaSettingsKey = "omniChatPersona"
-
-// GetOmniChatPersonaSetting le o systemPrompt customizado do Omni Chat do settings jsonb
-// da automacao (chave omniChatPersona). Retorna string vazia quando a conta nunca salvou
-// um custom — o service usa isso para cair no default embutido. Espelha GetSources.
-func (s *Store) GetOmniChatPersonaSetting(ctx context.Context, automationID string) (string, error) {
-	const q = `select coalesce(settings ->> $2, '')
-		from automation.automations
-		where id = $1`
-	var prompt string
-	if err := s.pool.QueryRow(ctx, q, automationID, omniChatPersonaSettingsKey).Scan(&prompt); err != nil {
-		return "", err
-	}
-	return prompt, nil
+// OmniChatConfig e a fonte autoritativa por account. Nao carrega segredo: a
+// credencial e resolvida server-side no cofre global somente durante a execucao.
+type OmniChatConfig struct {
+	AccountID     string
+	Enabled       bool
+	SystemPrompt  string
+	CredentialID  string
+	Provider      string
+	Model         string
+	Temperature   float64
+	HistoryWindow int
+	UpdatedBy     string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
-// SetOmniChatPersonaSetting grava o systemPrompt customizado do Omni Chat no settings
-// jsonb da automacao (merge na chave omniChatPersona, preservando as demais chaves).
-// Espelha SetSources.
-func (s *Store) SetOmniChatPersonaSetting(ctx context.Context, automationID, prompt string) error {
-	const q = `update automation.automations
-		set settings = jsonb_set(coalesce(settings, '{}'::jsonb), array[$2], to_jsonb($3::text), true),
-		    updated_at = now()
-		where id = $1`
-	_, err := s.pool.Exec(ctx, q, automationID, omniChatPersonaSettingsKey, prompt)
-	return err
+func defaultOmniChatConfig(accountID string) OmniChatConfig {
+	return OmniChatConfig{
+		AccountID: accountID, Enabled: true, Provider: "openai",
+		Model: "gpt-4.1-mini", Temperature: 0.2, HistoryWindow: defaultHistoryWindow,
+	}
 }
 
-// omniChatHistoryWindowKey e a chave do settings jsonb com a janela de memoria do
-// Omni Chat (quantas interacoes o n8n mantem). 0/ausente => service usa o default.
-const omniChatHistoryWindowKey = "omniChatHistoryWindow"
-
-// GetOmniChatHistoryWindow le a janela de memoria do settings jsonb (numero salvo).
-// Retorna 0 quando a conta nunca salvou — o service cai no default. Le como texto e
-// converte em Go (evita ::int no SQL quebrar se o valor vier estranho).
-func (s *Store) GetOmniChatHistoryWindow(ctx context.Context, automationID string) (int, error) {
-	const q = `select coalesce(settings ->> $2, '')
-		from automation.automations
-		where id = $1`
-	var raw string
-	if err := s.pool.QueryRow(ctx, q, automationID, omniChatHistoryWindowKey).Scan(&raw); err != nil {
-		return 0, err
+func (s *Store) GetOmniChatConfig(ctx context.Context, accountID string) (OmniChatConfig, error) {
+	const q = `select account_id::text, enabled, system_prompt,
+			coalesce(credential_id::text, ''), provider, model,
+			temperature::float8, history_window, coalesce(updated_by::text, ''),
+			created_at, updated_at
+		from automation.omni_chat_configs
+		where account_id = $1::uuid`
+	var config OmniChatConfig
+	err := s.pool.QueryRow(ctx, q, accountID).Scan(
+		&config.AccountID, &config.Enabled, &config.SystemPrompt,
+		&config.CredentialID, &config.Provider, &config.Model,
+		&config.Temperature, &config.HistoryWindow, &config.UpdatedBy,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return defaultOmniChatConfig(accountID), nil
 	}
-	if raw == "" {
-		return 0, nil
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, nil
-	}
-	return n, nil
+	return config, err
 }
 
-// SetOmniChatHistoryWindow grava a janela de memoria no settings jsonb (numero).
-// Espelha SetOmniChatPersonaSetting; preserva as demais chaves do jsonb.
-func (s *Store) SetOmniChatHistoryWindow(ctx context.Context, automationID string, n int) error {
-	const q = `update automation.automations
-		set settings = jsonb_set(coalesce(settings, '{}'::jsonb), array[$2], to_jsonb($3::int), true),
-		    updated_at = now()
-		where id = $1`
-	_, err := s.pool.Exec(ctx, q, automationID, omniChatHistoryWindowKey, n)
-	return err
+func (s *Store) SaveOmniChatConfig(ctx context.Context, config OmniChatConfig) (OmniChatConfig, error) {
+	const q = `insert into automation.omni_chat_configs (
+			account_id, enabled, system_prompt, credential_id, provider, model,
+			temperature, history_window, updated_by
+		) values (
+			$1::uuid, $2, $3, nullif($4, '')::uuid, $5, $6, $7, $8,
+			nullif($9, '')::uuid
+		)
+		on conflict (account_id) do update set
+			enabled = excluded.enabled,
+			system_prompt = excluded.system_prompt,
+			credential_id = excluded.credential_id,
+			provider = excluded.provider,
+			model = excluded.model,
+			temperature = excluded.temperature,
+			history_window = excluded.history_window,
+			updated_by = excluded.updated_by,
+			updated_at = now()
+		returning account_id::text, enabled, system_prompt,
+			coalesce(credential_id::text, ''), provider, model,
+			temperature::float8, history_window, coalesce(updated_by::text, ''),
+			created_at, updated_at`
+	var saved OmniChatConfig
+	err := s.pool.QueryRow(ctx, q,
+		config.AccountID, config.Enabled, config.SystemPrompt, config.CredentialID,
+		config.Provider, config.Model, config.Temperature, config.HistoryWindow,
+		config.UpdatedBy,
+	).Scan(
+		&saved.AccountID, &saved.Enabled, &saved.SystemPrompt,
+		&saved.CredentialID, &saved.Provider, &saved.Model,
+		&saved.Temperature, &saved.HistoryWindow, &saved.UpdatedBy,
+		&saved.CreatedAt, &saved.UpdatedAt,
+	)
+	return saved, err
 }

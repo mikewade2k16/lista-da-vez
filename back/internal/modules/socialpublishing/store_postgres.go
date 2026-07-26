@@ -106,6 +106,29 @@ func (s *Store) GetConnection(ctx context.Context, accountID string) (Connection
 	return record, nil
 }
 
+func (s *Store) GetConnectionTarget(
+	ctx context.Context,
+	accountID, connectionID string,
+) (connectionTarget, error) {
+	const query = `
+		select id::text, ig_user_id
+		from social_publishing.connections
+		where account_id = $1::uuid
+		  and id = $2::uuid`
+	var target connectionTarget
+	err := s.pool.QueryRow(ctx, query, accountID, connectionID).Scan(
+		&target.ID,
+		&target.IGUserID,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connectionTarget{}, ErrNotFound
+	}
+	if err != nil {
+		return connectionTarget{}, fmt.Errorf("social publishing: obter destino da conexao: %w", err)
+	}
+	return target, nil
+}
+
 func (s *Store) SaveConnection(
 	ctx context.Context,
 	accountID, userID string,
@@ -290,14 +313,21 @@ func (s *Store) ListPosts(
 	accountID string,
 	filter ListPostsFilter,
 ) ([]Post, error) {
-	const query = `
+	orderBy, err := listPostsOrderBy(filter.Order)
+	if err != nil {
+		return nil, err
+	}
+	statuses := make([]string, 0, len(filter.Statuses))
+	for _, status := range filter.Statuses {
+		statuses = append(statuses, string(status))
+	}
+	const queryPrefix = `
 		select ` + postSelectColumns + `
 		from social_publishing.posts p
 		where p.account_id = $1::uuid
-		  and ($2 = '' or p.status = $2)
-		order by p.created_at desc, p.id desc
-		limit $3 offset $4`
-	rows, err := s.pool.Query(ctx, query, accountID, filter.Status, filter.Limit, filter.Offset)
+		  and (cardinality($2::text[]) = 0 or p.status = any($2::text[]))`
+	query := queryPrefix + "\n\t\torder by " + orderBy + "\n\t\tlimit $3 offset $4"
+	rows, err := s.pool.Query(ctx, query, accountID, statuses, filter.Limit, filter.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("social publishing: listar posts: %w", err)
 	}
@@ -316,6 +346,17 @@ func (s *Store) ListPosts(
 	return posts, nil
 }
 
+func listPostsOrderBy(order PostListOrder) (string, error) {
+	switch order {
+	case "", PostListOrderCreated:
+		return "p.created_at desc, p.id desc", nil
+	case PostListOrderScheduled:
+		return "p.scheduled_for asc nulls last, p.id asc", nil
+	default:
+		return "", ErrInvalidInput
+	}
+}
+
 func (s *Store) UpdatePost(ctx context.Context, command updatePostCommand) (Post, error) {
 	const query = `
 		update social_publishing.posts
@@ -325,10 +366,8 @@ func (s *Store) UpdatePost(ctx context.Context, command updatePostCommand) (Post
 		    timezone = $7,
 		    status = 'draft',
 		    scheduled_for = null,
-		    connection_id = null,
 		    schedule_revision = schedule_revision + 1,
 		    external_creation_id = '',
-		    publish_attempted_at = null,
 		    last_error_code = '',
 		    last_error_message = '',
 		    updated_by = $3::uuid,
@@ -337,6 +376,7 @@ func (s *Store) UpdatePost(ctx context.Context, command updatePostCommand) (Post
 		where account_id = $1::uuid
 		  and id = $2::uuid
 		  and version = $8
+		  and publish_attempted_at is null
 		  and status in ('draft', 'scheduled', 'failed', 'cancelled')
 		returning ` + postReturnColumns
 	post, err := scanPost(s.pool.QueryRow(

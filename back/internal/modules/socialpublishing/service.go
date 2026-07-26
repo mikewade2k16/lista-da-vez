@@ -4,28 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
-	"unicode/utf8"
 
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/jobs"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/secretbox"
 )
 
-const (
-	maxCaptionRunes   = 2200
-	maxAltTextRunes   = 1000
-	maxMediaURLBytes  = 4096
-	maxSourceRefBytes = 256
-)
-
 type Service struct {
-	repo     serviceRepository
-	provider InstagramProvider
-	secrets  *secretbox.Box
-	enqueuer jobEnqueuer
-	now      func() time.Time
+	repo          serviceRepository
+	provider      InstagramProvider
+	secrets       *secretbox.Box
+	analyticsJobs jobEnqueuer
+	permissions   permissionChecker
+	now           func() time.Time
 }
 
 type ServiceOption func(*Service)
@@ -38,19 +31,25 @@ func WithServiceClock(now func() time.Time) ServiceOption {
 	}
 }
 
+func WithServicePermissionChecker(checker permissionChecker) ServiceOption {
+	return func(service *Service) {
+		service.permissions = checker
+	}
+}
+
 func NewService(
 	repo serviceRepository,
 	provider InstagramProvider,
 	secrets *secretbox.Box,
-	enqueuer jobEnqueuer,
+	analyticsJobs jobEnqueuer,
 	options ...ServiceOption,
 ) *Service {
 	service := &Service{
-		repo:     repo,
-		provider: provider,
-		secrets:  secrets,
-		enqueuer: enqueuer,
-		now:      time.Now,
+		repo:          repo,
+		provider:      provider,
+		secrets:       secrets,
+		analyticsJobs: analyticsJobs,
+		now:           time.Now,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -154,9 +153,17 @@ func (s *Service) ListPosts(
 	if strings.TrimSpace(accountID) == "" {
 		return nil, ErrForbidden
 	}
-	if filter.Status != "" && !validPostStatus(filter.Status) {
-		return nil, ErrInvalidInput
+	statuses, err := normalizePostStatuses(filter)
+	if err != nil {
+		return nil, err
 	}
+	order, err := normalizePostListOrder(filter.Order)
+	if err != nil {
+		return nil, err
+	}
+	filter.Statuses = statuses
+	filter.Status = ""
+	filter.Order = order
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
@@ -194,7 +201,7 @@ func (s *Service) PatchPost(
 	if post.Status == PostStatusPublishing || post.Status == PostStatusPublished {
 		return Post{}, ErrInvalidState
 	}
-	if post.LastErrorCode == "publish_outcome_unknown" {
+	if ambiguousPublishOutcome(post) {
 		return Post{}, ErrInvalidState
 	}
 	if input.Caption != nil {
@@ -244,7 +251,7 @@ func (s *Service) SchedulePost(
 		post.Status != PostStatusFailed && post.Status != PostStatusCancelled {
 		return Post{}, ErrInvalidState
 	}
-	if post.LastErrorCode == "publish_outcome_unknown" {
+	if ambiguousPublishOutcome(post) {
 		return Post{}, ErrInvalidState
 	}
 	when, timezone, err := s.validateSchedule(input.ScheduledFor, input.Timezone)
@@ -255,11 +262,15 @@ func (s *Service) SchedulePost(
 	if err != nil {
 		return Post{}, err
 	}
+	connectionID, err := s.scheduleConnectionID(ctx, accountID, post, connection)
+	if err != nil {
+		return Post{}, err
+	}
 	return s.repo.SchedulePost(ctx, schedulePostCommand{
 		AccountID:       accountID,
 		UserID:          userID,
 		PostID:          postID,
-		ConnectionID:    connection.ID,
+		ConnectionID:    connectionID,
 		ScheduledFor:    when,
 		Timezone:        timezone,
 		ExpectedVersion: input.Version,
@@ -305,7 +316,7 @@ func (s *Service) RetryPost(
 	if post.Status != PostStatusFailed {
 		return Post{}, ErrInvalidState
 	}
-	if post.LastErrorCode == "publish_outcome_unknown" {
+	if ambiguousPublishOutcome(post) {
 		return Post{}, ErrInvalidState
 	}
 	timezone := post.Timezone
@@ -326,31 +337,157 @@ func (s *Service) Overview(ctx context.Context, accountID string) (Overview, err
 	return s.repo.Overview(ctx, accountID, s.now().UTC())
 }
 
+func (s *Service) Summary(ctx context.Context, accountID string) (Summary, error) {
+	if strings.TrimSpace(accountID) == "" {
+		return Summary{}, ErrForbidden
+	}
+	return s.repo.Summary(ctx, accountID, s.now().UTC())
+}
+
+func (s *Service) PublishingScope(
+	ctx context.Context,
+	principal auth.Principal,
+) (PublishingScope, error) {
+	return s.publishingScopeForPermission(ctx, principal, PermissionView)
+}
+
+func (s *Service) publishingScopeForPermission(
+	ctx context.Context,
+	principal auth.Principal,
+	permission string,
+) (PublishingScope, error) {
+	accountID := strings.TrimSpace(principal.AccountID)
+	if accountID == "" || strings.TrimSpace(principal.UserID) == "" {
+		return PublishingScope{}, ErrForbidden
+	}
+	scope, err := s.repo.PublishingScope(
+		ctx,
+		accountID,
+		strings.TrimSpace(principal.UserID),
+		principal.Role == auth.RolePlatformAdmin,
+	)
+	if err != nil {
+		return PublishingScope{}, err
+	}
+	if principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner {
+		return scope, nil
+	}
+	if s.permissions == nil {
+		return PublishingScope{}, ErrForbidden
+	}
+	clients := make([]PublishingClient, 0, len(scope.Clients))
+	for _, client := range scope.Clients {
+		allowed, checkErr := s.permissions.HasAccountPermission(
+			ctx,
+			client.ID,
+			principal.UserID,
+			permission,
+		)
+		if checkErr != nil {
+			return PublishingScope{}, checkErr
+		}
+		if allowed {
+			clients = append(clients, client)
+		}
+	}
+	scope.Clients = clients
+	if !scope.CanSelect &&
+		(scope.LockedClientID == "" ||
+			len(scope.Clients) != 1 ||
+			scope.Clients[0].ID != scope.LockedClientID) {
+		return PublishingScope{}, ErrForbidden
+	}
+	return scope, nil
+}
+
+func (s *Service) Portfolio(
+	ctx context.Context,
+	principal auth.Principal,
+) (Portfolio, error) {
+	scope, err := s.publishingScopeForPermission(ctx, principal, PermissionAnalytics)
+	if err != nil {
+		return Portfolio{}, err
+	}
+	if !scope.CanSelect {
+		return Portfolio{}, ErrForbidden
+	}
+
+	accountIDs := make([]string, 0, len(scope.Clients))
+	seen := make(map[string]struct{}, len(scope.Clients))
+	for _, client := range scope.Clients {
+		accountID := strings.TrimSpace(client.ID)
+		if accountID == "" {
+			continue
+		}
+		if _, exists := seen[accountID]; exists {
+			continue
+		}
+		seen[accountID] = struct{}{}
+		accountIDs = append(accountIDs, accountID)
+	}
+	records, err := s.repo.ListPortfolio(ctx, accountIDs, s.now().UTC())
+	if err != nil {
+		return Portfolio{}, err
+	}
+
+	portfolio := Portfolio{Clients: make([]PortfolioClient, 0, len(records))}
+	for _, record := range records {
+		portfolio.Clients = append(portfolio.Clients, record.Client)
+		if record.Client.Connected {
+			portfolio.ConnectedClients++
+		}
+		portfolio.Draft += record.Client.Draft
+		portfolio.Scheduled += record.Client.Scheduled
+		portfolio.Publishing += record.Client.Publishing
+		portfolio.Published += record.Client.Published
+		portfolio.Failed += record.Client.Failed
+		portfolio.Views += record.Views
+		portfolio.Reach += record.Client.Reach
+		portfolio.TotalInteractions += record.Client.TotalInteractions
+		portfolio.Likes += record.Likes
+		portfolio.Comments += record.Comments
+		portfolio.Saved += record.Saved
+		portfolio.Shares += record.Shares
+		if record.CapturedAt != nil &&
+			(portfolio.CapturedAt == nil || record.CapturedAt.After(*portfolio.CapturedAt)) {
+			capturedAt := record.CapturedAt.UTC()
+			portfolio.CapturedAt = &capturedAt
+		}
+	}
+	portfolio.ClientCount = len(portfolio.Clients)
+	return portfolio, nil
+}
+
 func (s *Service) ListAnalytics(
 	ctx context.Context,
 	accountID string,
-	limit int,
+	filter ListAnalyticsFilter,
 ) ([]Analytics, error) {
 	if strings.TrimSpace(accountID) == "" {
 		return nil, ErrForbidden
 	}
-	if limit <= 0 {
-		limit = 100
+	postIDs, err := normalizeAnalyticsPostIDs(filter.PostIDs)
+	if err != nil {
+		return nil, err
 	}
-	if limit > 100 {
-		limit = 100
+	filter.PostIDs = postIDs
+	if filter.Limit <= 0 {
+		filter.Limit = 100
 	}
-	return s.repo.ListAnalytics(ctx, accountID, limit)
+	if filter.Limit > 100 {
+		filter.Limit = 100
+	}
+	return s.repo.ListAnalytics(ctx, accountID, filter)
 }
 
 func (s *Service) QueueAnalyticsSync(ctx context.Context, accountID string) (int, error) {
 	if strings.TrimSpace(accountID) == "" {
 		return 0, ErrForbidden
 	}
-	if s.enqueuer == nil {
+	if s.analyticsJobs == nil {
 		return 0, ErrProviderUnavailable
 	}
-	postIDs, err := s.repo.ListPublishedPostIDs(ctx, accountID, 100)
+	postIDs, err := s.repo.ListPublishedPostIDs(ctx, accountID)
 	if err != nil {
 		return 0, err
 	}
@@ -361,9 +498,9 @@ func (s *Service) QueueAnalyticsSync(ctx context.Context, accountID string) (int
 		if marshalErr != nil {
 			return created, marshalErr
 		}
-		_, wasCreated, enqueueErr := s.enqueuer.Enqueue(ctx, jobs.NewJob{
+		_, wasCreated, enqueueErr := s.analyticsJobs.Enqueue(ctx, jobs.NewJob{
 			AccountID:      accountID,
-			OrderingKey:    "analytics:" + postID,
+			OrderingKey:    "analytics:" + postID + ":manual",
 			IdempotencyKey: "analytics:" + postID + ":" + bucket,
 			Kind:           AnalyticsJobKind,
 			Payload:        payload,
@@ -397,111 +534,29 @@ func (s *Service) activeConnection(ctx context.Context, accountID string) (Conne
 	return connection, nil
 }
 
-func (s *Service) normalizeCreate(input CreatePostInput) (CreatePostInput, error) {
-	input.Caption = strings.TrimSpace(input.Caption)
-	input.MediaURL = strings.TrimSpace(input.MediaURL)
-	input.MediaType = strings.ToLower(strings.TrimSpace(input.MediaType))
-	input.AltText = strings.TrimSpace(input.AltText)
-	input.Timezone = strings.TrimSpace(input.Timezone)
-	input.SourceType = strings.TrimSpace(input.SourceType)
-	input.SourceRef = strings.TrimSpace(input.SourceRef)
-	if input.Status == "" {
-		input.Status = PostStatusDraft
+func (s *Service) scheduleConnectionID(
+	ctx context.Context,
+	accountID string,
+	post Post,
+	active ConnectionRecord,
+) (string, error) {
+	if post.ConnectionID == "" {
+		return active.ID, nil
 	}
-	if input.Status != PostStatusDraft && input.Status != PostStatusScheduled {
-		return CreatePostInput{}, ErrInvalidState
+	target, err := s.repo.GetConnectionTarget(ctx, accountID, post.ConnectionID)
+	if errors.Is(err, ErrNotFound) {
+		return "", ErrConnectionTarget
 	}
-	if input.MediaType == "" {
-		input.MediaType = "image"
-	}
-	if input.MediaType != "image" {
-		return CreatePostInput{}, ErrInvalidInput
-	}
-	if err := validateContent(input.Caption, input.MediaURL, input.AltText); err != nil {
-		return CreatePostInput{}, err
-	}
-	if input.SourceType == "" {
-		input.SourceType = "manual"
-	}
-	if !validSourceType(input.SourceType) || len(input.SourceRef) > maxSourceRefBytes {
-		return CreatePostInput{}, ErrInvalidInput
-	}
-	if input.Status == PostStatusDraft {
-		input.ScheduledFor = nil
-		if input.Timezone != "" {
-			if err := validateTimezone(input.Timezone); err != nil {
-				return CreatePostInput{}, err
-			}
-		}
-		return input, nil
-	}
-	if input.ScheduledFor == nil {
-		return CreatePostInput{}, ErrInvalidInput
-	}
-	when, timezone, err := s.validateSchedule(*input.ScheduledFor, input.Timezone)
 	if err != nil {
-		return CreatePostInput{}, err
+		return "", err
 	}
-	input.ScheduledFor = &when
-	input.Timezone = timezone
-	return input, nil
+	if target.IGUserID == "" || target.IGUserID != active.IGUserID {
+		return "", ErrConnectionTarget
+	}
+	return target.ID, nil
 }
 
-func (s *Service) validateSchedule(
-	when time.Time,
-	timezone string,
-) (time.Time, string, error) {
-	timezone = strings.TrimSpace(timezone)
-	if err := validateTimezone(timezone); err != nil {
-		return time.Time{}, "", err
-	}
-	if !when.After(s.now().UTC()) {
-		return time.Time{}, "", ErrScheduleInPast
-	}
-	return when.UTC(), timezone, nil
-}
-
-func validateContent(caption, mediaURL, altText string) error {
-	if utf8.RuneCountInString(caption) > maxCaptionRunes ||
-		utf8.RuneCountInString(altText) > maxAltTextRunes {
-		return ErrInvalidInput
-	}
-	if len(mediaURL) == 0 || len(mediaURL) > maxMediaURLBytes {
-		return ErrInvalidMediaURL
-	}
-	parsed, err := url.Parse(mediaURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" ||
-		parsed.User != nil || parsed.Fragment != "" {
-		return ErrInvalidMediaURL
-	}
-	return nil
-}
-
-func validateTimezone(value string) error {
-	if strings.TrimSpace(value) == "" {
-		return ErrInvalidTimezone
-	}
-	if _, err := time.LoadLocation(value); err != nil {
-		return ErrInvalidTimezone
-	}
-	return nil
-}
-
-func validSourceType(value string) bool {
-	switch value {
-	case "manual", "calendar", "crow_assistant":
-		return true
-	default:
-		return false
-	}
-}
-
-func validPostStatus(value PostStatus) bool {
-	switch value {
-	case PostStatusDraft, PostStatusScheduled, PostStatusPublishing,
-		PostStatusPublished, PostStatusFailed, PostStatusCancelled:
-		return true
-	default:
-		return false
-	}
+func ambiguousPublishOutcome(post Post) bool {
+	return post.LastErrorCode == "publish_outcome_unknown" ||
+		(post.PublishAttemptedAt != nil && post.ExternalMediaID == "")
 }

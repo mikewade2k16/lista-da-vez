@@ -10,6 +10,7 @@ back/bin/
 back/api
 back/api.exe
 .tmp-gocache/
+.tmp-go-cache-*/
 back/.gocache/
 *.exe
 qa-bot/.venv/
@@ -42,6 +43,7 @@ web/.codex-devserver.*.log
 
 # Local working area (logs, throwaway scripts, tokens, payloads)
 tmp/
+.tmp/
 scripts/dev/token-helpers/
 .local-backups/
 

@@ -206,16 +206,20 @@ const {
         <form class="finish-form" @submit.prevent="submitForm">
           <template v-if="step === 1">
             <FinishStepOutcome
+              :is-pending-validation="isPendingValidation"
+              :validation-reason="validationReason"
               :outcome="form.outcome"
               :should-use-purchase-code-field="shouldUsePurchaseCodeField"
               :purchase-code-label="purchaseCodeLabel"
               :purchase-code="form.purchaseCode"
               :purchase-code-placeholder="purchaseCodePlaceholder"
+              @update:validation-reason="validationReason = $event"
               @update:outcome="form.outcome = $event"
               @update:purchase-code="form.purchaseCode = $event"
             />
 
             <FinishStepProduct
+              :is-pending-validation="isPendingValidation"
               :justifications-revealed="step1JustificationsRevealed"
               :should-use-legacy-closed-product-field="shouldUseLegacyClosedProductField"
               :closed-product-label="closedProductLabel"
@@ -329,8 +333,6 @@ const {
             />
             <FinishStepNotes
               :justifications-revealed="step2JustificationsRevealed"
-              :is-pending-validation="isPendingValidation"
-              :validation-reason="validationReason"
               :is-queue-jump-service="service.startMode === 'queue-jump'"
               :show-queue-jump-reason-field="showQueueJumpReasonField"
               :queue-jump-reason-label="queueJumpReasonLabel"
@@ -389,7 +391,6 @@ const {
                 form.lossReasonDetails = syncSelectedDetails(form.lossReasonIds, $event)
               "
               @update:notes="form.notes = $event"
-              @update:validation-reason="validationReason = $event"
               @update:field-justification="form.fieldJustifications[$event.key] = $event.value"
               @previous="goToStep1"
               @submit="submitForm"

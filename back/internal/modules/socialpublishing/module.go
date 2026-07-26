@@ -2,10 +2,13 @@ package socialpublishing
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
@@ -13,6 +16,13 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/jobs"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/secretbox"
+)
+
+const (
+	publishOutboxTable    = ModuleID + ".outbox"
+	analyticsOutboxTable  = ModuleID + ".analytics_outbox"
+	publishWorkerPoolSize = 3
+	analyticsJobTimeout   = 3 * time.Minute
 )
 
 type Module struct {
@@ -109,31 +119,56 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	if provider == nil {
 		provider = NewInstagramGraphProvider(strings.TrimSpace(os.Getenv(GraphBaseEnv)))
 	}
-	outbox, err := jobs.NewPostgresStore(deps.Pool, ModuleID+".outbox")
+	publishOutbox, err := jobs.NewPostgresStore(deps.Pool, publishOutboxTable)
+	if err != nil {
+		return nil, err
+	}
+	analyticsOutbox, err := jobs.NewPostgresStore(deps.Pool, analyticsOutboxTable)
 	if err != nil {
 		return nil, err
 	}
 	store := NewStore(deps.Pool)
-	service := NewService(store, provider, m.secrets, outbox)
-	gate := newPermissionGate(core.NewRBACService(core.NewPostgresRBACRepository(deps.Pool)))
-	worker := jobs.New(outbox, jobs.Config{WorkerID: ModuleID, Logger: deps.Logger})
-	worker.Register(
-		PublishJobKind,
-		NewPublishHandler(store, provider, m.secrets, deps.ModulesGuard, deps.Logger),
+	permissions := core.NewRBACService(core.NewPostgresRBACRepository(deps.Pool))
+	service := NewService(
+		store,
+		provider,
+		m.secrets,
+		analyticsOutbox,
+		WithServicePermissionChecker(permissions),
 	)
-	worker.Register(
+	gate := newPermissionGate(permissions)
+	publishHandler := NewPublishHandler(store, provider, m.secrets, deps.ModulesGuard, deps.Logger)
+	analyticsHandler := NewAnalyticsHandler(store, provider, m.secrets, deps.ModulesGuard)
+	legacyAnalyticsHandler := NewAnalyticsForwardHandler(analyticsOutbox)
+	publishWorkers := make([]*jobs.Worker, 0, publishWorkerPoolSize)
+	for _, config := range publishWorkerConfigs(deps.Logger) {
+		worker := jobs.New(publishOutbox, config)
+		for kind, handler := range publishLaneHandlers(publishHandler, legacyAnalyticsHandler) {
+			worker.Register(kind, handler)
+		}
+		publishWorkers = append(publishWorkers, worker)
+	}
+	analyticsWorker := jobs.New(
+		analyticsOutbox,
+		analyticsWorkerConfig(deps.Logger),
+	)
+	analyticsWorker.Register(
 		AnalyticsJobKind,
-		NewAnalyticsHandler(store, provider, m.secrets, deps.ModulesGuard),
+		analyticsHandler,
 	)
 	workerContext, cancelWorker := context.WithCancel(context.Background())
-	worker.Start(workerContext)
+	for _, worker := range publishWorkers {
+		worker.Start(workerContext)
+	}
+	analyticsWorker.Start(workerContext)
 
 	m.handle = &handle{
-		service:        service,
-		gate:           gate,
-		authMiddleware: deps.AuthMiddleware,
-		worker:         worker,
-		cancelWorker:   cancelWorker,
+		service:         service,
+		gate:            gate,
+		authMiddleware:  deps.AuthMiddleware,
+		publishWorkers:  publishWorkers,
+		analyticsWorker: analyticsWorker,
+		cancelWorker:    cancelWorker,
 	}
 	return m.handle, nil
 }
@@ -146,11 +181,12 @@ func (m *Module) Service() *Service {
 }
 
 type handle struct {
-	service        *Service
-	gate           *permissionGate
-	authMiddleware *auth.Middleware
-	worker         *jobs.Worker
-	cancelWorker   context.CancelFunc
+	service         *Service
+	gate            *permissionGate
+	authMiddleware  *auth.Middleware
+	publishWorkers  []*jobs.Worker
+	analyticsWorker *jobs.Worker
+	cancelWorker    context.CancelFunc
 }
 
 func (h *handle) ID() string {
@@ -167,8 +203,45 @@ func (h *handle) Close() error {
 	if h.cancelWorker != nil {
 		h.cancelWorker()
 	}
-	if h.worker != nil {
-		return h.worker.Close()
+	var err error
+	for _, worker := range h.publishWorkers {
+		if worker != nil {
+			err = errors.Join(err, worker.Close())
+		}
 	}
-	return nil
+	if h.analyticsWorker != nil {
+		err = errors.Join(err, h.analyticsWorker.Close())
+	}
+	return err
+}
+
+func publishWorkerConfigs(logger *slog.Logger) []jobs.Config {
+	configs := make([]jobs.Config, 0, publishWorkerPoolSize)
+	for index := 1; index <= publishWorkerPoolSize; index++ {
+		configs = append(configs, jobs.Config{
+			WorkerID: fmt.Sprintf("%s-publish-%d", ModuleID, index),
+			Batch:    1,
+			Logger:   logger,
+		})
+	}
+	return configs
+}
+
+func publishLaneHandlers(
+	publishHandler jobs.Handler,
+	analyticsHandler jobs.Handler,
+) map[string]jobs.Handler {
+	return map[string]jobs.Handler{
+		PublishJobKind:   publishHandler,
+		AnalyticsJobKind: analyticsHandler,
+	}
+}
+
+func analyticsWorkerConfig(logger *slog.Logger) jobs.Config {
+	return jobs.Config{
+		WorkerID:   ModuleID + "-analytics",
+		Batch:      1,
+		JobTimeout: analyticsJobTimeout,
+		Logger:     logger,
+	}
 }

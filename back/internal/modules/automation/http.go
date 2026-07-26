@@ -20,6 +20,9 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 	wrap := func(h http.HandlerFunc) http.Handler {
 		return middleware.RequireAuth(h)
 	}
+	wrapAccount := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(h)
+	}
 
 	mux.Handle("GET /v1/automation", wrap(handleOverview(svc)))
 	mux.Handle("POST /v1/automation/whatsapp/connect", wrap(handleConnect(svc)))
@@ -40,11 +43,14 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 	// /v1/automation de proposito: nao casa nenhuma regra de moduleGatingRules
 	// (RequireModuleByPath usa limite de segmento), entao quem usa Operacao nao
 	// precisa do modulo `automation` habilitado. So RequireAuth.
-	mux.Handle("POST /v1/omni-chat/ask", wrap(handleOmniChatAsk(svc)))
+	mux.Handle("POST /v1/omni-chat/ask", wrapAccount(handleOmniChatAsk(svc)))
 	// Persona do Omni Chat (editavel, guardada no banco; embed = default/fallback).
 	// Mesmas regras da rota /ask: fora do prefixo /v1/automation, so RequireAuth.
-	mux.Handle("GET /v1/omni-chat/persona", wrap(handleOmniChatPersonaGet(svc)))
-	mux.Handle("PUT /v1/omni-chat/persona", wrap(handleOmniChatPersonaPut(svc)))
+	mux.Handle("GET /v1/omni-chat/config", wrapAccount(handleOmniChatPersonaGet(svc)))
+	mux.Handle("PUT /v1/omni-chat/config", wrapAccount(handleOmniChatPersonaPut(svc)))
+	// Aliases legados preservados durante a transicao do editor inline.
+	mux.Handle("GET /v1/omni-chat/persona", wrapAccount(handleOmniChatPersonaGet(svc)))
+	mux.Handle("PUT /v1/omni-chat/persona", wrapAccount(handleOmniChatPersonaPut(svc)))
 }
 
 func handleOverview(svc *Service) http.HandlerFunc {
@@ -393,6 +399,11 @@ func writeNoAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func accountIDFromContext(r *http.Request) (string, bool) {
+	if principal, ok := auth.PrincipalFromContext(r.Context()); ok {
+		if accountID := strings.TrimSpace(principal.AccountID); accountID != "" {
+			return accountID, true
+		}
+	}
 	if accountID := strings.TrimSpace(r.Header.Get("X-Account-Id")); accountID != "" {
 		return accountID, true
 	}

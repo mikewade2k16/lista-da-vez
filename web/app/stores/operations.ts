@@ -484,8 +484,8 @@ export const useOperationsStore = defineStore('operations', () => {
         },
       )
     },
-    openFinishModal(serviceId) {
-      return runtime.run('openFinishModal', serviceId)
+    openFinishModal(serviceId, pendingCandidate: LooseRecord | null = null) {
+      return runtime.run('openFinishModal', serviceId, pendingCandidate)
     },
     closeFinishModal() {
       return runtime.run('closeFinishModal')

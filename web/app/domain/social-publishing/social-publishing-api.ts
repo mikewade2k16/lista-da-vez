@@ -3,16 +3,35 @@ import {
   normalizeConnection,
   normalizeOverview,
   normalizePostAnalyticsList,
+  normalizePublishingPortfolio,
+  normalizePublishingScope,
   normalizeSocialPost,
   normalizeSocialPostList,
   type SocialPostAnalyticsRecord,
+  type SocialPostStatus,
   type SocialPublishingConnection,
   type SocialPublishingOverview,
+  type SocialPublishingPortfolio,
   type SocialPublishingPost,
   type SocialPublishingPostInput,
+  type SocialPublishingScope,
 } from './model'
 
 export type SocialPublishingApiRequest = ReturnType<typeof createApiRequest>
+
+export interface SocialPublishingPostPage {
+  items: SocialPublishingPost[]
+  offset: number
+  pageSize: number
+  hasNext: boolean
+}
+
+export interface SocialPublishingPostQuery {
+  statuses: SocialPostStatus[]
+  pageSize: number
+  offset: number
+  order?: 'scheduled'
+}
 
 type UnknownRecord = Record<string, unknown>
 
@@ -38,6 +57,36 @@ export async function fetchConnection(
   return normalizeConnection(await api('/v1/social-publishing/connection'))
 }
 
+export async function fetchPublishingScope(
+  api: SocialPublishingApiRequest,
+  accountId = '',
+): Promise<SocialPublishingScope> {
+  const normalizedAccountId = String(accountId || '').trim()
+  if (!normalizedAccountId) {
+    return normalizePublishingScope(await api('/v1/social-publishing/scope'))
+  }
+  return normalizePublishingScope(
+    await api('/v1/social-publishing/scope', {
+      headers: { 'X-Account-Id': normalizedAccountId },
+    }),
+  )
+}
+
+export async function fetchPublishingPortfolio(
+  api: SocialPublishingApiRequest,
+  accountId = '',
+): Promise<SocialPublishingPortfolio> {
+  const normalizedAccountId = String(accountId || '').trim()
+  if (!normalizedAccountId) {
+    return normalizePublishingPortfolio(await api('/v1/social-publishing/portfolio'))
+  }
+  return normalizePublishingPortfolio(
+    await api('/v1/social-publishing/portfolio', {
+      headers: { 'X-Account-Id': normalizedAccountId },
+    }),
+  )
+}
+
 export async function beginConnection(
   api: SocialPublishingApiRequest,
   accessToken: string,
@@ -60,8 +109,28 @@ export async function removeConnection(
   )
 }
 
-export async function fetchPosts(api: SocialPublishingApiRequest): Promise<SocialPublishingPost[]> {
-  return normalizeSocialPostList(await api('/v1/social-publishing/posts'))
+export async function fetchPosts(
+  api: SocialPublishingApiRequest,
+  query: SocialPublishingPostQuery,
+): Promise<SocialPublishingPostPage> {
+  const pageSize = Math.max(1, Math.round(query.pageSize))
+  const offset = Math.max(0, Math.round(query.offset))
+  const requestLimit = pageSize + 1
+  const params = new URLSearchParams({
+    statuses: query.statuses.join(','),
+    limit: String(requestLimit),
+    offset: String(offset),
+  })
+  if (query.order) params.set('order', query.order)
+  const items = normalizeSocialPostList(
+    await api(`/v1/social-publishing/posts?${params.toString()}`),
+  )
+  return {
+    items: items.slice(0, pageSize),
+    offset,
+    pageSize,
+    hasNext: items.length > pageSize,
+  }
 }
 
 export async function createPost(
@@ -150,12 +219,26 @@ export async function fetchOverview(
   return normalizeOverview(await api('/v1/social-publishing/overview'))
 }
 
-export async function fetchAnalyticsPosts(
+export async function fetchSummary(
   api: SocialPublishingApiRequest,
-): Promise<SocialPostAnalyticsRecord[]> {
-  return normalizePostAnalyticsList(await api('/v1/social-publishing/analytics/posts'))
+): Promise<SocialPublishingOverview> {
+  return normalizeOverview(await api('/v1/social-publishing/summary'))
 }
 
-export async function syncAnalytics(api: SocialPublishingApiRequest): Promise<void> {
-  await api('/v1/social-publishing/analytics/sync', { method: 'POST' })
+export async function fetchAnalyticsPosts(
+  api: SocialPublishingApiRequest,
+  postIds: string[] = [],
+): Promise<SocialPostAnalyticsRecord[]> {
+  const uniquePostIds = [...new Set(postIds.map((id) => String(id || '').trim()).filter(Boolean))]
+  const params = new URLSearchParams()
+  if (uniquePostIds.length) params.set('postIds', uniquePostIds.join(','))
+  const query = params.toString()
+  const path = `/v1/social-publishing/analytics/posts${query ? `?${query}` : ''}`
+  return normalizePostAnalyticsList(await api(path))
+}
+
+export async function syncAnalytics(api: SocialPublishingApiRequest): Promise<number> {
+  const response = asRecord(await api('/v1/social-publishing/analytics/sync', { method: 'POST' }))
+  const queued = Number(response.queued)
+  return Number.isFinite(queued) ? Math.max(0, Math.round(queued)) : 0
 }

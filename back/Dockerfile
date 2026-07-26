@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/migrate ./cmd/migrate
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+  && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg tzdata \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

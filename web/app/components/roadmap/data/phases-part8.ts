@@ -21,37 +21,43 @@ export const ROADMAP_PHASES_PART8: RoadmapPhase[] = [
       {
         id: "sp-f0-db",
         label:
-          "[banco] Schema social_publishing com conexão cifrada, publicações, snapshots de analytics e outbox multi-tenant",
-        done: false,
+          "[banco] Schema social_publishing com conexão cifrada, publicações, snapshots e outboxes separadas para publicação e analytics",
+        done: true,
       },
       {
         id: "sp-f0-back",
         label:
           "[back] API Go em camadas, adapter Instagram real e worker com idempotência/retry",
-        done: false,
+        done: true,
       },
       {
         id: "sp-f0-front",
         label:
           "[frontend] Workspace /postagens com fila, compositor, analytics e conexão técnica",
-        done: false,
+        done: true,
       },
       {
         id: "sp-f0-gates",
         label:
           "[segurança] Module Registry, permissões e gates de conta/workspace no front e no back",
-        done: false,
+        done: true,
       },
       {
         id: "sp-f0-tests",
         label:
-          "[qa] Testes de domínio/adapter, lint, typecheck, build e smoke visual da rota",
+          "[qa] Testes Go/frontend, lint, build, cenários de migration e smoke visual desktop/mobile",
+        done: true,
+      },
+      {
+        id: "sp-f0-meta-homologation",
+        label:
+          "[homologação] Publicar uma imagem e coletar analytics com conta Meta profissional de teste controlada",
         done: false,
       },
     ],
     verifiable:
       "Em uma conta de teste, criar rascunho, agendar uma imagem HTTPS, observar a fila publicar no horário e consultar métricas; desabilitar o módulo remove o acesso sem afetar /calendario.",
-    blockers: [],
+    blockers: ["Credencial e conta Meta profissional de teste controladas"],
   },
   {
     id: "social-publishing-f1",

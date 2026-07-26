@@ -72,7 +72,7 @@ function Invoke-TestPowerShellScript {
 $registry = @(Get-N8nWorkflowRegistry)
 Assert-N8nWorkflowRegistry -Registry $registry
 Assert-N8nWorkflowLocalInventory -Root $root -Registry $registry
-Assert-True -Condition ($registry.Count -eq 7) -Message "registro canonico deve conter sete workflows"
+Assert-True -Condition ($registry.Count -eq 8) -Message "registro canonico deve conter oito workflows"
 
 $brain = @(Resolve-N8nWorkflowSelection -Registry $registry -Only "omnichannel-brain" -Owner "omnichannel" -RequireWritable)
 Assert-True -Condition ($brain.Count -eq 1 -and $brain[0].WorkflowId -eq "omnibrain0000001") -Message "brain deve resolver por key exata"

@@ -5,8 +5,13 @@ import {
   cancelPost,
   createPost,
   fetchAnalyticsPosts,
+  fetchPublishingPortfolio,
+  fetchPublishingScope,
+  fetchPosts,
+  fetchSummary,
   retryPost,
   schedulePost,
+  syncAnalytics,
   updatePost,
   type SocialPublishingApiRequest,
 } from './social-publishing-api'
@@ -111,8 +116,77 @@ describe('social publishing API contract', () => {
     ])
 
     await expect(
-      fetchAnalyticsPosts(request as unknown as SocialPublishingApiRequest),
+      fetchAnalyticsPosts(request as unknown as SocialPublishingApiRequest, ['post-1', 'post-1']),
     ).resolves.toMatchObject([{ postId: 'post-1', views: 42, saved: 3 }])
-    expect(request).toHaveBeenCalledWith('/v1/social-publishing/analytics/posts')
+    expect(request).toHaveBeenCalledWith('/v1/social-publishing/analytics/posts?postIds=post-1')
+  })
+
+  it('loads tenant summary from the view-scoped endpoint', async () => {
+    const request = apiMock({ counts: { scheduled: 3 }, upcoming: [] })
+
+    await expect(
+      fetchSummary(request as unknown as SocialPublishingApiRequest),
+    ).resolves.toMatchObject({ scheduled: 3, upcoming: [] })
+    expect(request).toHaveBeenCalledWith('/v1/social-publishing/summary')
+  })
+
+  it('loads the selector scope using an explicit host account header', async () => {
+    const request = apiMock({
+      canSelect: true,
+      clients: [{ id: ' client-1 ', name: ' Cliente um ' }],
+    })
+
+    await expect(
+      fetchPublishingScope(request as unknown as SocialPublishingApiRequest, ' agency-account '),
+    ).resolves.toEqual({
+      canSelect: true,
+      lockedClientId: '',
+      clients: [{ id: 'client-1', name: 'Cliente um' }],
+    })
+    expect(request).toHaveBeenCalledWith('/v1/social-publishing/scope', {
+      headers: { 'X-Account-Id': 'agency-account' },
+    })
+  })
+
+  it('loads the consolidated portfolio without putting account scope in the URL', async () => {
+    const request = apiMock({ clientCount: 1, clients: [{ accountId: 'client-1' }] })
+
+    await expect(
+      fetchPublishingPortfolio(request as unknown as SocialPublishingApiRequest, 'agency-account'),
+    ).resolves.toMatchObject({
+      clientCount: 1,
+      clients: [{ accountId: 'client-1' }],
+    })
+    expect(request).toHaveBeenCalledWith('/v1/social-publishing/portfolio', {
+      headers: { 'X-Account-Id': 'agency-account' },
+    })
+  })
+
+  it('requests one look-ahead item for a chronological queue page', async () => {
+    const response = Array.from({ length: 25 }, (_, index) => ({
+      id: `post-${index + 1}`,
+      status: 'scheduled',
+    }))
+    const request = apiMock(response)
+
+    const page = await fetchPosts(request as unknown as SocialPublishingApiRequest, {
+      statuses: ['scheduled', 'publishing', 'failed'],
+      pageSize: 24,
+      offset: 48,
+      order: 'scheduled',
+    })
+
+    expect(request).toHaveBeenCalledWith(
+      '/v1/social-publishing/posts?statuses=scheduled%2Cpublishing%2Cfailed&limit=25&offset=48&order=scheduled',
+    )
+    expect(page.items).toHaveLength(24)
+    expect(page.hasNext).toBe(true)
+    expect(page.offset).toBe(48)
+  })
+
+  it('returns the queued analytics job count', async () => {
+    const request = apiMock({ queued: 3 })
+
+    await expect(syncAnalytics(request as unknown as SocialPublishingApiRequest)).resolves.toBe(3)
   })
 })

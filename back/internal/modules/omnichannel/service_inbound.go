@@ -26,33 +26,29 @@ type InboundService struct {
 	secretBox *secretbox.Box
 	publisher Publisher
 	qr        *qrCache
-	// ai (F9) e domain (F8) alimentam o auto-disparo da triagem pos-persistencia. nil (ex.:
-	// testes) => auto-triagem desligada; a persistencia/realtime seguem intactas.
-	ai                *AIService
+	// domain owns the FSM used by provider-device takeover. enqueueAutomation
+	// means the durable worker path is available; nil domain in narrow unit
+	// tests keeps persistence and realtime independent from automation.
 	domain            *Service
-	send              *SendService
+	enqueueAutomation bool
 	logger            *slog.Logger
-	durableAIDispatch bool
 }
 
 // NewInboundService monta o service do webhook. publisher nil vira no-op (realtime e F5). O
 // qrCache e COMPARTILHADO com o SessionService (module.go): o QR que a Evolution empurra por
 // webhook (QRCODE_UPDATED) vai para o mesmo cache que o endpoint /qrcode le. nil = sem cache
 // de QR por webhook (o evento vira ignored).
-func NewInboundService(store *Store, registry *channel.Registry, box *secretbox.Box, publisher Publisher, qr *qrCache, ai *AIService, domain *Service, send *SendService, logger *slog.Logger) *InboundService {
+func NewInboundService(store *Store, registry *channel.Registry, box *secretbox.Box, publisher Publisher, qr *qrCache, domain *Service, logger *slog.Logger) *InboundService {
 	if publisher == nil {
 		publisher = noopPublisher{}
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &InboundService{store: store, registry: registry, secretBox: box, publisher: publisher, qr: qr, ai: ai, domain: domain, send: send, logger: logger}
-}
-
-// SetDurableAIDispatch enables the E2 PostgreSQL-backed dispatcher after the boot probe.
-// It is deliberately opt-in so an older database keeps the legacy rollback path.
-func (s *InboundService) SetDurableAIDispatch(enabled bool) {
-	s.durableAIDispatch = enabled
+	return &InboundService{
+		store: store, registry: registry, secretBox: box, publisher: publisher, qr: qr,
+		domain: domain, enqueueAutomation: domain != nil, logger: logger,
+	}
 }
 
 // InboundStatus e o resultado agregado do processamento, mapeado a HTTP no handler.
@@ -239,6 +235,8 @@ func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey s
 		InstanceName:    ev.InstanceName,
 		InstanceID:      instanceID,
 		PayloadMasked:   maskEvent(providerKey, ev),
+		EnqueueAutomation: ev.Message != nil && !ev.Message.FromMe &&
+			s.enqueueAutomation,
 	}
 	if ev.Message != nil {
 		write.Message = &inboundMessageWrite{
@@ -275,10 +273,51 @@ func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey s
 	}
 
 	var res inboundResult
-	if write.Message != nil && write.Message.FromMe && s.domain != nil {
-		res, err = s.store.PersistInboundWithTransition(ctx, write, func(snap convSnapshot) (stateUpdate, *decisionRecord, error) {
-			return s.domain.decideTransition(ctx, accountID, EventMsgOutboundHuman, TransitionPayload{}, snap)
-		})
+	if write.Message != nil && s.domain != nil {
+		event := EventMsgOutboundHuman
+		hasActiveAgent := false
+		if !write.Message.FromMe {
+			event = EventMsgInbound
+			if s.store.AIDispatchV2Enabled() &&
+				!isWhatsAppGroupExternalID(write.Message.ContactExternalID) {
+				_, hasActiveAgent, err = s.store.ActiveAgentForInstance(
+					ctx, accountID, write.InstanceID,
+				)
+				if err != nil {
+					// Agent resolution is an optional automation gate. A lookup
+					// failure must not lose the customer message: fail open to
+					// deterministic human routing in the same transaction.
+					s.logger.Error(
+						"omnichannel_inbound_agent_lookup_failed",
+						"account_id", accountID,
+						"instance_id", write.InstanceID,
+					)
+					hasActiveAgent = false
+				}
+			}
+		}
+		res, err = s.store.PersistInboundWithTransition(
+			ctx,
+			write,
+			func(snap convSnapshot) (stateUpdate, *decisionRecord, error) {
+				if event == EventMsgInbound {
+					return s.domain.decideTransitionWithContext(
+						ctx,
+						accountID,
+						event,
+						TransitionPayload{},
+						snap,
+						TransitionContext{
+							HasActiveAgent: hasActiveAgent,
+							HasQueue:       snap.QueueID != nil,
+						},
+					)
+				}
+				return s.domain.decideTransition(
+					ctx, accountID, event, TransitionPayload{}, snap,
+				)
+			},
+		)
 	} else {
 		res, err = s.store.PersistInbound(ctx, write)
 	}
@@ -325,13 +364,8 @@ func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey s
 	// sanitizada (nunca base64 no WS). Publisher no-op quando o canal esta desligado. Vale tambem
 	// para o fromMe (OUTBOUND): o painel mostra ao vivo a mensagem enviada pelo aparelho.
 	s.publishInboundMessage(ctx, accountID, res, write.Message)
-	// Auto-disparo da IA (F5->F9->F8): a triagem roda SOZINHA sobre a mensagem recem-persistida.
-	// FIRE-AND-FORGET — a mensagem ja esta commitada e o realtime ja saiu; a IA e best-effort por
-	// cima e NUNCA falha o webhook (goroutine com contexto proprio, erro engolido). SO para
-	// mensagem do CLIENTE (inbound): fromMe = nosso proprio envio, nunca dispara triagem.
-	if !ev.Message.FromMe {
-		s.maybeAutoTriage(accountID, res.ConversationID, res.MessageID)
-	}
+	// O intento F5->F9->F8 ja foi commitado com a mensagem. O worker pode
+	// reexecuta-lo de forma idempotente sem depender do contexto do webhook.
 	return inboundAccepted, nil
 }
 
@@ -342,170 +376,6 @@ func providerForGroupMetadata(registry *channel.Registry, providerKey string) (c
 	}
 	groupProvider, ok := provider.(channel.GroupMetadataProvider)
 	return groupProvider, ok
-}
-
-// autoTriageTimeout limita a triagem em background: o LLM pode demorar, mas nao pode segurar
-// recursos indefinidamente. A mensagem JA foi persistida/emitida — isto e best-effort por cima.
-const autoTriageTimeout = 90 * time.Second
-
-// maybeAutoTriage agenda a triagem da IA (F9) + roteamento (F8) da mensagem inbound recem-
-// persistida em background. Sem ai/domain injetados (testes) ou sem ids => no-op. A goroutine
-// tem contexto PROPRIO: o ctx do webhook morre ao responder, e a IA nao pode segurar o handler.
-func (s *InboundService) maybeAutoTriage(accountID, convID, messageID string) {
-	if s.ai == nil || s.domain == nil ||
-		strings.TrimSpace(convID) == "" || strings.TrimSpace(messageID) == "" {
-		return
-	}
-	if s.durableAIDispatch && s.store != nil && s.store.AIDispatchV2Enabled() {
-		go s.scheduleAIDispatch(accountID, convID, messageID)
-		return
-	}
-	go s.runAutoTriage(accountID, convID, messageID)
-}
-
-func (s *InboundService) scheduleAIDispatch(accountID, convID, messageID string) {
-	defer func() {
-		if recover() != nil {
-			s.logger.Error("omnichannel_ai_dispatch_schedule_panic", "account_id", accountID, "conversation_id", convID)
-		}
-	}()
-	ctx, cancel := context.WithTimeout(context.Background(), autoTriageTimeout)
-	defer cancel()
-	conv, err := s.store.ConvTriageContext(ctx, accountID, convID)
-	if err != nil || !conv.Found {
-		if err != nil {
-			s.logger.Error("omnichannel_ai_dispatch_context_failed", "account_id", accountID, "conversation_id", convID)
-		}
-		return
-	}
-
-	state, err := s.domain.SystemTransition(ctx, accountID, convID, EventMsgInbound, TransitionPayload{})
-	if err != nil {
-		s.logger.Error("omnichannel_ai_dispatch_transition_failed", "account_id", accountID, "conversation_id", convID)
-		return
-	}
-	if state != StateAIActive {
-		if state == StateRouting {
-			if _, err := s.domain.SystemRoute(ctx, accountID, convID); err != nil {
-				s.logger.Error("omnichannel_ai_dispatch_route_failed", "account_id", accountID, "conversation_id", convID)
-			}
-		}
-		return
-	}
-	if isWhatsAppGroupExternalID(conv.ExternalID) {
-		if _, err := s.domain.SystemTransition(ctx, accountID, convID, EventAITriageFailed, TransitionPayload{}); err == nil {
-			_, _ = s.domain.SystemRoute(ctx, accountID, convID)
-		}
-		return
-	}
-	agent, ok, err := s.store.ActiveAgentForInstance(ctx, accountID, deref(conv.InstanceID))
-	if err != nil {
-		s.logger.Error("omnichannel_ai_dispatch_agent_failed", "account_id", accountID)
-		return
-	}
-	if !ok || agent.ActiveVersionID == nil || strings.TrimSpace(*agent.ActiveVersionID) == "" {
-		if _, err := s.domain.SystemTransition(ctx, accountID, convID, EventAITriageFailed, TransitionPayload{}); err == nil {
-			_, _ = s.domain.SystemRoute(ctx, accountID, convID)
-		}
-		return
-	}
-	debounce := 2500
-	if cfg, cfgErr := s.store.AIDispatchConfig(ctx, accountID, *agent.ActiveVersionID); cfgErr == nil && cfg.DebounceMS > 0 {
-		debounce = cfg.DebounceMS
-	}
-	runAfter := time.Now().UTC().Add(time.Duration(debounce) * time.Millisecond)
-	if _, err := s.store.UpsertAIDispatch(ctx, accountID, convID, *agent.ActiveVersionID, messageID, runAfter); err != nil {
-		if !errors.Is(err, ErrAILeaseInvalid) && !errors.Is(err, ErrNotFound) {
-			s.logger.Error("omnichannel_ai_dispatch_enqueue_failed", "account_id", accountID, "conversation_id", convID)
-		}
-	}
-}
-
-// runAutoTriage conduz o ciclo de vida canonico (F8) convidando a IA (F9):
-//
-//	msg.inbound  -> new/closed vira ai_active (ha agente ativo) OU routing (sem agente); demais
-//	                estados ficam onde estao (self: human_active/pending/queued nao re-disparam).
-//	ai_active    -> Dispatch (a IA SUGERE, funde extracted_fields) -> ai.triage.done|failed -> routing.
-//	routing      -> SystemRoute (o motor DETERMINISTICO decide a fila lendo routing_rules) -> queued.
-//
-// Todo erro e ENGOLIDO (so log, sem PII): a persistencia/realtime ja aconteceram e a conversa
-// nunca trava por falha da IA/infra. O recover blinda o processo de um panic no caminho de TODA
-// mensagem recebida. A IA nunca escreve queue_id — quem roteia e o motor.
-func (s *InboundService) runAutoTriage(accountID, convID, messageID string) {
-	defer func() {
-		if r := recover(); r != nil {
-			s.logger.Error("omnichannel_auto_triage_panic", "account_id", accountID, "conversation_id", convID)
-		}
-	}()
-
-	ctx, cancel := context.WithTimeout(context.Background(), autoTriageTimeout)
-	defer cancel()
-
-	// 1. msg.inbound avanca a maquina (transitionContextFor resolve HasActiveAgent do banco).
-	state, err := s.domain.SystemTransition(ctx, accountID, convID, EventMsgInbound, TransitionPayload{})
-	if err != nil {
-		s.logger.Error("omnichannel_auto_triage_inbound_failed", "account_id", accountID, "conversation_id", convID)
-		return
-	}
-
-	// 2. So `ai_active` convida a IA. Qualquer desfecho degradado sai de ai_active FAIL-OPEN para
-	//    routing — a conversa nunca fica presa esperando a IA (canonico: fail-open, motor decide).
-	if state == StateAIActive {
-		outcome := dispatchProviderError
-		var dispatch DispatchResult
-		res, derr := s.ai.Dispatch(ctx, TriageInput{AccountID: accountID, ConversationID: convID, MessageID: messageID})
-		if derr != nil {
-			s.logger.Error("omnichannel_auto_triage_dispatch_failed", "account_id", accountID, "conversation_id", convID)
-		} else {
-			dispatch = res
-			outcome = res.Outcome
-		}
-		s.logger.Info("omnichannel_auto_triage_ran", "account_id", accountID, "conversation_id", convID, "outcome", string(outcome))
-
-		// Saida multi-turno: a IA responde PELO OUTBOX DO GO e permanece em ai_active para
-		// ouvir a proxima mensagem. needs_human encerra a etapa da IA e segue ao roteamento;
-		// falha de envio tambem faz fail-open para um humano, nunca deixa o cliente no limbo.
-		if outcome == dispatchBlocked {
-			return
-		}
-		if outcome == dispatchNoReply {
-			return
-		}
-		if outcome == dispatchTriaged && strings.TrimSpace(dispatch.Output.ReplyDraft) != "" && s.send != nil {
-			moderated, moderationErr := s.store.IsInstagramModeratedMessage(ctx, accountID, messageID)
-			if moderationErr != nil && !errors.Is(moderationErr, ErrNotFound) {
-				s.logger.Error("omnichannel_instagram_moderation_lookup_failed", "account_id", accountID)
-			}
-			if moderated {
-				// Instagram comments/mentions are suggestions only. The human
-				// moderation action is the sole path that can publish a reply.
-				if err := s.store.SaveInstagramAIDraft(ctx, accountID, messageID, dispatch.Output.ReplyDraft); err != nil {
-					s.logger.Error("omnichannel_instagram_draft_save_failed", "account_id", accountID)
-				}
-			} else if sendErr := s.send.SendAIMessage(ctx, accountID, convID, dispatch.Output.ReplyDraft, dispatch.RunID, messageID, dispatch.AIGeneration); sendErr != nil {
-				if errors.Is(sendErr, ErrAILeaseInvalid) {
-					return
-				}
-				outcome = dispatchProviderError
-				s.logger.Error("omnichannel_auto_reply_enqueue_failed", "account_id", accountID, "conversation_id", convID)
-			} else if !dispatch.Output.NeedsHuman {
-				s.logger.Info("omnichannel_auto_reply_queued", "account_id", accountID, "conversation_id", convID)
-				return
-			}
-		}
-		state, err = s.domain.SystemTransition(ctx, accountID, convID, triageEventFor(outcome), TransitionPayload{})
-		if err != nil {
-			s.logger.Error("omnichannel_auto_triage_done_failed", "account_id", accountID, "conversation_id", convID)
-			return
-		}
-	}
-
-	// 3. So `routing` chama o motor (route.* fora de routing => 409). Resultado: queued.
-	if state == StateRouting {
-		if _, err := s.domain.SystemRoute(ctx, accountID, convID); err != nil {
-			s.logger.Error("omnichannel_auto_triage_route_failed", "account_id", accountID, "conversation_id", convID)
-		}
-	}
 }
 
 // triageEventFor mapeia o desfecho do Dispatch para o evento que TIRA a conversa de ai_active.

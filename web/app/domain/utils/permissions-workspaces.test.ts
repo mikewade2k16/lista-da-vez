@@ -8,14 +8,18 @@ import { getAllowedWorkspaces } from './permissions'
 // com permissoes resolvidas, workspace de modulo por prefixo e aliases por papel.
 describe('getAllowedWorkspaces — legacy mode (permissions unresolved)', () => {
   it('falls back to the role defaults', () => {
-    expect(getAllowedWorkspaces('consultant')).toEqual(['operacao'])
+    expect(getAllowedWorkspaces('consultant')).toEqual(['operacao', 'transcricoes', 'comunicados'])
     expect(getAllowedWorkspaces('store_terminal')).toEqual(
       expect.arrayContaining(['operacao', 'consultor', 'relatorios', 'alertas']),
     )
   })
 
   it('fails closed to the consultant defaults for an unknown role', () => {
-    expect(getAllowedWorkspaces('papel_custom_desconhecido')).toEqual(['operacao'])
+    expect(getAllowedWorkspaces('papel_custom_desconhecido')).toEqual([
+      'operacao',
+      'transcricoes',
+      'comunicados',
+    ])
   })
 
   it('resolves the admin alias to the platform_admin defaults', () => {
@@ -39,6 +43,8 @@ describe('getAllowedWorkspaces — fail-closed with resolved permissions', () =>
   it('shows operacao once the view key is present', () => {
     expect(getAllowedWorkspaces('consultant', ['workspace.operacao.view'], true)).toEqual([
       'operacao',
+      'transcricoes',
+      'comunicados',
     ])
   })
 })

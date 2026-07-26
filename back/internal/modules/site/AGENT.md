@@ -252,3 +252,17 @@ externas habilitadas da account e faz UPSERT em `site.products`. Resposta:
    ```
 6. POST em `http://localhost/painel-perola/back/site-track.php`.
 7. Esperado: Perola retorna `webhook_configured=true` e `webhook_queued=false`; Omni insere em `site.tracking_events`.
+
+## Fachada para Customer Intelligence (2026-07-23)
+
+- `customer_intelligence_evidence.go` e a fachada publica, somente leitura, do
+  owner Site. A primeira versao aceita somente `lead` por UUID exato.
+- A composition root so chama a fachada quando Customer Data ja possui
+  `source_link` deterministico com `source_module=site`; nao ha resolucao por
+  nome, telefone, e-mail, visitor ID ou session ID.
+- A projecao permitida e minimizada para
+  `source_label|page|coupon|consent|consent_label|status|created_at`. Identidade,
+  payload bruto e eventos de tracking ficam fora.
+- Customer Intelligence nao pode consultar tabelas de Site diretamente. Novas
+  entidades ou campos exigem alteracao e teste no contrato deste owner.
+- Falha ou lead ausente degrada somente a fonte e nao bloqueia o chat.

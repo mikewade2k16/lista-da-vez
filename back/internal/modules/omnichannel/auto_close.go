@@ -57,13 +57,14 @@ type AutoCloseDecisionView struct {
 }
 
 type AutoCloseRequest struct {
-	Proposal            AutoCloseProposal
-	AIRunID             string
-	IdempotencyKey      string
-	CapturedGeneration  int64
-	PreserveAIMessageID string
-	FinalReply          string
-	ReplyIdempotencyKey string
+	Proposal               AutoCloseProposal
+	AIRunID                string
+	IdempotencyKey         string
+	CapturedGeneration     int64
+	PreserveAIMessageID    string
+	FinalReply             string
+	ReplyIdempotencyKey    string
+	IntelligenceAcceptance *CustomerIntelligenceAcceptedOutcome
 }
 
 type autoCloseLockedContext struct {

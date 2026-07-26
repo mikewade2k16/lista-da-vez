@@ -1,5 +1,13 @@
 <script setup>
 defineProps({
+  isPendingValidation: {
+    type: Boolean,
+    default: false,
+  },
+  validationReason: {
+    type: String,
+    default: '',
+  },
   outcome: {
     type: String,
     default: '',
@@ -22,10 +30,25 @@ defineProps({
   },
 })
 
-const emit = defineEmits(['update:outcome', 'update:purchase-code'])
+const emit = defineEmits(['update:validation-reason', 'update:outcome', 'update:purchase-code'])
 </script>
 
 <template>
+  <section v-if="isPendingValidation" class="finish-form__section finish-form__section--pending">
+    <label class="finish-form__label" for="operation-validation-reason">
+      Por que este atendimento nao foi encerrado pelo consultor? *
+    </label>
+    <textarea
+      id="operation-validation-reason"
+      :value="validationReason"
+      class="finish-form__textarea"
+      rows="2"
+      placeholder="Ex.: consultor esqueceu de encerrar; cliente saiu sem aviso"
+      data-testid="operation-validation-reason"
+      @input="emit('update:validation-reason', $event.target.value)"
+    ></textarea>
+  </section>
+
   <section class="finish-form__section">
     <strong class="finish-form__label">Como terminou</strong>
     <div class="finish-form__options">

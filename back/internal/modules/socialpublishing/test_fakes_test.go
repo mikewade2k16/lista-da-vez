@@ -5,25 +5,49 @@ import (
 	"errors"
 	"time"
 
-	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/jobs"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/secretbox"
 )
 
 type stubRepository struct {
-	connection       ConnectionRecord
-	connectionErr    error
-	savedCiphertext  string
-	savedLast4       string
-	createCommand    createPostCommand
-	updateCommand    updatePostCommand
-	scheduleCommand  schedulePostCommand
-	post             Post
-	postErr          error
-	publishedPostIDs []string
+	connection          ConnectionRecord
+	connectionErr       error
+	connectionTarget    connectionTarget
+	targetErr           error
+	savedCiphertext     string
+	savedLast4          string
+	createCommand       createPostCommand
+	updateCommand       updatePostCommand
+	scheduleCommand     schedulePostCommand
+	listFilter          ListPostsFilter
+	analyticsFilter     ListAnalyticsFilter
+	summary             Summary
+	summaryAccountID    string
+	summaryNow          time.Time
+	post                Post
+	postErr             error
+	publishedPostIDs    []string
+	scope               PublishingScope
+	scopeErr            error
+	scopeAccountID      string
+	scopeUserID         string
+	scopePlatformAdmin  bool
+	portfolioRecords    []portfolioClientRecord
+	portfolioErr        error
+	portfolioAccountIDs []string
+	portfolioNow        time.Time
+	portfolioCalls      int
 }
 
 func (s *stubRepository) GetConnection(context.Context, string) (ConnectionRecord, error) {
 	return s.connection, s.connectionErr
+}
+
+func (s *stubRepository) GetConnectionTarget(
+	context.Context,
+	string,
+	string,
+) (connectionTarget, error) {
+	return s.connectionTarget, s.targetErr
 }
 
 func (s *stubRepository) SaveConnection(
@@ -72,10 +96,11 @@ func (s *stubRepository) CreatePost(
 }
 
 func (s *stubRepository) ListPosts(
-	context.Context,
-	string,
-	ListPostsFilter,
+	_ context.Context,
+	_ string,
+	filter ListPostsFilter,
 ) ([]Post, error) {
+	s.listFilter = filter
 	if s.post.ID == "" {
 		return []Post{}, nil
 	}
@@ -127,16 +152,30 @@ func (s *stubRepository) CancelPost(
 func (s *stubRepository) ListPublishedPostIDs(
 	context.Context,
 	string,
-	int,
 ) ([]string, error) {
 	return append([]string(nil), s.publishedPostIDs...), nil
 }
 
 func (s *stubRepository) Overview(context.Context, string, time.Time) (Overview, error) {
-	return Overview{Counts: map[string]int64{}, Upcoming: []Post{}}, nil
+	return Overview{}, nil
 }
 
-func (s *stubRepository) ListAnalytics(context.Context, string, int) ([]Analytics, error) {
+func (s *stubRepository) Summary(
+	_ context.Context,
+	accountID string,
+	now time.Time,
+) (Summary, error) {
+	s.summaryAccountID = accountID
+	s.summaryNow = now
+	return s.summary, nil
+}
+
+func (s *stubRepository) ListAnalytics(
+	_ context.Context,
+	_ string,
+	filter ListAnalyticsFilter,
+) ([]Analytics, error) {
+	s.analyticsFilter = filter
 	return []Analytics{}, nil
 }
 
@@ -146,6 +185,28 @@ func (s *stubRepository) RuntimeContext(
 	time.Time,
 ) (RuntimeContext, error) {
 	return RuntimeContext{}, nil
+}
+
+func (s *stubRepository) PublishingScope(
+	_ context.Context,
+	accountID, userID string,
+	platformAdmin bool,
+) (PublishingScope, error) {
+	s.scopeAccountID = accountID
+	s.scopeUserID = userID
+	s.scopePlatformAdmin = platformAdmin
+	return s.scope, s.scopeErr
+}
+
+func (s *stubRepository) ListPortfolio(
+	_ context.Context,
+	accountIDs []string,
+	now time.Time,
+) ([]portfolioClientRecord, error) {
+	s.portfolioCalls++
+	s.portfolioAccountIDs = append([]string(nil), accountIDs...)
+	s.portfolioNow = now
+	return append([]portfolioClientRecord(nil), s.portfolioRecords...), s.portfolioErr
 }
 
 func (s *stubRepository) AnalyticsTarget(
@@ -160,6 +221,7 @@ func (s *stubRepository) SaveAnalytics(
 	context.Context,
 	string,
 	string,
+	string,
 	Analytics,
 ) error {
 	return nil
@@ -171,6 +233,7 @@ type stubProvider struct {
 	validatedWith string
 	createCalls   int
 	publishCalls  int
+	publishErr    error
 }
 
 func (s *stubProvider) ValidateToken(
@@ -200,6 +263,9 @@ func (s *stubProvider) PublishContainer(
 	string,
 ) (string, error) {
 	s.publishCalls++
+	if s.publishErr != nil {
+		return "", s.publishErr
+	}
 	return "media-1", nil
 }
 
@@ -215,22 +281,6 @@ func (s *stubProvider) FetchMediaInsights(
 	return Analytics{}, nil
 }
 
-type stubEnqueuer struct {
-	jobs []jobs.NewJob
-	err  error
-}
-
-func (s *stubEnqueuer) Enqueue(
-	_ context.Context,
-	job jobs.NewJob,
-) (string, bool, error) {
-	if s.err != nil {
-		return "", false, s.err
-	}
-	s.jobs = append(s.jobs, job)
-	return "job", true, nil
-}
-
 type stubModules struct {
 	enabled bool
 	err     error
@@ -238,6 +288,26 @@ type stubModules struct {
 
 func (s stubModules) IsEnabled(context.Context, string, string) (bool, error) {
 	return s.enabled, s.err
+}
+
+type stubTargetPermissionChecker struct {
+	allowedByAccount   map[string]bool
+	checkedAccounts    []string
+	checkedPermissions []string
+	err                error
+}
+
+func (s *stubTargetPermissionChecker) HasAccountPermission(
+	_ context.Context,
+	accountID, _ string,
+	permission string,
+) (bool, error) {
+	s.checkedAccounts = append(s.checkedAccounts, accountID)
+	s.checkedPermissions = append(s.checkedPermissions, permission)
+	if s.err != nil {
+		return false, s.err
+	}
+	return s.allowedByAccount[accountID], nil
 }
 
 var errStub = errors.New("stub error")

@@ -57,6 +57,23 @@ escopado da WAHA para o front, sem expor n8n/WAHA ao cliente.
   A descricao de Fase 2 abaixo (context token + tool de catalogo) segue valida como infra, mas o workflow
   atual NAO a chama.
 
+- **Omni Chat — configuracao unica por conta (2026-07-25):** prompt, status,
+  credencial global, provider, modelo, temperatura e janela de memoria vivem em
+  `automation.omni_chat_configs`, com `account_id` como PK. O escopo e da conta
+  ativa e vale para todas as lojas e usuarios; nunca usa `user_id` como chave.
+  Somente `platform_admin` altera por `PUT /v1/omni-chat/config`. GET/config e
+  ask usam `RequireAuthWithAccount`, portanto o `X-Account-Id` e validado antes
+  de chegar ao handler. `credential_id` referencia de forma opaca o cofre global
+  `messaging.ai_credentials`; o segredo e resolvido pela fachada server-side do
+  Omnichannel, injetada no composition root, e enviado somente no salto interno
+  Go -> n8n. O workflow usa provider/modelo/prompt efetivos recebidos do Go, sem
+  credencial fixa cadastrada no proprio n8n.
+  Na operacao integrada da agencia, o front resolve a account dona das lojas e
+  sobrescreve explicitamente `X-Account-Id`; isso evita salvar na account-agencia
+  quando o cliente operacional e outro. A migration 0264 vincula contas-cliente
+  sem chave propria a uma credencial da account-agencia da mesma organizacao,
+  conforme a mesma regra de compartilhamento validada pelo cofre em runtime.
+
 - **Omni Chat — Fase 2 (tools de dados) [infra, hoje nao usada pelo workflow]:** o `/ask` ainda emite um **context token HMAC** opaco
   (`ctxv1`) que escopa as tools de dados; o n8n o reenvia no header `X-Omni-Context` ao chamar
   uma tool. Primeira tool: **catalogo** (`GET /v1/runtime/omni-chat/catalog`). O escopo
@@ -237,8 +254,8 @@ responde enquanto a pausa nao expira.
 | Verbo | Path | Acao |
 |---|---|---|
 | POST | `/v1/omni-chat/ask` | `{ question, topic? }` -> `{ answer, topic? }`. Chat interno ligado ao n8n. RequireAuth; accountID do principal (X-Account-Id) |
-| GET | `/v1/omni-chat/persona` | `{ systemPrompt, isDefault }` — persona EFETIVA da account: custom salvo no banco, ou o embed `omniChatPersona` como default (`isDefault=true`). RequireAuth; accountID do principal |
-| PUT | `/v1/omni-chat/persona` | body `{ systemPrompt }` -> `{ systemPrompt, isDefault:false }`. Salva o custom (passa a valer). `400 empty_prompt` (vazio apos trim) · `400 prompt_too_long` (> 20000 chars). RequireAuth; accountID do principal |
+| GET | `/v1/omni-chat/config` | Config efetiva account-scoped: `{ enabled, systemPrompt, isDefault, credentialId, provider, model, temperature, historyWindow }`. RequireAuthWithAccount |
+| PUT | `/v1/omni-chat/config` | Salva a configuracao unica da conta. Somente `platform_admin`; credencial validada no cofre global. `/persona` permanece como alias legado |
 
 **Fora do prefixo `/v1/automation`** (de proposito): o `RequireModuleByPath` usa limite de
 segmento (`pathHasSegmentPrefix`), entao `/v1/omni-chat/ask` **nao casa** a regra

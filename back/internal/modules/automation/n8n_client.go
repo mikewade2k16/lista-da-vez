@@ -74,8 +74,22 @@ type OmniChatRunRequest struct {
 	// Memory). Escopado por account+user+conversationId (montado no service, nunca
 	// do body cru) p/ isolar memoria entre operadores. HistoryWindow = quantas
 	// interacoes (pergunta+resposta) o n8n mantem no contexto (default 5).
-	SessionKey    string `json:"sessionKey"`
-	HistoryWindow int    `json:"historyWindow"`
+	SessionKey    string                   `json:"sessionKey"`
+	HistoryWindow int                      `json:"historyWindow"`
+	History       []OmniChatHistoryMessage `json:"history,omitempty"`
+	AI            OmniChatAIExecution      `json:"ai"`
+}
+
+type OmniChatHistoryMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type OmniChatAIExecution struct {
+	Provider    string  `json:"provider"`
+	Model       string  `json:"model"`
+	APIKey      string  `json:"apiKey"`
+	Temperature float64 `json:"temperature"`
 }
 
 // OmniChatRunResult e a resposta do webhook ({ answer, products }). products e' a

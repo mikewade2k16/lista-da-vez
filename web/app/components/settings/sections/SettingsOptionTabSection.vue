@@ -1,10 +1,8 @@
 <script setup>
-import { computed } from 'vue'
-
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import SettingsOptionManager from '~/components/settings/SettingsOptionManager.vue'
 
-const props = defineProps({
+defineProps({
   config: {
     type: Object,
     required: true,
@@ -14,53 +12,35 @@ const props = defineProps({
     required: true,
   },
 })
-
-const selectionModeLabel = computed(() => {
-  if (!props.config.selectionKey) return ''
-  const value =
-    props.ctx.state.modalConfig[props.config.selectionKey] || props.config.selectionDefault
-  const option = props.ctx.fieldSelectionOptions?.find((item) => item.value === value)
-  return option?.label || value
-})
 </script>
 
 <template>
-  <div :class="{ 'settings-grid': config.selectionKey }">
-    <article v-if="config.selectionKey" class="settings-card">
-      <details class="settings-collapse">
-        <summary class="settings-collapse__summary">
-          <div class="settings-collapse__title-wrap">
-            <strong class="settings-collapse__title">Comportamento do campo</strong>
-            <span class="settings-collapse__text">
-              Defina aqui como o campo aparece no modal antes de cadastrar as opcoes.
-            </span>
-          </div>
-          <span class="settings-collapse__meta">{{ selectionModeLabel }}</span>
-          <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
-            expand_more
-          </span>
-        </summary>
+  <div class="settings-option-tab">
+    <section v-if="config.selectionKey" class="catalog-behavior">
+      <header class="catalog-behavior__header">
+        <strong>Comportamento do campo</strong>
+        <span>Defina como o campo aparece no modal.</span>
+      </header>
 
-        <div class="settings-collapse__body">
-          <AppSelectField
-            class="settings-field"
-            label="Selecao"
-            :model-value="ctx.state.modalConfig[config.selectionKey] || config.selectionDefault"
-            :options="ctx.fieldSelectionOptions"
-            :disabled="!ctx.canEditSettings"
-            @update:model-value="ctx.updateModalConfigValue(config.selectionKey, $event)"
-          />
-          <AppSelectField
-            class="settings-field"
-            label="Descricao"
-            :model-value="ctx.state.modalConfig[config.detailKey] || config.detailDefault"
-            :options="ctx.fieldDetailModeOptions"
-            :disabled="!ctx.canEditSettings"
-            @update:model-value="ctx.updateModalConfigValue(config.detailKey, $event)"
-          />
-        </div>
-      </details>
-    </article>
+      <div class="catalog-behavior__fields">
+        <AppSelectField
+          class="settings-field"
+          label="Selecao"
+          :model-value="ctx.state.modalConfig[config.selectionKey] || config.selectionDefault"
+          :options="ctx.fieldSelectionOptions"
+          :disabled="!ctx.canEditSettings"
+          @update:model-value="ctx.updateModalConfigValue(config.selectionKey, $event)"
+        />
+        <AppSelectField
+          class="settings-field"
+          label="Descricao"
+          :model-value="ctx.state.modalConfig[config.detailKey] || config.detailDefault"
+          :options="ctx.fieldDetailModeOptions"
+          :disabled="!ctx.canEditSettings"
+          @update:model-value="ctx.updateModalConfigValue(config.detailKey, $event)"
+        />
+      </div>
+    </section>
 
     <SettingsOptionManager
       :title="config.title"
@@ -76,3 +56,67 @@ const selectionModeLabel = computed(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.settings-option-tab {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.catalog-behavior {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  background: rgb(var(--surface-2) / 0.64);
+}
+
+.catalog-behavior__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.catalog-behavior__header strong {
+  flex: 0 0 auto;
+  color: var(--text-main);
+  font-size: 0.77rem;
+}
+
+.catalog-behavior__header span {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.catalog-behavior__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.catalog-behavior__fields :deep(.settings-field) {
+  gap: 0.25rem;
+  font-size: 0.72rem;
+}
+
+.catalog-behavior__fields :deep(.app-select-field__trigger) {
+  min-height: 34px;
+}
+
+@media (max-width: 600px) {
+  .catalog-behavior__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .catalog-behavior__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>

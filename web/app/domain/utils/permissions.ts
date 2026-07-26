@@ -28,6 +28,20 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: 'workspace.operacao.edit',
   },
   {
+    id: 'transcricoes',
+    label: 'Transcrições',
+    description: 'Áudios e transcrições dos atendimentos.',
+    viewPermission: 'workspace.operacao.view',
+    editPermission: 'workspace.operacao.edit',
+  },
+  {
+    id: 'comunicados',
+    label: 'Comunicados',
+    description: 'Avisos publicados no painel operacional por loja.',
+    viewPermission: 'workspace.operacao.view',
+    editPermission: 'queue.communications.manage',
+  },
+  {
     id: 'consultor',
     label: 'Consultor',
     description: 'Painel individual do consultor.',
@@ -112,6 +126,17 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     label: 'Inteligencia',
     description: 'Diagnostico e leitura automatica.',
     viewPermission: 'workspace.inteligencia.view',
+    editPermission: '',
+  },
+  {
+    id: 'customer_intelligence',
+    label: 'Inteligencia de clientes',
+    description:
+      'Perfis, fontes, prompts e segmentos de clientes conforme modulos e permissoes efetivas.',
+    // O workspace agrega duas autoridades independentes. O acesso fino e
+    // resolvido pelos prefixos customer_data.* e customer_intelligence.*; cada
+    // pagina/acao continua gateada pelo modulo owner e pelo backend.
+    viewPermission: '',
     editPermission: '',
   },
   {
@@ -281,8 +306,8 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
   },
   {
     id: 'feedback',
-    label: 'Feedback',
-    description: 'Sugestoes, duvidas e problemas dos usuarios.',
+    label: 'Suporte',
+    description: 'Chamados de suporte, duvidas e problemas dos usuarios.',
     viewPermission: 'workspace.feedback.view',
     editPermission: 'workspace.feedback.edit',
   },
@@ -354,6 +379,8 @@ export const ADVANCED_ACCESS_DEFINITIONS = [
 const ROLE_WORKSPACES = {
   platform_admin: [
     'operacao',
+    'transcricoes',
+    'comunicados',
     'consultor',
     'tasks',
     'calendar',
@@ -362,6 +389,7 @@ const ROLE_WORKSPACES = {
     'ranking',
     'dados',
     'inteligencia',
+    'customer_intelligence',
     'relatorios',
     'campanhas',
     'site',
@@ -396,6 +424,8 @@ const ROLE_WORKSPACES = {
   ],
   owner: [
     'operacao',
+    'transcricoes',
+    'comunicados',
     'consultor',
     'tasks',
     'calendar',
@@ -429,6 +459,8 @@ const ROLE_WORKSPACES = {
   ],
   marketing: [
     'operacao',
+    'transcricoes',
+    'comunicados',
     'campanhas',
     'social_publishing',
     'site',
@@ -444,6 +476,8 @@ const ROLE_WORKSPACES = {
   ],
   director: [
     'operacao',
+    'transcricoes',
+    'comunicados',
     'site',
     'site_produtos_web',
     'site_leads_web',
@@ -458,6 +492,8 @@ const ROLE_WORKSPACES = {
   ],
   manager: [
     'operacao',
+    'transcricoes',
+    'comunicados',
     'site',
     'site_produtos_web',
     'site_leads_web',
@@ -473,6 +509,8 @@ const ROLE_WORKSPACES = {
   ],
   store_terminal: [
     'operacao',
+    'transcricoes',
+    'comunicados',
     'consultor',
     'ranking',
     'dados',
@@ -480,7 +518,7 @@ const ROLE_WORKSPACES = {
     'relatorios',
     'alertas',
   ],
-  consultant: ['operacao'],
+  consultant: ['operacao', 'transcricoes', 'comunicados'],
 }
 
 const SUPERUSER_ROLES = new Set(['platform_admin'])
@@ -490,24 +528,30 @@ const SUPERUSER_ROLES = new Set(['platform_admin'])
 // permissoes do modulo mas nao um papel-coarse de fila), o workspace tambem aparece
 // quando o usuario tem QUALQUER permissao daquele modulo. ADITIVO: so amplia, nunca
 // remove; o backend continua gateando o acesso real por requisicao.
-const MODULE_WORKSPACE_PERMISSION_PREFIXES: Record<string, string> = {
-  tasks: 'tasks.',
-  finance: 'finance.',
+const MODULE_WORKSPACE_PERMISSION_PREFIXES: Record<string, readonly string[]> = {
+  tasks: ['tasks.'],
+  finance: ['finance.'],
   // calendar.view / calendar.manage ja existem em core.permissions: papel custom
   // que recebe qualquer permissao do calendario no painel passa a ver o workspace.
-  calendar: 'calendar.',
+  calendar: ['calendar.'],
   // omnichannel.* sao seedadas pelo Module Registry quando o modulo Go entrar
   // (F2). Papel custom que receber qualquer uma delas no painel passa a ver o
   // workspace, sem migration.
-  omnichannel: 'omnichannel.',
+  omnichannel: ['omnichannel.'],
+  // Um unico workspace visual compoe Customer Data deterministico e Customer
+  // Intelligence opcional. Qualquer permissao efetiva de um dos modulos libera
+  // apenas a casca; abas e requests possuem gates mais estritos.
+  customer_intelligence: ['customer_data.', 'customer_intelligence.'],
 }
 
 function hasModuleWorkspacePermission(workspaceId, permissionKeys = []) {
-  const prefix = MODULE_WORKSPACE_PERMISSION_PREFIXES[String(workspaceId || '').trim()]
-  if (!prefix) {
+  const prefixes = MODULE_WORKSPACE_PERMISSION_PREFIXES[String(workspaceId || '').trim()]
+  if (!prefixes?.length) {
     return false
   }
-  return normalizePermissionKeys(permissionKeys).some((key) => key.startsWith(prefix))
+  return normalizePermissionKeys(permissionKeys).some((key) =>
+    prefixes.some((prefix) => key.startsWith(prefix)),
+  )
 }
 
 export function normalizeAppRole(role) {
@@ -564,6 +608,8 @@ function hasWorkspaceAccessAlias(
 ) {
   switch (String(workspaceId || '').trim()) {
     case 'operacao':
+    case 'transcricoes':
+    case 'comunicados':
       return hasAnyOperationAccessPermission(permissionKeys)
     case 'cardapio_web':
       // owner da conta sempre ve o cardapio (espelha o gate do back: platform_admin
@@ -830,6 +876,24 @@ export function canMutateOperations(role, permissionKeys = [], permissionsResolv
     normalized === 'manager' ||
     normalized === 'consultant' ||
     normalized === 'store_terminal'
+  )
+}
+
+export function canManageCommunications(role, permissionKeys = [], permissionsResolved = false) {
+  const normalized = normalizeAppRole(role)
+  if (SUPERUSER_ROLES.has(normalized)) {
+    return true
+  }
+
+  if (permissionsResolved) {
+    return hasPermission(permissionKeys, 'queue.communications.manage')
+  }
+
+  return (
+    normalized === 'platform_admin' ||
+    normalized === 'owner' ||
+    normalized === 'marketing' ||
+    normalized === 'manager'
   )
 }
 

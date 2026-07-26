@@ -10,6 +10,90 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const schedulePostUpdateQuery = `
+		update social_publishing.posts p
+		set connection_id = $4::uuid,
+		    status = 'scheduled',
+		    scheduled_for = $5,
+		    timezone = $6,
+		    schedule_revision = p.schedule_revision + 1,
+		    external_creation_id = '',
+		    last_error_code = '',
+		    last_error_message = '',
+		    updated_by = $3::uuid,
+		    updated_at = now(),
+		    version = p.version + 1
+		where p.account_id = $1::uuid
+		  and p.id = $2::uuid
+		  and p.version = $7
+		  and p.publish_attempted_at is null
+		  and p.status in ('draft', 'scheduled', 'failed', 'cancelled')
+		  and (p.connection_id is null or p.connection_id = $4::uuid)
+		  and exists (
+			select 1
+			from social_publishing.connections target_connection
+			join social_publishing.connections active_connection
+			  on active_connection.account_id = target_connection.account_id
+			 and active_connection.ig_user_id = target_connection.ig_user_id
+			 and active_connection.status = 'connected'
+			 and active_connection.access_token_ciphertext <> ''
+			where target_connection.account_id = p.account_id
+			  and target_connection.id = $4::uuid
+		  )
+		returning ` + postReturnColumns
+
+const listPublishedPostIDsQuery = `
+		select id::text
+		from social_publishing.posts
+		where account_id = $1::uuid
+		  and status = 'published'
+		  and external_media_id <> ''
+		order by published_at desc nulls last, id`
+
+const protectPublishOutcomeQuery = `
+		update social_publishing.posts
+		set status = 'failed',
+		    last_error_code = 'publish_outcome_unknown',
+		    last_error_message = 'Execucao anterior interrompida; confira o Instagram antes de tentar novamente.',
+		    updated_at = case
+				when status = 'failed' and last_error_code = 'publish_outcome_unknown'
+					then updated_at
+				else now()
+		    end,
+		    version = version + case
+				when status = 'failed' and last_error_code = 'publish_outcome_unknown'
+					then 0
+				else 1
+		    end
+		where account_id = $1::uuid
+		  and id = $2::uuid
+		  and schedule_revision = $3
+		  and publish_attempted_at is not null
+		  and external_media_id = ''
+		  and status <> 'published'
+		returning true`
+
+const markPublishFailedQuery = `
+		update social_publishing.posts
+		set status = 'failed',
+		    last_error_code = case
+				when publish_attempted_at is not null and external_media_id = ''
+					then 'publish_outcome_unknown'
+				else $4
+		    end,
+		    last_error_message = case
+				when publish_attempted_at is not null and external_media_id = ''
+					then 'Confira o Instagram antes de tentar novamente.'
+				else $5
+		    end,
+		    updated_at = now(),
+		    version = version + 1
+		where account_id = $1::uuid
+		  and id = $2::uuid
+		  and schedule_revision = $3
+		  and status <> 'published'
+		  and status <> 'cancelled'`
+
 func (s *Store) SchedulePost(
 	ctx context.Context,
 	command schedulePostCommand,
@@ -20,27 +104,9 @@ func (s *Store) SchedulePost(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	const update = `
-		update social_publishing.posts
-		set connection_id = $4::uuid,
-		    status = 'scheduled',
-		    scheduled_for = $5,
-		    timezone = $6,
-		    schedule_revision = schedule_revision + 1,
-		    publish_attempted_at = null,
-		    last_error_code = '',
-		    last_error_message = '',
-		    updated_by = $3::uuid,
-		    updated_at = now(),
-		    version = version + 1
-		where account_id = $1::uuid
-		  and id = $2::uuid
-		  and version = $7
-		  and status in ('draft', 'scheduled', 'failed', 'cancelled')
-		returning ` + postReturnColumns
 	post, scanErr := scanPost(tx.QueryRow(
 		ctx,
-		update,
+		schedulePostUpdateQuery,
 		command.AccountID,
 		command.PostID,
 		command.UserID,
@@ -81,13 +147,12 @@ func enqueuePublishTx(ctx context.Context, tx pgx.Tx, post Post) error {
 			$1::uuid, $2, $3, $4, $5::jsonb, 5, $6
 		)
 		on conflict (account_id, idempotency_key) do nothing`
-	orderingKey := "connection:" + post.ConnectionID
-	idempotencyKey := fmt.Sprintf("publish:%s:v%d", post.ID, post.ScheduleRevision)
+	idempotencyKey := publishJobKey(post.ID, post.ScheduleRevision)
 	if _, err := tx.Exec(
 		ctx,
 		query,
 		post.AccountID,
-		orderingKey,
+		idempotencyKey,
 		idempotencyKey,
 		PublishJobKind,
 		payload,
@@ -96,6 +161,10 @@ func enqueuePublishTx(ctx context.Context, tx pgx.Tx, post Post) error {
 		return fmt.Errorf("social publishing: enfileirar publicacao: %w", err)
 	}
 	return nil
+}
+
+func publishJobKey(postID string, revision int) string {
+	return fmt.Sprintf("publish:%s:v%d", postID, revision)
 }
 
 func (s *Store) CancelPost(
@@ -107,8 +176,6 @@ func (s *Store) CancelPost(
 		update social_publishing.posts
 		set status = 'cancelled',
 		    schedule_revision = schedule_revision + 1,
-		    last_error_code = '',
-		    last_error_message = '',
 		    updated_by = $3::uuid,
 		    updated_at = now(),
 		    version = version + 1
@@ -130,17 +197,8 @@ func (s *Store) CancelPost(
 func (s *Store) ListPublishedPostIDs(
 	ctx context.Context,
 	accountID string,
-	limit int,
 ) ([]string, error) {
-	const query = `
-		select id::text
-		from social_publishing.posts
-		where account_id = $1::uuid
-		  and status = 'published'
-		  and external_media_id <> ''
-		order by published_at desc nulls last, id
-		limit $2`
-	rows, err := s.pool.Query(ctx, query, accountID, limit)
+	rows, err := s.pool.Query(ctx, listPublishedPostIDsQuery, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("social publishing: listar posts publicados: %w", err)
 	}
@@ -232,6 +290,22 @@ func (s *Store) PreparePublish(
 		return publishTarget{}, false, fmt.Errorf("social publishing: confirmar publishing: %w", err)
 	}
 	return target, true, nil
+}
+
+func (s *Store) ProtectPublishOutcome(
+	ctx context.Context,
+	accountID, postID string,
+	revision int,
+) (bool, error) {
+	var protected bool
+	err := s.pool.QueryRow(ctx, protectPublishOutcomeQuery, accountID, postID, revision).Scan(&protected)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("social publishing: proteger resultado ambiguo: %w", err)
+	}
+	return protected, nil
 }
 
 func (s *Store) SaveCreationID(
@@ -327,7 +401,7 @@ func (s *Store) MarkPublished(
 		{key: "24h", delay: 24 * time.Hour},
 	}
 	const enqueue = `
-		insert into social_publishing.outbox (
+		insert into social_publishing.analytics_outbox (
 			account_id, ordering_key, idempotency_key, kind, payload,
 			max_attempts, run_after
 		)
@@ -338,7 +412,7 @@ func (s *Store) MarkPublished(
 			ctx,
 			enqueue,
 			accountID,
-			"analytics:"+postID,
+			"analytics:"+postID+":"+stage.key,
 			"analytics:"+postID+":"+stage.key,
 			AnalyticsJobKind,
 			payload,
@@ -359,19 +433,15 @@ func (s *Store) MarkPublishFailed(
 	revision int,
 	code, message string,
 ) error {
-	const query = `
-		update social_publishing.posts
-		set status = 'failed',
-		    last_error_code = $4,
-		    last_error_message = $5,
-		    updated_at = now(),
-		    version = version + 1
-		where account_id = $1::uuid
-		  and id = $2::uuid
-		  and schedule_revision = $3
-		  and status <> 'published'
-		  and status <> 'cancelled'`
-	if _, err := s.pool.Exec(ctx, query, accountID, postID, revision, code, message); err != nil {
+	if _, err := s.pool.Exec(
+		ctx,
+		markPublishFailedQuery,
+		accountID,
+		postID,
+		revision,
+		code,
+		message,
+	); err != nil {
 		return fmt.Errorf("social publishing: marcar falha: %w", err)
 	}
 	return nil

@@ -7,6 +7,8 @@ import {
   normalizeConnection,
   normalizeOverview,
   normalizePostAnalyticsList,
+  normalizePublishingPortfolio,
+  normalizePublishingScope,
   normalizeSocialPost,
 } from './model'
 
@@ -76,6 +78,74 @@ describe('social publishing normalizers', () => {
     })
   })
 
+  it('normalizes the client scope and fails closed for an unknown locked client', () => {
+    expect(
+      normalizePublishingScope({
+        canSelect: true,
+        lockedClientId: 'ignored',
+        clients: [
+          { id: ' client-1 ', name: ' Cliente um ' },
+          { id: 'client-1', name: 'Duplicado' },
+          { id: '', name: 'Inválido' },
+        ],
+      }),
+    ).toEqual({
+      canSelect: true,
+      lockedClientId: '',
+      clients: [{ id: 'client-1', name: 'Cliente um' }],
+    })
+
+    expect(
+      normalizePublishingScope({
+        canSelect: false,
+        lockedClientId: 'client-forged',
+        clients: [{ id: 'client-1', name: 'Cliente um' }],
+      }).lockedClientId,
+    ).toBe('')
+  })
+
+  it('normalizes portfolio metrics, clients and nullable dates defensively', () => {
+    const normalized = normalizePublishingPortfolio({
+      clientCount: -4,
+      connectedClients: 1.8,
+      reach: '120',
+      capturedAt: '0001-01-01T00:00:00Z',
+      accessToken: 'must-not-leak',
+      clients: [
+        {
+          accountId: ' client-1 ',
+          accountName: ' Cliente um ',
+          connected: true,
+          scheduled: -2,
+          reach: 25.4,
+          nextScheduledFor: 'invalid-date',
+          secret: 'must-not-leak',
+        },
+        { accountId: 'client-1', accountName: 'Duplicado' },
+        { accountId: '', accountName: 'Inválido' },
+      ],
+    })
+
+    expect(normalized).toMatchObject({
+      clientCount: 0,
+      connectedClients: 2,
+      reach: 120,
+      capturedAt: null,
+      clients: [
+        {
+          accountId: 'client-1',
+          accountName: 'Cliente um',
+          connected: true,
+          scheduled: 0,
+          reach: 25,
+          nextScheduledFor: null,
+        },
+      ],
+    })
+    expect(normalized).not.toHaveProperty('accessToken')
+    expect(normalized.clients[0]).not.toHaveProperty('secret')
+  })
+
   it('normalizes overview counts, aggregate analytics and upcoming posts', () => {
     const overview = normalizeOverview({
       counts: {
@@ -119,11 +189,17 @@ describe('social publishing normalizers', () => {
       capturedAt: '2026-07-23T15:00:00Z',
     })
     expect(overview.upcoming.map((post) => post.id)).toEqual(['post-next'])
+    const emptyOverview = normalizeOverview({
+      analytics: { capturedAt: '0001-01-01T00:00:00Z' },
+    })
+    expect(emptyOverview.capturedAt).toBeNull()
   })
 
   it('accepts only HTTPS media URLs', () => {
     expect(isHttpsMediaUrl('https://cdn.example.com/image.jpg')).toBe(true)
     expect(isHttpsMediaUrl('http://cdn.example.com/image.jpg')).toBe(false)
+    expect(isHttpsMediaUrl('https://user:secret@cdn.example.com/image.jpg')).toBe(false)
+    expect(isHttpsMediaUrl('https://cdn.example.com/image.jpg#fragment')).toBe(false)
     expect(isHttpsMediaUrl('not-a-url')).toBe(false)
   })
 

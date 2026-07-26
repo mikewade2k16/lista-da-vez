@@ -90,6 +90,12 @@ func (m *Module) Permissions() []modules.PermissionDef {
 			Description: "Criar, editar e desativar consultores. Vincular ao ERP.",
 			Scope:       "account",
 		},
+		{
+			Key:         "queue.communications.manage",
+			Label:       "Gerenciar comunicados",
+			Description: "Criar, editar, publicar e excluir comunicados da fila.",
+			Scope:       "account",
+		},
 	}
 }
 
@@ -111,6 +117,7 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 				"queue.feedback.read",
 				"queue.settings.manage",
 				"queue.consultants.manage",
+				"queue.communications.manage",
 			},
 		},
 		{

@@ -10,6 +10,7 @@ import ConfigRoutingRules from '~/components/omnichannel/config/ConfigRoutingRul
 import ConfigHandoffPolicies from '~/components/omnichannel/config/ConfigHandoffPolicies.vue'
 import ConfigAiToolsKnowledge from '~/components/omnichannel/config/ConfigAiToolsKnowledge.vue'
 import ConfigInstagram from '~/components/omnichannel/config/ConfigInstagram.vue'
+import ConfigChannelClientBindings from '~/components/omnichannel/config/ConfigChannelClientBindings.vue'
 import AutomationProfileConfig from './AutomationProfileConfig.vue'
 import type { AutomationProfile, AutomationProfileInput } from '~/domain/omnichannel/automation-api'
 import type { OmniAgent, OmniInstance } from '~/domain/omnichannel/config-types'
@@ -26,6 +27,7 @@ const props = defineProps<{
   canManageInstances: boolean
   canManageAgents: boolean
   canAudit?: boolean
+  initialTab?: string
 }>()
 
 const emit = defineEmits<{
@@ -46,11 +48,16 @@ type ConfigTab =
   | 'politicas'
   | 'tools'
   | 'instagram'
+  | 'clientes'
 
 const mode = ref<DrawerMode>('side')
 const activeTab = ref<ConfigTab>('atendimento')
 const visited = ref<Set<ConfigTab>>(new Set())
 const credentialRevision = ref(0)
+const clients = computed(() => {
+  const byId = new Map(props.profiles.map((item) => [item.client.id, item.client]))
+  return [...byId.values()]
+})
 
 const tabs = computed(() =>
   [
@@ -65,6 +72,12 @@ const tabs = computed(() =>
       label: 'Atendimento',
       icon: 'i-lucide-sliders-horizontal',
       allowed: props.canManageSettings,
+    },
+    {
+      key: 'clientes' as const,
+      label: 'Clientes por canal',
+      icon: 'i-lucide-network',
+      allowed: props.canManageInstances,
     },
     {
       key: 'whatsapp' as const,
@@ -122,6 +135,18 @@ function setTab(tab: ConfigTab): void {
   visited.value = new Set([...visited.value, tab])
 }
 
+function requestedTab(): ConfigTab | null {
+  const raw = String(props.initialTab || '')
+    .trim()
+    .toLowerCase()
+  const aliases: Record<string, ConfigTab> = {
+    'channel-client-bindings': 'clientes',
+    clientes: 'clientes',
+  }
+  const requested = (aliases[raw] || raw) as ConfigTab
+  return tabs.value.some((tab) => tab.key === requested) ? requested : null
+}
+
 function onCredentialsChanged(): void {
   credentialRevision.value += 1
   emit('optionsChanged')
@@ -131,11 +156,20 @@ watch(
   () => props.open,
   (open) => {
     if (!open) return
-    const firstTab = tabs.value[0]?.key || 'atendimento'
+    const firstTab = requestedTab() || tabs.value[0]?.key || 'atendimento'
     activeTab.value = firstTab
     visited.value = new Set([firstTab])
   },
   { immediate: true },
+)
+
+watch(
+  () => props.initialTab,
+  () => {
+    if (!props.open) return
+    const requested = requestedTab()
+    if (requested) setTab(requested)
+  },
 )
 </script>
 
@@ -181,6 +215,14 @@ watch(
 
           <div v-if="visited.has('whatsapp')" v-show="activeTab === 'whatsapp'">
             <ConfigNumbers :can-manage="canManageInstances" @changed="emit('optionsChanged')" />
+          </div>
+
+          <div v-if="visited.has('clientes')" v-show="activeTab === 'clientes'">
+            <ConfigChannelClientBindings
+              :clients="clients"
+              :instances="instances"
+              :can-manage="canManageInstances"
+            />
           </div>
 
           <div v-if="visited.has('ia')" v-show="activeTab === 'ia'">

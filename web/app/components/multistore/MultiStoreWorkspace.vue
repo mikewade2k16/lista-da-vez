@@ -5,6 +5,8 @@ import { ChevronDown, Flag, Store } from 'lucide-vue-next'
 import MultiStoreGoalsSection from '~/components/multistore/MultiStoreGoalsSection.vue'
 import MultiStoreLojasSection from '~/components/multistore/MultiStoreLojasSection.vue'
 import MultiStoreOrphanConsultants from '~/components/multistore/MultiStoreOrphanConsultants.vue'
+import SettingsCrmGoalsSection from '~/components/settings/sections/SettingsCrmGoalsSection.vue'
+import { useSettingsWorkspace } from '~/composables/useSettingsWorkspace'
 import {
   canAccessMultiStore,
   canManageGoalTargets,
@@ -22,6 +24,7 @@ const props = defineProps({
 
 const multiStore = useMultiStoreStore()
 const auth = useAuthStore()
+const settingsCtx = useSettingsWorkspace(props)
 const selectedGoalsMonth = ref('')
 const selectedGoalsStoreId = ref('')
 const selectedGoalsPeriod = ref('month')
@@ -55,7 +58,7 @@ onMounted(() => {
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Multi-loja</h2>
       <p class="admin-panel__text">
-        Cadastro de lojas e metas mensais. Performance comercial fica no CRM.
+        Cadastro de lojas, metas operacionais e politica comercial do CRM.
       </p>
     </header>
 
@@ -142,6 +145,14 @@ onMounted(() => {
           @update:selected-store-id="selectedGoalsStoreId = $event"
           @update:selected-period="selectedGoalsPeriod = $event"
         />
+
+        <section class="multistore-workspace__crm-policy">
+          <header class="multistore-workspace__section-head">
+            <strong>Metas e politica comercial do CRM</strong>
+            <span>Faixas de uso da lista, destaque e recebimento por atingimento.</span>
+          </header>
+          <SettingsCrmGoalsSection :ctx="settingsCtx" />
+        </section>
       </div>
     </details>
   </section>
@@ -248,6 +259,29 @@ onMounted(() => {
 .multistore-workspace__collapse-body {
   padding: 0 1rem 1rem;
   border-top: 1px solid var(--line-soft);
+}
+
+.multistore-workspace__crm-policy {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.multistore-workspace__section-head {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.multistore-workspace__section-head strong {
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
+.multistore-workspace__section-head span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 @media (max-width: 820px) {

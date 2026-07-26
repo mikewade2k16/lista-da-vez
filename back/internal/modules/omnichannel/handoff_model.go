@@ -84,15 +84,16 @@ type HandoffPolicyPatch struct {
 }
 
 type HandoffRequest struct {
-	ReasonCode           string          `json:"reasonCode"`
-	Summary              string          `json:"summary"`
-	CollectedFields      json.RawMessage `json:"collectedFields"`
-	TargetQueueID        *string         `json:"targetQueueId"`
-	IdempotencyKey       string          `json:"idempotencyKey"`
-	CustomerNotice       string          `json:"-"`
-	AIRunID              string          `json:"-"`
-	CapturedGeneration   int64           `json:"-"`
-	NoticeIdempotencyKey string          `json:"-"`
+	ReasonCode             string                               `json:"reasonCode"`
+	Summary                string                               `json:"summary"`
+	CollectedFields        json.RawMessage                      `json:"collectedFields"`
+	TargetQueueID          *string                              `json:"targetQueueId"`
+	IdempotencyKey         string                               `json:"idempotencyKey"`
+	CustomerNotice         string                               `json:"-"`
+	AIRunID                string                               `json:"-"`
+	CapturedGeneration     int64                                `json:"-"`
+	NoticeIdempotencyKey   string                               `json:"-"`
+	IntelligenceAcceptance *CustomerIntelligenceAcceptedOutcome `json:"-"`
 }
 
 type TakeConversationRequest struct {

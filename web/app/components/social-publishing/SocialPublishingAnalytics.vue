@@ -9,6 +9,7 @@ const props = defineProps<{
   overview: SocialPublishingOverview | null
   posts: SocialPublishingPost[]
   syncing: boolean
+  pending: boolean
   canSync: boolean
 }>()
 
@@ -74,6 +75,10 @@ function formatDate(value: string | null): string {
           <time :datetime="overview.capturedAt">{{ formatDate(overview.capturedAt) }}</time>
         </p>
         <p v-else>Os dados aparecerão depois da primeira sincronização.</p>
+        <p v-if="pending" class="sp-analytics__pending" role="status">
+          Sincronização em andamento; resultados parciais podem aparecer enquanto os jobs são
+          processados.
+        </p>
       </div>
       <UButton
         v-if="canSync"
@@ -104,10 +109,10 @@ function formatDate(value: string | null): string {
 
     <div class="sp-analytics__section-head">
       <div>
-        <h2>Resultado por publicação</h2>
-        <p>As métricas abaixo pertencem somente a posts já publicados.</p>
+        <h2>Resultado por publicação nesta página</h2>
+        <p>Publicações presentes na página atual de Conteúdo.</p>
       </div>
-      <span>{{ publishedPosts.length }} publicadas</span>
+      <span>{{ publishedPosts.length }} nesta página</span>
     </div>
 
     <div v-if="publishedPosts.length" class="sp-analytics__list">
@@ -204,6 +209,10 @@ function formatDate(value: string | null): string {
   margin-top: 0.22rem;
   color: rgb(var(--muted));
   font-size: 0.78rem;
+}
+.sp-analytics__head .sp-analytics__pending {
+  color: rgb(var(--primary));
+  font-weight: 650;
 }
 
 .sp-analytics__primary {

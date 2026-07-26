@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { formatDurationMinutes, formatPercent } from '~/domain/utils/admin-metrics'
+import AutoCloseDataPanel from '~/components/data/AutoCloseDataPanel.vue'
 import InsightHourlyTable from '~/components/data/InsightHourlyTable.vue'
 import InsightTagList from '~/components/data/InsightTagList.vue'
 
@@ -154,6 +155,7 @@ const liveTimeTags = computed(() => [
         </div>
       </article>
 
+      <AutoCloseDataPanel :data="report?.autoClose || {}" />
       <InsightTagList title="Produtos mais vendidos" :items="report?.soldProducts || []" />
       <InsightTagList title="Produtos mais procurados" :items="report?.requestedProducts || []" />
       <InsightTagList title="Motivos de visita" :items="report?.visitReasons || []" />

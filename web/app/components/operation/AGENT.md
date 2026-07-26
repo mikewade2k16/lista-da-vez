@@ -4,6 +4,60 @@
 
 Estas instruções valem para `web/app/components/operation/`.
 
+## Gravacao experimental do atendimento
+
+- Handoff detalhado do bloco atual e do proximo passo com Whisper:
+  `docs/operacao/GRAVACAO_TRANSCRICOES_HANDOFF_2026-07-24.md`.
+- O gate global continua em `core.platform_settings` pela feature
+  `attendanceAudioRecording`; somente o admin da plataforma pode altera-lo.
+- Quando o backend confirma um novo atendimento, `OperationQueueColumns` inicia
+  `useAttendanceAudioRecordingStore` e vincula a sessao local ao `serviceId`,
+  `storeId` e consultor retornados pelo snapshot.
+- O `MediaRecorder` emite blocos a cada 5 segundos. Cada bloco e persistido no
+  IndexedDB `omni-attendance-audio-v1`, separado dos demais atendimentos. Ao
+  recarregar a pagina, uma sessao que ainda estava `recording` vira
+  `interrupted`, preservando os blocos ja gravados.
+- Cada bloco tambem e enviado de forma idempotente ao backend; o PostgreSQL
+  guarda metadados e o binario permanece no storage privado configurado por
+  `ATTENDANCE_AUDIO_DIR`. Ao parar, o backend consolida os blocos recebidos.
+- `OperationAudioRecordingStatus` atua somente como controller de ciclo de vida.
+  O microfone vermelho pulsante pertence à linha do atendimento em
+  `OperationActiveServiceCard`; a operação atualiza a lista de gravações ativas
+  em polling curto para também sinalizar capturas iniciadas em outros terminais.
+- A rota `/transcricoes` agrupa os registros autoritativos por loja e consultor,
+  entrega o audio por endpoint autenticado e solicita a transcricao duravel no
+  Whisper local. A pagina fica dentro do shell visual da Fila e faz polling curto
+  para receber novas gravacoes e atualizacoes do Whisper sem recarregar.
+- Na pagina de transcricoes, cada loja e um bloco recolhivel e os atendimentos
+  aparecem em cards compactos num grid. O card mostra somente resumo/estado;
+  audio amplo, relatorio e transcricao completa ficam em `OmniEntityDrawer`.
+- Os selects de Loja e Consultor continuam no topo como filtros compactos. A
+  organizacao recolhivel por loja complementa esses filtros e nunca autoriza
+  remove-los sem pedido explicito.
+- Loja, Consultor e Configurar compartilham a mesma linha de controles no
+  desktop; Configurar usa `margin-left: auto` para permanecer no extremo direito.
+  Todo controle com icone e texto nesta pagina preserva um `gap` visivel.
+- Componentes desta pagina importam `AppPanelButton` explicitamente de
+  `components/ui`; deixar o nome sem resolver faz o Vue renderizar um componente
+  anonimo sem semantica, cursor ou estados reais de botao.
+- O botao `Configurar` usa o mesmo `AppPanelButton` ghost do cabecalho
+  Omnichannel e abre o drawer de configuracao no canto direito.
+- A previa quase ao vivo chega apos a primeira janela de aproximadamente 25
+  segundos. O frontend identifica `transcriptLive`, mas nao confunde essa previa
+  com a transcricao definitiva feita sobre o audio completo ao encerrar.
+- A configuracao de transcricoes usa `OmniEntityDrawer`, reutiliza
+  `ConfigAiCredentials` para o cofre global da conta e separa Whisper de
+  resumo/prompt em abas. Nenhuma chave e digitada ou devolvida pela tela Queue.
+- Quando ainda nao existe configuracao persistida, o drawer prioriza e seleciona
+  a primeira credencial OpenAI da conta; Gemini continua disponivel como opcao.
+- O rodape de salvar permanece fixo no drawer e a UI distingue rascunho
+  "Nao salvo" de configuracao ativa. No workspace agregado, o store replica a
+  configuracao para as accounts operacionais visiveis; a API revalida cada uma.
+- Existe uma sessao de gravacao independente por `serviceId`. O navegador
+  compartilha a captura do microfone entre varios `MediaRecorder`, permitindo
+  gravacoes simultaneas no mesmo terminal; cada sessao possui fila de chunks,
+  persistencia e encerramento proprios.
+
 ## Responsabilidade dos componentes
 
 Este diretório cuida da renderização visual da operação, incluindo:
@@ -39,12 +93,34 @@ Este diretório cuida da renderização visual da operação, incluindo:
 
 **Propagacao de `goalStats`:** `OperationWorkspace.vue` repassa em `mapIntegratedWaitingItem`, `mapIntegratedActiveItem` e `mapScopedActiveItem` (modo integrado/all) e via spread `...item` em `buildOperableStoreState` + `servicesGroupedByConsultant` (modo loja unica). O anel aparece na fila E no "Em atendimento" (avatar do `primaryService`); a faixa de consultores do rodape NAO usa o anel.
 
-## Coluna lateral da operacao (OperationSidePanel) — TEMPLATE/PREVIA
+## Coluna lateral da operacao (OperationSidePanel)
 
-`OperationSidePanel.vue` (novo) e a 3a coluna do board (`.queue-grid`), renderizada dentro de `OperationQueueColumns.vue` depois das colunas "Lista da vez" e "Em atendimento". Dois blocos: **Comunicados** (topo) e **Omni Chat** (rodape, com input desabilitado).
+`OperationSidePanel.vue` e a 3a coluna do board (`.queue-grid`), renderizada dentro de `OperationQueueColumns.vue` depois das colunas "Lista da vez" e "Em atendimento". Dois blocos: **Comunicados** (topo) e **Omni Chat** (rodape).
 
-- E SO front (sem dados/sem backend); marcado com a tag "Previa" para nao parecer pronto. A implementacao real (comunicados/campanhas + chat IA) vem depois.
-- **Editar persona do Omni Chat (so platform_admin):** o cabecalho do bloco Omni Chat tem uma engrenagem (icone `tune`, ao lado do badge "Previa", gateada por `auth.role === 'platform_admin'`) que abre o editor inline `OperationOmniPersonaEditor.vue`. Esse componente le/grava o prompt do sistema (persona) no banco via `useOmniChatPersona` (GET/PUT `/v1/omni-chat/persona`; X-Account-Id automatico, sem accountId no body); mostra "Usando o texto padrao" quando `isDefault`, e feedback de salvando/salvo/erro. O chat em si continua para todos; so a edicao e gated.
+- Comunicados vem de `queue.communications` por
+  `GET /v1/operations/communications?publishedOnly=true&storeId=...`.
+- A lista respeita conta, lojas-alvo, publicacao, vigencia e ordem, aceita varios
+  cards e atualiza a cada 30 segundos. Nao existe fallback hardcoded.
+- A gestao fica na secao Comunicados do hub `/campanhas`; `/comunicados`
+  redireciona para essa secao por compatibilidade. Ela cria, edita, publica e
+  exclui logicamente os registros, e o editor usa `OmniEntityDrawer`.
+- Leitura usa `workspace.operacao.view`; acoes administrativas usam
+  `queue.communications.manage`.
+- **Configurar o Omni Chat (so platform_admin):** o botao `tune` abre
+  `OperationOmniChatConfigDrawer.vue` no mesmo padrao lateral do Calendario. O
+  drawer controla status, prompt soberano, credencial global da conta,
+  provider/modelo, temperatura e memoria. A persistencia usa
+  `GET/PUT /v1/omni-chat/config`; uma unica configuracao vale para todas as lojas
+  e usuarios da account ativa. `ConfigAiCredentials` e o mesmo cofre global
+  reutilizado pelo Omnichannel e pelas transcricoes; nenhuma chave crua entra no
+  componente. O antigo editor inline nao e mais renderizado.
+- Em visao de agencia, a account ativa do topo pode ser diferente da dona das
+  lojas. `OperationOverviewStore.accountId` e `StoreView.tenantId` resolvem a
+  account operacional e ela e enviada explicitamente no `X-Account-Id` do
+  config/chat. Assim o admin da Crow configura a conta Perola, e os usuarios da
+  Perola leem exatamente a mesma linha. A lista/gestao de chaves continua no
+  cofre global da account ativa da agencia; o backend permite a credencial
+  compartilhada somente dentro da mesma organizacao.
 - **Largura das colunas:** as 3 larguras estao em `web/app/assets/styles/layout.css` no `.queue-grid` (`--queue-grid-left-column`, `--queue-grid-right-column`, `--queue-grid-side-column`) — ajuste num lugar so (fr ou px). No mobile o grid colapsa para 1 coluna.
 
 ## Skeleton de carregamento (Fase 9 — apply-operacao)

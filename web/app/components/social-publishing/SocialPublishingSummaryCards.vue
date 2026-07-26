@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type {
   SocialPublishingConnection,
-  SocialPublishingPost,
+  SocialPublishingOverview,
 } from '~/domain/social-publishing/model'
 
 const props = defineProps<{
-  posts: SocialPublishingPost[]
+  overview: SocialPublishingOverview | null
   connection: SocialPublishingConnection | null
 }>()
 
@@ -17,48 +17,48 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
   minute: '2-digit',
 })
 
-const scheduled = computed(() =>
-  props.posts
-    .filter((post) => post.status === 'scheduled' && post.scheduledFor)
-    .sort(
-      (left, right) => Date.parse(left.scheduledFor || '') - Date.parse(right.scheduledFor || ''),
-    ),
-)
-
 const cards = computed(() => [
   {
     label: 'Na fila',
-    value: scheduled.value.length,
-    detail: scheduled.value[0]?.scheduledFor
-      ? `Próxima: ${dateFormatter.format(new Date(scheduled.value[0].scheduledFor))}`
-      : 'Nenhuma postagem agendada',
+    value: props.overview?.scheduled ?? null,
+    detail: props.overview?.upcoming[0]?.scheduledFor
+      ? `Próxima: ${dateFormatter.format(new Date(props.overview.upcoming[0].scheduledFor))}`
+      : props.overview
+        ? 'Nenhuma postagem agendada'
+        : 'Total disponível com analytics',
     icon: 'i-lucide-calendar-clock',
     tone: 'primary',
   },
   {
     label: 'Rascunhos',
-    value: props.posts.filter((post) => post.status === 'draft').length,
-    detail: 'Conteúdos em preparação',
+    value: props.overview?.draft ?? null,
+    detail: props.overview ? 'Conteúdos em preparação' : 'Total disponível com analytics',
     icon: 'i-lucide-file-pen-line',
     tone: 'neutral',
   },
   {
     label: 'Publicadas',
-    value: props.posts.filter((post) => post.status === 'published').length,
-    detail: 'Histórico deste cliente',
+    value: props.overview?.published ?? null,
+    detail: props.overview ? 'Histórico deste cliente' : 'Total disponível com analytics',
     icon: 'i-lucide-circle-check',
     tone: 'success',
   },
   {
     label: 'Atenção',
-    value: props.posts.filter((post) => post.status === 'failed').length,
-    detail: props.connection?.connected
-      ? 'Falhas que precisam de revisão'
-      : 'Instagram desconectado',
+    value: props.overview?.failed ?? null,
+    detail: !props.connection?.connected
+      ? 'Instagram desconectado'
+      : props.overview
+        ? 'Falhas que precisam de revisão'
+        : 'Total disponível com analytics',
     icon: 'i-lucide-triangle-alert',
     tone: 'danger',
   },
 ])
+
+function formatValue(value: number | null): string {
+  return value === null ? '—' : numberFormatter.format(value)
+}
 </script>
 
 <template>
@@ -74,7 +74,7 @@ const cards = computed(() => [
       </div>
       <div>
         <p class="sp-summary__label">{{ card.label }}</p>
-        <p class="sp-summary__value">{{ numberFormatter.format(card.value) }}</p>
+        <p class="sp-summary__value">{{ formatValue(card.value) }}</p>
         <p class="sp-summary__detail">{{ card.detail }}</p>
       </div>
     </article>

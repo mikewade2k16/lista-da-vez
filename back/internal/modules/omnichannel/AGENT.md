@@ -126,6 +126,15 @@ server-to-server, valida novamente a saída, aplica FSM/routing e cria mensagem 
 outbox. `OMNI_AI_EXECUTOR=native|n8n` é chave de rollout/rollback, não uma segunda fonte de
 configuração.
 
+O cofre `messaging.ai_credentials` e global por conta e pode ser consumido por
+outros modulos somente por fachada server-side explicita, injetada no composition
+root. O Omnichannel nao consulta schemas desses consumidores e o segredo nunca
+entra em views HTTP, logs ou configuracoes de workflow.
+Para consumidores server-side da mesma organizacao, uma credencial pertencente a
+account agencia ativa pode atender accounts clientes ativas com a mesma
+`organization_id`. A listagem e o CRUD HTTP continuam estritamente account-scoped;
+somente a fachada de runtime aplica esse compartilhamento e nunca devolve a chave.
+
 ### Canais e CRM
 
 - Evolution é a ponte do piloto; WhatsApp Cloud API é o destino oficial.
@@ -798,3 +807,41 @@ e depois `up -d api`. Portas são fixas (api=9091) — não alterar.
   outbox e capability do adapter.
 - A aba `Handoff` em `OmnichannelConfigDrawer` apenas configura as policies; o inbox lê handoff/SLA
   pela API autoritativa. Não criar estado booleano paralelo (`ai_active`, `assigned`) no frontend.
+
+## CI-01/CI-07 — cliente por canal e inteligência opcional
+
+- `messaging.channel_client_bindings` é o ownership histórico do recurso WhatsApp/Instagram.
+  `automation_profiles` continua sendo configuração de IA e nunca substitui esse binding.
+- Inbound resolve pela borda `[effective_from,effective_to)` no timestamp do provider e grava
+  snapshot em conversa/touchpoint. Ausência não bloqueia persistência humana; vira `unresolved`.
+  Ambiguidade ou client inválido vira `quarantined`.
+- APIs `/v1/omnichannel/channel-client-bindings*`, exceptions, preview/apply de reparo e policy
+  exigem `omnichannel.instances.manage`, account do Principal e client do catálogo permissionado.
+- Reassign encerra o intervalo e cria sucessor; não altera histórico. End só é aceito depois de o
+  recurso ser desativado. Toda mutação exige reason, idempotency key e optimistic revision.
+- Policy administrável: `channelBindingMode=legacy|shadow|enforced`,
+  `customerIntelligenceMode=off|shadow|on` e
+  `customerIntelligenceFailurePolicy=legacy_fallback|retry_then_handoff|immediate_handoff`.
+  O default é `shadow/off/retry_then_handoff`; `on` exige `customer_data` e
+  `customer_intelligence` habilitados. `enforced` exige todo recurso ativo resolvido.
+- A porta `CustomerIntelligenceBridge` só devolve proposta. Mesmo no modo `on`, este módulo
+  revalida generation/FSM/policy e é o único que cria `OUTBOUND/PENDING` + outbox. Falha técnica
+  nunca vira `no_reply`: conforme a policy, usa o legado, faz retry limitado e depois handoff, ou
+  transfere imediatamente. Shadow executa e audita, mas nunca produz efeito de canal.
+- A aceitação durável preserva `pipelineVersionId` e as referências completas de cada process run
+  (process/config, binding e camadas de prompt, agente, modelo, snapshot e schema). O payload não
+  carrega segredo, prompt efetivo nem mensagem bruta adicional.
+- Candidate claims seguem no outcome apenas como descritores tipados (`ordinal`, `factKey`,
+  `valueType`, confiança, evidências, validade e referências de process run). O valor extraído não
+  é duplicado na outbox nem em `extracted_fields`; Customer Intelligence o reidrata do output
+  cifrado do runtime e sempre o persiste como `candidate/unverified/llm`.
+- Aceitar uma claim no Customer Intelligence não materializa fato e não permite que a IA
+  substitua valor manual ou verificado. O Omnichannel não implementa atalho para essa regra.
+- Todo inbound novo com snapshot de binding `resolved` cria, na mesma transação da mensagem,
+  um evento em `messaging.customer_data_outbox`. O payload é ID-only e deve permanecer sem nome,
+  telefone, conteúdo, prompt ou credencial.
+- `customer_data_outbox` é uma lane própria do `platform/jobs`, separada do sender e de
+  `intelligence_outbox`. O worker reidrata a evidência autoritativa e chama Customer Data apenas
+  pela bridge do composition root; IA desligada não desativa essa ingestão.
+- Binding `unresolved|quarantined`, grupo, eco `fromMe` e canal não suportado não alimentam
+  Customer Data, mas continuam sendo persistidos e exibidos pelo chat humano.

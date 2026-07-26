@@ -12,10 +12,11 @@ import (
 // Service orquestra a persistencia (automation.*), o proxy da WAHA e o webhook
 // interno do Omni Chat (n8n).
 type Service struct {
-	store  *Store
-	waha   *WAHAClient
-	n8n    *N8NClient
-	ctxMgr *ContextTokenManager
+	store               *Store
+	waha                *WAHAClient
+	n8n                 *N8NClient
+	ctxMgr              *ContextTokenManager
+	omniChatCredentials OmniChatCredentialResolver
 	// wahaSession fixa a sessao fisica da WAHA usada em todas as chamadas (Status/
 	// Start/Logout/QR). A WAHA Core so aceita a sessao "default" (1 numero por
 	// instancia), entao todas as contas compartilham essa sessao unica. Vazio = modo
@@ -29,6 +30,10 @@ type Service struct {
 // e' a sessao fisica unica da WAHA Core ("default"); vazio cai no modo por-conta.
 func NewService(store *Store, waha *WAHAClient, n8n *N8NClient, ctxMgr *ContextTokenManager, wahaSession string) *Service {
 	return &Service{store: store, waha: waha, n8n: n8n, ctxMgr: ctxMgr, wahaSession: wahaSession}
+}
+
+func (s *Service) SetOmniChatCredentialResolver(resolver OmniChatCredentialResolver) {
+	s.omniChatCredentials = resolver
 }
 
 // sessionName resolve a sessao fisica da WAHA para um canal. Com wahaSession setado

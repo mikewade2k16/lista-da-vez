@@ -1,0 +1,160 @@
+[
+  {
+    "id": "queueattendan001",
+    "name": "Queue Attendance Analysis",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "queue-attendance-analysis",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          0
+        ],
+        "id": "40bc73ad-queue-4000-8000-webhook0001",
+        "name": "Webhook",
+        "webhookId": "b45862de-queue-4000-8000-attendance01"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const body = ($('Webhook').first().json.body) || {};\nconst ai = body.ai || {};\nconst context = body.context || {};\nconst transcript = String(body.transcript || '').trim();\nif (!transcript) throw new Error('transcript_required');\nconst provider = String(ai.provider || 'gemini').toLowerCase() === 'openai' ? 'openai' : 'gemini';\nconst baseUrl = provider === 'openai' ? 'https://api.openai.com/v1' : 'https://generativelanguage.googleapis.com/v1beta/openai';\nconst model = String(ai.model || (provider === 'openai' ? 'gpt-4.1-mini' : 'gemini-2.5-flash')).trim();\nconst temperature = Math.max(0, Math.min(1, Number(ai.temperature) || 0.2));\nconst policy = String(ai.systemPrompt || '').trim();\nconst system = policy + '\\n\\nCONTEXTO AUTORITATIVO DO ATENDIMENTO:\\n' + JSON.stringify(context) + '\\n\\nREGRAS DE SAIDA: devolva somente JSON valido, sem markdown. Nao invente nomes, produtos ou fatos. Corrija erros foneticos apenas quando o contexto sustentar. O campo summary deve ser um resumo executivo curto em pt-BR. O campo report deve seguir: {customerIntent:string,needs:string[],products:string[],objections:string[],commitments:string[],nextSteps:string[],opportunities:string[],alerts:string[],sentiment:string,confidence:number}. confidence fica entre 0 e 1.';\nconst messages = [{ role: 'system', content: system }, { role: 'user', content: 'Transcricao integral do atendimento:\\n' + transcript }];\nconst requestBody = { model, messages, response_format: { type: 'json_object' } };\nif (!(provider === 'openai' && /^gpt-5(?:-|$)/i.test(model))) requestBody.temperature = temperature;\nreturn [{ json: { baseUrl, apiKey: String(ai.apiKey || ''), requestBody } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          0
+        ],
+        "id": "b3c83ea7-queue-4000-8000-prepare0001",
+        "name": "Preparar analise"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.baseUrl }}/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + $json.apiKey }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+          "options": {
+            "timeout": 1200000
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          500,
+          0
+        ],
+        "id": "05a37ff4-queue-4000-8000-callllm0001",
+        "name": "Interpretar e resumir",
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 3000
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "let response = $input.first().json || {};\nif (Array.isArray(response)) response = response[0] || {};\nconst content = String((((response.choices || [])[0] || {}).message || {}).content || '').trim();\nif (!content) throw new Error('empty_ai_response');\nlet text = content;\nconst fence = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\nif (fence) text = fence[1].trim();\nconst start = text.indexOf('{'); const end = text.lastIndexOf('}');\nif (start >= 0 && end > start) text = text.slice(start, end + 1);\nconst parsed = JSON.parse(text);\nconst summary = String(parsed.summary || '').trim();\nif (!summary) throw new Error('summary_required');\nconst source = parsed.report && typeof parsed.report === 'object' ? parsed.report : {};\nconst list = (value) => Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 30) : [];\nconst confidence = Math.max(0, Math.min(1, Number(source.confidence) || 0));\nconst report = { customerIntent: String(source.customerIntent || '').trim(), needs: list(source.needs), products: list(source.products), objections: list(source.objections), commitments: list(source.commitments), nextSteps: list(source.nextSteps), opportunities: list(source.opportunities), alerts: list(source.alerts), sentiment: String(source.sentiment || '').trim(), confidence };\nreturn [{ json: { summary: summary.slice(0, 20000), report } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          760,
+          0
+        ],
+        "id": "55b92b2d-queue-4000-8000-extract0001",
+        "name": "Validar relatorio"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { \"summary\": $json.summary, \"report\": $json.report } }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          1000,
+          0
+        ],
+        "id": "fa2ecfa8-queue-4000-8000-respond0001",
+        "name": "Respond to Webhook"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Preparar analise",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar analise": {
+        "main": [
+          [
+            {
+              "node": "Interpretar e resumir",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Interpretar e resumir": {
+        "main": [
+          [
+            {
+              "node": "Validar relatorio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validar relatorio": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "e5cebedb-5294-40f4-8ca2-463f901dcef1"
+  }
+]

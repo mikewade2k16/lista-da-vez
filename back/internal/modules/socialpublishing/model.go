@@ -11,7 +11,8 @@ import (
 const (
 	ModuleID        = "social_publishing"
 	GraphBaseEnv    = "SOCIAL_PUBLISHING_GRAPH_BASE"
-	DefaultGraphURL = "https://graph.instagram.com/v23.0"
+	DefaultGraphURL = "https://graph.instagram.com/v24.0"
+	DefaultTimezone = "America/Sao_Paulo"
 
 	PermissionView      = "social_publishing.view"
 	PermissionManage    = "social_publishing.manage"
@@ -34,6 +35,7 @@ var (
 	ErrInvalidTimezone      = errors.New("social publishing: timezone invalido")
 	ErrScheduleInPast       = errors.New("social publishing: horario deve estar no futuro")
 	ErrInvalidState         = errors.New("social publishing: estado invalido para a operacao")
+	ErrConnectionTarget     = errors.New("social publishing: conexao ativa aponta para outro instagram")
 	ErrProviderUnavailable  = errors.New("social publishing: instagram indisponivel")
 	ErrRuntimeNotConfigured = errors.New("social publishing: runtime nao configurado")
 )
@@ -47,6 +49,13 @@ const (
 	PostStatusPublished  PostStatus = "published"
 	PostStatusFailed     PostStatus = "failed"
 	PostStatusCancelled  PostStatus = "cancelled"
+)
+
+type PostListOrder string
+
+const (
+	PostListOrderCreated   PostListOrder = "created"
+	PostListOrderScheduled PostListOrder = "scheduled"
 )
 
 type Connection struct {
@@ -134,9 +143,16 @@ type VersionInput struct {
 }
 
 type ListPostsFilter struct {
-	Status PostStatus
-	Limit  int
-	Offset int
+	Status   PostStatus
+	Statuses []PostStatus
+	Order    PostListOrder
+	Limit    int
+	Offset   int
+}
+
+type ListAnalyticsFilter struct {
+	PostIDs []string
+	Limit   int
 }
 
 type CreatePostResult struct {
@@ -156,11 +172,79 @@ type Analytics struct {
 	CapturedAt        time.Time `json:"capturedAt"`
 }
 
+type Summary struct {
+	Counts   map[string]int64 `json:"counts"`
+	Upcoming []Post           `json:"upcoming"`
+}
+
 type Overview struct {
-	Connection *Connection      `json:"connection,omitempty"`
-	Counts     map[string]int64 `json:"counts"`
-	Analytics  Analytics        `json:"analytics"`
-	Upcoming   []Post           `json:"upcoming"`
+	Analytics Analytics `json:"analytics"`
+}
+
+// PublishingClient identifica uma conta-cliente da plataforma que possui o
+// modulo social_publishing habilitado. Nao representa contato/lead do CRM.
+type PublishingClient struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// PublishingScope e o escopo de clientes visivel a partir da account ativa.
+// Contas-cliente ficam travadas nelas mesmas; contas-agencia e platform_admin
+// podem selecionar um cliente ou consultar o portfolio consolidado.
+type PublishingScope struct {
+	CanSelect      bool               `json:"canSelect"`
+	LockedClientID string             `json:"lockedClientId"`
+	Clients        []PublishingClient `json:"clients"`
+}
+
+// PortfolioClient e uma projecao administrativa enxuta. Segredo, connection ID,
+// token e ciphertext nao fazem parte deste contrato.
+type PortfolioClient struct {
+	AccountID         string     `json:"accountId"`
+	AccountName       string     `json:"accountName"`
+	Connected         bool       `json:"connected"`
+	Username          string     `json:"username"`
+	Draft             int64      `json:"draft"`
+	Scheduled         int64      `json:"scheduled"`
+	Publishing        int64      `json:"publishing"`
+	Published         int64      `json:"published"`
+	Failed            int64      `json:"failed"`
+	Reach             int64      `json:"reach"`
+	TotalInteractions int64      `json:"totalInteractions"`
+	NextScheduledFor  *time.Time `json:"nextScheduledFor"`
+}
+
+// Portfolio consolida o estado de todas as contas do PublishingScope. Os
+// totais ficam no root para consumo direto pelos cards da workspace.
+type Portfolio struct {
+	ClientCount       int               `json:"clientCount"`
+	ConnectedClients  int               `json:"connectedClients"`
+	Draft             int64             `json:"draft"`
+	Scheduled         int64             `json:"scheduled"`
+	Publishing        int64             `json:"publishing"`
+	Published         int64             `json:"published"`
+	Failed            int64             `json:"failed"`
+	Views             int64             `json:"views"`
+	Reach             int64             `json:"reach"`
+	TotalInteractions int64             `json:"totalInteractions"`
+	Likes             int64             `json:"likes"`
+	Comments          int64             `json:"comments"`
+	Saved             int64             `json:"saved"`
+	Shares            int64             `json:"shares"`
+	CapturedAt        *time.Time        `json:"capturedAt"`
+	Clients           []PortfolioClient `json:"clients"`
+}
+
+// portfolioClientRecord carrega as metricas necessarias para somar o root sem
+// ampliar o JSON de cada cliente.
+type portfolioClientRecord struct {
+	Client     PortfolioClient
+	Views      int64
+	Likes      int64
+	Comments   int64
+	Saved      int64
+	Shares     int64
+	CapturedAt *time.Time
 }
 
 type RuntimeContext struct {
@@ -223,6 +307,11 @@ type analyticsTarget struct {
 	AccountID       string
 	ExternalMediaID string
 	TokenCiphertext string
+}
+
+type connectionTarget struct {
+	ID       string
+	IGUserID string
 }
 
 func marshalJobPayload(value any) (json.RawMessage, error) {

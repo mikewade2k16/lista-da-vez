@@ -13,6 +13,8 @@ Hoje ele deve responder por:
 - ranking mensal e diario por consultor
 - alertas de desempenho por consultor
 - agregados de produtos, motivos, origens, profissoes e horarios
+- auditoria de auto-encerramentos por consultor e por loja, incluindo quem validou
+  ou cancelou, quando e a justificativa registrada
 - inteligencia operacional com diagnosticos e acoes recomendadas
 
 Ele nao deve cuidar de:
@@ -27,6 +29,12 @@ Ele nao deve cuidar de:
 - `GET /v1/analytics/data?storeId=...`
 - `GET /v1/analytics/intelligence?storeId=...`
 - os mesmos endpoints tambem aceitam `tenantId` para consolidar todas as lojas acessiveis da sessao dentro do tenant ativo
+- `GET /v1/analytics/data` devolve `autoClose` com `summary`, `byConsultant`,
+  `byStore` e `recent`. O agregado usa todas as linhas `close_reason='auto'`
+  dentro da janela, inclusive canceladas para auditoria; o restante dos KPIs
+  continua excluindo `validation_status='cancelled'`.
+- `recent[].closedByName` e resolvido server-side a partir do UUID persistido em
+  `validated_by`; o frontend nunca recebe a tabela de usuarios para fazer esse cruzamento.
 
 ## Regras
 

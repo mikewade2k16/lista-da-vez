@@ -50,10 +50,15 @@ function formatPrice(value?: number): string {
   return PRICE_FORMATTER.format(value)
 }
 
-export function useOmniChat() {
+export function useOmniChat(accountId?: () => string) {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
+
+  function accountHeaders(): Record<string, string> | undefined {
+    const value = String(accountId?.() || '').trim()
+    return value ? { 'X-Account-Id': value } : undefined
+  }
 
   const messages = ref<ChatMessage[]>([])
   const draft = ref('')
@@ -100,15 +105,21 @@ export function useOmniChat() {
     })
 
     try {
+      const history = messages.value
+        .slice(0, -1)
+        .slice(-40)
+        .map((message) => ({ role: message.role, content: message.text }))
       const response = (await apiRequest('/v1/omni-chat/ask', {
         method: 'POST',
+        headers: accountHeaders(),
         body: resolvedTopic
           ? {
               question: trimmedQuestion,
               topic: resolvedTopic,
               conversationId: conversationId.value,
+              history,
             }
-          : { question: trimmedQuestion, conversationId: conversationId.value },
+          : { question: trimmedQuestion, conversationId: conversationId.value, history },
         signal: controller.signal,
       })) as OmniChatAskResponse
 

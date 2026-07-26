@@ -625,3 +625,18 @@ Ao subir a WAVE 3 pra producao, NAO basta o deploy da imagem. Fazer, em ordem:
   FRONT (SPEC-F5) e o workflow n8n (SPEC-W1).
 - **Aprovacao via WhatsApp (Fase 7)** + visao compartilhavel read-only pro cliente.
 (Feriados/datas comemorativas: implementado — ver `holidays.go` e `GET /v1/calendar/holidays`.)
+
+## Fachada para Customer Intelligence (2026-07-23)
+
+- `customer_intelligence_context.go` e a fachada publica, somente leitura, do
+  owner Calendar para a composition root.
+- A leitura exige `account_id + client_account_id` exatos e consulta apenas
+  `calendar.client_profiles`; o consumidor nao acessa tabelas de Calendar.
+- O retorno e **Business Context** do cliente contratante, nunca fato de uma
+  pessoa. O DTO e a observacao resultante nao possuem `subject_id` nem
+  `relationship_id`.
+- As secoes sao fechadas em `strategy|presence|voice|brief`, com limite por
+  campo e limite total de bytes. Nao adicionar secao por prompt ou configuracao
+  sem primeiro alterar e testar este contrato owner-owned.
+- A fonte `calendar.client_profile` e somente `on_demand`. Ausencia de perfil
+  retorna conjunto vazio; falha desta fonte nao pode interromper o chat.

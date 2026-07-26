@@ -53,6 +53,66 @@ func (s *Store) CreateAIOutboundMessage(ctx context.Context, accountID, conversa
 	return view, created, nil
 }
 
+// CreateAIOutboundMessageWithIntelligence accepts a Customer Intelligence
+// reply atomically: decision audit, PENDING message, provider outbox,
+// integration outbox and dispatch completion share one PostgreSQL transaction.
+func (s *Store) CreateAIOutboundMessageWithIntelligence(
+	ctx context.Context,
+	accountID, conversationID, content, runID, idempotencyKey string,
+	generation int64,
+	event CustomerIntelligenceAcceptedOutcome,
+) (MessageView, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return MessageView{}, false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var instanceID *string
+	var instanceScopeKey, state string
+	var currentGeneration int64
+	err = tx.QueryRow(ctx, `select instance_id::text, instance_scope_key, state, ai_generation
+		from messaging.conversations
+		where account_id = $1::uuid and id = $2::uuid
+		for update`, accountID, conversationID).
+		Scan(&instanceID, &instanceScopeKey, &state, &currentGeneration)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MessageView{}, false, ErrNotFound
+		}
+		return MessageView{}, false, err
+	}
+	if state != string(StateAIActive) || currentGeneration != generation {
+		return MessageView{}, false, ErrAILeaseInvalid
+	}
+	allowed, err := aiOutboundAllowedTx(ctx, tx, accountID, conversationID)
+	if err != nil {
+		return MessageView{}, false, err
+	}
+	if !allowed {
+		return MessageView{}, false, ErrAILeaseInvalid
+	}
+	view, created, err := createAIOutboundMessageLockedTx(
+		ctx, tx, accountID, conversationID, instanceID, instanceScopeKey,
+		content, runID, idempotencyKey, generation,
+	)
+	if err != nil {
+		return MessageView{}, false, err
+	}
+	event.AccountID = accountID
+	event.ConversationID = conversationID
+	event.MessageID = view.ID
+	event.Generation = generation
+	event.Outcome = "reply"
+	if err := insertIntelligenceAcceptanceTx(ctx, tx, event); err != nil {
+		return MessageView{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MessageView{}, false, err
+	}
+	return view, created, nil
+}
+
 func createAIOutboundMessageLockedTx(ctx context.Context, tx pgx.Tx, accountID, conversationID string,
 	instanceID *string, instanceScopeKey, content, runID, idempotencyKey string, generation int64) (MessageView, bool, error) {
 	var existingMessageID string

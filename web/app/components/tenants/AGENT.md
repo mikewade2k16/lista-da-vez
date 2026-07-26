@@ -3,8 +3,22 @@
 ## Escopo
 
 Admin global de **accounts** (`core.accounts`, via `/v1/admin/accounts`). Para
-platform_admin. Não confundir com o gestor legado de `public.tenants`
-(`TenantsWorkspace.vue`, módulo Fila).
+platform_admin.
+
+## Remoção da página duplicada da Fila (2026-07-25)
+
+- As antigas rotas `/clientes` e `/operacao/clientes`, o item
+  `/manage/clientes` e o componente `TenantsWorkspace.vue` foram removidos. O
+  alias de Manage redireciona links antigos para `/manage/clientes-web`.
+- A página não possuía tabela própria: consumia `useTenantsStore` →
+  `/v1/tenants` → `core.accounts`, a mesma fonte canônica usada pelo restante
+  do painel.
+- `public.tenants` já havia sido removida pela migration 0136. Não criar tabela
+  substituta nem copiar accounts para o schema `queue`.
+- A administração visual permanece em `/manage/clientes-web`. O store
+  `useTenantsStore` e o endpoint `/v1/tenants` permanecem porque são o catálogo
+  permission-scoped compartilhado por Calendar, Tasks, Bio, Cardápio e outros
+  seletores de cliente.
 
 ## Peças
 

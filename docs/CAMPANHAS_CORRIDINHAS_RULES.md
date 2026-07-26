@@ -1,5 +1,26 @@
 # Campanhas e Corridinhas
 
+## Superficie de gestao
+
+Desde 2026-07-25, a rota `/campanhas` e o hub unico do modulo da Fila:
+
+- **Comunicados:** avisos publicados para todas ou para lojas especificas,
+  persistidos pelo CRUD `/v1/operations/communications`;
+- **Campanhas comerciais:** registros de `state.campaigns` cujo
+  `campaignType` e `comercial`;
+- **Corridinhas e premiacoes:** registros de `state.campaigns` cujo
+  `campaignType` e `interna`.
+
+A rota legada `/comunicados` redireciona para
+`/campanhas?secao=comunicados`. A unificacao e de navegacao e layout; nao
+mistura as fontes de dados nem altera as permissoes. Comunicados podem ser
+lidos pelos papeis operacionais ja autorizados, enquanto campanhas e
+corridinhas exigem acesso ao workspace `campanhas`.
+
+Criacao e edicao usam drawers laterais; as listagens usam cards compactos. A
+premiacao implementada atualmente continua sendo `bonusFixed` somado a
+`bonusRate` aplicado sobre o valor da venda.
+
 ## Objetivo
 
 Separar dois tipos de iniciativa comercial:

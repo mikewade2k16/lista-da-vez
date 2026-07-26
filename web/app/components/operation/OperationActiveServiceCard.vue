@@ -40,6 +40,10 @@ const props = defineProps({
     type: Number,
     default: 30,
   },
+  recordingServiceIds: {
+    type: Array,
+    default: () => [],
+  },
 })
 
 const emit = defineEmits(['finish', 'stop', 'startParallel', 'keepOpen'])
@@ -103,12 +107,6 @@ function startedAtLabel(service) {
   )
 }
 
-function isPrimaryService(service) {
-  return (
-    String(service?.serviceId || '').trim() === String(primaryService.value?.serviceId || '').trim()
-  )
-}
-
 function firstPositiveTimestamp(values) {
   return (
     values
@@ -161,6 +159,11 @@ function primaryActionLabel(service) {
 
 function isStopped(service) {
   return Number(service?.stoppedAt || 0) > 0
+}
+
+function isRecording(service) {
+  const serviceId = String(service?.serviceId || '').trim()
+  return serviceId && props.recordingServiceIds.includes(serviceId)
 }
 
 function timerLabel(service) {
@@ -314,6 +317,15 @@ function handleKeepOpen(service) {
         <div class="service-card__service-main">
           <div class="service-card__meta-row">
             <span class="queue-card__note">{{ serviceMetaLabel(service) }}</span>
+            <span
+              v-if="isRecording(service)"
+              class="service-card__recording-indicator"
+              role="status"
+              title="Gravação em andamento"
+              :aria-label="`Gravação em andamento para ${service.name || consultantDisplayName}`"
+            >
+              <span class="material-icons-round" aria-hidden="true">mic</span>
+            </span>
             <strong class="service-card__timer">{{ timerLabel(service) }}</strong>
           </div>
           <OperationServiceCountdownBar
@@ -381,3 +393,35 @@ function handleKeepOpen(service) {
     </div>
   </article>
 </template>
+
+<style scoped>
+.service-card__recording-indicator {
+  display: inline-grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgb(var(--danger) / 0.35);
+  border-radius: 999px;
+  background: rgb(var(--danger) / 0.1);
+  color: rgb(var(--danger));
+  box-shadow: 0 0 0 0 rgb(var(--danger) / 0.25);
+  animation: service-recording-pulse 1.25s ease-out infinite;
+}
+
+.service-card__recording-indicator .material-icons-round {
+  font-size: 1rem;
+}
+
+@keyframes service-recording-pulse {
+  70% {
+    box-shadow: 0 0 0 0.35rem rgb(var(--danger) / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .service-card__recording-indicator {
+    animation: none;
+  }
+}
+</style>

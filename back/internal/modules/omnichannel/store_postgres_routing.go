@@ -41,7 +41,11 @@ type stateUpdate struct {
 	BumpLastMessage bool
 	NoChange        bool
 	InvalidateAI    bool
-	CloseHandoffs   bool
+	// AdvanceAIGeneration invalidates an in-flight AI lease without cancelling
+	// the buffering dispatch. A newer inbound intent can then merge into that
+	// dispatch while every stale operational effect is rejected immediately.
+	AdvanceAIGeneration bool
+	CloseHandoffs       bool
 	// PreserveAIMessageID keeps one already-created final AI reply queued while
 	// close invalidates every other pending AI action for the conversation.
 	PreserveAIMessageID string
@@ -80,11 +84,12 @@ func applyStateUpdateTx(ctx context.Context, tx pgx.Tx, accountID, convID string
 			department_id = $5::uuid,
 			assigned_user_id = $6::uuid,
 			last_message_at = case when $7 then now() else last_message_at end,
-			ai_generation = case when $8 then ai_generation + 1 else ai_generation end,
+			ai_generation = case when $8 or $9 then ai_generation + 1 else ai_generation end,
 			updated_at = now()
 			where id = $1::uuid and account_id = $2::uuid`,
 			convID, accountID, string(upd.State), upd.QueueID, upd.DepartmentID,
-			upd.AssignedUserID, upd.BumpLastMessage, upd.InvalidateAI); err != nil {
+			upd.AssignedUserID, upd.BumpLastMessage, upd.InvalidateAI,
+			upd.AdvanceAIGeneration); err != nil {
 			return err
 		}
 	}

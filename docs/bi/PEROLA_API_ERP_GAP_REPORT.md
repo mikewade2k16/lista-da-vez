@@ -31,14 +31,14 @@ foi executado um novo smoke contra o ambiente externo nesta data.
 **A API Pérola, no contrato atual, ainda não substitui integralmente o ERP.**
 
 No painel, este levantamento está disponível em `/bi` → **Lacunas ERP × API**.
-O inventário completo das colunas observadas está em `/bi` → **Entidades**,
-numa grade local das seis entidades com busca, filtros e paginação, sem API.
-As leituras paginadas ficam em `/bi` → **Consultas**. Abrir a aba não chama
-nenhuma rota do BI; até o catálogo exige o clique em **Carregar catálogo de
-consultas**. A origem só é chamada depois que o usuário informa um filtro
-seletivo e clica em **Consultar**.
+O inventário e as descrições do contrato ficam em `/bi` → **Entidades**. As
+seis tabelas operacionais, com todas as colunas mapeadas, ficam em `/bi` →
+**Consultas** e aparecem vazias sem chamar a API. O catálogo de regras exige o
+clique em **Carregar catálogo de consultas**. A origem só é chamada depois que
+o usuário informa um filtro seletivo e clica em **Consultar**; Anterior e
+Próxima solicitam páginas reais ao servidor, mantendo o mesmo filtro.
 
-O switch **Bloquear chamadas**, no cabeçalho, inicia ativo e impede todas as
+O switch **Interromper API**, no cabeçalho, inicia ativo e impede todas as
 rotas do módulo BI. Ao ser ativado durante uma leitura, também cancela a
 requisição em andamento; desligá-lo apenas libera os botões e não inicia
 consulta automaticamente.

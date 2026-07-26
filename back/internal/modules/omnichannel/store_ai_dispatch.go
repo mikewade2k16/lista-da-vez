@@ -184,7 +184,9 @@ func (s *Store) UpsertAIDispatch(ctx context.Context, accountID, conversationID,
 }
 
 // enqueueAIDispatchJobTx writes the generic outbox row in the same transaction as the
-// dispatch. The worker is the only executor; this row contains identifiers only.
+// dispatch. AI execution has its own FIFO namespace: a debounce run_after must
+// not head-of-line block a newer inbound intent on the conversation FIFO.
+// Generation and lease checks still serialize every operational effect.
 func enqueueAIDispatchJobTx(ctx context.Context, tx pgx.Tx, accountID, dispatchID, conversationID string, generation int64, runAfter time.Time) error {
 	payload, err := json.Marshal(aiDispatchJobPayload{DispatchID: dispatchID, Generation: generation})
 	if err != nil {
@@ -194,10 +196,14 @@ func enqueueAIDispatchJobTx(ctx context.Context, tx pgx.Tx, accountID, dispatchI
 		(account_id, ordering_key, idempotency_key, kind, payload, max_attempts, run_after)
 		values ($1::uuid, $2, $3, $4, $5::jsonb, 5, $6)
 		on conflict (account_id, idempotency_key) do nothing`,
-		accountID, conversationID,
+		accountID, aiDispatchOrderingKey(conversationID),
 		fmt.Sprintf("ai-dispatch:%s:%d", dispatchID, generation),
 		AIDispatchJobKind, payload, runAfter)
 	return err
+}
+
+func aiDispatchOrderingKey(conversationID string) string {
+	return "ai-dispatch:" + strings.TrimSpace(conversationID)
 }
 
 // GetAIDispatch lê uma linha com escopo explícito. Outra conta é indistinguível de inexistente.

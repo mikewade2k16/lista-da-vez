@@ -2,65 +2,110 @@ package automation
 
 import (
 	"context"
+	"errors"
 	"strings"
 )
 
-// OmniChatResultView e a resposta do Omni Chat para o painel de Operacao. products
-// vem da tool de catalogo (via n8n) para o front renderizar cards com imagem; vazio
-// em pergunta nao-produto.
+var (
+	ErrOmniChatDisabled              = errors.New("automation: omni chat desativado")
+	ErrOmniChatCredentialUnavailable = errors.New("automation: credencial do omni chat indisponivel")
+	ErrOmniChatInvalidConfig         = errors.New("automation: configuracao do omni chat invalida")
+)
+
+// OmniChatCredentialResolver e a fronteira com o cofre global de IA. Automation
+// conhece somente a interface; a composicao injeta a fachada do Omnichannel.
+type OmniChatCredentialResolver interface {
+	ResolveCredential(ctx context.Context, accountID, credentialID string) (OmniChatRuntimeCredential, error)
+}
+
+type OmniChatRuntimeCredential struct {
+	ID       string
+	Provider string
+	APIKey   string
+}
+
+type OmniChatConfigView struct {
+	Enabled       bool    `json:"enabled"`
+	SystemPrompt  string  `json:"systemPrompt"`
+	IsDefault     bool    `json:"isDefault"`
+	CredentialID  string  `json:"credentialId"`
+	Provider      string  `json:"provider"`
+	Model         string  `json:"model"`
+	Temperature   float64 `json:"temperature"`
+	HistoryWindow int     `json:"historyWindow"`
+}
+
+type OmniChatConfigInput struct {
+	Enabled       bool
+	SystemPrompt  string
+	CredentialID  string
+	Model         string
+	Temperature   float64
+	HistoryWindow int
+	UpdatedBy     string
+}
+
+// OmniChatResultView e a resposta do Omni Chat para o painel de Operacao.
 type OmniChatResultView struct {
 	Answer   string       `json:"answer"`
 	Topic    string       `json:"topic,omitempty"`
 	Products []ProductHit `json:"products,omitempty"`
 }
 
-// OmniChatAsk responde uma pergunta do chat interno (painel de Operacao) via
-// n8n. Reusa a automacao default da account para montar o systemMessage do Tony
-// (persona + knowledge docs + guardrails), sem sessao WAHA. O escopo (scope) vem
-// do principal autenticado, nunca do body — defesa multi-tenant. O scope e'
-// assinado num context token HMAC (Fase 2) injetado no body do webhook; o n8n o
-// devolve nas tools de dados (catalogo etc.) e o Go le o escopo SO do token.
-//
-// Erros propagados (mapeados em http_omnichat.go):
-//   - ErrN8NNotConfigured -> 503 omnichat_not_configured
-//   - errN8NFailed         -> 502 omnichat_error
-//   - context.DeadlineExceeded -> 504 omnichat_timeout
-//
-// Janela de memoria do Omni Chat (interacoes pergunta+resposta que o n8n mantem no
-// contexto). default quando a conta nunca salvou; clamp defensivo nos extremos.
 const (
 	defaultHistoryWindow = 5
 	minHistoryWindow     = 1
 	maxHistoryWindow     = 20
 )
 
-func (s *Service) OmniChatAsk(ctx context.Context, scope ContextScope, question, topic, conversationID string) (OmniChatResultView, error) {
-	// Persona DEDICADA do Omni Chat (Perola Joias — copiloto de vendas/conhecimento)
-	// + janela de memoria, ambos do banco (settings jsonb da automacao default; se a
-	// conta nunca salvou, persona cai no embed omniChatPersona e janela no default).
-	// NAO reusa o Tony (WhatsApp). Catalogo DESCONECTADO por ora.
-	systemMessage, _, historyWindow, err := s.OmniChatConfig(ctx, scope.AccountID)
+func (s *Service) OmniChatAsk(
+	ctx context.Context,
+	scope ContextScope,
+	question string,
+	topic string,
+	conversationID string,
+	history []OmniChatHistoryMessage,
+) (OmniChatResultView, error) {
+	config, err := s.OmniChatConfig(ctx, scope.AccountID)
 	if err != nil {
 		return OmniChatResultView{}, err
 	}
+	if !config.Enabled {
+		return OmniChatResultView{}, ErrOmniChatDisabled
+	}
+	if strings.TrimSpace(config.CredentialID) == "" || s.omniChatCredentials == nil {
+		return OmniChatResultView{}, ErrOmniChatCredentialUnavailable
+	}
+	credential, err := s.omniChatCredentials.ResolveCredential(ctx, scope.AccountID, config.CredentialID)
+	if err != nil || strings.TrimSpace(credential.APIKey) == "" {
+		return OmniChatResultView{}, ErrOmniChatCredentialUnavailable
+	}
+	if normalizeOmniChatProvider(credential.Provider) == "" {
+		return OmniChatResultView{}, ErrOmniChatInvalidConfig
+	}
 
-	// Context token (Fase 2). Mantido (inofensivo) para reconectar as tools de dados
-	// (catalogo etc.) depois sem retrabalho; hoje o workflow nao chama nenhuma tool.
-	// Se o secret nao estiver configurado, Issue falha e seguimos sem token.
-	contextToken, err := s.ctxMgr.Issue(scope)
-	if err != nil {
+	contextToken, issueErr := s.ctxMgr.Issue(scope)
+	if issueErr != nil {
 		contextToken = ""
 	}
 
+	history = normalizeOmniChatHistory(history, config.HistoryWindow)
 	topic = strings.TrimSpace(topic)
 	result, err := s.n8n.Ask(ctx, OmniChatRunRequest{
 		Question:      question,
 		Topic:         topic,
-		SystemMessage: systemMessage,
+		SystemMessage: config.SystemPrompt,
 		SessionRef:    "omni-chat-" + scope.AccountID,
 		ContextToken:  contextToken,
 		SessionKey:    omniChatSessionKey(scope, conversationID),
-		HistoryWindow: historyWindow,
+		HistoryWindow: config.HistoryWindow,
+		History:       history,
+		AI: OmniChatAIExecution{
+			Provider:    normalizeOmniChatProvider(credential.Provider),
+			Model:       config.Model,
+			APIKey:      credential.APIKey,
+			Temperature: config.Temperature,
+		},
 	})
 	if err != nil {
 		return OmniChatResultView{}, err
@@ -69,10 +114,6 @@ func (s *Service) OmniChatAsk(ctx context.Context, scope ContextScope, question,
 	return OmniChatResultView{Answer: result.Answer, Topic: topic, Products: result.Products}, nil
 }
 
-// omniChatSessionKey monta a chave de memoria da conversa para o n8n. Escopa por
-// account + user (isola memoria entre operadores — nunca por accountID puro) + o
-// conversationId que o front gera por conversa. Sem conversationId, cai numa chave
-// estavel por usuario (a memoria ainda segue a conversa daquele operador).
 func omniChatSessionKey(scope ContextScope, conversationID string) string {
 	base := scope.AccountID + "|" + scope.UserID
 	conversationID = strings.TrimSpace(conversationID)
@@ -82,8 +123,6 @@ func omniChatSessionKey(scope ContextScope, conversationID string) string {
 	return base + "|" + conversationID
 }
 
-// clampHistoryWindow normaliza a janela: 0/ausente -> default; fora da faixa ->
-// limita aos extremos.
 func clampHistoryWindow(n int) int {
 	switch {
 	case n <= 0:
@@ -97,45 +136,121 @@ func clampHistoryWindow(n int) int {
 	}
 }
 
-// OmniChatConfig retorna a config EFETIVA do Omni Chat da account: systemPrompt
-// (custom salvo OU embed default), isDefault, e a janela de memoria (default quando
-// nao salva). Uma unica resolucao de automacao default (GetOrCreateDefault) p/ as
-// duas leituras de settings.
-func (s *Service) OmniChatConfig(ctx context.Context, accountID string) (systemPrompt string, isDefault bool, historyWindow int, err error) {
-	a, _, err := s.store.GetOrCreateDefault(ctx, accountID)
-	if err != nil {
-		return "", false, 0, err
+func clampOmniChatTemperature(value float64) float64 {
+	if value < 0 {
+		return 0
 	}
-	custom, err := s.store.GetOmniChatPersonaSetting(ctx, a.ID)
-	if err != nil {
-		return "", false, 0, err
+	if value > 1 {
+		return 1
 	}
-	win, err := s.store.GetOmniChatHistoryWindow(ctx, a.ID)
-	if err != nil {
-		return "", false, 0, err
-	}
-	historyWindow = clampHistoryWindow(win)
-	if strings.TrimSpace(custom) == "" {
-		return omniChatPersona, true, historyWindow, nil
-	}
-	return custom, false, historyWindow, nil
+	return value
 }
 
-// SetOmniChatConfig grava persona (systemPrompt) e janela de memoria no settings
-// jsonb da automacao default da account. Devolve os valores salvos (prompt com trim,
-// janela com clamp). A partir daqui o prompt efetivo deixa de ser o default embutido.
-func (s *Service) SetOmniChatConfig(ctx context.Context, accountID, prompt string, historyWindow int) (savedPrompt string, savedWindow int, err error) {
-	prompt = strings.TrimSpace(prompt)
-	historyWindow = clampHistoryWindow(historyWindow)
-	a, _, err := s.store.GetOrCreateDefault(ctx, accountID)
+func normalizeOmniChatProvider(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "openai":
+		return "openai"
+	case "gemini":
+		return "gemini"
+	case "glm":
+		return "glm"
+	default:
+		return ""
+	}
+}
+
+func normalizeOmniChatHistory(history []OmniChatHistoryMessage, window int) []OmniChatHistoryMessage {
+	limit := clampHistoryWindow(window) * 2
+	if len(history) > limit {
+		history = history[len(history)-limit:]
+	}
+	out := make([]OmniChatHistoryMessage, 0, len(history))
+	for _, message := range history {
+		role := strings.ToLower(strings.TrimSpace(message.Role))
+		content := strings.TrimSpace(message.Content)
+		if (role != "user" && role != "assistant") || content == "" {
+			continue
+		}
+		if len(content) > 6000 {
+			content = content[:6000]
+		}
+		out = append(out, OmniChatHistoryMessage{Role: role, Content: content})
+	}
+	return out
+}
+
+func (s *Service) OmniChatConfig(ctx context.Context, accountID string) (OmniChatConfigView, error) {
+	config, err := s.store.GetOmniChatConfig(ctx, accountID)
 	if err != nil {
-		return "", 0, err
+		return OmniChatConfigView{}, err
 	}
-	if err := s.store.SetOmniChatPersonaSetting(ctx, a.ID, prompt); err != nil {
-		return "", 0, err
+	isDefault := strings.TrimSpace(config.SystemPrompt) == ""
+	prompt := config.SystemPrompt
+	if isDefault {
+		prompt = omniChatPersona
 	}
-	if err := s.store.SetOmniChatHistoryWindow(ctx, a.ID, historyWindow); err != nil {
-		return "", 0, err
+	return OmniChatConfigView{
+		Enabled:       config.Enabled,
+		SystemPrompt:  prompt,
+		IsDefault:     isDefault,
+		CredentialID:  config.CredentialID,
+		Provider:      config.Provider,
+		Model:         config.Model,
+		Temperature:   config.Temperature,
+		HistoryWindow: clampHistoryWindow(config.HistoryWindow),
+	}, nil
+}
+
+func (s *Service) SetOmniChatConfig(ctx context.Context, accountID string, input OmniChatConfigInput) (OmniChatConfigView, error) {
+	prompt := strings.TrimSpace(input.SystemPrompt)
+	model := strings.TrimSpace(input.Model)
+	credentialID := strings.TrimSpace(input.CredentialID)
+	provider := ""
+
+	if input.Enabled && (credentialID == "" || model == "") {
+		return OmniChatConfigView{}, ErrOmniChatInvalidConfig
 	}
-	return prompt, historyWindow, nil
+	if credentialID != "" {
+		if s.omniChatCredentials == nil {
+			return OmniChatConfigView{}, ErrOmniChatCredentialUnavailable
+		}
+		credential, err := s.omniChatCredentials.ResolveCredential(ctx, accountID, credentialID)
+		if err != nil {
+			return OmniChatConfigView{}, ErrOmniChatCredentialUnavailable
+		}
+		provider = normalizeOmniChatProvider(credential.Provider)
+		if provider == "" {
+			return OmniChatConfigView{}, ErrOmniChatInvalidConfig
+		}
+	}
+	if provider == "" {
+		provider = "openai"
+	}
+	if model == "" {
+		model = "gpt-4.1-mini"
+	}
+
+	saved, err := s.store.SaveOmniChatConfig(ctx, OmniChatConfig{
+		AccountID: accountID, Enabled: input.Enabled, SystemPrompt: prompt,
+		CredentialID: credentialID, Provider: provider, Model: model,
+		Temperature:   clampOmniChatTemperature(input.Temperature),
+		HistoryWindow: clampHistoryWindow(input.HistoryWindow),
+		UpdatedBy:     input.UpdatedBy,
+	})
+	if err != nil {
+		return OmniChatConfigView{}, err
+	}
+	return OmniChatConfigView{
+		Enabled: saved.Enabled, SystemPrompt: firstOmniChatPrompt(saved.SystemPrompt),
+		IsDefault:    strings.TrimSpace(saved.SystemPrompt) == "",
+		CredentialID: saved.CredentialID, Provider: saved.Provider, Model: saved.Model,
+		Temperature: saved.Temperature, HistoryWindow: saved.HistoryWindow,
+	}, nil
+}
+
+func firstOmniChatPrompt(prompt string) string {
+	if strings.TrimSpace(prompt) == "" {
+		return omniChatPersona
+	}
+	return prompt
 }

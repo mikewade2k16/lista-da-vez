@@ -331,6 +331,7 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 
 		overview.Stores = append(overview.Stores, OperationOverviewStore{
 			StoreID:        storeID,
+			AccountID:      strings.TrimSpace(storeView.TenantID),
 			StoreName:      strings.TrimSpace(storeView.Name),
 			StoreCode:      strings.TrimSpace(storeView.Code),
 			City:           strings.TrimSpace(storeView.City),

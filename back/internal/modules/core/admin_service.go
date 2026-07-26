@@ -121,6 +121,13 @@ func (s *AdminService) GetModules(ctx context.Context, accountID string) (AdminM
 }
 
 func (s *AdminService) SetModules(ctx context.Context, accountID string, input AdminSetModulesInput) (AdminModulesResponse, error) {
+	current, err := s.repo.GetAccountModules(ctx, accountID)
+	if err != nil {
+		return AdminModulesResponse{}, err
+	}
+	if err := validateModuleDependencyChange(current, input); err != nil {
+		return AdminModulesResponse{}, err
+	}
 	for _, moduleID := range input.Enable {
 		if err := s.repo.SetAccountModuleEnabled(ctx, accountID, moduleID, true); err != nil {
 			return AdminModulesResponse{}, err
@@ -143,6 +150,37 @@ func (s *AdminService) SetModules(ctx context.Context, accountID string, input A
 	})
 
 	return s.GetModules(ctx, accountID)
+}
+
+// validateModuleDependencyChange keeps the administrative panel from creating
+// an impossible catalog state. Customer Intelligence consumes Customer Data,
+// while Customer Data remains independently useful without AI.
+func validateModuleDependencyChange(current []AccountModuleView, input AdminSetModulesInput) error {
+	state := make(map[string]bool, len(current))
+	for _, module := range current {
+		state[module.ModuleID] = module.Enabled
+	}
+	touched := make(map[string]bool, len(input.Enable)+len(input.Disable))
+	for _, moduleID := range input.Enable {
+		moduleID = strings.TrimSpace(moduleID)
+		if moduleID == "" || touched[moduleID] {
+			return ErrValidationFailed("lista de modulos contem item vazio ou duplicado")
+		}
+		touched[moduleID] = true
+		state[moduleID] = true
+	}
+	for _, moduleID := range input.Disable {
+		moduleID = strings.TrimSpace(moduleID)
+		if moduleID == "" || touched[moduleID] {
+			return ErrValidationFailed("um modulo nao pode ser habilitado e desabilitado na mesma operacao")
+		}
+		touched[moduleID] = true
+		state[moduleID] = false
+	}
+	if state["customer_intelligence"] && !state["customer_data"] {
+		return ErrValidationFailed("customer_intelligence requer customer_data habilitado")
+	}
+	return nil
 }
 
 func (s *AdminService) GetStores(ctx context.Context, accountID string) (AdminStoresResponse, error) {

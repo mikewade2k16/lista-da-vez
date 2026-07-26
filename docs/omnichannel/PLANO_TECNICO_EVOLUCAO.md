@@ -10,13 +10,17 @@ propostas, APIs, componentes, testes, proibições e critérios de aceite ficam 
 executiva; um agente só pode implementar uma fase quando receber também o contrato comum e um
 pacote atômico daquela pasta.
 
-## Proposta em validação — Customer Intelligence
+## Customer Intelligence — implementação local parcial
 
-A separação futura entre Omnichannel, dados determinísticos do cliente e runtime inteligente está
-registrada em [`../customer-intelligence/GOVERNANCA.md`](../customer-intelligence/GOVERNANCA.md),
-com blueprint em [`../customer-intelligence/SPECS_GERAIS.md`](../customer-intelligence/SPECS_GERAIS.md).
-Enquanto esses documentos estiverem em `DRAFT`, eles não substituem as specs executáveis atuais
-nem autorizam migration, cutover, workflow ou exclusão.
+A separação entre Omnichannel, Customer Data e Customer Intelligence foi autorizada e possui um
+slice local implementado nas migrations `0239` a `0255`. A governança vigente está em
+[`../customer-intelligence/GOVERNANCA.md`](../customer-intelligence/GOVERNANCA.md), as specs gerais
+em [`../customer-intelligence/SPECS_GERAIS.md`](../customer-intelligence/SPECS_GERAIS.md) e o estado
+auditável da implementação em
+[`../customer-intelligence/IMPLEMENTACAO_LOCAL_2026-07-23.md`](../customer-intelligence/IMPLEMENTACAO_LOCAL_2026-07-23.md).
+
+Esse estado local não autoriza deploy, cutover, remoção do legado nem ativação em produção. As
+lacunas e os gates de rollout permanecem registrados no relatório de implementação.
 
 ## Prioridade vigente — MVP de automação WhatsApp (2026-07-21)
 

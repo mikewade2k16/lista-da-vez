@@ -141,6 +141,49 @@ func TestDecryptMalformed(t *testing.T) {
 	}
 }
 
+func TestOpaqueFingerprintIsStableScopedAndDoesNotExposeInput(t *testing.T) {
+	box := newBox(t, 1)
+	first := box.OpaqueFingerprint(
+		"customer-intelligence.observation-provenance.v1",
+		"account-a",
+		"client-a",
+		"erp",
+		"observation-a",
+	)
+	repeated := box.OpaqueFingerprint(
+		"customer-intelligence.observation-provenance.v1",
+		"account-a",
+		"client-a",
+		"erp",
+		"observation-a",
+	)
+	otherClient := box.OpaqueFingerprint(
+		"customer-intelligence.observation-provenance.v1",
+		"account-a",
+		"client-b",
+		"erp",
+		"observation-a",
+	)
+	otherKey := newBox(t, 9).OpaqueFingerprint(
+		"customer-intelligence.observation-provenance.v1",
+		"account-a",
+		"client-a",
+		"erp",
+		"observation-a",
+	)
+	if first == "" || first != repeated {
+		t.Fatalf("fingerprint nao estavel: first=%q repeated=%q", first, repeated)
+	}
+	if first == otherClient || first == otherKey {
+		t.Fatalf("fingerprint nao ficou escopado: %q", first)
+	}
+	for _, raw := range []string{"account-a", "client-a", "observation-a"} {
+		if strings.Contains(first, raw) {
+			t.Fatalf("fingerprint expos input %q: %q", raw, first)
+		}
+	}
+}
+
 // TestNewRejectsBadKeySize: so AES-256 (32 bytes).
 func TestNewRejectsBadKeySize(t *testing.T) {
 	for _, size := range []int{0, 16, 24, 31, 33, 64} {

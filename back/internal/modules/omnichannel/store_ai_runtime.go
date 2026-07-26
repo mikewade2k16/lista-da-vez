@@ -115,27 +115,42 @@ func (s *Store) ActiveAgent(ctx context.Context, accountID string) (agentRow, bo
 // convTriage e o minimo que o dispatch precisa da conversa: o state (gate 1) e os campos que
 // alimentam o RoutingContext do motor (contact_phone, instance_scope_key).
 type convTriage struct {
-	State            string
-	AIGeneration     int64
-	InstanceID       *string
-	ContactID        *string
-	ContactPhone     *string
-	ContactName      *string
-	Channel          string
-	ExternalID       string
-	InstanceScopeKey string
-	ExtractedFields  json.RawMessage
-	Found            bool
+	State              string
+	AIGeneration       int64
+	InstanceID         *string
+	ContactID          *string
+	ContactPhone       *string
+	ContactName        *string
+	ContactExternalID  *string
+	ClientAccountID    *string
+	ClientBindingID    *string
+	ClientBindingState string
+	Channel            string
+	ExternalID         string
+	InstanceScopeKey   string
+	ExtractedFields    json.RawMessage
+	Found              bool
 }
 
 // ConvTriageContext le o contexto da conversa para o dispatch. Fora de escopo => Found=false.
 func (s *Store) ConvTriageContext(ctx context.Context, accountID, convID string) (convTriage, error) {
 	var c convTriage
 	err := s.pool.QueryRow(ctx, `select state, ai_generation, instance_id::text, contact_id::text, contact_phone, contact_name,
+		(select identity.external_id
+		 from messaging.contact_identities identity
+		 where identity.account_id = conversations.account_id
+		   and identity.contact_id = conversations.contact_id
+		   and identity.channel = conversations.channel
+		   and identity.instance_scope_key = conversations.instance_scope_key
+		 order by identity.last_seen_at desc, identity.id desc
+		 limit 1),
+		client_account_id::text, channel_client_binding_id::text, client_binding_state,
 		channel, external_id, instance_scope_key, coalesce(extracted_fields, '{}'::jsonb)
 		from messaging.conversations
 		where account_id = $1::uuid and id = $2::uuid`, accountID, convID).
 		Scan(&c.State, &c.AIGeneration, &c.InstanceID, &c.ContactID, &c.ContactPhone, &c.ContactName,
+			&c.ContactExternalID,
+			&c.ClientAccountID, &c.ClientBindingID, &c.ClientBindingState,
 			&c.Channel, &c.ExternalID, &c.InstanceScopeKey, &c.ExtractedFields)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):

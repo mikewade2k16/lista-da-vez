@@ -10,6 +10,8 @@ import type {
   PerolaDatasetQueryInput,
   PerolaDatasetQueryResponse,
 } from '~/domain/bi/perola-query'
+import { normalizeBiRecentSales } from '~/domain/bi/recent-sales'
+import type { BiRecentSalesResponse } from '~/domain/bi/recent-sales'
 import { useAuthStore } from '~/stores/auth'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
@@ -166,6 +168,9 @@ export const useBiStore = defineStore('bi', () => {
   const datasetQueryResponse = ref<PerolaDatasetQueryResponse | null>(null)
   const datasetQueryLoading = ref(false)
   const datasetQueryError = ref('')
+  const recentSales = ref<BiRecentSalesResponse | null>(null)
+  const recentSalesLoading = ref(false)
+  const recentSalesError = ref('')
   const manualConfig = reactive<BiManualConfig>({
     companyKey: '',
     cnpjEmpresa: '',
@@ -226,6 +231,7 @@ export const useBiStore = defineStore('bi', () => {
     loggingIn.value = false
     datasetCatalogLoading.value = false
     datasetQueryLoading.value = false
+    recentSalesLoading.value = false
   }
 
   function tableByKey(key: string) {
@@ -449,6 +455,34 @@ export const useBiStore = defineStore('bi', () => {
     datasetQueryError.value = ''
   }
 
+  async function loadRecentSales(): Promise<BiActionResult<BiRecentSalesResponse>> {
+    if (apiBlocked.value) return blockedResult()
+
+    try {
+      recentSalesLoading.value = true
+      recentSalesError.value = ''
+
+      const payload = await requestBiApi('/v1/bi/perola/sales/recent', {
+        skipLoadingIndicator: true,
+        dedupe: false,
+      })
+      const normalized = normalizeBiRecentSales(payload)
+      if (!normalized) {
+        throw new Error('A consulta de vendas retornou um formato inválido.')
+      }
+
+      recentSales.value = normalized
+      return { ok: true, data: normalized }
+    } catch (err) {
+      if (isBlockedRequest(err)) return blockedResult()
+      const message = getApiErrorMessage(err, 'Não foi possível carregar as vendas recentes.')
+      recentSalesError.value = message
+      return { ok: false, message }
+    } finally {
+      recentSalesLoading.value = false
+    }
+  }
+
   return {
     apiBlocked,
     overview,
@@ -472,6 +506,9 @@ export const useBiStore = defineStore('bi', () => {
     datasetQueryResponse,
     datasetQueryLoading,
     datasetQueryError,
+    recentSales,
+    recentSalesLoading,
+    recentSalesError,
     setApiBlocked,
     tableByKey,
     updateManualConfig,
@@ -482,5 +519,6 @@ export const useBiStore = defineStore('bi', () => {
     loadPerolaDatasetCatalog,
     queryPerolaDataset,
     clearPerolaDatasetQuery,
+    loadRecentSales,
   }
 })

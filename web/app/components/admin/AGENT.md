@@ -85,6 +85,13 @@ com `/operacao/usuarios` (módulo Fila legado, `back/internal/modules/users` + `
   (`AppSearchInput`) + filtro por módulo (`AppSegmentedFilter`, sentinela `'all'`); reusa
   `admin/users/AdminRolePermissionMatrix.vue` na grade. Em readonly mostra só o resumo das permissões.
 - `LegacyMarker.vue` — badge "LEGADO"/"MOCK" (só platform_admin).
+- `ExperimentalFeaturesWorkspace.vue` — painel global exclusivo de
+  `platform_admin` em `/manage/experimental-features`. Usa
+  `usePlatformFeaturesStore`, carrega `GET /v1/platform/experimental-features`
+  antes de habilitar qualquer switch e reidrata toda escrita pelo retorno
+  autoritativo do `PUT`. O primeiro rollout é
+  `attendanceAudioRecording`; o toggle não inicia captura de microfone neste
+  bloco.
 
 ## Camada de dados
 
@@ -129,3 +136,4 @@ com `/operacao/usuarios` (módulo Fila legado, `back/internal/modules/users` + `
 - Novo painel/aba no drawer, novo componente admin, ou mudança no contrato de
   `useAdminUsersManager`/`useAccountRolesManager`/`useAdminRoleTemplatesManager`/endpoints
   `/v1/admin/*` ou `/v1/accounts/{id}/roles*`.
+- Mudança no contrato ou na navegação de recursos experimentais globais.

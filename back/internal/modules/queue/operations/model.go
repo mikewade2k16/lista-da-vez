@@ -291,6 +291,7 @@ type PausedStateItem struct {
 
 type OperationOverviewStore struct {
 	StoreID        string `json:"storeId"`
+	AccountID      string `json:"accountId"`
 	StoreName      string `json:"storeName"`
 	StoreCode      string `json:"storeCode,omitempty"`
 	City           string `json:"city,omitempty"`

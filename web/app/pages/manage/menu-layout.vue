@@ -37,6 +37,13 @@ async function handleSave() {
 
     <div class="menu-layout-page__actions">
       <UButton
+        to="/manage/experimental-features"
+        icon="i-lucide-flask-conical"
+        color="neutral"
+        variant="soft"
+        label="Recursos experimentais"
+      />
+      <UButton
         icon="i-lucide-wand-2"
         color="neutral"
         variant="soft"

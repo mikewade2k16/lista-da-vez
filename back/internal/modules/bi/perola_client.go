@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -152,6 +153,60 @@ func (client *PerolaClient) Find(ctx context.Context, endpoint string, body []by
 		return PerolaProxyResponse{}, err
 	}
 	return client.FindWithToken(ctx, endpoint, body, client.credentials, refreshedToken)
+}
+
+func (client *PerolaClient) Get(ctx context.Context, endpoint string, query url.Values) (PerolaProxyResponse, error) {
+	token, err := client.EnsureToken(ctx, false)
+	if err != nil {
+		return PerolaProxyResponse{}, err
+	}
+
+	response, err := client.GetWithToken(ctx, endpoint, query, client.credentials, token)
+	if err != nil || response.UpstreamStatus != http.StatusUnauthorized || !client.hasLoginCredentials() {
+		return response, err
+	}
+
+	refreshedToken, err := client.RefreshAfterUnauthorized(ctx, token)
+	if err != nil {
+		return PerolaProxyResponse{}, err
+	}
+	return client.GetWithToken(ctx, endpoint, query, client.credentials, refreshedToken)
+}
+
+func (client *PerolaClient) GetWithToken(
+	ctx context.Context,
+	endpoint string,
+	query url.Values,
+	credentials perolaCredentials,
+	token string,
+) (PerolaProxyResponse, error) {
+	credentials.CNPJEmpresa = onlyDigits(credentials.CNPJEmpresa)
+	token = normalizeBearerToken(token)
+	if strings.TrimSpace(credentials.CompanyKey) == "" ||
+		strings.TrimSpace(credentials.CNPJEmpresa) == "" ||
+		token == "" {
+		return PerolaProxyResponse{}, ErrConfiguration
+	}
+
+	requestURL, err := url.Parse(client.baseURL + endpoint)
+	if err != nil {
+		return PerolaProxyResponse{}, fmt.Errorf("%w: invalid upstream URL", ErrUpstream)
+	}
+	requestURL.RawQuery = query.Encode()
+
+	requestCtx, cancel := client.requestContext(ctx)
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, requestURL.String(), nil)
+	if err != nil {
+		return PerolaProxyResponse{}, fmt.Errorf("%w: %v", ErrUpstream, err)
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("dsCompanyKey", credentials.CompanyKey)
+	request.Header.Set("dsCnpjEmpresa", credentials.CNPJEmpresa)
+	request.Header.Set("Authorization", "Bearer "+token)
+
+	return client.do(request)
 }
 
 func (client *PerolaClient) FindWithToken(

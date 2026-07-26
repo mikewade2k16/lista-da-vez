@@ -75,13 +75,16 @@ evento, não do relógio do workflow.
 ## Canais e migração segura
 
 1. Evolution é o adapter atual de piloto.
-2. Meta WhatsApp Cloud será outro `channel.Provider`; a troca acontece por número no
-   painel, com janela controlada e nunca com dois providers ativos no mesmo número.
-3. Webhooks oficiais da Meta entram primeiro no Go para assinatura, dedupe e
-   persistência. O n8n nunca é o endpoint público autoritativo do canal.
-4. Instagram usa o mesmo inbox/CRM, mas terá orquestração própria para DM e comentários,
-   chamando o mesmo cérebro estruturado. Resposta automática a comentário começa com
-   allowlist, limite por post e opção de aprovação humana.
+2. Os adapters Go de Meta WhatsApp Cloud e Instagram, suas rotas de configuração/webhook e a
+   moderação de comentários estão code-complete no workspace local.
+3. Webhooks oficiais da Meta entram primeiro no Go para assinatura, dedupe e persistência. O n8n
+   nunca é o endpoint público autoritativo do canal.
+4. A troca de Evolution para WhatsApp Cloud continua sendo por número, com janela controlada e
+   nunca com dois providers ativos no mesmo número.
+5. Instagram usa o mesmo inbox/CRM e mantém aprovação humana para os efeitos moderados.
+
+Code-complete não significa provider validado: credenciais reais, E2E controlado, observabilidade,
+rollout e cutover continuam pendentes.
 
 ## Segurança e portabilidade dos workflows
 
@@ -104,5 +107,5 @@ de outro owner. Validações em scripts compartilhados devem ser escopadas pelos
 2. Debounce, áudio, visão e tools no n8n, mantendo callbacks validados no Go.
 3. Painel CRM com identidades, touchpoints, lifecycle, tags e notas persistidas.
 4. Atribuição de landing pages/UTMs integrada ao receptor do Site.
-5. Adapter Meta WhatsApp Cloud e migração por número.
-6. Adapter Meta Instagram + workflow específico de DM/comentários.
+5. E2E controlado dos adapters Meta, seguido de migração gradual por número.
+6. Validar em provider real o fluxo Instagram DM/comentários, incluindo moderação e rollback.

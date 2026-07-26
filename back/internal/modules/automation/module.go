@@ -37,12 +37,25 @@ const omniContextTokenTTL = 300 * time.Second
 // Conectar (QR via proxy WAHA) + liga/desliga. Fases seguintes (runtime-config,
 // personas/RAG, BYOK) em docs/automation/PLATAFORMA_AUTOMACAO.md.
 type Module struct {
-	handle *handle
+	handle              *handle
+	omniChatCredentials OmniChatCredentialResolver
 }
 
 // New cria um Module pronto para registrar no Registry.
-func New() *Module {
-	return &Module{}
+func New(options ...func(*Module)) *Module {
+	module := &Module{}
+	for _, option := range options {
+		if option != nil {
+			option(module)
+		}
+	}
+	return module
+}
+
+func WithOmniChatCredentialResolver(resolver OmniChatCredentialResolver) func(*Module) {
+	return func(module *Module) {
+		module.omniChatCredentials = resolver
+	}
 }
 
 func (m *Module) ID() string { return "automation" }
@@ -111,6 +124,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	ctxMgr := NewContextTokenManager([]byte(ctxSecret), omniContextTokenTTL)
 
 	svc := NewService(NewStore(deps.Pool), NewWAHAClient(wahaURL), NewN8NClient(n8nURL, runtimeToken), ctxMgr, wahaSession)
+	svc.SetOmniChatCredentialResolver(m.omniChatCredentials)
 
 	m.handle = &handle{
 		service:        svc,

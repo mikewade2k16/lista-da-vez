@@ -53,7 +53,7 @@ onMounted(() => {
   <article v-if="hasQueueModule" class="settings-card profile-feedback">
     <header class="settings-card__header">
       <h3 class="settings-card__title">Seus chamados</h3>
-      <p class="settings-card__text">Feedbacks que voce abriu e as respostas do time.</p>
+      <p class="settings-card__text">Chamados de suporte e respostas do time.</p>
     </header>
 
     <p v-if="isLoading" class="profile-feedback__loading">Carregando seus chamados...</p>
@@ -82,9 +82,9 @@ onMounted(() => {
 
     <div class="profile-feedback__actions">
       <AppPanelButton variant="secondary" @click="feedbackModalOpen = true">
-        Enviar feedback
+        Abrir chamado
       </AppPanelButton>
-      <NuxtLink class="profile-feedback__link" to="/meus-feedbacks">Ver todos</NuxtLink>
+      <NuxtLink class="profile-feedback__link" to="/meus-chamados">Ver todos</NuxtLink>
     </div>
 
     <FeedbackFormModal v-model="feedbackModalOpen" />

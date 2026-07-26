@@ -5,7 +5,7 @@ import { useOmnichannelAutomationMvp } from '~/composables/omnichannel/useOmnich
 import { useAuthStore } from '~/stores/auth'
 import { useCoreAccountStore } from '../../../../layers/core/stores/account'
 
-const props = defineProps<{ open: boolean }>()
+const props = defineProps<{ open: boolean; initialTab?: string }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
 const auth = useAuthStore()
@@ -52,6 +52,7 @@ watch(
     :can-manage-instances="canManageInstances"
     :can-manage-agents="canManageAgents"
     :can-audit="canAudit"
+    :initial-tab="initialTab"
     @save="save"
     @options-changed="load"
     @update:open="emit('update:open', $event)"

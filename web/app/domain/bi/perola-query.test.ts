@@ -5,6 +5,7 @@ import {
   createInitialPerolaFilterDrafts,
   normalizePerolaDatasetCatalog,
   normalizePerolaDatasetQueryResponse,
+  PEROLA_STATIC_DATASETS,
   perolaQueryResultColumns,
 } from './perola-query'
 
@@ -36,6 +37,20 @@ const catalogPayload = {
 }
 
 describe('Pérola typed query helpers', () => {
+  it('keeps the six local table contracts available without an API call', () => {
+    expect(PEROLA_STATIC_DATASETS.map((dataset) => dataset.id)).toEqual([
+      'item',
+      'imagem-item',
+      'item-saldo-preco-compra',
+      'nota',
+      'nota-item',
+      'inventario',
+    ])
+    for (const dataset of PEROLA_STATIC_DATASETS) {
+      expect(perolaQueryResultColumns(dataset.id, []).length).toBeGreaterThan(0)
+    }
+  })
+
   it('normalizes the public catalog and creates the required filter draft', () => {
     const [dataset] = normalizePerolaDatasetCatalog(catalogPayload)
     expect(dataset?.id).toBe('nota')
@@ -71,7 +86,7 @@ describe('Pérola typed query helpers', () => {
     expect(result.error).toContain('inteiro positivo')
   })
 
-  it('normalizes a structured page and derives manageable dynamic columns', () => {
+  it('normalizes a structured page and keeps every mapped column visible', () => {
     const response = normalizePerolaDatasetQueryResponse({
       datasetId: 'nota',
       datasetLabel: 'Nota',
@@ -88,9 +103,11 @@ describe('Pérola typed query helpers', () => {
     })
 
     expect(response?.hasMore).toBe(true)
-    expect(perolaQueryResultColumns(response?.records || []).map((column) => column.id)).toEqual([
-      'id',
-      'numDocumento',
-    ])
+    const columns = perolaQueryResultColumns('nota', response?.records || [])
+    expect(columns.map((column) => column.id)).toEqual(
+      expect.arrayContaining(['id', 'numDocumento', 'dataEmissao', 'valorTotal']),
+    )
+    expect(columns.every((column) => column.defaultVisible)).toBe(true)
+    expect(columns.length).toBeGreaterThan(20)
   })
 })

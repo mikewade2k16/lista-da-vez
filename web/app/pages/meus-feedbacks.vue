@@ -4,6 +4,7 @@ import UserFeedbackWorkspace from '~/components/feedback/UserFeedbackWorkspace.v
 definePageMeta({
   layout: 'dashboard',
   workspaceId: '',
+  alias: ['/meus-chamados'],
 })
 </script>
 

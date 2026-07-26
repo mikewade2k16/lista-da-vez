@@ -5,9 +5,9 @@ import {
   DEFAULT_PAUSE_REASON_OPTIONS,
   DEFAULT_QUEUE_JUMP_REASON_OPTIONS,
   DEFAULT_OPERATION_TEMPLATE_ID,
-  DEFAULT_SCORE_WEIGHTS,
   getOperationTemplateById,
 } from './operation-templates'
+import { DEFAULT_SCORE_WEIGHTS } from './gamification'
 import { DEFAULT_PROFESSION_OPTIONS } from './profession-options'
 import { normalizeCampaign } from '../utils/campaigns'
 import {

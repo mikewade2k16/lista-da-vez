@@ -2,7 +2,7 @@
 definePageMeta({
   layout: 'dashboard',
   workspaceId: 'feedback',
-  alias: ['/operacao/feedback'],
+  alias: ['/operacao/feedback', '/suporte', '/operacao/suporte'],
 })
 </script>
 

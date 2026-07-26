@@ -1,0 +1,232 @@
+.retention-policies {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid rgb(var(--border) / 0.8);
+  border-radius: 1rem;
+  background: rgb(var(--surface) / 0.9);
+}
+
+.retention-policies__header,
+.retention-policies__selector,
+.retention-policies__versions article > header,
+.retention-policies__governance summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.retention-policies h2,
+.retention-policies p,
+.retention-policies dl {
+  margin: 0;
+}
+
+.retention-policies__header small,
+.retention-policies__header p,
+.retention-policies__governance summary small,
+.retention-policies__form small,
+.retention-policies__versions article > p,
+.retention-policies__empty-draft {
+  color: rgb(var(--muted));
+}
+
+.retention-policies__header small {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.retention-policies__header h2 {
+  margin: 0.2rem 0;
+}
+
+.retention-policies button {
+  min-height: 2.35rem;
+  padding: 0 0.85rem;
+  border: 1px solid rgb(var(--primary) / 0.28);
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(var(--primary));
+  font-weight: 800;
+}
+
+.retention-policies button.is-primary,
+.retention-policies__form button[type='submit'] {
+  background: rgb(var(--primary));
+  color: white;
+}
+
+.retention-policies button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.retention-policies__selector {
+  align-items: end;
+}
+
+.retention-policies__selector > :first-child {
+  flex: 1;
+}
+
+.retention-policies__selector dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(6rem, 1fr));
+  gap: 0.6rem;
+  min-width: min(100%, 24rem);
+}
+
+.retention-policies__selector dl div,
+.retention-policies__versions article {
+  padding: 0.7rem;
+  border: 1px solid rgb(var(--border) / 0.75);
+  border-radius: 0.75rem;
+}
+
+.retention-policies dt {
+  color: rgb(var(--muted));
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.retention-policies dd {
+  margin: 0.2rem 0 0;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.retention-policies__versions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.retention-policies__versions article {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.retention-policies__versions article.is-published {
+  border-color: rgb(var(--success) / 0.3);
+  background: rgb(var(--success) / 0.05);
+}
+
+.retention-policies__versions article.is-draft {
+  border-color: rgb(var(--warning) / 0.3);
+  background: rgb(var(--warning) / 0.05);
+}
+
+.retention-policies__versions article > header span {
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgb(var(--border) / 0.35);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.retention-policies__versions dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.retention-policies__versions article > p {
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.retention-policies__governance {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.retention-policies__governance details {
+  border: 1px solid rgb(var(--border) / 0.8);
+  border-radius: 0.8rem;
+  overflow: hidden;
+}
+
+.retention-policies__governance summary {
+  padding: 0.8rem;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.retention-policies__governance summary span {
+  display: grid;
+  gap: 0.15rem;
+  flex: 1;
+}
+
+.retention-policies__form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 0 0.8rem 0.8rem;
+  border-top: 1px solid rgb(var(--border) / 0.55);
+}
+
+.retention-policies__form > * {
+  margin-top: 0.8rem;
+}
+
+.retention-policies__form label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  color: rgb(var(--muted));
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.retention-policies__form input {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 0.7rem;
+  border: 1px solid rgb(var(--border));
+  border-radius: 0.7rem;
+  background: rgb(var(--surface));
+  color: inherit;
+}
+
+.retention-policies__form button {
+  align-self: end;
+}
+
+.retention-policies__inline-error {
+  padding: 0.7rem;
+  border: 1px solid rgb(var(--danger) / 0.3);
+  border-radius: 0.7rem;
+  background: rgb(var(--danger) / 0.06);
+  color: rgb(var(--danger));
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.retention-policies__empty-draft {
+  padding: 0 0.8rem 0.8rem;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 950px) {
+  .retention-policies__versions,
+  .retention-policies__form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .retention-policies__header,
+  .retention-policies__selector {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .retention-policies__selector dl,
+  .retention-policies__versions,
+  .retention-policies__form {
+    grid-template-columns: 1fr;
+  }
+}

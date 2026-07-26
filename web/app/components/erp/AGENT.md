@@ -19,3 +19,7 @@ Componentes administrativos da workspace ERP em `web/app/components/erp/`.
 - Manter abas com props/emits explicitos e arquivos abaixo de 500 linhas.
 - Reaproveitar `ErpDataTable.vue` para grades administrativas em vez de criar tabelas paralelas.
 - Antes de alterar filtros, paginacao ou exportacao, validar `/erp` manualmente com troca de aba.
+- `ErpWorkspace.vue` usa fluxo flex-column no host `.erp-panel`; as tabs possuem
+  altura propria e ficam fora do empilhamento do conteudo. Nao voltar o host
+  para o grid generico de `.admin-panel`, pois as tabs compactas podem ser
+  sobrepostas pelos cards da aba ativa.

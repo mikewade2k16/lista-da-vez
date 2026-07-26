@@ -143,6 +143,7 @@ entrada = botao "Configurar atendimento" em `~/pages/omnichannel/index.vue` (gat
 | Caminho                                                                                 | Papel                                                                                         |
 | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `config/OmnichannelConfigDrawer.vue`                                                    | Host: abas + `?config=<aba>` + gate por permissao (platform_admin incluso)                    |
+| `config/ConfigChannelClientBindings.vue`                                                | Vínculo histórico canal→cliente, policy off/shadow/on, exceções e reparo assistido            |
 | `config/ConfigNumbers.vue` + `ConfigNumberCard/Credentials/Capabilities/Connection.vue` | Numeros/providers/credencial `{set,last4}`/QR; UI degrada por numero via `Capabilities()`     |
 | `config/ConfigDepartments.vue` · `ConfigQueues.vue` · `ConfigQueueMembers.vue`          | Setores, filas e membros (diff incremental add/remove)                                        |
 | `config/ConfigRoutingRules.vue`                                                         | Regras + reordenacao de prioridade (`PUT /routing-rules/order`)                               |

@@ -54,6 +54,16 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		httpapi.WriteJSON(w, http.StatusOK, service.PerolaDatasetCatalog())
 	}), allowedRoles...))
 
+	mux.Handle("GET /v1/bi/perola/sales/recent", middleware.RequireRoles(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response, err := service.PerolaRecentSales(r.Context())
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, response)
+	}), allowedRoles...))
+
 	mux.Handle("POST /v1/bi/perola/datasets/{dataset}/query", middleware.RequireRoles(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input PerolaDatasetQueryInput
 		if err := httpapi.ReadJSON(r, &input); err != nil {
@@ -98,6 +108,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "dataset_not_found", "Dataset da Perola BI nao encontrado.")
 	case errors.Is(err, ErrFilterRequired):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "filter_required", "A consulta exige um filtro seletivo.")
+	case errors.Is(err, ErrSalesUnauthorized):
+		httpapi.WriteError(w, r, http.StatusBadGateway, "sales_unauthorized", "A Datajoias ainda nao autorizou esta credencial a consultar Vendas.")
 	case errors.Is(err, ErrUpstream):
 		httpapi.WriteError(w, r, http.StatusBadGateway, "upstream_error", "Nao foi possivel conectar na Perola BI.")
 	default:

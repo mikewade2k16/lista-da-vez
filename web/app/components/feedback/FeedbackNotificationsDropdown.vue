@@ -27,7 +27,7 @@ const canManageFeedback = computed(() => allowedWorkspaces.value.includes('feedb
 const feedbackCollection = computed(() =>
   canManageFeedback.value ? feedbackStore.feedbacks : feedbackStore.myFeedbacks,
 )
-const feedbackPath = computed(() => (canManageFeedback.value ? '/feedback' : '/meus-feedbacks'))
+const feedbackPath = computed(() => (canManageFeedback.value ? '/suporte' : '/meus-chamados'))
 
 function statusLabel(status) {
   const labels = {

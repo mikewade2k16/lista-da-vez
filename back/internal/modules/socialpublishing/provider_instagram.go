@@ -247,7 +247,9 @@ func (p *InstagramGraphProvider) do(
 	} else {
 		body = bytes.NewBufferString(values.Encode())
 	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	// graphBase vem exclusivamente de configuracao do servidor; path e
+	// url.PathEscape e query/form sao construidos pelo adapter, nunca pelo cliente.
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body) //nolint:gosec // host configurado, nao input HTTP
 	if err != nil {
 		return fmt.Errorf("%w: criar request", ErrProviderUnavailable)
 	}

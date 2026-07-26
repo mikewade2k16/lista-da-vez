@@ -19,15 +19,6 @@ const omniChatMaxQuestionLen = 2000
 // Chat (contrato: 400 prompt_too_long acima disso).
 const omniChatMaxPersonaLen = 20000
 
-// omniChatPersonaView e a resposta do contrato de config do Omni Chat: o systemPrompt
-// efetivo da account, se ele e o default embutido (true) ou um custom salvo (false), e
-// a janela de memoria (interacoes que o n8n mantem no contexto).
-type omniChatPersonaView struct {
-	SystemPrompt  string `json:"systemPrompt"`
-	IsDefault     bool   `json:"isDefault"`
-	HistoryWindow int    `json:"historyWindow"`
-}
-
 // handleOmniChatAsk responde POST /v1/omni-chat/ask: chat interno do painel de
 // Operacao ligado ao n8n. Auth e' RequireAuth (rota FORA do prefixo
 // /v1/automation, de proposito — nao exige o modulo automation de quem usa
@@ -51,11 +42,12 @@ func handleOmniChatAsk(svc *Service) http.HandlerFunc {
 		}
 
 		var body struct {
-			Question       string `json:"question"`
-			Topic          string `json:"topic"`
-			ConversationID string `json:"conversationId"`
+			Question       string                   `json:"question"`
+			Topic          string                   `json:"topic"`
+			ConversationID string                   `json:"conversationId"`
+			History        []OmniChatHistoryMessage `json:"history"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&body); err != nil {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
 		}
@@ -72,7 +64,9 @@ func handleOmniChatAsk(svc *Service) http.HandlerFunc {
 
 		// conversationId vem do front (1 por conversa) e escopa a memoria do n8n;
 		// o service o combina com account+user (nunca confia no body p/ escopo).
-		view, err := svc.OmniChatAsk(r.Context(), scope, question, body.Topic, body.ConversationID)
+		view, err := svc.OmniChatAsk(
+			r.Context(), scope, question, body.Topic, body.ConversationID, body.History,
+		)
 		if err != nil {
 			writeOmniChatError(w, r, err)
 			return
@@ -91,12 +85,12 @@ func handleOmniChatPersonaGet(svc *Service) http.HandlerFunc {
 			writeNoAccount(w, r)
 			return
 		}
-		prompt, isDefault, historyWindow, err := svc.OmniChatConfig(r.Context(), accountID)
+		view, err := svc.OmniChatConfig(r.Context(), accountID)
 		if err != nil {
 			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Falha ao carregar a persona do Omni Chat.")
 			return
 		}
-		httpapi.WriteJSON(w, http.StatusOK, omniChatPersonaView{SystemPrompt: prompt, IsDefault: isDefault, HistoryWindow: historyWindow})
+		httpapi.WriteJSON(w, http.StatusOK, view)
 	}
 }
 
@@ -110,36 +104,82 @@ func handleOmniChatPersonaPut(svc *Service) http.HandlerFunc {
 			writeNoAccount(w, r)
 			return
 		}
+		principal, hasPrincipal := auth.PrincipalFromContext(r.Context())
+		if !hasPrincipal || principal.Role != auth.RolePlatformAdmin {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Somente o administrador pode configurar o Omni Chat.")
+			return
+		}
 		var body struct {
-			SystemPrompt  string `json:"systemPrompt"`
-			HistoryWindow int    `json:"historyWindow"`
+			Enabled       *bool    `json:"enabled"`
+			SystemPrompt  string   `json:"systemPrompt"`
+			CredentialID  string   `json:"credentialId"`
+			Model         string   `json:"model"`
+			Temperature   *float64 `json:"temperature"`
+			HistoryWindow int      `json:"historyWindow"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
 		}
 		trimmed := strings.TrimSpace(body.SystemPrompt)
-		switch {
-		case trimmed == "":
-			httpapi.WriteError(w, r, http.StatusBadRequest, "empty_prompt", "O comportamento nao pode ficar vazio.")
-			return
-		case len(trimmed) > omniChatMaxPersonaLen:
+		if len(trimmed) > omniChatMaxPersonaLen {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "prompt_too_long", "O comportamento e' longo demais (max 20000 caracteres).")
 			return
 		}
-		// historyWindow normalizado no service (0/ausente -> default; clamp 1..20).
-		saved, savedWindow, err := svc.SetOmniChatConfig(r.Context(), accountID, trimmed, body.HistoryWindow)
+		current, err := svc.OmniChatConfig(r.Context(), accountID)
 		if err != nil {
+			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Falha ao carregar a configuracao atual.")
+			return
+		}
+		enabled := current.Enabled
+		if body.Enabled != nil {
+			enabled = *body.Enabled
+		}
+		temperature := current.Temperature
+		if body.Temperature != nil {
+			temperature = *body.Temperature
+		}
+		credentialID := strings.TrimSpace(body.CredentialID)
+		if credentialID == "" {
+			credentialID = current.CredentialID
+		}
+		model := strings.TrimSpace(body.Model)
+		if model == "" {
+			model = current.Model
+		}
+		saved, err := svc.SetOmniChatConfig(r.Context(), accountID, OmniChatConfigInput{
+			Enabled: enabled, SystemPrompt: trimmed, CredentialID: credentialID,
+			Model: model, Temperature: temperature, HistoryWindow: body.HistoryWindow,
+			UpdatedBy: principal.UserID,
+		})
+		if err != nil {
+			if errors.Is(err, ErrOmniChatCredentialUnavailable) {
+				httpapi.WriteError(w, r, http.StatusBadRequest, "credential_unavailable", "A chave global selecionada nao esta disponivel para esta conta.")
+				return
+			}
+			if errors.Is(err, ErrOmniChatInvalidConfig) {
+				httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_config", "Selecione uma chave global e um modelo para ativar o Omni Chat.")
+				return
+			}
 			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Falha ao salvar a persona do Omni Chat.")
 			return
 		}
-		httpapi.WriteJSON(w, http.StatusOK, omniChatPersonaView{SystemPrompt: saved, IsDefault: false, HistoryWindow: savedWindow})
+		httpapi.WriteJSON(w, http.StatusOK, saved)
 	}
 }
 
 // writeOmniChatError mapeia os erros do Omni Chat para o contrato congelado.
 func writeOmniChatError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, ErrOmniChatDisabled):
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "omnichat_disabled",
+			"O Omni Chat esta desativado pelo administrador desta conta.")
+	case errors.Is(err, ErrOmniChatCredentialUnavailable):
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "omnichat_credential_unavailable",
+			"O Omni Chat ainda nao possui uma chave global de IA valida.")
+	case errors.Is(err, ErrOmniChatInvalidConfig):
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "omnichat_invalid_config",
+			"A configuracao de IA do Omni Chat esta incompleta.")
 	case errors.Is(err, ErrN8NNotConfigured):
 		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "omnichat_not_configured",
 			"O Omni Chat ainda nao foi configurado (AUTOMATION_N8N_INTERNAL_URL/AUTOMATION_RUNTIME_TOKEN).")

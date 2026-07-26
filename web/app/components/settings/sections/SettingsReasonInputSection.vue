@@ -1,10 +1,8 @@
 <script setup>
-import { computed } from 'vue'
-
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import SettingsOptionManager from '~/components/settings/SettingsOptionManager.vue'
 
-const props = defineProps({
+defineProps({
   config: {
     type: Object,
     required: true,
@@ -14,79 +12,65 @@ const props = defineProps({
     required: true,
   },
 })
-
-const currentModeLabel = computed(() => {
-  const value = props.ctx.state.modalConfig[props.config.modeKey] || 'text'
-  const option = props.ctx.reasonInputModeOptions?.find((item) => item.value === value)
-  return option?.label || value
-})
 </script>
 
 <template>
-  <div class="settings-grid">
-    <article class="settings-card">
-      <details class="settings-collapse">
-        <summary class="settings-collapse__summary">
-          <div class="settings-collapse__title-wrap">
-            <strong class="settings-collapse__title">{{ config.title }}</strong>
-            <span class="settings-collapse__text">{{ config.text }}</span>
-          </div>
-          <span class="settings-collapse__meta">{{ currentModeLabel }}</span>
-          <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
-            expand_more
-          </span>
-        </summary>
+  <div class="settings-reason-section">
+    <section class="catalog-behavior">
+      <header class="catalog-behavior__header">
+        <strong>{{ config.title }}</strong>
+        <span>{{ config.text }}</span>
+      </header>
 
-        <div class="settings-collapse__body">
-          <AppSelectField
-            class="settings-field"
-            label="Modo do campo"
-            :model-value="ctx.state.modalConfig[config.modeKey] || 'text'"
-            :options="ctx.reasonInputModeOptions"
+      <div class="catalog-behavior__fields catalog-behavior__fields--reason">
+        <AppSelectField
+          class="settings-field"
+          label="Modo do campo"
+          :model-value="ctx.state.modalConfig[config.modeKey] || 'text'"
+          :options="ctx.reasonInputModeOptions"
+          :disabled="!ctx.canEditSettings"
+          @update:model-value="ctx.updateModalConfigValue(config.modeKey, $event)"
+        />
+        <label class="settings-field">
+          <span>Label</span>
+          <input
+            :value="ctx.state.modalConfig[config.labelKey] || config.labelDefault"
+            type="text"
             :disabled="!ctx.canEditSettings"
-            @update:model-value="ctx.updateModalConfigValue(config.modeKey, $event)"
+            @change="ctx.updateModalConfigValue(config.labelKey, $event.target.value)"
           />
-          <label class="settings-field">
-            <span>Label</span>
-            <input
-              :value="ctx.state.modalConfig[config.labelKey] || config.labelDefault"
-              type="text"
-              :disabled="!ctx.canEditSettings"
-              @change="ctx.updateModalConfigValue(config.labelKey, $event.target.value)"
-            />
-          </label>
-          <label class="settings-field">
-            <span>Placeholder</span>
-            <input
-              :value="ctx.state.modalConfig[config.placeholderKey] || config.placeholderDefault"
-              type="text"
-              :disabled="!ctx.canEditSettings"
-              @change="ctx.updateModalConfigValue(config.placeholderKey, $event.target.value)"
-            />
-          </label>
-          <label class="settings-field">
-            <span>Label do outro</span>
-            <input
-              :value="ctx.state.modalConfig[config.otherLabelKey] || config.otherLabelDefault"
-              type="text"
-              :disabled="!ctx.canEditSettings"
-              @change="ctx.updateModalConfigValue(config.otherLabelKey, $event.target.value)"
-            />
-          </label>
-          <label class="settings-field">
-            <span>Placeholder do outro</span>
-            <input
-              :value="
-                ctx.state.modalConfig[config.otherPlaceholderKey] || config.otherPlaceholderDefault
-              "
-              type="text"
-              :disabled="!ctx.canEditSettings"
-              @change="ctx.updateModalConfigValue(config.otherPlaceholderKey, $event.target.value)"
-            />
-          </label>
-        </div>
-      </details>
-    </article>
+        </label>
+        <label class="settings-field">
+          <span>Placeholder</span>
+          <input
+            :value="ctx.state.modalConfig[config.placeholderKey] || config.placeholderDefault"
+            type="text"
+            :disabled="!ctx.canEditSettings"
+            @change="ctx.updateModalConfigValue(config.placeholderKey, $event.target.value)"
+          />
+        </label>
+        <label class="settings-field">
+          <span>Label do outro</span>
+          <input
+            :value="ctx.state.modalConfig[config.otherLabelKey] || config.otherLabelDefault"
+            type="text"
+            :disabled="!ctx.canEditSettings"
+            @change="ctx.updateModalConfigValue(config.otherLabelKey, $event.target.value)"
+          />
+        </label>
+        <label class="settings-field">
+          <span>Placeholder do outro</span>
+          <input
+            :value="
+              ctx.state.modalConfig[config.otherPlaceholderKey] || config.otherPlaceholderDefault
+            "
+            type="text"
+            :disabled="!ctx.canEditSettings"
+            @change="ctx.updateModalConfigValue(config.otherPlaceholderKey, $event.target.value)"
+          />
+        </label>
+      </div>
+    </section>
 
     <SettingsOptionManager
       :title="config.optionTitle"
@@ -102,3 +86,81 @@ const currentModeLabel = computed(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.settings-reason-section {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.catalog-behavior {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  background: rgb(var(--surface-2) / 0.64);
+}
+
+.catalog-behavior__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.catalog-behavior__header strong {
+  flex: 0 0 auto;
+  color: var(--text-main);
+  font-size: 0.77rem;
+}
+
+.catalog-behavior__header span {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.catalog-behavior__fields {
+  display: grid;
+  min-width: 0;
+  gap: 0.45rem;
+}
+
+.catalog-behavior__fields--reason {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.catalog-behavior__fields :deep(.settings-field) {
+  gap: 0.25rem;
+  font-size: 0.72rem;
+}
+
+.catalog-behavior__fields :deep(.settings-field input) {
+  padding: 0.45rem 0.55rem;
+}
+
+.catalog-behavior__fields :deep(.app-select-field__trigger) {
+  min-height: 34px;
+}
+
+@media (max-width: 760px) {
+  .catalog-behavior__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .catalog-behavior__fields--reason {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .catalog-behavior__fields--reason {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>

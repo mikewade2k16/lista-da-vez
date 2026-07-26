@@ -31,3 +31,11 @@ type AICredentialImportView struct {
 	Imported int `json:"imported"`
 	Existing int `json:"existing"`
 }
+
+// RuntimeAICredential is the server-side projection exposed to explicitly wired
+// module adapters. APIKey must never be serialized, logged or returned to HTTP.
+type RuntimeAICredential struct {
+	ID       string
+	Provider string
+	APIKey   string
+}

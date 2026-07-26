@@ -157,6 +157,54 @@ function submit(): void {
           Nunca compartilhe o token em mensagens, tarefas ou documentos. Revogue-o no Meta caso
           suspeite de exposição.
         </p>
+        <details class="sp-connection__guide">
+          <summary>
+            <UIcon name="i-lucide-book-open-check" aria-hidden="true" />
+            Como obter este token
+          </summary>
+          <ol>
+            <li>
+              No
+              <a
+                href="https://developers.facebook.com/apps/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Meta for Developers,
+              </a>
+              abra o app da plataforma e configure
+              <strong>Instagram API with Instagram Login.</strong>
+            </li>
+            <li>
+              Adicione a conta profissional Business ou Creator como conta de teste e conclua o
+              aceite no Instagram.
+            </li>
+            <li>
+              Em
+              <strong>Generate access tokens</strong>
+              , autorize as três permissões acima e copie o Instagram User Access Token.
+            </li>
+            <li>
+              Selecione o cliente correto no topo desta página, cole o token uma única vez e confira
+              o
+              <strong>@usuário</strong>
+              validado antes de agendar.
+            </li>
+          </ol>
+          <p>
+            Este é o fluxo manual do piloto. Para clientes em produção, a conexão deverá usar OAuth
+            e Advanced Access aprovado pela Meta.
+          </p>
+          <a
+            class="sp-connection__guide-link"
+            href="https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/get-started/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Abrir o guia oficial da Meta
+            <UIcon name="i-lucide-external-link" aria-hidden="true" />
+          </a>
+        </details>
       </div>
     </aside>
   </div>
@@ -389,6 +437,62 @@ function submit(): void {
   border-radius: var(--radius-xs);
   color: rgb(var(--text));
   background: rgb(var(--warning) / 0.14);
+}
+
+.sp-connection__guide {
+  margin-top: 0.8rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.sp-connection__guide summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: rgb(var(--primary));
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 750;
+  list-style: none;
+}
+
+.sp-connection__guide summary::-webkit-details-marker {
+  display: none;
+}
+
+.sp-connection__guide summary :deep(svg),
+.sp-connection__guide-link :deep(svg) {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+}
+
+.sp-connection__guide ol {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.75rem 0 0;
+  padding-left: 1.15rem;
+  color: rgb(var(--muted));
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.sp-connection__guide a {
+  color: rgb(var(--primary));
+}
+
+.sp-connection__guide .sp-connection__guide-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.sp-connection__guide-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 900px) {

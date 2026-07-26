@@ -15,6 +15,10 @@ defineProps({
     type: Array,
     default: () => [],
   },
+  openingServiceId: {
+    type: String,
+    default: '',
+  },
 })
 
 const emit = defineEmits(['close', 'finish'])
@@ -91,10 +95,11 @@ function closedAtLabel(item) {
             <button
               class="column-action column-action--primary pending-list__finish"
               type="button"
+              :disabled="Boolean(openingServiceId)"
               :data-testid="`operation-pending-finish-${item.serviceId}`"
               @click="emit('finish', item)"
             >
-              Encerrar
+              {{ openingServiceId === item.serviceId ? 'Abrindo...' : 'Encerrar' }}
             </button>
           </article>
         </div>

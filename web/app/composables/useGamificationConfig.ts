@@ -1,6 +1,6 @@
 import { computed } from 'vue'
 
-import { DEFAULT_SCORE_WEIGHTS as DEFAULT_SCORE_WEIGHT_SETTINGS } from '~/domain/data/operation-templates'
+import { DEFAULT_SCORE_WEIGHTS as DEFAULT_SCORE_WEIGHT_SETTINGS } from '~/domain/data/gamification'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 
 export type BadgeRuleId =

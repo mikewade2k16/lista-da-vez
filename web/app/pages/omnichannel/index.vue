@@ -22,6 +22,7 @@ const auth = useAuthStore();
 const isPlatformAdmin = computed(() => auth.role === "platform_admin");
 const route = useRoute();
 const configOpen = ref(false);
+const configTab = computed(() => String(route.query.config || ""));
 const canConfigure = computed(
   () =>
     isPlatformAdmin.value ||
@@ -43,7 +44,7 @@ watch(
 
 <template>
   <section class="omnichannel-inbox-page">
-    <OmnichannelConfigDrawer v-model:open="configOpen" />
+    <OmnichannelConfigDrawer v-model:open="configOpen" :initial-tab="configTab" />
 
     <ClientOnly>
       <AsyncOmnichannelInboxModule @configure="configOpen = true" />

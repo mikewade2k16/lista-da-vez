@@ -1,6 +1,9 @@
 package omnichannel
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // TestTriageEventFor prova o mapeamento desfecho->evento do auto-disparo: SO `triaged` fecha a
 // triagem com sucesso (ai.triage.done); TODO desfecho degradado falha OPEN (ai.triage.failed),
@@ -42,6 +45,36 @@ func TestAutoTriagePathWithAgent(t *testing.T) {
 func TestAutoTriagePathWithoutAgent(t *testing.T) {
 	assertGoto(t, StateNew, EventMsgInbound, TransitionContext{HasActiveAgent: false}, StateRouting)
 	assertGoto(t, StateRouting, EventRouteMatched, TransitionContext{}, StateQueued)
+}
+
+func TestInboundTransitionCanUsePreResolvedAgentInsidePersistenceTransaction(t *testing.T) {
+	service := &Service{}
+	for _, tc := range []struct {
+		hasAgent bool
+		want     State
+	}{
+		{hasAgent: true, want: StateAIActive},
+		{hasAgent: false, want: StateRouting},
+	} {
+		update, decision, err := service.decideTransitionWithContext(
+			context.Background(),
+			"account-1",
+			EventMsgInbound,
+			TransitionPayload{},
+			convSnapshot{State: StateNew},
+			TransitionContext{HasActiveAgent: tc.hasAgent},
+		)
+		if err != nil {
+			t.Fatalf("hasAgent=%v: %v", tc.hasAgent, err)
+		}
+		if decision != nil || update.State != tc.want ||
+			!update.BumpLastMessage || !update.AdvanceAIGeneration {
+			t.Fatalf(
+				"hasAgent=%v: update=%+v decision=%+v, want state=%s with last-message bump",
+				tc.hasAgent, update, decision, tc.want,
+			)
+		}
+	}
 }
 
 // TestAutoTriageHumanStatesDoNotInviteAI prova que uma mensagem inbound num estado humano NAO

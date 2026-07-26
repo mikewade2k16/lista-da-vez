@@ -1,15 +1,31 @@
 # Governança da Inteligência do Cliente
 
-- **Status:** DRAFT — aguardando validação do product owner
-- **Versão:** 0.2
+- **Status:** IMPLEMENTAÇÃO LOCAL PARCIAL — fluxos conversacional e headless presentes; produção não validada
+- **Versão:** 0.9
 - **Data-base:** 2026-07-23
 - **Decisor do produto:** Mike
 - **Escopo:** Omnichannel, Customer Data, Customer Intelligence e integrações de contexto
+- **Especificações detalhadas:** [specs/README.md](specs/README.md)
 - **Especificação companheira:** [SPECS_GERAIS.md](SPECS_GERAIS.md)
+- **Evidência da implementação:** [IMPLEMENTACAO_LOCAL_2026-07-23.md](IMPLEMENTACAO_LOCAL_2026-07-23.md)
 
-> Este documento registra intenção, limites, evidências, mudanças propostas e critérios de
-> auditoria. Enquanto estiver em `DRAFT`, ele não autoriza migration, mudança de código, exclusão,
-> ativação de workflow, deploy ou tratamento cross-client em produção.
+> Aprovação registrada em 2026-07-23: o product owner autorizou iniciar a implementação integral
+> do pacote CI-00 a CI-10. A autorização cobre código, migrations aditivas, testes e documentação
+> local; não autoriza deploy, ativação/importação de workflow, cutover de produção, exclusão de
+> legado ou tratamento individual cross-client. Esses atos continuam sujeitos aos gates próprios.
+
+> Registro de execução em 2026-07-23: existe um slice local de binding, Customer Data, ingestão,
+> observações, contexto, runtime conversacional, cinco processos headless com writers, candidate
+> claims, Prompt Studio, fontes/sugestões, retenção de observações/context snapshots e integração
+> segura com o Omnichannel. Isso não conclui CI-00 a CI-10, não equivale a E2E autenticado ou com provider real
+> e não significa “ativado em produção”. Seis processos ainda não têm writer de negócio, o gerador
+> seguro de portfólio não existe e deploy, credenciais reais, cutover e fechamento jurídico/LGPD
+> continuam pendentes.
+
+> O texto de arquitetura abaixo preserva a visão-alvo. O estado entregue e as lacunas são
+> autoritativamente discriminados em
+> [IMPLEMENTACAO_LOCAL_2026-07-23.md](IMPLEMENTACAO_LOCAL_2026-07-23.md); verbo no presente em uma
+> regra normativa não deve ser interpretado como evidência de implementação.
 
 ## 1. Decisão executiva
 
@@ -36,6 +52,11 @@ Não existe contradição entre resposta automática e a proibição de envio di
 
 Para o consumidor, foi a IA que respondeu. Tecnicamente, somente o Omnichannel possui autoridade
 para publicar no canal.
+
+`CustomerIntelligenceDecision` é uma proposta tipada, não um comando de provider. Quando o
+Omnichannel a aceita, a decisão, a mensagem `PENDING`, a outbox do provider e a outbox de integração
+da Inteligência são correlacionadas sob autoridade transacional do Go. A
+`messaging.intelligence_outbox` não substitui a `messaging.outbox` e jamais chama o canal.
 
 ```text
 mensagem inbound
@@ -68,6 +89,9 @@ Estados esperados:
 - Permitir que a IA sugira novas fontes sem habilitar acesso por conta própria.
 - Suportar inteligência de portfólio da agência sem vazar dados entre clientes.
 - Liberar desenvolvimento paralelo por contratos estáveis e ownership explícito.
+- Tornar todo comportamento de produto que seja seguro parametrizar configurável pelo painel.
+- Usar prompts separados, versionados e publicáveis por processo como principal camada de
+  comportamento das IAs.
 
 ## 3. Fora de escopo
 
@@ -132,9 +156,9 @@ Invariantes ainda a congelar em CI-00:
 
 ## 5. Estado atual comprovado em 2026-07-23
 
-### 5.1 Base já existente
+### 5.1 Baseline anterior ao slice
 
-| Capacidade | Estado atual |
+| Capacidade | Baseline anterior |
 |---|---|
 | contatos e identidade de canal | `messaging.contacts` e `messaging.contact_identities` |
 | atribuição/origem | `messaging.contact_touchpoints` |
@@ -150,7 +174,7 @@ Invariantes ainda a congelar em CI-00:
 | leads e tracking | schema/módulo `site` |
 | CRM 360 no front | acoplado ao inbox do Omnichannel |
 
-### 5.2 Lacunas que motivam a mudança
+### 5.2 Lacunas que motivaram a mudança
 
 - `messaging.contact_intelligence` é um snapshot JSON sem proveniência por fato, histórico,
   verificação, conflitos, finalidade ou validade.
@@ -166,7 +190,25 @@ Invariantes ainda a congelar em CI-00:
 
 ### 5.3 Baseline documental
 
-- A maior migration no disco na inspeção foi `0237_social_publishing_foundation.sql`.
+- Na inspeção que originou o plano, a maior migration era
+  `0238_social_publishing_reliability.sql`.
+- A implementação local auditada neste documento cobre as migrations aditivas `0239` a `0255`.
+- `0250` adiciona constraints de escopo e auditoria automática metadata-only para observações.
+- `0251` vincula fontes, runs e observações a políticas publicadas e cria o estado/índice que o
+  worker Go usa para tombstone/crypto-shredding sem apagar a linha de proveniência.
+- `0252` publica schemas fechados para os onze processos além de triage/reply e registra o pipeline
+  `intelligence.headless`, sem publicar prompt, binding, agente ou capability de tenant.
+- `0253` cria projeções duráveis, cifradas e idempotentes para os cinco writers headless entregues.
+- `0254` exige aprovação explícita e revisionada para publicar retenção e adiciona legal hold de
+  observações com proteção e auditoria no banco.
+- `0255` aplica crypto-shred in-place aos context snapshots expirados, preserva IDs/metadados
+  mínimos referenciados por runs/resultados e impede expiração sob legal hold direto ou herdado de
+  observação.
+- O caminho inbound agora confirma mensagem, FSM, avanço de `ai_generation` e o intento durável
+  `omnichannel.ai.inbound` na mesma transação. A criação do dispatch e toda chamada de IA ocorrem
+  somente no worker; não existe fallback LLM por goroutine após o commit.
+- `0241` cria segmentos, versões, runs de avaliação, materializações e memberships. Export de
+  segmento exige migration própria futura e não foi entregue.
 - Nenhum número de migration fica reservado por este plano.
 - Migrations existentes são imutáveis; toda alteração futura será aditiva.
 - O plano preserva os workflows e recursos de outros módulos.
@@ -183,15 +225,15 @@ Invariantes ainda a congelar em CI-00:
 | Site | leads, formulário, atribuição e tracking autoritativos | merge global de identidade |
 | n8n | orquestração configurável, modelo, multimodal e tools autorizadas | banco, credenciais persistidas, permissão, FSM ou envio |
 
-IDs técnicos propostos:
+IDs técnicos adotados no slice local:
 
-- boundary: `customer_data`; CI-00 decide entre módulo/package próprio e subdomínio
-  `crm/customerdata`;
-- módulo: `customer_intelligence`; package Go: `customerintelligence`;
+- boundary/módulo determinístico: `customer_data`, package Go `customerdata`;
+- módulo inteligente: `customer_intelligence`, package Go `customerintelligence`;
 - rota de produto: `/inteligencia-clientes`;
 - APIs: `/v1/customer-data/*` e `/v1/customer-intelligence/*`.
 
-Esses nomes permanecem propostos até a validação deste documento.
+A adoção local congela o vocabulário para novos pacotes; renomear exige decisão registrada,
+migration/compatibilidade e atualização dos consumidores, não uma troca silenciosa.
 
 ## 7. Contratos entre módulos
 
@@ -224,6 +266,13 @@ type CustomerContextProvider interface {
 }
 ```
 
+`CustomerContextProvider` e o `ContextEnvelope` bruto são contratos internos entre serviços. Eles
+não podem ser expostos por rota pública, painel, workflow n8n ou resposta de ferramenta.
+
+`InteractionRequest` aciona um pipeline estruturado de alto nível. Cada prompt continua sendo
+executado separadamente e produz `ProcessResult` próprio; somente depois o Customer Intelligence
+compõe `InteractionDecision` para revalidação operacional do Omnichannel.
+
 Regras:
 
 - a interface é declarada pelo consumidor;
@@ -233,10 +282,131 @@ Regras:
 - tools e fontes vêm de registry allowlisted;
 - falha de uma fonte degrada o contexto e não bloqueia o recebimento da conversa.
 
-Dependência proposta: Omnichannel consome Customer Data e Customer Intelligence opcionalmente e
-mantém seu participante local quando ambos estão ausentes. Customer Intelligence requer a
-capacidade Customer Data para identificar `subject`/`relationship`. CI-00 deverá congelar
-`RequiresModules`, `OptionalModules` e o modo degradado antes das specs executáveis.
+Dependência adotada: Omnichannel consome Customer Data e Customer Intelligence opcionalmente e
+mantém seu participante local quando ambos estão ausentes. O módulo Customer Intelligence declara
+`customer_data` em `RequiresModules` e Omnichannel/CRM/Calendário/Site como opcionais; o chat
+continua operando no modo degradado quando a Inteligência está ausente/desabilitada.
+
+### 7.1 Configurabilidade pelo painel
+
+Configuração de comportamento não fica hardcoded em Go, Vue, n8n ou variáveis de ambiente quando
+for uma decisão de produto que um administrador autorizado deva ajustar. O painel será a superfície
+única de administração e o PostgreSQL continuará sendo a fonte autoritativa.
+
+| Categoria | Como customizar | Limite obrigatório |
+|---|---|---|
+| linguagem, tom, persona e estratégia | prompt versionado por processo | saída continua schema-validada |
+| objetivo e comportamento de cada IA | prompt específico + binding por cliente/agente | não altera permissão/FSM |
+| modelo, temperatura, tokens e timeout | campos estruturados | bounds validados no Go |
+| tools, fontes e knowledge | catálogo allowlisted + bindings | modelo não cria tool/URL/SQL |
+| follow-up, horários e thresholds | policy estruturada | canal, opt-out e consentimento vencem |
+| campos a coletar e etapas | schema/configuração estruturada | migração/versionamento compatíveis |
+| composição entre processos | pipeline versionado com branches allowlisted | nenhuma etapa ganha efeito operacional |
+| habilitar/desabilitar capacidades | feature/capability por conta/cliente | dependências e modo degradado explícitos |
+| rollout | draft, teste, shadow, canary e publicação | rollback e auditoria obrigatórios |
+
+Estado local: o painel já administra capabilities, coorte canary, fontes por descriptor tipado,
+versões de policy de retenção, modelos, credenciais write-only, agentes e o texto versionado de
+prompt por `process_key`. O Prompt Studio cria/edita draft, valida, registra teste estrutural,
+publica binding com agente publicado e faz rollback. A tela de Fontes lista versões de retenção,
+cria somente draft e publica separadamente com revisão, motivo catalogado, referência de aprovação
+e confirmação; bloqueia versão obsoleta, cancela leitura/mutação quando o escopo ou a permissão
+muda e não reponta fontes existentes implicitamente. Ainda não há descriptor/API
+para persistir no Studio todas as policies estruturadas por processo, nem editor de pipeline,
+tool/knowledge policy completa ou corpus de avaliação com execução real do modelo. Esses campos
+não podem ser simulados como se estivessem salvos.
+
+“Tudo customizável” significa que comportamento funcional e inteligente exposto ao produto possui
+configuração administrativa quando seguro. Não significa permitir que um prompt desligue:
+
+- isolamento multi-tenant, permissões ou autenticação;
+- dedupe, idempotência, leases e FSM;
+- validação do schema de saída;
+- allowlist de tools/fontes;
+- regras legais, retenção ou consentimento;
+- janela/capacidade do canal;
+- mensagem `PENDING`, outbox ou adapter de envio.
+
+### 7.2 Prompts como camada principal de comportamento
+
+Não haverá um único prompt gigante. Cada processo possui `process_key`, prompt, variáveis,
+schema de saída, tools/fontes permitidas e política de rollout próprios.
+
+Catálogo canônico registrado:
+
+| `process_key` | Responsabilidade |
+|---|---|
+| `conversation.triage` | intenção, etapa, campos e necessidade de humano |
+| `conversation.reply` | resposta ao consumidor |
+| `conversation.handoff_summary` | resumo e motivo para o atendente |
+| `memory.extract` | claims/fatos candidatos a partir de evidências |
+| `profile.summary` | síntese versionada do relacionamento |
+| `recommendation.follow_up` | momento, canal e justificativa de follow-up |
+| `recommendation.offer` | produtos/serviços adequados |
+| `recommendation.important_dates` | datas relevantes e sua evidência |
+| `source.suggest` | lacunas e novas fontes sugeridas |
+| `portfolio.opportunity` | oportunidade agregada entre clientes |
+| `media.image_analysis` | descrição/extração autorizada de imagem |
+| `media.document_analysis` | extração limitada de documento |
+| `quality.review` | avaliação de atendimento e feedback |
+
+Camadas compiladas em ordem determinística:
+
+```text
+platform_guardrail
+  + agency_policy
+  + client_policy
+  + process_prompt
+  + agent_override permitido
+  + contexto runtime autorizado
+```
+
+- `platform_guardrail` é visível para auditoria, mas editável somente no escopo da plataforma.
+- Camadas de agência, cliente, processo e agente são editáveis por permissões próprias.
+- O runtime registra IDs/versões de todas as camadas usadas.
+- Alteração cria draft; não muda produção até publicação explícita.
+- Toda publicação possui diff, autor, data, teste, escopo, rollout e rollback.
+- Prompt publicado é imutável; nova alteração cria nova versão.
+- O painel permite clonar, comparar, simular, executar casos de teste, avaliar e reverter.
+- Variáveis usam catálogo tipado; placeholder desconhecido ou obrigatório ausente bloqueia publish.
+- Prompt não recebe segredo nem payload sem minimização.
+- Processo sem binding publicado não reutiliza silenciosamente o prompt de outro processo; usa
+  default explicitamente herdado ou fallback seguro para humano.
+
+Persistência lógica registrada:
+
+- `intelligence.process_definitions`;
+- `intelligence.process_config_versions`;
+- `intelligence.pipeline_definitions`;
+- `intelligence.pipeline_versions`;
+- `intelligence.prompt_definitions`;
+- `intelligence.prompt_versions`;
+- `intelligence.prompt_bindings`;
+- `intelligence.prompt_variables`;
+- `intelligence.prompt_test_cases`;
+- `intelligence.prompt_evaluations`;
+- `intelligence.prompt_rollouts`.
+
+Toda execução referencia `prompt_version_id`/bindings e registra resultado, custo, latência e
+avaliação sem colocar prompt bruto ou PII desnecessária em logs.
+
+### 7.3 Estado operacional dos processos
+
+Todos os treze processos possuem contrato de saída fechado no Go. A resposta do modelo rejeita
+campos desconhecidos, JSON adicional, referências inválidas e payload acima do limite. Ter schema e
+validador não significa possuir efeito funcional.
+
+| Grupo | `process_key` | Estado local |
+|---|---|---|
+| conversa | `conversation.triage`, `conversation.reply` | executados por `conversation.respond`; produzem proposta para o Omnichannel |
+| refresh headless | `profile.summary`, `recommendation.follow_up`, `recommendation.offer`, `recommendation.important_dates`, `source.suggest` | job durável e writer transacional implementados |
+| sem writer de negócio | `conversation.handoff_summary`, `memory.extract`, `portfolio.opportunity`, `media.image_analysis`, `media.document_analysis`, `quality.review` | schema e validador de saída registrados, mas nenhuma entrada/orquestração/writer funcional entregue |
+
+O refresh headless é enfileirado por relacionamento, funciona sem painel aberto, constrói o
+contexto no servidor e executa cada processo separadamente. Somente runs ativos bem-sucedidos são
+materializados. `shadow` e membros não selecionados do canary não geram resumo, recomendação ou
+sugestão. Referências de evidência/fato precisam pertencer ao mesmo `ContextEnvelope` e são
+reconfirmadas no PostgreSQL com owner, cliente, subject e relacionamento antes do commit.
 
 ## 8. Identidade, matching e relacionamento
 
@@ -289,6 +459,12 @@ O dado bruto autoritativo permanece no módulo de origem. A Inteligência armaze
 
 O produto deve mostrar “de onde veio” sem replicar indiscriminadamente payloads com PII.
 
+No slice local, a lista de relacionamento mostra somente observações ativas, autorizadas e
+allowlisted. O detalhe de auditoria fica mascarado para sensibilidades protegidas. A revelação exige
+permissão de auditoria e `reason_code`; revela apenas campos allowlisted na resposta corrente e
+grava ator, motivo, origem, sensibilidade, finalidade e quantidade de campos, nunca os valores
+revelados.
+
 Imutabilidade lógica não elimina retenção e direitos de exclusão. A policy detalhada definirá:
 
 - tombstone e invalidação dos derivados;
@@ -296,6 +472,23 @@ Imutabilidade lógica não elimina retenção e direitos de exclusão. A policy 
 - legal hold e expurgo de backups;
 - bloqueio de reingestão;
 - reconstrução de fatos, summaries, recommendations e context snapshots.
+
+Para observações e context snapshots, parte desse lifecycle já está implementada:
+
+- a fonte aponta para uma versão publicada e a ingestão congela essa versão;
+- observação expirada perde `snapshot_json`/ciphertext, mas conserva a linha de proveniência;
+- context snapshot expirado sofre crypto-shred in-place: ciphertext, key version e hash são
+  removidos, enquanto ID, escopo, processos, finalidade, contagens e tempos mínimos permanecem para
+  as referências históricas;
+- o worker é limitado, idempotente, tenant/client-scoped e audita somente metadados;
+- legal hold direto do context snapshot ou herdado de observação relacionada bloqueia expiração,
+  inclusive em corrida transacional;
+- novas versões de policy nascem em draft e publicação exige revisão esperada, motivo e referência
+  de aprovação.
+
+O lifecycle da policy de retenção possui painel autenticado para listar versões, criar draft e
+publicar explicitamente. Ainda não existe API/painel para criar/liberar legal hold; DSAR, política
+de backups e retenção/anonimização das demais categorias continuam gates de produção.
 
 CPF, telefone e e-mail não usam hash simples enumerável. A spec de segurança definirá criptografia
 e/ou fingerprint com HMAC e chaves rotacionáveis.
@@ -333,6 +526,11 @@ Configuração de fonte:
 
 A IA pode sugerir uma fonte com justificativa e lacunas esperadas. Somente um usuário autorizado
 pode habilitar, configurar ou ampliar seu escopo.
+
+O fluxo local `source.suggest` materializa sugestões cifradas e versionadas por relacionamento. O
+perfil mostra `source_key`, lacunas, racional, confiança, validade e estado; usuário com
+`sources.manage` pode aceitar/rejeitar com motivo fechado. Aceitar é somente feedback auditável:
+não cria `source_config`, não ativa conector, não sincroniza e não solicita credencial.
 
 Desabilitar uma fonte exige decisões separadas:
 
@@ -404,7 +602,10 @@ Cada execução relevante deve permitir correlacionar, sem expor conteúdo desne
 Resumos registram as evidências utilizadas. Recomendações registram racional, expiração, estado e
 feedback de aceite/rejeição.
 
-## 13. Inventário de mudanças propostas
+## 13. Inventário da arquitetura-alvo
+
+Este inventário mistura itens já presentes no slice e itens ainda planejados. Ele não é um
+checklist de conclusão; o relatório de implementação é a fonte de estado.
 
 ### 13.0 Ownership durante a transição
 
@@ -473,11 +674,11 @@ Notas, consentimentos, external refs, segmentos e eventos de merge migram depois
 troca do writer. Touchpoints diretamente ligados a mensagem/conversa podem permanecer como
 evidência bruta no Omnichannel enquanto Customer Data mantém sua projeção multiorigem.
 
-### 13.3 Criar
+### 13.3 Criar — alvo e estado parcial
 
 | Alvo proposto | Finalidade |
 |---|---|
-| `back/internal/modules/customerdata/**` **ou** `back/internal/modules/crm/customerdata/**` | alternativa de CI-00 para subjects, relações, identidades, consentimentos e merge |
+| `back/internal/modules/customerdata/**` | boundary adotado no slice para subjects, relações, identidades, consentimentos e merge |
 | `back/internal/modules/customerintelligence/**` | fontes, evidências, fatos, contexto, agentes e recomendações |
 | `AGENT.md` em cada módulo | ownership, contratos, tabelas, rotas e falhas conhecidas |
 | adapters em `back/internal/platform/app/**` | composição sem import/SQL cross-module |
@@ -487,6 +688,9 @@ evidência bruta no Omnichannel enquanto Customer Data mantém sua projeção mu
 | APIs `/v1/customer-intelligence/*` | perfil derivado, fontes, runs e recomendações |
 | workspace `/inteligencia-clientes` | perfil completo fora do inbox |
 | painel de fontes/evidências | ativação, health, origem, conflito e revisão |
+| Prompt Studio `/inteligencia-clientes/prompts` | prompt por processo, draft/edição, validação, teste estrutural, binding/publicação e rollback; pipeline editor, policy descriptor completo e corpus/eval com LLM ainda pendentes |
+| segmentação `/inteligencia-clientes/segmentos` | segmentos versionados, preview e materialização governada |
+| configuração `/omnichannel?config=channel-client-bindings` | vínculo operacional canal→cliente sob ownership do Omnichannel |
 
 ### 13.4 Frontend
 
@@ -514,8 +718,11 @@ Criar:
 - `web/app/domain/customer-data/**`;
 - `web/app/stores/customer-intelligence.ts`;
 - páginas `/inteligencia-clientes`, `/inteligencia-clientes/:subjectId`,
-  `/inteligencia-clientes/fontes`, `/inteligencia-clientes/auditoria`,
-  `/inteligencia-clientes/atendimentos` e `/inteligencia-clientes/portfolio`.
+  `/inteligencia-clientes/fontes`, `/inteligencia-clientes/prompts`,
+  `/inteligencia-clientes/segmentos`, `/inteligencia-clientes/auditoria`,
+  `/inteligencia-clientes/atendimentos` e `/inteligencia-clientes/portfolio`;
+- entrada `/omnichannel?config=channel-client-bindings` para vínculo canal→cliente, exceções e
+  reparos, sem transferir esse ownership para Customer Intelligence.
 
 O inbox compõe dois contratos opcionais, sem criar nova fonte de verdade:
 
@@ -676,30 +883,65 @@ Todo pacote deve registrar:
 
 O autor de uma implementação não marca sozinho seu pacote como `VERIFIED` ou `DONE`.
 
+### 16.1 Como alterar, inserir ou retirar comportamento
+
+Toda mudança futura deve deixar uma trilha que permita localizar onde o comportamento é definido e
+qual efeito ele pode produzir:
+
+| Tipo de mudança | Artefatos obrigatórios | Proibição |
+|---|---|---|
+| linguagem/persona/estratégia de uma IA | novo draft do prompt daquele `process_key`, teste, publicação/binding e audit event | editar prompt publicado ou compartilhar mega-prompt implícito |
+| threshold, cadência, modelo ou rollout | nova versão da policy/config tipada e alteração pelo painel permissionado | esconder policy em prompt, constante ou JSON livre |
+| novo processo | migration aditiva de definição/schema, validador Go, prompt próprio, entrypoint, writer explícito, painel e testes | considerar schema registrado como feature funcional |
+| novo writer para processo existente | ownership, transação/idempotência, proveniência, estados/supersede, auditoria e rollback | gravar outro módulo diretamente ou produzir efeito em shadow |
+| nova fonte | descriptor fechado, adapter, finalidade, allowlist, retenção, health/sync e tela de configuração | URL/SQL/credencial escolhida pelo modelo |
+| nova ação de canal | comando/FSM no Omnichannel, mensagem `PENDING`, outbox e adapter | sender em Customer Intelligence ou n8n |
+| alteração de retenção/privacidade | draft/versionamento, aprovação, auditoria, impacto nos derivados e legal hold | update silencioso de histórico ou bypass por prompt |
+| exclusão/deprecação | inventário de leitores/writers/FKs, tráfego zero, retenção, rollback ensaiado e pacote aprovado separado | `DROP`, remoção de rota ou desligamento de compatibilidade no mesmo cutover |
+
+O relatório de implementação deve ser atualizado na mesma entrega com arquivos, migrations,
+processos, painéis, testes, riscos e lacunas. Uma função só muda de “contrato registrado” para
+“funcional” quando possui entrada autorizada, writer/efeito definido e prova proporcional ao risco.
+
 ## 17. Decisões para validação
+
+Os estados desta tabela registram adoção no código local, não aceite operacional. `parcial` significa
+que a regra foi aplicada somente ao slice descrito no relatório; `pendente` continua bloqueando o
+recurso dependente.
 
 | ID | Proposta recomendada | Status |
 |---|---|---|
-| CI-DEC-001 | módulo novo chama-se `customer_intelligence` | proposto |
-| CI-DEC-002 | dados determinísticos usam boundary `customer_data`; decidir entre módulo próprio ou `crm/customerdata`, sem reaproveitar silenciosamente `/crm` | pendente de validação |
-| CI-DEC-003 | `subject_id` é deduplicável apenas dentro de `owner_account_id` | proposto |
-| CI-DEC-004 | fatos e consentimentos são sempre separados por `relationship_id` | proposto |
-| CI-DEC-005 | binding canal↔cliente pertence ao Omnichannel e independe da IA | proposto |
-| CI-DEC-006 | autoridade é configurada por tipo de fato/fonte/frescor; LLM não vence fonte verificada | proposto |
-| CI-DEC-007 | ingestão crítica usa outbox durável, não apenas event bus in-process | proposto |
-| CI-DEC-008 | dados cross-client individuais ficam desabilitados por padrão | proposto |
-| CI-DEC-009 | observação guarda referência/hash + snapshot allowlisted, não payload bruto irrestrito | proposto |
-| CI-DEC-010 | métricas quantitativas de shadow serão fechadas antes do rollout | pendente de spec |
-| CI-DEC-011 | retenção por categoria/fonte será aprovada antes de produção | pendente de política |
-| CI-DEC-012 | contatos já misturados entram em quarentena/revisão, sem correção automática | proposto |
-| CI-DEC-013 | match forte entre clientes apenas gera candidato restrito; não vincula automaticamente | proposto |
+| CI-DEC-001 | módulo novo chama-se `customer_intelligence` | adotado no slice local |
+| CI-DEC-002 | dados determinísticos usam boundary `customer_data`, sem reaproveitar silenciosamente `/crm` | adotado em `back/internal/modules/customerdata` |
+| CI-DEC-003 | `subject_id` é deduplicável apenas dentro de `owner_account_id` | adotado no slice local |
+| CI-DEC-004 | fatos e consentimentos são sempre separados por `relationship_id` | adotado no slice local |
+| CI-DEC-005 | binding canal↔cliente pertence ao Omnichannel e independe da IA | adotado no slice local |
+| CI-DEC-006 | autoridade é configurada por tipo de fato/fonte/frescor; LLM não vence fonte verificada | parcial; automações de resolução amplas pendentes |
+| CI-DEC-007 | ingestão crítica usa outbox durável, não apenas event bus in-process | adotado nos fluxos integrados |
+| CI-DEC-008 | dados cross-client individuais ficam desabilitados por padrão | adotado no slice local |
+| CI-DEC-009 | observação guarda referência/hash + snapshot allowlisted, não payload bruto irrestrito | adotado; auditoria em `0250` e lifecycle de payload em `0251`/`0254` |
+| CI-DEC-010 | métricas quantitativas de shadow serão fechadas antes do rollout | matriz especificada; valores pendentes de aprovação |
+| CI-DEC-011 | retenção por categoria/fonte será aprovada antes de produção | lifecycle fechado implementado para observações; valores jurídicos e demais categorias pendentes |
+| CI-DEC-012 | contatos já misturados entram em quarentena/revisão, sem correção automática | backfill/quarentena pendentes |
+| CI-DEC-013 | match forte entre clientes apenas gera candidato restrito; não vincula automaticamente | compartilhamento automático bloqueado; fluxo de candidato pendente |
 | CI-DEC-014 | definir conta standalone e invariantes owner/client/organização | pendente |
 | CI-DEC-015 | definir controlador, operadores, base legal, revogação e dados sensíveis | pendente jurídico |
-| CI-DEC-016 | definir tombstone, anonimização/crypto-shredding, legal hold e backups | pendente |
+| CI-DEC-016 | definir tombstone, anonimização/crypto-shredding, legal hold e backups | observações/context snapshots possuem tombstone/crypto-shred e holds diretos/derivados; API de hold, anonimização ampla e backups pendentes |
 | CI-DEC-017 | definir criptografia/HMAC e rotação para identificadores | pendente |
-| CI-DEC-018 | `subject_type` suporta pessoa e empresa com atributos próprios | proposto |
-| CI-DEC-019 | context snapshots têm criptografia, TTL e conteúdo minimizado | proposto |
-| CI-DEC-020 | portfólio exige limiar de coorte/supressão contra reidentificação | proposto |
+| CI-DEC-018 | `subject_type` suporta pessoa e empresa com atributos próprios | adotado na persistência local |
+| CI-DEC-019 | context snapshots têm criptografia, TTL e conteúdo minimizado | adotado; `0255` faz crypto-shred in-place, preserva metadados mínimos e respeita legal hold direto/derivado |
+| CI-DEC-020 | portfólio exige limiar de coorte/supressão contra reidentificação | gate técnico mínimo existe; valor/política jurídica pendentes |
+| CI-DEC-021 | prompts separados por `process_key` são a principal camada de comportamento da IA | treze processos registrados; dois conversacionais e cinco headless têm fluxo funcional; seis writers pendentes |
+| CI-DEC-022 | comportamento seguro de produto é configurável pelo painel e persistido no PostgreSQL | parcial; capabilities, fontes, agentes/modelos/credenciais e prompts cobertos; policies por processo, pipelines, tools/knowledge e legal hold incompletos |
+| CI-DEC-023 | guardrails de plataforma não podem ser sobrescritos por prompt de tenant | adotado no slice local |
+| CI-DEC-024 | prompt usa draft→teste→publish→canary/rollback, com versão imutável e auditoria | parcial; Studio publica/reverte e canary usa coorte determinística; teste ainda é estrutural e rollout real não foi provado |
+| CI-DEC-025 | prompt, schema, tools, fontes e parâmetros formam um binding versionado por processo | parcial; tools/knowledge sem runtime |
+| CI-DEC-026 | composição entre processos usa pipeline estruturado/versionado e um `ProcessResult` por etapa | parcial em `conversation.respond` e `intelligence.headless`; seis processos seguem sem orquestração/writer |
+| CI-DEC-027 | auto-close preserva proposta e resposta final; somente o Omnichannel revalida e executa | adotado no slice; E2E pendente |
+| CI-DEC-028 | segmento pertence ao Customer Data, usa AST fechado e versões imutáveis; LLM/SQL livre não o executam | parcial; worker de avaliação/materialização pendente |
+| CI-DEC-029 | membership de segmento não equivale a consentimento; exportação/marketing têm permissão, finalidade e gates próprios | princípio adotado; export não implementado |
+| CI-DEC-030 | migração de prompts mantém lifecycle funcional separado do estado de import e exige mapping/split revisável antes de publicar | migração/backfill legado pendente |
+| CI-DEC-031 | áudio/transcrição e vídeo atuais permanecem no runtime legado até process keys, schemas, prompts e thresholds próprios serem aprovados | preservação adotada; extração pendente |
 
 ## 18. Histórico de revisão
 
@@ -707,3 +949,10 @@ O autor de uma implementação não marca sozinho seu pacote como `VERIFIED` ou 
 |---|---|---|---|---|
 | 0.1 | 2026-07-23 | Codex | primeira governança baseada no estado real do repositório | pendente |
 | 0.2 | 2026-07-23 | Codex + revisão adversarial | corrigidos topologia de identidade, transação/outbox, FKs, ownership de transição, privacidade, rollback e garantia de envio | pendente |
+| 0.3 | 2026-07-23 | Codex | configurabilidade administrativa e Prompt Registry por processo | pendente |
+| 0.4 | 2026-07-23 | Codex + revisão cruzada | pipeline processual, resultado intermediário e compatibilidade de auto-close sem perda | pendente |
+| 0.5 | 2026-07-23 | Codex + revisão adversarial | migração legada auditável, segmentos governados, rotas administrativas e compatibilidade de mídia | pendente |
+| 0.6 | 2026-07-23 | Codex + implementação multiagente | núcleo local implementado, evidências/testes registrados e limites de rollout explicitados | implementação local; aceitação operacional pendente |
+| 0.7 | 2026-07-23 | Codex + auditoria de aderência | estado reclassificado como slice parcial; lacunas de Prompt Studio, canary, processos, BI, exports e LGPD explicitadas | verificação E2E/aceite pendentes |
+| 0.8 | 2026-07-23 | Codex + reconciliação 0239–0254 | registrados Prompt Studio publicável, canary determinístico, cinco writers headless, proveniência, reveal, retenção/legal hold e lacunas reais | deploy/E2E/aceite pendentes |
+| 0.9 | 2026-07-23 | Codex + reconciliação 0255/UI | context snapshots expiram por crypto-shred com legal hold direto/herdado; painel governa draft/publicação de policies de retenção | deploy/E2E/aceite pendentes |

@@ -95,6 +95,51 @@ export interface SocialPublishingOverview {
   upcoming: SocialPublishingPost[]
 }
 
+export interface SocialPublishingScopeClient {
+  id: string
+  name: string
+}
+
+export interface SocialPublishingScope {
+  canSelect: boolean
+  lockedClientId: string
+  clients: SocialPublishingScopeClient[]
+}
+
+export interface SocialPublishingPortfolioClient {
+  accountId: string
+  accountName: string
+  connected: boolean
+  username: string
+  draft: number
+  scheduled: number
+  publishing: number
+  published: number
+  failed: number
+  reach: number
+  totalInteractions: number
+  nextScheduledFor: string | null
+}
+
+export interface SocialPublishingPortfolio {
+  clientCount: number
+  connectedClients: number
+  draft: number
+  scheduled: number
+  publishing: number
+  published: number
+  failed: number
+  views: number
+  reach: number
+  totalInteractions: number
+  likes: number
+  comments: number
+  saved: number
+  shares: number
+  capturedAt: string | null
+  clients: SocialPublishingPortfolioClient[]
+}
+
 type UnknownRecord = Record<string, unknown>
 
 const POST_STATUSES = new Set<SocialPostStatus>([
@@ -125,7 +170,7 @@ function stringValue(value: unknown): string {
 
 function nullableDate(value: unknown): string | null {
   const normalized = stringValue(value)
-  if (!normalized) return null
+  if (!normalized || normalized.startsWith('0001-01-01T')) return null
   const timestamp = Date.parse(normalized)
   return Number.isFinite(timestamp) ? normalized : null
 }
@@ -157,7 +202,14 @@ function normalizeConnectionStatus(value: unknown, connected: boolean): SocialCo
 
 export function isHttpsMediaUrl(value: string): boolean {
   try {
-    return new URL(value).protocol === 'https:'
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      Boolean(url.hostname) &&
+      !url.username &&
+      !url.password &&
+      !url.hash
+    )
   } catch {
     return false
   }
@@ -325,6 +377,78 @@ export function normalizeOverview(value: unknown): SocialPublishingOverview {
     shares: nonNegativeInteger(analytics.shares),
     capturedAt: nullableDate(analytics.capturedAt ?? analytics.syncedAt),
     upcoming: normalizeSocialPostList(outer.upcoming),
+  }
+}
+
+export function normalizePublishingScope(value: unknown): SocialPublishingScope {
+  const raw = asRecord(value)
+  const clients: SocialPublishingScopeClient[] = []
+  const seen = new Set<string>()
+  for (const entry of Array.isArray(raw.clients) ? raw.clients : []) {
+    const client = asRecord(entry)
+    const id = stringValue(client.id)
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    clients.push({
+      id,
+      name: stringValue(client.name) || 'Cliente',
+    })
+  }
+
+  const canSelect = raw.canSelect === true
+  const lockedClientId = canSelect ? '' : stringValue(raw.lockedClientId)
+  return {
+    canSelect,
+    lockedClientId:
+      lockedClientId && clients.some((client) => client.id === lockedClientId)
+        ? lockedClientId
+        : '',
+    clients,
+  }
+}
+
+export function normalizePublishingPortfolio(value: unknown): SocialPublishingPortfolio {
+  const raw = asRecord(value)
+  const clients: SocialPublishingPortfolioClient[] = []
+  const seen = new Set<string>()
+  for (const entry of Array.isArray(raw.clients) ? raw.clients : []) {
+    const client = asRecord(entry)
+    const accountId = stringValue(client.accountId)
+    if (!accountId || seen.has(accountId)) continue
+    seen.add(accountId)
+    clients.push({
+      accountId,
+      accountName: stringValue(client.accountName) || 'Cliente',
+      connected: client.connected === true,
+      username: stringValue(client.username),
+      draft: nonNegativeInteger(client.draft),
+      scheduled: nonNegativeInteger(client.scheduled),
+      publishing: nonNegativeInteger(client.publishing),
+      published: nonNegativeInteger(client.published),
+      failed: nonNegativeInteger(client.failed),
+      reach: nonNegativeInteger(client.reach),
+      totalInteractions: nonNegativeInteger(client.totalInteractions),
+      nextScheduledFor: nullableDate(client.nextScheduledFor),
+    })
+  }
+
+  return {
+    clientCount: nonNegativeInteger(raw.clientCount),
+    connectedClients: nonNegativeInteger(raw.connectedClients),
+    draft: nonNegativeInteger(raw.draft),
+    scheduled: nonNegativeInteger(raw.scheduled),
+    publishing: nonNegativeInteger(raw.publishing),
+    published: nonNegativeInteger(raw.published),
+    failed: nonNegativeInteger(raw.failed),
+    views: nonNegativeInteger(raw.views),
+    reach: nonNegativeInteger(raw.reach),
+    totalInteractions: nonNegativeInteger(raw.totalInteractions),
+    likes: nonNegativeInteger(raw.likes),
+    comments: nonNegativeInteger(raw.comments),
+    saved: nonNegativeInteger(raw.saved),
+    shares: nonNegativeInteger(raw.shares),
+    capturedAt: nullableDate(raw.capturedAt),
+    clients,
   }
 }
 

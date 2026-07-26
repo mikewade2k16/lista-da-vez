@@ -247,7 +247,7 @@ onMounted(async () => {
 
         <div v-if="!feedbackStore.myFeedbacks.length" class="user-feedback__empty">
           <strong>Nenhum chamado enviado</strong>
-          <span>Quando voce enviar feedback, ele aparece aqui.</span>
+          <span>Quando voce abrir um chamado, ele aparece aqui.</span>
         </div>
       </aside>
 
@@ -291,7 +291,7 @@ onMounted(async () => {
             >
               <img
                 :src="message.image_url"
-                alt="Imagem anexada ao feedback"
+                alt="Imagem anexada ao chamado"
                 class="user-feedback__message-image"
               />
             </a>

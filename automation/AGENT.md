@@ -16,7 +16,9 @@ exportar, ativar, desativar ou remover workflows do modulo explicitamente em esc
 
 - `workflow-whatsapp.json` pertence ao modulo **automation** e usa WAHA legitimamente.
 - `workflow-calendar-*` pertence ao modulo **calendar**.
-- `workflow-omni-chat.json` pertence ao chat interno da Operacao.
+- `workflow-omni-chat.json` pertence ao chat interno da Operacao. Recebe do Go
+  o prompt, historico, provider, modelo, temperatura e chave global resolvida
+  server-side; nao possui credencial/modelo fixo no workflow.
 - `workflow-omnichannel-brain.json` e `workflow-instagram-first-contact.json` pertencem
   ao modulo **omnichannel**.
 

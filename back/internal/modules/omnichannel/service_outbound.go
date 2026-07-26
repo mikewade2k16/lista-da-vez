@@ -221,6 +221,31 @@ func (s *SendService) SendAIMessageWithResult(ctx context.Context, accountID, co
 	return view.ID, nil
 }
 
+func (s *SendService) SendAIMessageWithIntelligence(
+	ctx context.Context,
+	accountID, conversationID, content, runID, inboundMessageID string,
+	generation int64,
+	event CustomerIntelligenceAcceptedOutcome,
+) (string, error) {
+	content = strings.TrimSpace(content)
+	if content == "" || len([]rune(content)) > maxContentRunes {
+		return "", ErrInvalidBody
+	}
+	idempotencyKey := "ai-reply:" + firstNonEmpty(runID, inboundMessageID)
+	view, created, err := s.store.CreateAIOutboundMessageWithIntelligence(
+		ctx, accountID, conversationID, content, runID,
+		idempotencyKey, generation, event,
+	)
+	if err != nil {
+		return "", err
+	}
+	if created {
+		s.publishMessageCreated(ctx, accountID, view)
+		s.audit(ctx, accountID, "", conversationID, view.ID, "MESSAGE_OUTBOUND_QUEUED")
+	}
+	return view.ID, nil
+}
+
 // PublishAIAutoCloseResult emits the final reply created atomically with an
 // accepted close. Rejected or idempotently replayed evaluations emit nothing.
 func (s *SendService) PublishAIAutoCloseResult(ctx context.Context, accountID, conversationID string, decision AutoCloseDecisionView) {

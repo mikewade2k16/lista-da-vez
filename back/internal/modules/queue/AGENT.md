@@ -57,6 +57,12 @@ queue/
     service.go
     http.go
     AGENT.md
+  communications/            — comunicados por conta/loja
+    model.go
+    store_postgres.go
+    service.go
+    http.go
+    AGENT.md
 ```
 
 ## Estado atual (C4 — 2026-05-29)
@@ -68,7 +74,7 @@ queue/
 - Imports atualizados em 19 arquivos (paths `modules/<nome>` → `modules/queue/<nome>`).
 - `queue/module.go` criado implementando `modules.Module`:
   - `ID() = "queue"`
-  - 8 permissões declaradas (ver seção abaixo)
+- 9 permissões declaradas (ver seção abaixo)
   - 2 role templates: `queue.supervisor` e `queue.consultant`
   - `Build()` retorna handle vazio — rotas ainda montadas pelo wiring legado em `app.go`
 - `registry.MustRegister(queue.New())` adicionado em `app.go` (antes de `notifications.New()`).
@@ -97,12 +103,13 @@ e [platform/httpapi/AGENT.md](../../platform/httpapi/AGENT.md).
 | `queue.feedback.read` | account | Visualizar feedbacks de atendimentos |
 | `queue.settings.manage` | account | Configurações de operação e templates |
 | `queue.consultants.manage` | account | Criar/editar/desativar consultores |
+| `queue.communications.manage` | account | Criar/editar/publicar/excluir comunicados |
 
 ## Role templates declarados
 
 | ID | Label | Permissões |
 |---|---|---|
-| `queue.supervisor` | Supervisor de Fila | Todas as 8 permissões |
+| `queue.supervisor` | Supervisor de Fila | Todas as 9 permissões |
 | `queue.consultant` | Consultor | dashboard.read + operations.manage + analytics.read |
 
 ## Import paths
@@ -142,6 +149,42 @@ C5 faz o mesmo para CRM:
 - Não introduzir FK de `queue.*` para `core.*`; abstrair via interface in-process.
 - `core.account_modules` é a fonte de verdade para "módulo queue habilitado?".
 - Máx 450 linhas por arquivo; quebrar em sub-arquivos se necessário.
+
+## Gravacoes e transcricoes experimentais
+
+- O pacote `transcriptions/` recebe blocos idempotentes, consolida o audio em
+  storage privado e lista os metadados autoritativos por conta/loja.
+- As tabelas `queue.attendance_recordings` e
+  `queue.attendance_recording_chunks` repetem `account_id`; nao possuem FK para
+  `core.*`.
+- O endpoint de audio e autenticado. Ao consolidar uma gravacao, o backend
+  solicita automaticamente o job duravel do Whisper local; o endpoint
+  `POST .../{id}/transcribe` permanece idempotente para retry manual.
+
+## Comunicados da operacao
+
+- O pacote `communications/` fornece CRUD em
+  `/v1/operations/communications`.
+- `queue.communications` guarda conteudo, vigencia, publicacao, ordem e soft
+  delete; `queue.communication_stores` guarda destinos especificos.
+- A FK composta `(account_id, store_id)` impede vinculo de loja de outra conta.
+- O painel operacional consulta apenas comunicados publicados e vigentes para
+  a loja corrente; a aba `/comunicados` administra todos os registros da conta.
+
+## Navegacao enxuta da Fila (2026-07-25)
+
+- As abas `Dados`, `Inteligencia`, `Relatorios` e `Clientes` foram removidas da
+  navegacao do modulo Fila.
+- As antigas paginas `/clientes`, `/operacao/clientes` e `/manage/clientes`
+  foram retiradas por duplicarem a administracao de contas; o alias de Manage
+  aponta para `/manage/clientes-web`. Elas liam `core.accounts` por
+  `/v1/tenants`; nunca houve tabela de clientes propria do schema `queue`.
+- `core.accounts` permanece como fonte canonica e nao pode ser removida: o
+  catalogo e compartilhado por toda a plataforma e possui dependencias
+  multi-tenant fora da Fila.
+- Nesta retirada, `Dados`, `Inteligencia` e `Relatorios` perderam apenas os
+  atalhos da Fila; seus endpoints e superficies legadas foram preservados para
+  rollback e para nao interromper consumidores existentes.
 
 ## Quando atualizar este AGENT.md
 

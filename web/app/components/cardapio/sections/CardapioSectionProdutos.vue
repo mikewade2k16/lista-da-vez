@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
 import OmniDataTable from '../../../../layers/tasks/components/omni/table/OmniDataTable.vue'
+import CardapioProductImportModal from '~/components/cardapio/product/CardapioProductImportModal.vue'
 import CardapioProductModal from '~/components/cardapio/product/CardapioProductModal.vue'
 import {
   useCardapioProductColumns,
@@ -12,6 +13,12 @@ import {
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
+import {
+  serializeProductTransfer,
+  type ProductImportInput,
+  type ProductImportResult,
+} from '~/domain/cardapio/product-transfer'
+import type { ProductBulkAction } from '~/domain/cardapio/types'
 import type { OmniTableCellUpdate, OmniTableImageUpload } from '~/types/omni/collection'
 
 const store = useCardapioStore()
@@ -21,6 +28,11 @@ const modalOpen = ref(false)
 const editingId = ref('')
 const busyId = ref('')
 const selectedIds = ref<Array<string | number>>([])
+const bulkBusy = ref(false)
+const importOpen = ref(false)
+const importBusy = ref(false)
+const importResult = ref<ProductImportResult | null>(null)
+const exportBusy = ref(false)
 
 const filtersState = ref<CardapioProductFilters & Record<string, unknown>>({
   categoryId: '',
@@ -42,6 +54,49 @@ const {
 
 // Sinaliza produtos sem imagem (ex.: import que ainda nao tem foto cadastrada).
 const noImageCount = computed(() => tableRows.value.filter((row) => !row.imageUrl).length)
+const selectedProductIds = computed(() =>
+  selectedIds.value.map((id) => String(id).trim()).filter(Boolean),
+)
+
+const bulkActionItems = computed(() => [
+  [
+    {
+      label: 'Marcar como disponivel',
+      icon: 'i-lucide-circle-check',
+      onSelect: () => runBulkAction('enable'),
+    },
+    {
+      label: 'Marcar como indisponivel',
+      icon: 'i-lucide-circle-off',
+      onSelect: () => runBulkAction('disable'),
+    },
+    {
+      label: 'Adicionar destaque',
+      icon: 'i-lucide-star',
+      onSelect: () => runBulkAction('feature'),
+    },
+    {
+      label: 'Remover destaque',
+      icon: 'i-lucide-star-off',
+      onSelect: () => runBulkAction('remove_feature'),
+    },
+  ],
+  [
+    {
+      label: 'Excluir selecionados',
+      icon: 'i-lucide-trash-2',
+      color: 'error' as const,
+      onSelect: () => runBulkAction('delete'),
+    },
+  ],
+])
+
+const exportItems = [
+  [
+    { label: 'Exportar JSON', icon: 'i-lucide-braces', onSelect: () => exportFile('json') },
+    { label: 'Exportar CSV', icon: 'i-lucide-sheet', onSelect: () => exportFile('csv') },
+  ],
+]
 
 const columnExcludeKeys = ['actions']
 const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
@@ -112,6 +167,87 @@ async function remove(row: Record<string, unknown>) {
   }
 }
 
+async function runBulkAction(action: ProductBulkAction) {
+  const ids = selectedProductIds.value
+  const restaurantId = store.restaurantId
+  if (!ids.length || !restaurantId || bulkBusy.value) return
+
+  if (action === 'delete') {
+    const { confirmed } = (await ui.confirm({
+      title: 'Excluir produtos selecionados',
+      message: `Excluir permanentemente ${ids.length} produto(s)? Esta acao nao pode ser desfeita.`,
+      confirmLabel: `Excluir ${ids.length}`,
+    })) as { confirmed: boolean }
+    if (!confirmed) return
+  }
+
+  bulkBusy.value = true
+  try {
+    const result = await store.bulkProducts(restaurantId, ids, action)
+    selectedIds.value = []
+    ui.success(`${result.affected} produto(s) atualizado(s).`)
+  } catch (caught) {
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel aplicar a acao em lote.'))
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+async function exportFile(format: 'json' | 'csv') {
+  const restaurantId = store.restaurantId
+  if (!restaurantId || exportBusy.value || import.meta.server) return
+  exportBusy.value = true
+  try {
+    const document = await store.exportProducts(restaurantId)
+    const content = serializeProductTransfer(document, format)
+    const mime = format === 'json' ? 'application/json;charset=utf-8' : 'text/csv;charset=utf-8'
+    const prefix = format === 'csv' ? '\uFEFF' : ''
+    const blob = new Blob([prefix, content], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const link = window.document.createElement('a')
+    link.href = url
+    link.download = `produtos-${store.restaurant?.slug || restaurantId}.${format}`
+    link.click()
+    URL.revokeObjectURL(url)
+    ui.success(`${document.products.length} produto(s) exportado(s).`)
+  } catch (caught) {
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel exportar os produtos.'))
+  } finally {
+    exportBusy.value = false
+  }
+}
+
+function openImport() {
+  importResult.value = null
+  importOpen.value = true
+}
+
+function closeImport() {
+  if (importBusy.value) return
+  importOpen.value = false
+}
+
+async function importProducts(input: ProductImportInput) {
+  const restaurantId = store.restaurantId
+  if (!restaurantId || importBusy.value) return
+  importBusy.value = true
+  importResult.value = null
+  try {
+    const result = await store.importProducts(restaurantId, input)
+    importResult.value = result
+    selectedIds.value = []
+    if (result.failed) {
+      ui.error(`Importacao concluida com ${result.failed} produto(s) rejeitado(s).`)
+    } else {
+      ui.success(`${result.created + result.updated} produto(s) importado(s).`)
+    }
+  } catch (caught) {
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel importar os produtos.'))
+  } finally {
+    importBusy.value = false
+  }
+}
+
 function onResetFilters() {
   filtersState.value = { categoryId: '', availability: '' }
 }
@@ -138,6 +274,36 @@ function onResetFilters() {
       @reset-columns="resetToDefaults"
     >
       <template #actions>
+        <UBadge v-if="selectedIds.length" color="neutral" variant="soft">
+          {{ selectedIds.length }} selecionado(s)
+        </UBadge>
+        <UDropdownMenu :items="bulkActionItems">
+          <UButton
+            icon="i-lucide-list-checks"
+            label="Acoes"
+            color="neutral"
+            variant="soft"
+            :loading="bulkBusy"
+            :disabled="!selectedIds.length || bulkBusy"
+          />
+        </UDropdownMenu>
+        <UButton
+          icon="i-lucide-upload"
+          label="Importar"
+          color="neutral"
+          variant="soft"
+          @click="openImport"
+        />
+        <UDropdownMenu :items="exportItems">
+          <UButton
+            icon="i-lucide-download"
+            label="Exportar"
+            color="neutral"
+            variant="soft"
+            :loading="exportBusy"
+            :disabled="exportBusy || !tableRows.length"
+          />
+        </UDropdownMenu>
         <UButton icon="i-lucide-plus" label="Novo produto" color="primary" @click="openCreate" />
       </template>
     </OmniCollectionFilters>
@@ -182,6 +348,16 @@ function onResetFilters() {
       :categories="store.categories"
       @close="modalOpen = false"
       @saved="modalOpen = false"
+    />
+
+    <CardapioProductImportModal
+      v-if="importOpen"
+      :restaurant-id="store.restaurantId"
+      :importing="importBusy"
+      :result="importResult"
+      @close="closeImport"
+      @reset="importResult = null"
+      @submit="importProducts"
     />
   </section>
 </template>

@@ -312,6 +312,26 @@ o painel passa `?accountId=` ao abrir restaurante de outra account (front: `?acc
 - Categories: `GET/POST /v1/cardapio/restaurants/{id}/categories`, `PATCH/DELETE /v1/cardapio/categories/{id}`.
 - Products: `GET/POST /v1/cardapio/restaurants/{id}/products` (lean), `GET/PATCH/DELETE
   /v1/cardapio/products/{id}` (full; PATCH faz **replace-all transacional** de `variations[]`/`addons[]`).
+  A listagem lean inclui `compareAtPriceCents`. Gestao em massa/importacao/exportacao:
+  - `POST /v1/cardapio/restaurants/{id}/products/bulk-action` body
+    `{ids[],action}`; acoes `delete|enable|disable|feature|remove_feature`, maximo
+    500 IDs, validacao + mutacao atomicas e sempre filtradas por `account_id` +
+    `restaurant_id`;
+  - `GET /v1/cardapio/restaurants/{id}/products/export` devolve documento JSON
+    versionado `{version:1,exportedAt,products[]}` com todos os campos, categoria
+    portavel por slug/nome, variacoes e adicionais; o painel serializa o mesmo
+    snapshot em JSON ou CSV;
+  - `POST /v1/cardapio/restaurants/{id}/products/import/preview` compara o arquivo
+    com as categorias atuais sem escrever e devolve `newCategories[]` com
+    `slug`, `name` e `productCount` para revisao obrigatoria no painel;
+  - `POST /v1/cardapio/restaurants/{id}/products/import` aceita o documento
+    normalizado (body maximo 10 MB, ate 2000 produtos). Categoria ausente so e
+    criada quando seu slug consta em `acceptedCategorySlugs`; a analise e repetida
+    server-side para impedir bypass do preview. Categoria removida no painel chega
+    vazia e deixa o produto sem categoria. O import faz upsert por slug quando
+    `updateExisting=true` e responde contagens + erros por linha.
+  Os quatro endpoints usam `cardapio.view/manage`, `scopedAccountID` e defesa de
+  escopo repetida no repository. Nao exigem migration.
 - Reviews: `GET/POST /v1/cardapio/products/{id}/reviews` (por produto),
   `GET/POST /v1/cardapio/restaurants/{id}/reviews` (F2; do estabelecimento:
   `product_id IS NULL OR show_on_establishment = true`; o POST cria com `product_id NULL`),

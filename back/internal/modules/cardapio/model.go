@@ -172,15 +172,16 @@ type Product struct {
 
 // ProductLean e a projecao enxuta da listagem de produtos do painel.
 type ProductLean struct {
-	ID          string  `json:"id"`
-	CategoryID  *string `json:"categoryId"`
-	Slug        string  `json:"slug"`
-	Name        string  `json:"name"`
-	PriceCents  int64   `json:"priceCents"`
-	ImageURL    string  `json:"imageUrl"`
-	IsAvailable bool    `json:"isAvailable"`
-	IsFeatured  bool    `json:"isFeatured"`
-	SortOrder   int     `json:"sortOrder"`
+	ID                  string  `json:"id"`
+	CategoryID          *string `json:"categoryId"`
+	Slug                string  `json:"slug"`
+	Name                string  `json:"name"`
+	PriceCents          int64   `json:"priceCents"`
+	CompareAtPriceCents int64   `json:"compareAtPriceCents,omitempty"`
+	ImageURL            string  `json:"imageUrl"`
+	IsAvailable         bool    `json:"isAvailable"`
+	IsFeatured          bool    `json:"isFeatured"`
+	SortOrder           int     `json:"sortOrder"`
 }
 
 // Review e o DTO de avaliacao curada. productId e opcional (F2): vazio/null = review
@@ -322,7 +323,7 @@ type AddonInput struct {
 // ProductInput cria/edita produto. variations/addons (quando nao-nil) substituem
 // todas as opcoes existentes (replace-all transacional).
 type ProductInput struct {
-	CategoryID          *string          `json:"categoryId"`
+	CategoryID          *string          `json:"categoryId,omitempty"`
 	Slug                string           `json:"slug"`
 	Name                string           `json:"name"`
 	ShortDesc           string           `json:"shortDesc"`
@@ -343,6 +344,83 @@ type ProductInput struct {
 	SortOrder           int              `json:"sortOrder"`
 	Variations          []VariationInput `json:"variations"`
 	Addons              []AddonInput     `json:"addons"`
+}
+
+// ProductBulkAction representa as mutacoes em lote permitidas pela tela de
+// produtos. A allowlist e validada no service; nenhum nome de coluna vem do
+// cliente para o repository.
+type ProductBulkAction string
+
+const (
+	ProductBulkDelete        ProductBulkAction = "delete"
+	ProductBulkEnable        ProductBulkAction = "enable"
+	ProductBulkDisable       ProductBulkAction = "disable"
+	ProductBulkFeature       ProductBulkAction = "feature"
+	ProductBulkRemoveFeature ProductBulkAction = "remove_feature"
+)
+
+// ProductBulkInput aplica uma unica acao a produtos explicitamente
+// selecionados. O restaurante vem da rota e account_id do Principal.
+type ProductBulkInput struct {
+	IDs    []string          `json:"ids"`
+	Action ProductBulkAction `json:"action"`
+}
+
+// ProductBulkResult informa quantos produtos foram alterados.
+type ProductBulkResult struct {
+	Affected int `json:"affected"`
+}
+
+// ProductTransferItem e o contrato versionado de importacao/exportacao. IDs e
+// metricas internas ficam de fora; categoria e referenciada por slug portavel.
+type ProductTransferItem struct {
+	CategorySlug string `json:"categorySlug"`
+	CategoryName string `json:"categoryName"`
+	ProductInput
+}
+
+// ProductTransferDocument e a resposta autoritativa usada pelo frontend para
+// gerar JSON ou CSV. O mesmo shape volta no import.
+type ProductTransferDocument struct {
+	Version    int                   `json:"version"`
+	ExportedAt time.Time             `json:"exportedAt"`
+	Products   []ProductTransferItem `json:"products"`
+}
+
+// ProductImportInput faz upsert por slug quando UpdateExisting=true. Quando
+// false, slugs existentes sao preservados e contabilizados como skipped.
+type ProductImportInput struct {
+	UpdateExisting        bool                  `json:"updateExisting"`
+	AcceptedCategorySlugs []string              `json:"acceptedCategorySlugs"`
+	Products              []ProductTransferItem `json:"products"`
+}
+
+// ProductImportPreviewCategory descreve uma categoria que ainda nao existe no
+// restaurante e, portanto, precisa de confirmacao explicita antes do import.
+type ProductImportPreviewCategory struct {
+	Slug         string `json:"slug"`
+	Name         string `json:"name"`
+	ProductCount int    `json:"productCount"`
+}
+
+// ProductImportPreview e a revisao autoritativa calculada contra as categorias
+// atuais do PostgreSQL. Nenhuma escrita acontece durante o preview.
+type ProductImportPreview struct {
+	NewCategories []ProductImportPreviewCategory `json:"newCategories"`
+}
+
+type ProductImportError struct {
+	Row     int    `json:"row"`
+	Slug    string `json:"slug,omitempty"`
+	Message string `json:"message"`
+}
+
+type ProductImportResult struct {
+	Created int                  `json:"created"`
+	Updated int                  `json:"updated"`
+	Skipped int                  `json:"skipped"`
+	Failed  int                  `json:"failed"`
+	Errors  []ProductImportError `json:"errors"`
 }
 
 // ReviewInput cria/edita avaliacao (full-replace). showOnEstablishment (F2) marca

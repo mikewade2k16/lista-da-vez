@@ -21,6 +21,10 @@ func RegisterCatalogRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Mi
 
 	mux.Handle("GET /v1/cardapio/restaurants/{id}/products", wrap(handleListProducts(svc)))
 	mux.Handle("POST /v1/cardapio/restaurants/{id}/products", wrap(handleCreateProduct(svc)))
+	mux.Handle("POST /v1/cardapio/restaurants/{id}/products/bulk-action", wrap(handleBulkProducts(svc)))
+	mux.Handle("GET /v1/cardapio/restaurants/{id}/products/export", wrap(handleExportProducts(svc)))
+	mux.Handle("POST /v1/cardapio/restaurants/{id}/products/import/preview", wrap(handlePreviewProductImport(svc)))
+	mux.Handle("POST /v1/cardapio/restaurants/{id}/products/import", wrap(handleImportProducts(svc)))
 	mux.Handle("GET /v1/cardapio/products/{id}", wrap(handleGetProduct(svc)))
 	mux.Handle("PATCH /v1/cardapio/products/{id}", wrap(handleUpdateProduct(svc)))
 	mux.Handle("DELETE /v1/cardapio/products/{id}", wrap(handleDeleteProduct(svc)))

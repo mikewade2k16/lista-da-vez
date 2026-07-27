@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
@@ -113,7 +114,7 @@ func scanProduct(row rowScanner) (Product, error) {
 
 // ListProductsLean retorna a projecao enxuta de produtos de um restaurante.
 func (s *Store) ListProductsLean(ctx context.Context, accountID, restaurantID string) ([]ProductLean, error) {
-	const q = `select id, category_id, slug, name, price_cents, image_url,
+	const q = `select id, category_id, slug, name, price_cents, compare_at_price_cents, image_url,
 			is_available, is_featured, sort_order
 		from cardapio.products
 		where restaurant_id = $1 and account_id = $2
@@ -127,12 +128,49 @@ func (s *Store) ListProductsLean(ctx context.Context, accountID, restaurantID st
 	for rows.Next() {
 		var p ProductLean
 		if err := rows.Scan(&p.ID, &p.CategoryID, &p.Slug, &p.Name, &p.PriceCents,
-			&p.ImageURL, &p.IsAvailable, &p.IsFeatured, &p.SortOrder); err != nil {
+			&p.CompareAtPriceCents, &p.ImageURL, &p.IsAvailable, &p.IsFeatured, &p.SortOrder); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// ListProductsFull retorna todo o catalogo do restaurante, incluindo produtos
+// indisponiveis e opcoes, em tres queries no total. E a fonte da exportacao.
+func (s *Store) ListProductsFull(ctx context.Context, accountID, restaurantID string) ([]Product, error) {
+	const q = `select ` + productColumns + `
+		from cardapio.products
+		where restaurant_id = $1 and account_id = $2
+		order by sort_order, name`
+	rows, err := s.pool.Query(ctx, q, restaurantID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	products := make([]Product, 0)
+	for rows.Next() {
+		product, scanErr := scanProduct(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		products = append(products, product)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, len(products))
+	refs := make([]*Product, len(products))
+	for i := range products {
+		ids[i] = products[i].ID
+		refs[i] = &products[i]
+	}
+	if err := s.attachOptions(ctx, ids, refs); err != nil {
+		return nil, err
+	}
+	return products, nil
 }
 
 // GetProduct busca um produto full (com variations/addons embutidos) por id.
@@ -359,6 +397,69 @@ func (s *Store) DeleteProduct(ctx context.Context, accountID, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// BulkProducts valida a selecao e aplica a mutacao na mesma transacao. A
+// contagem previa evita alteracao parcial quando algum ID saiu do escopo ou
+// ficou stale entre a selecao e o comando.
+func (s *Store) BulkProducts(ctx context.Context, accountID, restaurantID string, ids []string, action ProductBulkAction) (int, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	const lockQuery = `select id
+		from cardapio.products
+		where account_id = $1 and restaurant_id = $2 and id = any($3)
+		for update`
+	rows, err := tx.Query(ctx, lockQuery, accountID, restaurantID, ids)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for rows.Next() {
+		count++
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if count != len(ids) {
+		return 0, ErrNotFound
+	}
+
+	var commandTag pgconn.CommandTag
+	switch action {
+	case ProductBulkDelete:
+		commandTag, err = tx.Exec(ctx, `delete from cardapio.products
+			where account_id = $1 and restaurant_id = $2 and id = any($3)`, accountID, restaurantID, ids)
+	case ProductBulkEnable:
+		commandTag, err = tx.Exec(ctx, `update cardapio.products
+			set is_available = true, updated_at = now()
+			where account_id = $1 and restaurant_id = $2 and id = any($3)`, accountID, restaurantID, ids)
+	case ProductBulkDisable:
+		commandTag, err = tx.Exec(ctx, `update cardapio.products
+			set is_available = false, updated_at = now()
+			where account_id = $1 and restaurant_id = $2 and id = any($3)`, accountID, restaurantID, ids)
+	case ProductBulkFeature:
+		commandTag, err = tx.Exec(ctx, `update cardapio.products
+			set is_featured = true, updated_at = now()
+			where account_id = $1 and restaurant_id = $2 and id = any($3)`, accountID, restaurantID, ids)
+	case ProductBulkRemoveFeature:
+		commandTag, err = tx.Exec(ctx, `update cardapio.products
+			set is_featured = false, updated_at = now()
+			where account_id = $1 and restaurant_id = $2 and id = any($3)`, accountID, restaurantID, ids)
+	default:
+		return 0, ErrValidation
+	}
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return int(commandTag.RowsAffected()), nil
 }
 
 // ============================================================================

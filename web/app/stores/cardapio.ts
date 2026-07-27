@@ -9,6 +9,7 @@ import type {
   Order,
   OrderStatus,
   Product,
+  ProductBulkAction,
   ProductListItem,
   Restaurant,
   RestaurantDomain,
@@ -17,6 +18,12 @@ import type {
   ReviewInput,
   SiteLayout,
 } from '~/domain/cardapio/types'
+import type {
+  ProductImportInput,
+  ProductImportPreview,
+  ProductImportResult,
+  ProductTransferDocument,
+} from '~/domain/cardapio/product-transfer'
 
 // Store do modulo Cardapio Online (painel). Contrato congelado em
 // docs/cardapio/PLANO_MODULO_CARDAPIO.md (§4). Os componentes em
@@ -381,6 +388,43 @@ export const useCardapioStore = defineStore('cardapio', () => {
     }
   }
 
+  async function bulkProducts(id: string, ids: string[], action: ProductBulkAction) {
+    const result = (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products/bulk-action`),
+      { method: 'POST', body: { ids, action } },
+    )) as { affected: number }
+    await reloadProducts(id)
+    return result
+  }
+
+  async function exportProducts(id: string): Promise<ProductTransferDocument> {
+    return (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products/export`),
+    )) as ProductTransferDocument
+  }
+
+  async function previewProductImport(
+    id: string,
+    input: ProductImportInput,
+  ): Promise<ProductImportPreview> {
+    return (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products/import/preview`),
+      { method: 'POST', body: input },
+    )) as ProductImportPreview
+  }
+
+  async function importProducts(
+    id: string,
+    input: ProductImportInput,
+  ): Promise<ProductImportResult> {
+    const result = (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products/import`),
+      { method: 'POST', body: input },
+    )) as ProductImportResult
+    await Promise.all([reloadCategories(id), reloadProducts(id)])
+    return result
+  }
+
   // --- Avaliacoes ---
   // As reviews NAO ficam no state da store: cada secao busca a sua lista (por
   // produto OU do estabelecimento) e a guarda localmente. As actions abaixo so
@@ -696,6 +740,10 @@ export const useCardapioStore = defineStore('cardapio', () => {
     createProduct,
     patchProduct,
     deleteProduct,
+    bulkProducts,
+    exportProducts,
+    previewProductImport,
+    importProducts,
     loadReviews,
     createReview,
     loadEstablishmentReviews,

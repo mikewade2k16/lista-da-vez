@@ -31,11 +31,13 @@ type dataStore interface {
 
 	// Products
 	ListProductsLean(ctx context.Context, accountID, restaurantID string) ([]ProductLean, error)
+	ListProductsFull(ctx context.Context, accountID, restaurantID string) ([]Product, error)
 	GetProduct(ctx context.Context, accountID, id string) (Product, error)
 	ListMenuProducts(ctx context.Context, accountID, restaurantID string) ([]Product, error)
 	CreateProduct(ctx context.Context, accountID, restaurantID string, in ProductInput) (Product, error)
 	UpdateProduct(ctx context.Context, accountID, id string, in ProductInput) (Product, error)
 	DeleteProduct(ctx context.Context, accountID, id string) error
+	BulkProducts(ctx context.Context, accountID, restaurantID string, ids []string, action ProductBulkAction) (int, error)
 
 	// Reviews
 	ListReviewsByProduct(ctx context.Context, accountID, productID string) ([]Review, error)

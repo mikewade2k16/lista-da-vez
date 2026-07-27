@@ -246,11 +246,14 @@ export interface ProductListItem {
   slug: string
   name: string
   priceCents: number
+  compareAtPriceCents?: number
   imageUrl: string
   isAvailable: boolean
   isFeatured: boolean
   sortOrder: number
 }
+
+export type ProductBulkAction = 'delete' | 'enable' | 'disable' | 'feature' | 'remove_feature'
 
 export interface Review {
   id: string

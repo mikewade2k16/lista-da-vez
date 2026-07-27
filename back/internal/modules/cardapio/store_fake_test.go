@@ -56,6 +56,9 @@ func (unimplementedStore) DeleteCategory(context.Context, string, string) error 
 func (unimplementedStore) ListProductsLean(context.Context, string, string) ([]ProductLean, error) {
 	return nil, nil
 }
+func (unimplementedStore) ListProductsFull(context.Context, string, string) ([]Product, error) {
+	return nil, nil
+}
 func (unimplementedStore) GetProduct(context.Context, string, string) (Product, error) {
 	return Product{}, nil
 }
@@ -69,6 +72,9 @@ func (unimplementedStore) UpdateProduct(context.Context, string, string, Product
 	return Product{}, nil
 }
 func (unimplementedStore) DeleteProduct(context.Context, string, string) error { return nil }
+func (unimplementedStore) BulkProducts(context.Context, string, string, []string, ProductBulkAction) (int, error) {
+	return 0, nil
+}
 func (unimplementedStore) ListReviewsByProduct(context.Context, string, string) ([]Review, error) {
 	return nil, nil
 }

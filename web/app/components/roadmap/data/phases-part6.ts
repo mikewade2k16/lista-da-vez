@@ -281,5 +281,25 @@ export const ROADMAP_PHASES_PART6: RoadmapPhase[] = [
     ],
     blockers: [],
     verifiable: "Como platform_admin: criar/editar um usuário como Consultor + loja X faz ele aparecer na Lista da vez da loja X SEM reload (WebSocket) e sem depender de vínculo ERP; trocar a loja pelo select move ele para a fila da nova loja ao vivo; trocar o papel para não-consultor (ou inativar) tira ele da fila. Banco: queue.consultants ganha/atualiza a linha chaveada por user_id. go test users+consultants verdes; api rebuildada."
+  },
+  {
+    id: "storage-r2-private-cdn",
+    code: "R2CDN",
+    title: "Storage R2 — CDN privada para mídia original",
+    goal: "Entregar os arquivos originais imutáveis pelo hostname media.crowvisuals.com.br com prioridade para Safari/iPhone, sem tornar o bucket enumerável nem alterar codec, resolução, proporção, frame rate, bitrate, container, metadados ou bytes.",
+    status: "pending",
+    startedAt: "2026-07-30",
+    estimateWeeks: "infra DNS + Worker Free + integração e QA iPhone",
+    group: "infra-deploy",
+    tasks: [
+      { id: "r2cdn-1-dns-zone", label: "Migrar a zona crowvisuals.com.br da HostGator para a mesma conta Cloudflare do R2: inventariar e recriar TODOS os registros atuais antes de trocar ns20/ns21.hostgator.com.br pelos nameservers Cloudflare; preservar omni, n8n, e-mail e demais serviços; validar resolução antes e depois.", done: false, note: "Bloqueio atual: a tela R2 só aceita domínios de zonas ativas na mesma conta. Não trocar nameservers sem inventário/rollback — risco de indisponibilidade de produção e e-mail." },
+      { id: "r2cdn-2-worker-private", label: "Plano Free: criar Worker de mídia com binding privado ao bucket omni-mvp-v1 e Custom Domain media.crowvisuals.com.br; manter r2.dev desativado; validar assinatura/expiração antes de qualquer leitura.", done: false },
+      { id: "r2cdn-3-signed-urls", label: "API Go emite URLs curtas assinadas após autenticação e escopo da conta; frontend renova sem persistir bearer expirado. URL ausente, adulterada, expirada ou de outra conta retorna 404/403 sem entregar o objeto.", done: false },
+      { id: "r2cdn-4-cache-iphone", label: "CDN/Worker preserva ETag forte, Content-Length, Accept-Ranges, If-Range e 206; cacheia somente chave imutável autorizada; player usa playsinline/object-fit contain e QA real em Safari iPhone com início, seek, retomada e múltiplos vídeos.", done: false },
+      { id: "r2cdn-5-protocol-cache", label: "Ativar HTTP/3 na zona e configurar cache compatível com o plano Free; medir CF-Cache-Status, TTFB, início do play e operações Classe B. Não afirmar Tiered Cache no caminho Worker Cache API sem prova nos headers/logs.", done: false },
+      { id: "r2cdn-6-cutover", label: "Cutover gradual Calendar/Tasks: URLs atuais pelo backend permanecem fallback; só promover media.crowvisuals.com.br após testes de privacidade, Range/Safari e rollback. Depois documentar purge/exclusão e rotação do segredo.", done: false },
+    ],
+    blockers: ["Zona crowvisuals.com.br ainda autoritativa na HostGator; precisa entrar e ficar ativa na mesma conta Cloudflare do R2."],
+    verifiable: "Em iPhone/Safari, usuário autorizado inicia e busca no vídeo original por media.crowvisuals.com.br com 206, Content-Length e ETag forte; bytes baixados têm o mesmo hash do upload. URL sem assinatura, expirada ou de outra conta falha. r2.dev segue desligado. omni.crowvisuals.com.br, n8n e e-mail continuam resolvendo após a migração DNS; API e rotas antigas permanecem rollback funcional."
   }
 ];

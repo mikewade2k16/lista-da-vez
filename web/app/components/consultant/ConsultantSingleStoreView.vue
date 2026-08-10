@@ -49,6 +49,7 @@ withDefaults(
     staff?: SingleStoreStaffItem[]
     history?: Array<Record<string, unknown>>
     simulationAdditionalSales?: number
+    canOpenFeedback?: boolean
   }>(),
   {
     rows: () => [],
@@ -57,11 +58,12 @@ withDefaults(
     staff: () => [],
     history: () => [],
     simulationAdditionalSales: 0,
+    canOpenFeedback: false,
   },
 )
 
 const emit = defineEmits<{
-  (e: 'select', consultantId: string): void
+  (e: 'select' | 'open-feedback', consultantId: string): void
   (e: 'update:simulation-additional-sales', value: number): void
 }>()
 </script>
@@ -92,6 +94,8 @@ const emit = defineEmits<{
     :goal-context="card.goalContext"
     mode="full"
     :show-details-button="false"
+    :show-feedback-button="canOpenFeedback"
+    @open-feedback="emit('open-feedback', $event)"
   />
   <div v-if="card" class="consultant-integrated-insights">
     <ConsultantHistoryPanel

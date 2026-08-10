@@ -45,6 +45,12 @@ queue/
     service.go
     http.go
     AGENT.md
+  performancefeedback/       — reunioes 1:1, snapshots de KPI e plano de acao
+    model.go
+    store_postgres.go
+    service.go
+    http.go
+    AGENT.md
   consultants/               — subpacote queue/consultants
     model.go
     store_postgres.go
@@ -83,7 +89,8 @@ queue/
 ### Wiring de rotas (legado) + gating ativo (C20, 2026-06-04)
 
 Os endpoints HTTP das rotas `/v1/operations/*`, `/v1/alerts/*`, `/v1/reports/*`,
-`/v1/analytics/*`, `/v1/feedback/*`, `/v1/consultants/*`, `/v1/settings/*`,
+`/v1/analytics/*`, `/v1/feedback/*`, `/v1/performance-feedback/*`,
+`/v1/consultants/*`, `/v1/settings/*`,
 `/v1/stores/*` continuam registrados diretamente em `app.go` com `RequireAuth`,
 MAS agora são **gateados por contratação** via `AccountModulesGuard.RequireModuleByPath`
 (prefixo → `queue`), aplicado no `Chain`. Desabilitar o módulo `queue` de uma

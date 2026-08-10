@@ -14,88 +14,106 @@ const (
 )
 
 type Config struct {
-	AppName                       string
-	Env                           string
-	HTTPAddr                      string
-	HTTPRateLimitRequests         int
-	HTTPRateLimitWindow           time.Duration
-	WebAppURL                     string
-	UploadsDir                    string
-	ERPSourceKind                 string
-	ERPSourceRecursive            bool
-	ERPSourceDir                  string
-	ERPLocalSourceDir             string
-	ERPStorageDir                 string
-	ERPBootstrapItemFile          string
-	ERPBootstrapCustomerFile      string
-	ERPBootstrapEmployeeFile      string
-	ERPBootstrapOrderFile         string
-	ERPBootstrapOrderCanceledFile string
-	ERPAllowManualSync            bool
-	ERPFTPHost                    string
-	ERPFTPPort                    int
-	ERPFTPUser                    string
-	ERPFTPPassword                string
-	ERPFTPKeyPath                 string
-	ERPFTPRemoteDir               string
-	ERPFTPHostKey                 string
-	ERPRootStoreCode              string
-	ERPSyncInterval               time.Duration
-	ERPSyncHourUTC                int
-	ERPSyncAutomaticEnabled       bool
-	ERPSyncDryRunDefault          bool
-	ERPCSVMaxBytes                int64
-	ERPManualSyncMaxFiles         int
-	ERPBackfillMaxFiles           int
-	ERPManualSyncMinInterval      time.Duration
-	PerolaBICompanyKey            string
-	PerolaBILogin                 string
-	PerolaBIPass                  string
-	PerolaBIStaticToken           string
-	PerolaBICNPJEmpresa           string
-	PerolaBITokenTTL              time.Duration
-	PerolaBIRequestTimeout        time.Duration
-	PerolaBIPageLimit             int
-	PerolaBIMaxPages              int
-	DatabaseURL                   string
-	DatabaseAppURL                string
-	DatabaseMinConns              int
-	DatabaseMaxConns              int
-	CORSAllowedOrigins            []string
-	AuthTokenSecret               string
-	AuthTokenTTL                  time.Duration
-	AuthInviteTTL                 time.Duration
-	AuthPasswordResetTTL          time.Duration
-	AuthPrincipalCacheTTL         time.Duration
-	SMTPHost                      string
-	SMTPPort                      int
-	SMTPUsername                  string
-	SMTPPassword                  string
-	SMTPFromEmail                 string
-	SMTPFromName                  string
-	SMTPTLSMode                   string
-	SMTPInsecureSkipVerify        bool
-	SMTPTimeout                   time.Duration
-	BcryptCost                    int
-	ConsultantEmailDomain         string
-	ConsultantDefaultPassword     string
-	CoreV2Enabled                 bool
-	AuthGatewayCookieDomain       string
+	AppName                             string
+	Env                                 string
+	HTTPAddr                            string
+	HTTPRateLimitRequests               int
+	HTTPRateLimitWindow                 time.Duration
+	WebAppURL                           string
+	UploadsDir                          string
+	R2Enabled                           bool
+	R2AccountID                         string
+	R2Bucket                            string
+	R2AccessKeyID                       string
+	R2SecretAccessKey                   string
+	R2RequestTimeout                    time.Duration
+	R2UploadTimeout                     time.Duration
+	R2AnalyticsToken                    string
+	R2AllowNonEmptyBucketInitialization bool
+	ERPSourceKind                       string
+	ERPSourceRecursive                  bool
+	ERPSourceDir                        string
+	ERPLocalSourceDir                   string
+	ERPStorageDir                       string
+	ERPBootstrapItemFile                string
+	ERPBootstrapCustomerFile            string
+	ERPBootstrapEmployeeFile            string
+	ERPBootstrapOrderFile               string
+	ERPBootstrapOrderCanceledFile       string
+	ERPAllowManualSync                  bool
+	ERPFTPHost                          string
+	ERPFTPPort                          int
+	ERPFTPUser                          string
+	ERPFTPPassword                      string
+	ERPFTPKeyPath                       string
+	ERPFTPRemoteDir                     string
+	ERPFTPHostKey                       string
+	ERPRootStoreCode                    string
+	ERPSyncInterval                     time.Duration
+	ERPSyncHourUTC                      int
+	ERPSyncAutomaticEnabled             bool
+	ERPSyncDryRunDefault                bool
+	ERPCSVMaxBytes                      int64
+	ERPManualSyncMaxFiles               int
+	ERPBackfillMaxFiles                 int
+	ERPManualSyncMinInterval            time.Duration
+	PerolaBICompanyKey                  string
+	PerolaBILogin                       string
+	PerolaBIPass                        string
+	PerolaBIStaticToken                 string
+	PerolaBICNPJEmpresa                 string
+	PerolaBITokenTTL                    time.Duration
+	PerolaBIRequestTimeout              time.Duration
+	PerolaBIPageLimit                   int
+	PerolaBIMaxPages                    int
+	DatabaseURL                         string
+	DatabaseAppURL                      string
+	DatabaseMinConns                    int
+	DatabaseMaxConns                    int
+	CORSAllowedOrigins                  []string
+	AuthTokenSecret                     string
+	AuthTokenTTL                        time.Duration
+	AuthInviteTTL                       time.Duration
+	AuthPasswordResetTTL                time.Duration
+	AuthPrincipalCacheTTL               time.Duration
+	SMTPHost                            string
+	SMTPPort                            int
+	SMTPUsername                        string
+	SMTPPassword                        string
+	SMTPFromEmail                       string
+	SMTPFromName                        string
+	SMTPTLSMode                         string
+	SMTPInsecureSkipVerify              bool
+	SMTPTimeout                         time.Duration
+	BcryptCost                          int
+	ConsultantEmailDomain               string
+	ConsultantDefaultPassword           string
+	CoreV2Enabled                       bool
+	AuthGatewayCookieDomain             string
 }
 
 func Load() Config {
 	env := getEnv("APP_ENV", "development")
 	return Config{
-		AppName:               getEnv("APP_NAME", "omni-api"),
-		Env:                   env,
-		HTTPAddr:              getEnv("APP_ADDR", ":8080"),
-		HTTPRateLimitRequests: getEnvInt("HTTP_RATE_LIMIT_REQUESTS", defaultHTTPRateLimitRequests(env)),
-		HTTPRateLimitWindow:   getEnvDuration("HTTP_RATE_LIMIT_WINDOW", time.Minute),
-		WebAppURL:             getEnv("WEB_APP_URL", "http://localhost:3003"),
-		UploadsDir:            getEnv("UPLOADS_DIR", "data/uploads"),
-		ERPSourceKind:         getEnv("ERP_SOURCE_KIND", "local"),
-		ERPSourceRecursive:    getEnvBool("ERP_SOURCE_RECURSIVE", false),
-		ERPSourceDir:          getEnv("ERP_SOURCE_DIR", ""),
+		AppName:                             getEnv("APP_NAME", "omni-api"),
+		Env:                                 env,
+		HTTPAddr:                            getEnv("APP_ADDR", ":8080"),
+		HTTPRateLimitRequests:               getEnvInt("HTTP_RATE_LIMIT_REQUESTS", defaultHTTPRateLimitRequests(env)),
+		HTTPRateLimitWindow:                 getEnvDuration("HTTP_RATE_LIMIT_WINDOW", time.Minute),
+		WebAppURL:                           getEnv("WEB_APP_URL", "http://localhost:3003"),
+		UploadsDir:                          getEnv("UPLOADS_DIR", "data/uploads"),
+		R2Enabled:                           getEnvBool("R2_ENABLED", false),
+		R2AccountID:                         getEnv("R2_ACCOUNT_ID", ""),
+		R2Bucket:                            getEnv("R2_BUCKET", ""),
+		R2AccessKeyID:                       getEnv("R2_ACCESS_KEY_ID", ""),
+		R2SecretAccessKey:                   getEnv("R2_SECRET_ACCESS_KEY", ""),
+		R2RequestTimeout:                    getEnvDuration("R2_REQUEST_TIMEOUT", 30*time.Second),
+		R2UploadTimeout:                     getEnvDuration("R2_UPLOAD_TIMEOUT", 15*time.Minute),
+		R2AnalyticsToken:                    getEnv("R2_ANALYTICS_API_TOKEN", ""),
+		R2AllowNonEmptyBucketInitialization: getEnvBool("R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION", false),
+		ERPSourceKind:                       getEnv("ERP_SOURCE_KIND", "local"),
+		ERPSourceRecursive:                  getEnvBool("ERP_SOURCE_RECURSIVE", false),
+		ERPSourceDir:                        getEnv("ERP_SOURCE_DIR", ""),
 		ERPLocalSourceDir: getEnv(
 			"ERP_LOCAL_SOURCE_DIR",
 			getEnv("ERP_SOURCE_DIR", ""),
@@ -209,6 +227,9 @@ func (cfg Config) Validate() error {
 	}
 	if strings.TrimSpace(cfg.DatabaseAppURL) == "" {
 		problems = append(problems, "DATABASE_APP_URL ausente (AC-04: a api deve conectar com a role least-privilege omni_app, nunca com o superuser)")
+	}
+	if cfg.R2Enabled && !cfg.CoreV2Enabled {
+		problems = append(problems, "R2_ENABLED exige CORE_V2_ENABLED=true para construir o modulo storage")
 	}
 
 	if len(problems) > 0 {

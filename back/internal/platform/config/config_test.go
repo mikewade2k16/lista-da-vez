@@ -65,6 +65,22 @@ func TestLoadHTTPRateLimitOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadR2NonEmptyBucketInitializationDefaultsToDisabled(t *testing.T) {
+	t.Setenv("R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION", "")
+
+	if cfg := Load(); cfg.R2AllowNonEmptyBucketInitialization {
+		t.Fatal("expected non-empty R2 bucket initialization to default to false")
+	}
+}
+
+func TestLoadR2NonEmptyBucketInitializationExplicitlyEnabled(t *testing.T) {
+	t.Setenv("R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION", "true")
+
+	if cfg := Load(); !cfg.R2AllowNonEmptyBucketInitialization {
+		t.Fatal("expected explicit non-empty R2 bucket initialization to be enabled")
+	}
+}
+
 func TestValidateNoOpInDevelopment(t *testing.T) {
 	cfg := Config{Env: "development", AuthTokenSecret: devTokenSecretDefault, BcryptCost: 4}
 	if err := cfg.Validate(); err != nil {
@@ -114,5 +130,20 @@ func TestValidateAcceptsProductionWithSecureValues(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected no error with secure production config, got %v", err)
+	}
+}
+
+func TestValidateRejectsR2WithoutCoreV2InProduction(t *testing.T) {
+	cfg := Config{
+		Env:             "production",
+		AuthTokenSecret: "secret-real-aqui",
+		BcryptCost:      productionMinBcrypt,
+		DatabaseAppURL:  "postgres://omni_app:secure-password@postgres:5432/omni",
+		R2Enabled:       true,
+		CoreV2Enabled:   false,
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "CORE_V2_ENABLED") {
+		t.Fatalf("expected R2/CoreV2 validation error, got %v", err)
 	}
 }

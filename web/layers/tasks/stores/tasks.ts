@@ -7,10 +7,12 @@ import { CONTENT_STATUSES } from '~/utils/content-taxonomy'
 import { useCoreAccountStore } from '../../core/stores/account'
 import { sanitizeTaskContentHtml, stripHtmlToText } from '../utils/content'
 import { compactUserLabel } from '../utils/user-label'
+import { normalizeTaskChecklist } from '../utils/task-checklist'
 import type {
   OrchestratorField,
   OrchestratorView,
   TaskBoardColumn,
+  TaskChecklistItem,
   TaskItem,
   TaskPriority,
   TaskProjectCardFieldsConfig,
@@ -137,6 +139,7 @@ interface TaskUiMetadata {
   prioritySet?: boolean
   createdBy?: string
   videos?: TaskVideoItem[]
+  checklist?: TaskChecklistItem[]
 }
 
 interface TasksUiMetadata {
@@ -689,6 +692,9 @@ function taskUiPatchFromPayload(payload: Record<string, any>): TaskUiMetadata {
   if (Object.prototype.hasOwnProperty.call(payload, 'videos')) {
     patch.videos = normalizeTaskVideos(payload.videos)
   }
+  if (Object.prototype.hasOwnProperty.call(payload, 'checklist')) {
+    patch.checklist = normalizeTaskChecklist(payload.checklist)
+  }
   return patch
 }
 
@@ -708,6 +714,7 @@ function normalizeTaskUiMetadata(value: unknown): TaskUiMetadata {
     'prioritySet',
     'createdBy',
     'videos',
+    'checklist',
   ].forEach((key) => {
     if (Object.prototype.hasOwnProperty.call(raw, key)) {
       payload[key] = raw[key]
@@ -795,6 +802,7 @@ function mapTaskToStoreItem(
     createdAt: normalizeText(task.createdAt, 80) || new Date().toISOString(),
     updatedAt: normalizeText(task.updatedAt, 80) || new Date().toISOString(),
     videos: normalizeTaskVideos(resolvedTaskUi?.videos),
+    checklist: normalizeTaskChecklist(resolvedTaskUi?.checklist),
     // calendarMedia e ESPELHO server-populated (WAVE 6 cruzamento A), read-only: vem direto
     // do ui_metadata do BACK, sem passar pelo pipeline de patch local (normalizeTaskUiMetadata
     // faz whitelist p/ escrita e descartava a chave — regressao que sumia a midia no card/modal).
@@ -1803,10 +1811,15 @@ export const useTasksStore = defineStore('tasks', () => {
       : currentTask.columnId
         ? project.columns.find((column) => column.id === currentTask.columnId) || null
         : null
-    const previousTask: TasksStoreTaskItem = { ...currentTask, involved: [...currentTask.involved] }
+    const previousTask: TasksStoreTaskItem = {
+      ...currentTask,
+      involved: [...currentTask.involved],
+      checklist: normalizeTaskChecklist(currentTask.checklist),
+    }
     const optimisticTask: TasksStoreTaskItem = {
       ...currentTask,
       involved: [...currentTask.involved],
+      checklist: normalizeTaskChecklist(currentTask.checklist),
       updatedAt: new Date().toISOString(),
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'title'))
@@ -1856,6 +1869,9 @@ export const useTasksStore = defineStore('tasks', () => {
       optimisticTask.type = normalizeText(patch.type, 120)
     if (Object.prototype.hasOwnProperty.call(patch, 'videos')) {
       optimisticTask.videos = normalizeTaskVideos((patch as TasksStoreTaskItem).videos)
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'checklist')) {
+      optimisticTask.checklist = normalizeTaskChecklist((patch as TasksStoreTaskItem).checklist)
     }
     replaceTask(optimisticTask)
     let response: any

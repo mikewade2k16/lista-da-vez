@@ -113,7 +113,7 @@ Cuidados obrigatorios:
 - `responsavel` e `envolvidos` nao podem usar `creatable`; pessoas vem do modulo de usuarios e o responsavel deve ser removido de envolvidos;
 - usuario/cliente renderizam como avatar + nome com borda opcional; status/tipo/prioridade continuam como badge preenchido;
 - prazo precisa manter inicio e fim (`dueDate` + `dueEndDate`) e hora ao lado da data;
-- campos visuais do card (`responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet`, `createdBy`) sao server-backed em `tasks.tasks.ui_metadata`; nao voltar a usar `omni.tasks.api.workspace.ui.v1` como fonte autoritativa desses dados.
+- campos visuais do card (`responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet`, `createdBy`, `checklist`) sao server-backed em `tasks.tasks.ui_metadata`; nao voltar a usar `omni.tasks.api.workspace.ui.v1` como fonte autoritativa desses dados.
 - enquanto o backend nao persistir views/filtros equivalentes, manter a ponte local `omni.tasks.api.workspace.ui.v1` apenas para configuracao de workspace/view.
 
 ## Composables novos (Fases T2–T7)
@@ -218,6 +218,22 @@ espelhados no contexto via `v-model` (`taskEditorMode`/`taskEditorWidth`); o boa
 `--tasks-editor-width` (escrita por `useTasksPageContext` a partir de `taskEditorWidth`). O
 `setTaskEditorMode` segue exposto (o `RoadmapModulesBoard` abre a task em modo `center`). Ajustes do
 comportamento do modal sao feitos no `OmniEntityDrawer` (um lugar so). Ver `docs/frontend/MODAL_TEMPLATE.md`.
+
+### Itens genericos e progresso da task (2026-07-28)
+
+- `TaskItem.checklist` e a lista server-backed de itens `{ id, title, completed }` armazenada em
+  `tasks.tasks.ui_metadata.checklist`; o front normaliza no util `utils/task-checklist.ts`.
+- O modal permite adicionar, renomear, concluir e remover itens, com autosave/presence pelo field key
+  `checklist`. O percentual e sempre derivado de `completed / total`, nunca persistido separadamente.
+- A secao fica recolhida por padrao. Sem itens, renderiza somente o gatilho minimalista `Adicionar itens`;
+  com itens, o cabecalho colapsavel resume concluidos/total e percentual. Ao remover o ultimo item, volta
+  automaticamente ao gatilho vazio.
+- A edicao do checklist permanece no draft do modal ate o autosave: nao espelhar cada clique imediatamente
+  na task do board, porque isso invalida agrupamento/filtros e rerenderiza todos os cards. O modal responde
+  no mesmo ciclo; o card recebe o valor autoritativo devolvido pelo `PATCH`.
+- Cards com itens mostram `concluidos/total` e a barra percentual para espelhar o modal.
+- O editor rico da task recebe altura definida no modal para que `OmniEditor` consiga manter a toolbar
+  fixa e aplicar `overflow-y: auto` ao conteudo longo.
 
 ### Montagem tardia dos selects do card (Track C perf — 2026-06-15)
 
@@ -367,6 +383,20 @@ export function useCan(permissionKey: string) {
 - `Cache-Control: private, max-age=15` em GETs de lista
 
 ## Regras de arquitetura
+
+### Upload de video e destino hibrido
+
+- Consultar `GET /v1/tasks/video-limit` antes do envio e rejeitar no cliente qualquer arquivo acima
+  do limite ativo, evitando iniciar um multipart que o backend recusaria.
+- O seletor administrativo de Storage decide o destino: local preserva o fluxo anterior; R2 usa o
+  modulo central e os limites por tipo. A tela de Tasks nao duplica nem persiste essa configuracao.
+- Nunca converter, recomprimir ou alterar formato, container, codec, frame rate, resolucao, bitrate
+  ou bytes do arquivo selecionado.
+- Upload usa `XMLHttpRequest` para mostrar progresso real navegador -> API. Depois de 100%, a UI
+  diferencia `gravando no storage` (API -> local/R2) de `vinculando a tarefa`; nao voltar ao texto
+  generico `salvando video...` sem barra.
+- Se o checklist tiver itens, abrir a escolha antes do envio. Persistir `checklistItemId` opcional no
+  metadata do video e permitir reassociacao sem reenviar ou modificar o arquivo.
 
 - Front nunca é fonte de autoridade para permissões — usar `useCan` contra dados do backend
 - Modal e card sempre espelham os mesmos campos (memória feedback_modal_board_mirror)

@@ -10,6 +10,7 @@ export interface PlayerCardStats {
   ticketAverage: number
   paScore: number
   conversionRate: number
+  attendances?: number
   // Campos exclusivos do modo FULL — o grid (mini) não os envia. Opcionais para o
   // grid type-checar sem precisar preencher KPIs que o mini não mostra.
   estimatedCommission?: number
@@ -27,6 +28,7 @@ export interface PlayerCardStats {
   paGoal?: number
   conversionGoal?: number
   cancellationRate?: number
+  qualityScore?: number
 }
 
 export interface PlayerCardConsultant {

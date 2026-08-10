@@ -1,7 +1,7 @@
 export const WORKSPACES = [
   { id: 'operacao', label: 'Operacao', icon: 'pending_actions', path: '/operacao' },
   { id: 'transcricoes', label: 'Transcrições', icon: 'mic', path: '/transcricoes' },
-  { id: 'comunicados', label: 'Campanhas', icon: 'campaign', path: '/campanhas' },
+  { id: 'campanhas', label: 'Campanhas', icon: 'campaign', path: '/campanhas' },
   // ATENCAO: `icon` aqui e ligature do Material Icons Round (o
   // DashboardWorkspaceNav renderiza <span class="material-icons-round">{{ icon }}</span>),
   // NAO chave do NAV_ICON_MAP. Usar 'messages' (a chave do nav.config.ts) renderiza
@@ -26,7 +26,6 @@ export const WORKSPACES = [
     path: '/inteligencia-clientes',
   },
   { id: 'relatorios', label: 'Relatorios', icon: 'description', path: '/relatorios' },
-  { id: 'campanhas', label: 'Campanhas', icon: 'campaign', path: '/campanhas?secao=campanhas' },
   {
     id: 'site_produtos_web',
     label: 'Produtos do Site',
@@ -66,6 +65,12 @@ export const WORKSPACES = [
   { id: 'erp', label: 'ERP', icon: 'inventory_2', path: '/erp' },
   { id: 'crm', label: 'CRM', icon: 'insights', path: '/crm' },
   { id: 'multiloja', label: 'Multi-loja', icon: 'store', path: '/multiloja' },
+  {
+    id: 'planejamento',
+    label: 'Planejamento',
+    icon: 'calendar_month',
+    path: '/planejamento/metas',
+  },
   { id: 'usuarios', label: 'Usuarios', icon: 'group', path: '/operacao/usuarios' },
   { id: 'usuarios_admin', label: 'Usuarios Admin', icon: 'manage_accounts', path: '/manage/users' },
   {
@@ -80,6 +85,7 @@ export const WORKSPACES = [
     icon: 'admin_panel_settings',
     path: '/manage/role-templates',
   },
+  { id: 'storage_admin', label: 'Storage R2', icon: 'cloud', path: '/manage/storage' },
   { id: 'manage', label: 'Manage', icon: 'layout_panel_left', path: '/manage/users' },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/configuracoes' },
   { id: 'menu_layout', label: 'Organização do Menu', icon: 'tune', path: '/manage/menu-layout' },
@@ -97,12 +103,18 @@ export const WORKSPACES = [
 export const QUEUE_WORKSPACES = [
   { id: 'operacao', label: 'Operacao', icon: 'pending_actions', path: '/operacao' },
   { id: 'transcricoes', label: 'Transcrições', icon: 'mic', path: '/transcricoes' },
-  { id: 'comunicados', label: 'Campanhas', icon: 'campaign', path: '/campanhas' },
+  { id: 'campanhas', label: 'Campanhas', icon: 'campaign', path: '/campanhas' },
   { id: 'consultor', label: 'Consultor', icon: 'person', path: '/operacao/consultor' },
   { id: 'ranking', label: 'Ranking', icon: 'leaderboard', path: '/operacao/ranking' },
   { id: 'erp', label: 'ERP', icon: 'inventory_2', path: '/operacao/erp' },
   { id: 'crm', label: 'CRM', icon: 'insights', path: '/operacao/crm' },
   { id: 'multiloja', label: 'Multi-loja', icon: 'store', path: '/operacao/multiloja' },
+  {
+    id: 'planejamento',
+    label: 'Planejamento',
+    icon: 'calendar_month',
+    path: '/planejamento/metas',
+  },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/operacao/configuracoes' },
   { id: 'alertas', label: 'Alertas', icon: 'warning', path: '/operacao/alertas' },
   { id: 'feedback', label: 'Suporte', icon: 'chat_bubble', path: '/suporte' },

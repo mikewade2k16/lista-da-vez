@@ -39,6 +39,7 @@ withDefaults(
     rankingPositionByKey?: Record<string, number>
     storeProgressByStoreId?: Record<string, StoreProgress>
     storePayoutByStoreId?: Record<string, ErpStorePayout>
+    canOpenFeedback?: boolean
   }>(),
   {
     staff: () => [],
@@ -46,11 +47,12 @@ withDefaults(
     rankingPositionByKey: () => ({}),
     storeProgressByStoreId: () => ({}),
     storePayoutByStoreId: () => ({}),
+    canOpenFeedback: false,
   },
 )
 
 const emit = defineEmits<{
-  (e: 'open-details', consultantId: string): void
+  (e: 'open-details' | 'open-feedback', consultantId: string): void
 }>()
 </script>
 
@@ -81,7 +83,9 @@ const emit = defineEmits<{
       :ranking-position-by-key="rankingPositionByKey"
       :store-progress-by-store-id="storeProgressByStoreId"
       :store-payout-by-store-id="storePayoutByStoreId"
+      :can-open-feedback="canOpenFeedback"
       @open-details="emit('open-details', $event)"
+      @open-feedback="emit('open-feedback', $event)"
     />
   </section>
 </template>

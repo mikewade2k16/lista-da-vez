@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +32,11 @@ func RegisterMediaRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Midd
 	// MediaItem); a persistencia e via PUT /events/{id} (campo media). As rotas de day-media
 	// (GET/PUT /day-media) sairam junto com o conceito de "anexo do dia".
 	mux.Handle("POST /v1/calendar/media", wrapManage(handleUploadMedia(svc)))
+	// URLs permanecem no contrato /uploads/calendar/... para nao alterar thumbs,
+	// viewer e player. O shape com objectID e exclusivo dos objetos novos no R2;
+	// arquivos legados (account/arquivo) continuam no file server global.
+	mux.HandleFunc("GET /uploads/calendar/{accountID}/{objectID}/{fileName}", handleCalendarMediaContent(svc))
+	mux.HandleFunc("HEAD /uploads/calendar/{accountID}/{objectID}/{fileName}", handleCalendarMediaContent(svc))
 	mux.Handle("GET /v1/calendar/media-limits", wrapView(handleGetMediaLimits(svc)))
 	mux.Handle("PUT /v1/calendar/media-limits", wrapManage(handlePutMediaLimits(svc)))
 }
@@ -72,18 +79,88 @@ func handleUploadMedia(svc *Service) http.HandlerFunc {
 		}
 		defer func() { _ = file.Close() }()
 
-		content, err := io.ReadAll(io.LimitReader(file, limits.VideoMaxBytes+1))
-		if err != nil {
-			writeMediaUploadReadError(w, r, err)
+		if header.Size <= 0 || header.Size > limits.VideoMaxBytes {
+			writeServiceError(w, r, ErrMediaTooLarge)
 			return
 		}
-		item, err := svc.SaveScopedMedia(r.Context(), accountID, header.Filename, header.Header.Get("Content-Type"), content)
+		principal, _ := auth.PrincipalFromContext(r.Context())
+		item, err := svc.SaveScopedMediaStream(r.Context(), accountID, principal.UserID,
+			r.Header.Get("Idempotency-Key"), header.Filename, header.Header.Get("Content-Type"), header.Size, file)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusCreated, item)
 	}
+}
+
+func handleCalendarMediaContent(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID := strings.TrimSpace(r.PathValue("accountID"))
+		objectID := strings.TrimSpace(r.PathValue("objectID"))
+		requestedName := strings.TrimSpace(r.PathValue("fileName"))
+		var content MediaContent
+		var err error
+		if r.Method == http.MethodHead {
+			content, err = svc.StatMedia(r.Context(), accountID, objectID)
+		} else {
+			byteRange := r.Header.Get("Range")
+			if byteRange != "" && r.Header.Get("If-Range") != "" {
+				metadata, metadataErr := svc.StatMedia(r.Context(), accountID, objectID)
+				if metadataErr != nil {
+					err = metadataErr
+				} else if r.Header.Get("If-Range") != quotedMediaETag(metadata.ETag) {
+					byteRange = ""
+				}
+			}
+			if err == nil {
+				content, err = svc.OpenMedia(r.Context(), accountID, objectID, byteRange)
+			}
+		}
+		if err != nil || content.FileName != requestedName {
+			if content.Body != nil {
+				_ = content.Body.Close()
+			}
+			if errors.Is(err, ErrInvalidMediaRange) {
+				w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
+			if errors.Is(err, ErrMediaUnavailable) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", content.ContentType)
+		w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.PathEscape(content.FileName))
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if etag := quotedMediaETag(content.ETag); etag != "" {
+			w.Header().Set("ETag", etag)
+		}
+		if content.ContentLength > 0 {
+			w.Header().Set("Content-Length", strconv.FormatInt(content.ContentLength, 10))
+		}
+		if content.ContentRange != "" {
+			w.Header().Set("Content-Range", content.ContentRange)
+			w.WriteHeader(http.StatusPartialContent)
+		}
+		if r.Method == http.MethodHead {
+			return
+		}
+		defer func() { _ = content.Body.Close() }()
+		_, _ = io.Copy(w, content.Body)
+	}
+}
+
+func quotedMediaETag(etag string) string {
+	etag = strings.Trim(strings.TrimSpace(etag), "\"")
+	if etag == "" {
+		return ""
+	}
+	return strconv.Quote(etag)
 }
 
 // clearMediaUploadDeadlines remove os prazos globais apenas do upload de midia.

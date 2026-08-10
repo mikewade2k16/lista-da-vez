@@ -9,7 +9,7 @@ import { useTaskPresence } from './useTaskPresence'
 import { useTasksRealtime, type TasksRealtimeEvent } from './useTasksRealtime'
 import { useTaskRelations } from './useTaskRelations'
 import { useTaskComments } from './useTaskComments'
-import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+import { createApiRequest, getApiBase, getApiErrorMessage } from '~/utils/api-client'
 // Taxonomia de conteudo compartilhada com o Calendario (WAVE 6): mesmos TIPOS nos dois modulos.
 import { CONTENT_TYPES } from '~/utils/content-taxonomy'
 import { sanitizeTaskContentHtml } from '../utils/content'
@@ -29,6 +29,9 @@ import {
   initialsFor as sharedInitialsFor,
   selectOptionColor as sharedSelectOptionColor,
 } from '../utils/select-display'
+import { normalizeTaskChecklist } from '../utils/task-checklist'
+import { isTaskUpdatedEventAlreadyApplied } from '../utils/realtime-refresh'
+import { uploadTaskVideoFile, type TaskVideoUploadProgress } from '../utils/task-video-upload'
 import { useTasksWorkspace } from './useTasksWorkspace'
 import { useTimeTracking } from './useTimeTracking'
 import type {
@@ -40,6 +43,7 @@ import type {
 import type {
   OrchestratorView,
   TaskBoardColumn,
+  TaskChecklistItem,
   TaskItem,
   TaskPriority,
   TaskProjectItem,
@@ -230,6 +234,7 @@ export function useTasksPageContext() {
     status: '',
     responsible: '',
     involved: [] as string[],
+    checklist: [] as TaskChecklistItem[],
     clientId: '',
     clientName: '',
     type: '',
@@ -247,6 +252,14 @@ export function useTasksPageContext() {
   const taskVideoDrafts = ref<TaskVideoDraft[]>([])
   const taskVideoSaving = ref(false)
   const taskVideoError = ref('')
+  const taskVideoMaxBytes = ref(100 * 1024 * 1024)
+  const taskVideoUploads = ref<TaskVideoUploadProgress[]>([])
+  const taskVideoItemDialogOpen = ref(false)
+  const taskVideoPendingFiles = ref<File[]>([])
+  const taskVideoPendingFileNames = computed(() =>
+    taskVideoPendingFiles.value.map((file) => file.name),
+  )
+  const taskVideoChecklistItems = computed(() => normalizeTaskChecklist(taskDraft.checklist))
   const taskDraftHydrating = ref(false)
   const taskDraftSaveQueued = ref(false)
   const taskDraftAutosaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -255,6 +268,8 @@ export function useTasksPageContext() {
   const lastSavedTaskDraftSignature = ref('')
   const lastSavedTaskVideoSignature = ref(taskVideoSignature([]))
   const TASK_AUTOSAVE_DELAY_MS = 650
+  const locallySavingTaskIds = new Set<string>()
+  const deferredLocalTaskEvents = new Map<string, TasksRealtimeEvent>()
   let tasksRealtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let tasksRealtimeRefreshing = false
   let tasksRealtimeRefreshQueued = false
@@ -1059,7 +1074,10 @@ export function useTasksPageContext() {
   }
 
   function activeTaskAccountId() {
-    return normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80)
+    return normalizeText(
+      accountStore.activeAccountId || auth.activeTenantId || auth.tenantContext?.[0]?.id,
+      80,
+    )
   }
 
   async function ensureTaskVideoTarget() {
@@ -1084,7 +1102,7 @@ export function useTasksPageContext() {
     return sharedFormatFileSize(size)
   }
 
-  async function uploadTaskVideoFiles(files: FileList | File[] | null | undefined) {
+  async function prepareTaskVideoFiles(files: FileList | File[] | null | undefined) {
     if (!files) return
     const nextFiles = Array.from(files).filter(
       (file) =>
@@ -1095,25 +1113,100 @@ export function useTasksPageContext() {
       return
     }
 
-    const taskId = await ensureTaskVideoTarget()
     const accountId = activeTaskAccountId()
-    if (!taskId || !accountId) return
+    if (!accountId) return
 
+    try {
+      const limitResponse = (await taskVideoRequest('/v1/tasks/video-limit', {
+        headers: { 'X-Account-Id': accountId },
+        skipLoadingIndicator: true,
+      })) as { maxBytes?: number }
+      const resolvedLimit = Number(limitResponse?.maxBytes || 0)
+      if (Number.isFinite(resolvedLimit) && resolvedLimit > 0) {
+        taskVideoMaxBytes.value = resolvedLimit
+      }
+    } catch (error) {
+      taskVideoError.value = getApiErrorMessage(
+        error,
+        'Nao foi possivel consultar o limite de video.',
+      )
+      return
+    }
+
+    const oversized = nextFiles.find((file) => file.size > taskVideoMaxBytes.value)
+    if (oversized) {
+      taskVideoError.value = `${oversized.name} tem ${formatFileSize(oversized.size)} e supera o limite ativo de ${formatFileSize(taskVideoMaxBytes.value)}.`
+      return
+    }
+
+    if (taskVideoChecklistItems.value.length > 0) {
+      taskVideoPendingFiles.value = nextFiles
+      taskVideoItemDialogOpen.value = true
+      return
+    }
+
+    await uploadTaskVideoFiles(nextFiles, '')
+  }
+
+  function cancelTaskVideoUpload(): void {
+    taskVideoItemDialogOpen.value = false
+    taskVideoPendingFiles.value = []
+  }
+
+  function confirmTaskVideoUpload(checklistItemId: string): void {
+    const files = [...taskVideoPendingFiles.value]
+    taskVideoItemDialogOpen.value = false
+    taskVideoPendingFiles.value = []
+    void uploadTaskVideoFiles(files, normalizeText(checklistItemId, 120))
+  }
+
+  function updateTaskVideoUpload(
+    key: string,
+    update: Partial<Pick<TaskVideoUploadProgress, 'percent' | 'phase'>>,
+  ): void {
+    taskVideoUploads.value = taskVideoUploads.value.map((item) =>
+      item.key === key ? { ...item, ...update } : item,
+    )
+  }
+
+  async function uploadTaskVideoFiles(nextFiles: File[], checklistItemId: string) {
+    const accountId = activeTaskAccountId()
+    if (!accountId || nextFiles.length === 0) return
+
+    const taskId = await ensureTaskVideoTarget()
+    if (!taskId) return
+
+    const jobs = nextFiles.map((file) => {
+      const key = crypto.randomUUID()
+      return {
+        key,
+        file,
+        progress: {
+          key,
+          name: file.name,
+          percent: 0,
+          phase: 'uploading' as const,
+          previewUrl: URL.createObjectURL(file),
+        },
+      }
+    })
+    taskVideoUploads.value = [...taskVideoUploads.value, ...jobs.map((job) => job.progress)]
     taskVideoSaving.value = true
     taskVideoError.value = ''
     try {
       let nextVideos = currentTaskVideoItems()
-      for (const file of nextFiles) {
-        const formData = new FormData()
-        formData.append('video', file)
-        const response = await taskVideoRequest(`/v1/tasks/${encodeURIComponent(taskId)}/videos`, {
-          method: 'POST',
-          headers: {
-            'X-Account-Id': accountId,
-          },
-          body: formData,
+      for (const job of jobs) {
+        const response = await uploadTaskVideoFile({
+          endpoint: `${getApiBase(runtimeConfig).replace(/\/$/, '')}/v1/tasks/${encodeURIComponent(taskId)}/videos`,
+          token: auth.accessToken || '',
+          accountId,
+          file: job.file,
+          checklistItemId,
+          onProgress: (percent) => updateTaskVideoUpload(job.key, { percent }),
+          onPhase: (phase) => updateTaskVideoUpload(job.key, { phase }),
         })
-        const uploadedVideo = normalizeTaskVideoItem(response?.video)
+        updateTaskVideoUpload(job.key, { percent: 100, phase: 'linking' })
+        const uploadedVideo = normalizeTaskVideoItem(response)
         if (!uploadedVideo) {
           throw new Error('Upload de video retornou metadata invalida.')
         }
@@ -1124,8 +1217,14 @@ export function useTasksPageContext() {
         (updatedTask as (TaskItem & { videos?: TaskVideoItem[] }) | null)?.videos || nextVideos,
       )
     } catch (error) {
-      taskVideoError.value = getApiErrorMessage(error, 'Nao foi possivel enviar o video.')
+      taskVideoError.value =
+        error instanceof Error
+          ? error.message
+          : getApiErrorMessage(error, 'Nao foi possivel enviar o video.')
     } finally {
+      for (const job of jobs) URL.revokeObjectURL(job.progress.previewUrl)
+      const completedKeys = new Set<string>(jobs.map((job) => job.key))
+      taskVideoUploads.value = taskVideoUploads.value.filter((item) => !completedKeys.has(item.key))
       taskVideoSaving.value = false
     }
   }
@@ -1134,11 +1233,34 @@ export function useTasksPageContext() {
     const input = event.target as HTMLInputElement | null
     const files = input?.files ? Array.from(input.files) : []
     if (input) input.value = ''
-    void uploadTaskVideoFiles(files)
+    void prepareTaskVideoFiles(files)
   }
 
   function onTaskVideoDrop(event: DragEvent) {
-    void uploadTaskVideoFiles(event.dataTransfer?.files)
+    void prepareTaskVideoFiles(event.dataTransfer?.files)
+  }
+
+  async function updateTaskVideoChecklistItem(fileId: string, checklistItemId: string) {
+    const previousDrafts = [...taskVideoDrafts.value]
+    const nextDrafts = previousDrafts.map((item) =>
+      item.id === fileId
+        ? { ...item, checklistItemId: normalizeText(checklistItemId, 120) || undefined }
+        : item,
+    )
+    taskVideoDrafts.value = nextDrafts
+    taskVideoSaving.value = true
+    taskVideoError.value = ''
+    try {
+      const updatedTask = await persistTaskVideos(normalizeTaskVideoItems(nextDrafts))
+      syncTaskVideoDrafts(
+        (updatedTask as (TaskItem & { videos?: TaskVideoItem[] }) | null)?.videos || nextDrafts,
+      )
+    } catch (error) {
+      taskVideoDrafts.value = previousDrafts
+      taskVideoError.value = getApiErrorMessage(error, 'Nao foi possivel vincular o video ao item.')
+    } finally {
+      taskVideoSaving.value = false
+    }
   }
 
   async function removeTaskVideoDraft(fileId: string) {
@@ -1163,10 +1285,13 @@ export function useTasksPageContext() {
     }
   }
 
-  function taskSignatureFromTask(task: TaskItem | null | undefined) {
+  function taskSignatureFromTask(
+    task: TaskItem | null | undefined,
+    options: { includeChecklist?: boolean } = {},
+  ) {
     if (!task) return ''
     const prioritySet = Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet)
-    return JSON.stringify({
+    const signature = {
       id: normalizeText(task.id, 80),
       title: normalizeText(task.title, 220),
       description: normalizeText(task.description, 5000),
@@ -1185,13 +1310,18 @@ export function useTasksPageContext() {
       dueEndDate: normalizeText(task.dueEndDate, 30),
       archived: Boolean(task.archived),
       createdBy: normalizeText(task.createdBy, 120),
-    })
+    }
+    return JSON.stringify(
+      options.includeChecklist === false
+        ? signature
+        : { ...signature, checklist: normalizeTaskChecklist(task.checklist) },
+    )
   }
 
-  function taskDraftSignature() {
+  function taskDraftSignature(options: { includeChecklist?: boolean } = {}) {
     // Cast para o tipo estendido: prioritySet e' um campo extra (nao esta em TaskItem) que
     // taskSignatureFromTask consome via cast interno. Aqui tornamos o contrato explicito.
-    return taskSignatureFromTask({
+    const draftTask = {
       id: taskDraft.id,
       projectId: activeProject.value?.id || '',
       title: taskDraft.title,
@@ -1212,7 +1342,13 @@ export function useTasksPageContext() {
       createdBy: taskDraft.createdBy,
       createdAt: taskDraft.createdAt,
       updatedAt: '',
-    } as TaskItem & { prioritySet?: boolean })
+    } as TaskItem & { prioritySet?: boolean }
+    return taskSignatureFromTask(
+      options.includeChecklist === false
+        ? draftTask
+        : { ...draftTask, checklist: taskDraft.checklist },
+      options,
+    )
   }
 
   function syncTaskDraftFromTask(
@@ -1227,6 +1363,7 @@ export function useTasksPageContext() {
     taskDraft.status = task.status
     taskDraft.responsible = task.responsible
     taskDraft.involved = sanitizeInvolved(task.involved, task.responsible)
+    taskDraft.checklist = normalizeTaskChecklist(task.checklist)
     taskDraft.clientId = task.clientId
     taskDraft.clientName = task.clientName
     taskDraft.type = task.type
@@ -1293,6 +1430,12 @@ export function useTasksPageContext() {
     if (draftInvolved === savedInvolved && incomingInvolved !== draftInvolved) {
       taskDraft.involved = [...(task.involved || [])]
     }
+    const draftChecklist = JSON.stringify(normalizeTaskChecklist(taskDraft.checklist))
+    const savedChecklist = JSON.stringify(normalizeTaskChecklist(saved.checklist))
+    const incomingChecklist = JSON.stringify(normalizeTaskChecklist(task.checklist))
+    if (draftChecklist === savedChecklist && incomingChecklist !== draftChecklist) {
+      taskDraft.checklist = normalizeTaskChecklist(task.checklist)
+    }
   }
 
   function resetTaskDraft() {
@@ -1312,6 +1455,7 @@ export function useTasksPageContext() {
     taskDraft.status = statuses.value[0] || ''
     taskDraft.responsible = responsible
     taskDraft.involved = []
+    taskDraft.checklist = []
     taskDraft.clientId = clientId
     taskDraft.clientName = clientLabel(taskDraft.clientId)
     taskDraft.type = ''
@@ -1411,6 +1555,7 @@ export function useTasksPageContext() {
       status: normalizeText(taskDraft.status, 120) || project.statuses[0] || 'Raw',
       responsible: normalizeText(taskDraft.responsible, 120),
       involved: sanitizeInvolved(taskDraft.involved, taskDraft.responsible),
+      checklist: normalizeTaskChecklist(taskDraft.checklist),
       clientId,
       clientName: clientLabel(clientId),
       type: normalizeText(taskDraft.type, 120),
@@ -1437,6 +1582,7 @@ export function useTasksPageContext() {
     task.status = normalizeText(taskDraft.status, 120) || task.status
     task.responsible = normalizeText(taskDraft.responsible, 120)
     task.involved = sanitizeInvolved(taskDraft.involved, taskDraft.responsible)
+    task.checklist = normalizeTaskChecklist(taskDraft.checklist)
     task.clientId = clientId
     task.clientName = clientLabel(clientId)
     task.type = normalizeText(taskDraft.type, 120)
@@ -1507,9 +1653,18 @@ export function useTasksPageContext() {
         if (!taskDraft.id) taskDraft.id = created.id
         savedTaskId = created.id
       } else {
-        const updated = await tasksWorkspace.updateTask(taskDraft.id, payload)
-        if (!updated) return
-        savedTaskId = updated.id
+        const updatingTaskId = taskDraft.id
+        locallySavingTaskIds.add(updatingTaskId)
+        try {
+          const updated = await tasksWorkspace.updateTask(updatingTaskId, payload)
+          if (!updated) return
+          savedTaskId = updated.id
+        } finally {
+          locallySavingTaskIds.delete(updatingTaskId)
+          const deferredEvent = deferredLocalTaskEvents.get(updatingTaskId)
+          deferredLocalTaskEvents.delete(updatingTaskId)
+          if (deferredEvent) scheduleTasksRealtimeRefresh(deferredEvent)
+        }
       }
       await upsertProjectListsFromTask()
       if (savedTaskId) taskDraft.id = savedTaskId
@@ -2365,6 +2520,22 @@ export function useTasksPageContext() {
       return
     }
 
+    if (type === 'task.updated') {
+      const taskId = normalizeText(event.taskId, 80)
+      if (taskId && locallySavingTaskIds.has(taskId)) {
+        const deferredEvent = deferredLocalTaskEvents.get(taskId)
+        if (Number(event.version || 0) >= Number(deferredEvent?.version || 0)) {
+          deferredLocalTaskEvents.set(taskId, event)
+        }
+        return
+      }
+
+      const localTask = tasksWorkspace.tasks.value.find((task) => task.id === taskId) as
+        | (TaskItem & { version?: number })
+        | undefined
+      if (isTaskUpdatedEventAlreadyApplied(event, localTask?.version)) return
+    }
+
     if (import.meta.client) {
       console.info('[tasks-ws] evento recebido — refresh agendado:', {
         type,
@@ -2503,6 +2674,9 @@ export function useTasksPageContext() {
         : []
       return encodeStructuredPresenceDraft(nextInvolved)
     }
+    if (key === 'checklist') {
+      return encodeStructuredPresenceDraft(normalizeTaskChecklist(value))
+    }
     if (key === 'clientId') {
       return encodeStructuredPresenceDraft(normalizeText(value, 80))
     }
@@ -2543,6 +2717,10 @@ export function useTasksPageContext() {
         )
       }
       return []
+    }
+    if (key === 'checklist') {
+      const decoded = decodeStructuredPresenceDraft<unknown[]>(value)
+      return normalizeTaskChecklist(decoded)
     }
     if (key === 'clientId') {
       const decoded = decodeStructuredPresenceDraft<number | string>(value)
@@ -2679,6 +2857,17 @@ export function useTasksPageContext() {
     schedulePresenceDraft('involved', taskDraft.involved)
   }
 
+  function taskDraftChecklistValue() {
+    const remoteDraft = presenceDraftValue('checklist')
+    return Array.isArray(remoteDraft) ? normalizeTaskChecklist(remoteDraft) : taskDraft.checklist
+  }
+
+  function updateTaskDraftChecklist(value: unknown) {
+    if (isPresenceFieldLocked('checklist')) return
+    taskDraft.checklist = normalizeTaskChecklist(value)
+    schedulePresenceDraft('checklist', taskDraft.checklist)
+  }
+
   function taskDraftClientIdValue() {
     const remoteDraft = presenceDraftValue('clientId')
     return typeof remoteDraft === 'string' && remoteDraft ? remoteDraft : taskDraft.clientId
@@ -2784,11 +2973,23 @@ export function useTasksPageContext() {
     void closeTaskEditor()
   }
 
+  // O checklist pertence ao draft do modal e precisa responder no mesmo frame. Espelha-lo na
+  // task do board a cada clique invalidava agrupamento/filtros e centenas de cards. Os demais
+  // campos continuam espelhados imediatamente; o checklist chega ao card pelo autosave autoritativo.
   watch(
-    () => taskDraftSignature(),
+    () => taskDraftSignature({ includeChecklist: false }),
     () => {
       if (!taskEditorOpen.value || taskDraftHydrating.value) return
       applyTaskDraftToLocalTask()
+      scheduleTaskDraftAutosave()
+    },
+    { flush: 'post' },
+  )
+
+  watch(
+    () => JSON.stringify(normalizeTaskChecklist(taskDraft.checklist)),
+    () => {
+      if (!taskEditorOpen.value || taskDraftHydrating.value) return
       scheduleTaskDraftAutosave()
     },
     { flush: 'post' },
@@ -2969,6 +3170,11 @@ export function useTasksPageContext() {
     taskVideoDrafts,
     taskVideoSaving,
     taskVideoError,
+    taskVideoMaxBytes,
+    taskVideoUploads,
+    taskVideoItemDialogOpen,
+    taskVideoPendingFileNames,
+    taskVideoChecklistItems,
     legacyMigrationNotice: tasksWorkspace.legacyMigrationNotice,
     tasksErrorMessage: tasksWorkspace.errorMessage,
     projectSettingsDraft,
@@ -3071,6 +3277,8 @@ export function useTasksPageContext() {
     updateTaskDraftResponsible,
     taskDraftInvolvedValue,
     updateTaskDraftInvolved,
+    taskDraftChecklistValue,
+    updateTaskDraftChecklist,
     taskDraftClientIdValue,
     updateTaskDraftClientId,
     taskDraftDueDateValue,
@@ -3085,6 +3293,9 @@ export function useTasksPageContext() {
     flushTaskDraftAutosave,
     onTaskVideoInput,
     onTaskVideoDrop,
+    cancelTaskVideoUpload,
+    confirmTaskVideoUpload,
+    updateTaskVideoChecklistItem,
     removeTaskVideoDraft,
     taskCalendarMedia,
     onCreateProject,

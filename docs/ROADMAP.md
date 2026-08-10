@@ -723,6 +723,11 @@ Páginas onde o impacto de feedback é maior (e onde o usuário mais sentiu lent
 - [x] Fase T3: criar modulo notifications (migration 0109, InAppAdapter, stubs email/WhatsApp/push e triggers em tasks).
 - [x] Fase T4: registry de resolvers cross-module (crm/erp/operations) e endpoint `relations:expand` com cache 60s.
 - [ ] Fase T5: trocar localStorage por API Go/Pinia store real.
+- [ ] Otimizar o realtime de Tasks: remover o `refresh()` completo disparado por cada evento e a cascata
+  repetida de `GET /boards` + paginacao de tasks. Cada mutation deve reconciliar somente a task/campo/board
+  afetado por `id + version`; eventos duplicados dos canais account/board devem ser coalescidos. Manter
+  refresh completo apenas como fallback de recuperacao e garantir que uma edicao gere uma mutation e, no
+  maximo, uma leitura direcionada da entidade alterada.
 - **Verificavel**: backend passa em `go test ./...`; `/tasks` segue front-first ate a T5; roadmap detalhado em `web/app/components/roadmap/roadmap-data.ts` e `docs/tasks-orquestrador-plano.html`.
 
 ### Fase 13 — Módulo Omni / Omnichannel (2-4 semanas)

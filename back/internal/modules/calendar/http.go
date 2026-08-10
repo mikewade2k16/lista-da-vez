@@ -406,6 +406,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_media", "Anexo invalido (tipo nao suportado).")
 	case errors.Is(err, ErrMediaTooLarge):
 		httpapi.WriteError(w, r, http.StatusRequestEntityTooLarge, "media_too_large", "Arquivo acima do limite permitido.")
+	case errors.Is(err, ErrMediaUnavailable):
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "media_unavailable", "O storage de midia esta indisponivel ou atingiu o limite de seguranca.")
 	case errors.Is(err, ErrInvalidClient):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_client", "Informe um cliente valido (clientId UUID).")
 	case errors.Is(err, ErrAINotConfigured):

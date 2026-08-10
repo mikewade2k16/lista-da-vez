@@ -31,8 +31,8 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     id: 'transcricoes',
     label: 'Transcrições',
     description: 'Áudios e transcrições dos atendimentos.',
-    viewPermission: 'workspace.operacao.view',
-    editPermission: 'workspace.operacao.edit',
+    viewPermission: 'workspace.transcricoes.view',
+    editPermission: 'workspace.transcricoes.edit',
   },
   {
     id: 'comunicados',
@@ -240,6 +240,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: 'workspace.multiloja.edit',
   },
   {
+    id: 'planejamento',
+    label: 'Planejamento',
+    description: 'Escalas, jornada e rateio de metas por loja.',
+    viewPermission: 'workspace.planejamento.view',
+    editPermission: 'workspace.planejamento.edit',
+  },
+  {
     id: 'usuarios',
     label: 'Usuarios',
     description: 'Usuarios, overrides e matriz de acesso.',
@@ -268,6 +275,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
       'Catalogo global de papeis-padrao (role templates) que as contas novas clonam (so platform_admin).',
     viewPermission: 'workspace.role_templates_admin.view',
     editPermission: 'workspace.role_templates_admin.edit',
+  },
+  {
+    id: 'storage_admin',
+    label: 'Storage R2',
+    description: 'Limites globais de consumo e conexao do Cloudflare R2 (so platform_admin).',
+    viewPermission: '',
+    editPermission: '',
   },
   {
     id: 'manage',
@@ -404,10 +418,12 @@ const ROLE_WORKSPACES = {
     'bi',
     'crm',
     'multiloja',
+    'planejamento',
     'usuarios',
     'usuarios_admin',
     'organizations_admin',
     'role_templates_admin',
+    'storage_admin',
     'manage',
     'configuracoes',
     'menu_layout',
@@ -447,6 +463,7 @@ const ROLE_WORKSPACES = {
     'bi',
     'crm',
     'multiloja',
+    'planejamento',
     'usuarios',
     'manage',
     'configuracoes',
@@ -459,9 +476,7 @@ const ROLE_WORKSPACES = {
   ],
   marketing: [
     'operacao',
-    'transcricoes',
     'comunicados',
-    'campanhas',
     'social_publishing',
     'site',
     'site_produtos_web',
@@ -473,10 +488,10 @@ const ROLE_WORKSPACES = {
     'bi',
     'crm',
     'multiloja',
+    'planejamento',
   ],
   director: [
     'operacao',
-    'transcricoes',
     'comunicados',
     'site',
     'site_produtos_web',
@@ -488,11 +503,12 @@ const ROLE_WORKSPACES = {
     'bi',
     'crm',
     'multiloja',
+    'planejamento',
     'configuracoes',
   ],
   manager: [
     'operacao',
-    'transcricoes',
+    'consultor',
     'comunicados',
     'site',
     'site_produtos_web',
@@ -504,12 +520,12 @@ const ROLE_WORKSPACES = {
     'bi',
     'crm',
     'multiloja',
+    'planejamento',
     'alertas',
     'feedback',
   ],
   store_terminal: [
     'operacao',
-    'transcricoes',
     'comunicados',
     'consultor',
     'ranking',
@@ -518,7 +534,7 @@ const ROLE_WORKSPACES = {
     'relatorios',
     'alertas',
   ],
-  consultant: ['operacao', 'transcricoes', 'comunicados'],
+  consultant: ['operacao', 'comunicados', 'consultor'],
 }
 
 const SUPERUSER_ROLES = new Set(['platform_admin'])
@@ -608,7 +624,6 @@ function hasWorkspaceAccessAlias(
 ) {
   switch (String(workspaceId || '').trim()) {
     case 'operacao':
-    case 'transcricoes':
     case 'comunicados':
       return hasAnyOperationAccessPermission(permissionKeys)
     case 'cardapio_web':
@@ -822,6 +837,32 @@ export function canViewConsultants(role, permissionKeys = [], permissionsResolve
   )
 }
 
+export function canViewPerformanceFeedback(role, permissionKeys = [], permissionsResolved = false) {
+  const normalized = normalizeAppRole(role)
+  if (SUPERUSER_ROLES.has(normalized)) {
+    return true
+  }
+
+  if (permissionsResolved) {
+    return hasPermission(permissionKeys, 'workspace.performance_feedback.view')
+  }
+
+  return normalized === 'owner' || normalized === 'manager' || normalized === 'consultant'
+}
+
+export function canEditPerformanceFeedback(role, permissionKeys = [], permissionsResolved = false) {
+  const normalized = normalizeAppRole(role)
+  if (SUPERUSER_ROLES.has(normalized)) {
+    return true
+  }
+
+  if (permissionsResolved) {
+    return hasPermission(permissionKeys, 'workspace.performance_feedback.edit')
+  }
+
+  return normalized === 'owner' || normalized === 'manager'
+}
+
 export function canViewAlerts(role, permissionKeys = [], permissionsResolved = false) {
   const normalized = normalizeAppRole(role)
   if (SUPERUSER_ROLES.has(normalized)) {
@@ -907,7 +948,7 @@ export function canManageCampaigns(role, permissionKeys = [], permissionsResolve
     return hasPermission(permissionKeys, 'workspace.campanhas.edit')
   }
 
-  return normalized === 'platform_admin' || normalized === 'owner' || normalized === 'marketing'
+  return normalized === 'platform_admin' || normalized === 'owner'
 }
 
 export function canManageStores(role, permissionKeys = [], permissionsResolved = false) {
@@ -916,8 +957,8 @@ export function canManageStores(role, permissionKeys = [], permissionsResolved =
     return true
   }
 
-  if (permissionsResolved) {
-    return hasPermission(permissionKeys, 'workspace.multiloja.edit')
+  if (permissionsResolved && hasPermission(permissionKeys, 'workspace.multiloja.edit')) {
+    return true
   }
 
   return normalized === 'platform_admin' || normalized === 'owner'
@@ -929,8 +970,8 @@ export function canManageGoalTargets(role, permissionKeys = [], permissionsResol
     return true
   }
 
-  if (permissionsResolved && hasPermission(permissionKeys, 'workspace.multiloja.edit')) {
-    return true
+  if (permissionsResolved) {
+    return hasPermission(permissionKeys, 'workspace.multiloja.edit')
   }
 
   return (

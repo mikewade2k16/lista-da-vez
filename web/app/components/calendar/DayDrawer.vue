@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
+import AppDayItemsPanel from '~/components/ui/AppDayItemsPanel.vue'
 import CalendarMediaUploader from '~/components/calendar/CalendarMediaUploader.vue'
 import { useCalendarStore } from '~/stores/calendar'
 import {
@@ -228,22 +229,13 @@ function addField(key: DrawerField): void {
 </script>
 
 <template>
-  <aside class="calendar-drawer" role="dialog" :aria-label="`Itens de ${dayTitle}`">
-    <header class="calendar-drawer__header">
-      <div class="calendar-drawer__heading">
-        <strong class="calendar-drawer__title">{{ dayTitle }}</strong>
-        <span class="calendar-drawer__count">{{ events.length }} itens agendados</span>
-      </div>
-      <button
-        type="button"
-        class="calendar-drawer__close"
-        aria-label="Fechar"
-        @click="emit('close')"
-      >
-        <UIcon name="i-lucide-x" aria-hidden="true" />
-      </button>
-    </header>
-
+  <AppDayItemsPanel
+    class="calendar-drawer"
+    :title="dayTitle"
+    :subtitle="`${events.length} itens agendados`"
+    :aria-label="`Itens de ${dayTitle}`"
+    @close="emit('close')"
+  >
     <div v-if="events.length" class="calendar-drawer__body">
       <span class="calendar-drawer__list-label">Itens do dia</span>
       <!-- WAVE 6: cada item do dia e um COLLAPSE (accordion). Header clicavel; o corpo (detalhe +
@@ -551,13 +543,13 @@ function addField(key: DrawerField): void {
       <p>Nenhum item agendado neste dia.</p>
     </div>
 
-    <footer class="calendar-drawer__footer">
+    <template #footer>
       <AppPanelButton variant="primary" block @click="emit('new-item')">
         <UIcon name="i-lucide-plus" aria-hidden="true" />
         Novo item neste dia
       </AppPanelButton>
-    </footer>
-  </aside>
+    </template>
+  </AppDayItemsPanel>
 </template>
 
 <style scoped>

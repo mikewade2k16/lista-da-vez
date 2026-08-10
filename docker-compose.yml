@@ -46,6 +46,15 @@ services:
       APP_ADDR: :8080
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3003}
       UPLOADS_DIR: /app/data/uploads
+      R2_ENABLED: ${R2_ENABLED:-false}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_REQUEST_TIMEOUT: ${R2_REQUEST_TIMEOUT:-30s}
+      R2_UPLOAD_TIMEOUT: ${R2_UPLOAD_TIMEOUT:-15m}
+      R2_ANALYTICS_API_TOKEN: ${R2_ANALYTICS_API_TOKEN:-}
+      R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION: ${R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION:-false}
       # Base do back acessivel PELO BROWSER; absolutiza a midia /uploads/... no
       # endpoint publico (bio/cardapio). Sem ela, a midia enviada pelo painel sai
       # relativa e quebra no front (que roda em outro dominio). Em prod = dominio da api.

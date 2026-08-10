@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { getAllowedWorkspaces } from './permissions'
+import {
+  canEditPerformanceFeedback,
+  canViewPerformanceFeedback,
+  getAllowedWorkspaces,
+} from './permissions'
 
 // Matriz papel x workspace de getAllowedWorkspaces. Separado de permissions.test.ts
 // para nao estourar o limite de linhas por arquivo. Cobre: modo legado (defaults do
@@ -8,7 +12,7 @@ import { getAllowedWorkspaces } from './permissions'
 // com permissoes resolvidas, workspace de modulo por prefixo e aliases por papel.
 describe('getAllowedWorkspaces — legacy mode (permissions unresolved)', () => {
   it('falls back to the role defaults', () => {
-    expect(getAllowedWorkspaces('consultant')).toEqual(['operacao', 'transcricoes', 'comunicados'])
+    expect(getAllowedWorkspaces('consultant')).toEqual(['operacao', 'comunicados', 'consultor'])
     expect(getAllowedWorkspaces('store_terminal')).toEqual(
       expect.arrayContaining(['operacao', 'consultor', 'relatorios', 'alertas']),
     )
@@ -17,8 +21,8 @@ describe('getAllowedWorkspaces — legacy mode (permissions unresolved)', () => 
   it('fails closed to the consultant defaults for an unknown role', () => {
     expect(getAllowedWorkspaces('papel_custom_desconhecido')).toEqual([
       'operacao',
-      'transcricoes',
       'comunicados',
+      'consultor',
     ])
   })
 
@@ -43,9 +47,62 @@ describe('getAllowedWorkspaces — fail-closed with resolved permissions', () =>
   it('shows operacao once the view key is present', () => {
     expect(getAllowedWorkspaces('consultant', ['workspace.operacao.view'], true)).toEqual([
       'operacao',
-      'transcricoes',
       'comunicados',
     ])
+  })
+
+  it('keeps feedback inside the consultant workspace', () => {
+    expect(getAllowedWorkspaces('consultant', ['workspace.consultor.view'], true)).toEqual([
+      'consultor',
+    ])
+    expect(
+      getAllowedWorkspaces('consultant', ['workspace.performance_feedback.view'], true),
+    ).toEqual([])
+  })
+})
+
+describe('performance feedback action', () => {
+  it('uses its dedicated permission without creating a separate workspace', () => {
+    expect(canViewPerformanceFeedback('manager')).toBe(true)
+    expect(canViewPerformanceFeedback('store_terminal')).toBe(false)
+    expect(canViewPerformanceFeedback('consultant', [], true)).toBe(false)
+    expect(
+      canViewPerformanceFeedback('consultant', ['workspace.performance_feedback.view'], true),
+    ).toBe(true)
+  })
+
+  it('restricts configuration to roles allowed to edit feedback', () => {
+    expect(canEditPerformanceFeedback('manager')).toBe(true)
+    expect(canEditPerformanceFeedback('consultant')).toBe(false)
+    expect(
+      canEditPerformanceFeedback('consultant', ['workspace.performance_feedback.view'], true),
+    ).toBe(false)
+    expect(
+      canEditPerformanceFeedback('manager', ['workspace.performance_feedback.edit'], true),
+    ).toBe(true)
+  })
+})
+
+describe('global storage workspace', () => {
+  it('is exclusive to the platform administrator defaults', () => {
+    expect(getAllowedWorkspaces('platform_admin')).toContain('storage_admin')
+    expect(getAllowedWorkspaces('owner')).not.toContain('storage_admin')
+  })
+})
+
+describe('sensitive queue workspaces', () => {
+  it('does not expose transcriptions through operation access', () => {
+    expect(getAllowedWorkspaces('consultant', ['workspace.operacao.view'], true)).not.toContain(
+      'transcricoes',
+    )
+    expect(getAllowedWorkspaces('owner', ['workspace.transcricoes.view'], true)).toContain(
+      'transcricoes',
+    )
+  })
+
+  it('keeps campaigns out of the marketing defaults', () => {
+    expect(getAllowedWorkspaces('marketing')).not.toContain('campanhas')
+    expect(getAllowedWorkspaces('owner')).toContain('campanhas')
   })
 })
 
@@ -83,5 +140,19 @@ describe('getAllowedWorkspaces - social publishing', () => {
     expect(getAllowedWorkspaces('marketing', ['social_publishing.view'], true)).toContain(
       'social_publishing',
     )
+  })
+})
+
+describe('planning workspace', () => {
+  it('uses its own resolved permission without exposing it to consultants by default', () => {
+    expect(getAllowedWorkspaces('owner')).toContain('planejamento')
+    expect(getAllowedWorkspaces('director', [], true)).not.toContain('planejamento')
+    expect(getAllowedWorkspaces('manager', ['workspace.planejamento.view'], true)).toContain(
+      'planejamento',
+    )
+    expect(getAllowedWorkspaces('manager', ['workspace.multiloja.edit'], true)).not.toContain(
+      'planejamento',
+    )
+    expect(getAllowedWorkspaces('consultant')).not.toContain('planejamento')
   })
 })

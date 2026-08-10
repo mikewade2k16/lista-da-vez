@@ -3,11 +3,13 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { useAccessControlStore } from '~/stores/access-control'
 import { useAlertsStore } from '~/stores/alerts'
+import { useAttendanceRecordingFeatureStore } from '~/stores/attendanceRecordingFeature'
 import { useCrmStore } from '~/stores/crm'
 import { useUiStore } from '~/stores/ui'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 import { useMultiStoreStore } from '~/stores/multistore'
 import { useOperationGoalsStore } from '~/stores/operation-goals'
+import { notifyPlanningRealtimeUpdate } from '~/composables/usePlanningRealtimeEvents'
 import { useUsersStore } from '~/stores/users'
 import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
 import { createApiRequest } from '~/utils/api-client'
@@ -36,6 +38,7 @@ export function useContextRealtime() {
   const auth = useAuthStore()
   const accessControl = useAccessControlStore()
   const alertsStore = useAlertsStore()
+  const attendanceRecordingFeature = useAttendanceRecordingFeatureStore()
   const ui = useUiStore()
   const runtime = useAppRuntimeStore()
   const accountStore = useCoreAccountStore()
@@ -280,6 +283,11 @@ export function useContextRealtime() {
 
         const resource = String(payload?.resource || '').trim()
 
+        if (resource === 'attendance_recording') {
+          await attendanceRecordingFeature.load(true)
+          return
+        }
+
         if (resource === 'operationgoal') {
           // Meta criada/editada/excluida em qualquer sessao do tenant.
           // Recarrega lista de metas e overview do CRM (que cruza com operation_goal_targets).
@@ -304,6 +312,14 @@ export function useContextRealtime() {
             followUps.push(crmStore.refreshOverview().catch(() => null))
           }
           await Promise.allSettled(followUps)
+          return
+        }
+
+        if (resource === 'planning') {
+          notifyPlanningRealtimeUpdate(
+            String(payload?.resourceId || '').trim(),
+            String(payload?.action || '').trim(),
+          )
           return
         }
 

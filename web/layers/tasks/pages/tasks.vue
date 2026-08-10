@@ -920,6 +920,62 @@ function openAssistant(): void {
   font-size: 0.75rem;
 }
 
+.tasks-page__task-video-progress-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.tasks-page__task-video-progress {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgb(var(--border));
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface-2));
+}
+
+.tasks-page__task-video-progress > video {
+  width: 100%;
+  max-height: 15rem;
+  border-radius: var(--radius-sm);
+  background: rgb(0 0 0);
+  object-fit: contain;
+}
+
+.tasks-page__task-video-progress > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: rgb(var(--text));
+  font-size: 0.78rem;
+}
+
+.tasks-page__task-video-progress progress {
+  width: 100%;
+  height: 0.45rem;
+  accent-color: rgb(var(--primary));
+}
+
+.tasks-page__task-video-progress.is-processing progress {
+  animation: task-video-processing 1.2s ease-in-out infinite alternate;
+}
+
+.tasks-page__task-video-progress small {
+  color: rgb(var(--muted));
+  font-size: 0.72rem;
+}
+
+@keyframes task-video-processing {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .tasks-page__task-video-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
@@ -948,7 +1004,7 @@ function openAssistant(): void {
   object-fit: contain;
 }
 
-.tasks-page__task-video-item > button {
+.tasks-page__task-video-item > button:not(.tasks-page__task-video-play) {
   position: absolute;
   top: 0.65rem;
   right: 0.65rem;
@@ -956,8 +1012,34 @@ function openAssistant(): void {
   box-shadow: var(--shadow-sm);
 }
 
+.tasks-page__task-video-play {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  left: 0.45rem;
+  height: 14rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: rgb(var(--text));
+  font-size: 1.8rem;
+  cursor: pointer;
+}
+
+.tasks-page__task-video-play :deep(svg) {
+  padding: 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, rgb(var(--surface)) 76%, transparent);
+  box-sizing: content-box;
+}
+
 .tasks-page__task-video-meta {
   padding-inline: 0.15rem;
+}
+
+.tasks-page__task-video-checklist {
+  width: 100%;
 }
 
 .tasks-page__task-video-item p {

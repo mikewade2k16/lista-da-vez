@@ -27,6 +27,9 @@ const alertsStore = {
   items: [],
   refreshRealtimeState: vi.fn().mockResolvedValue(undefined),
 }
+const attendanceRecordingFeatureStore = {
+  load: vi.fn().mockResolvedValue(true),
+}
 const uiStore = {
   notify: vi.fn(),
 }
@@ -82,6 +85,10 @@ vi.mock('~/stores/alerts', () => ({
   useAlertsStore: () => alertsStore,
 }))
 
+vi.mock('~/stores/attendanceRecordingFeature', () => ({
+  useAttendanceRecordingFeatureStore: () => attendanceRecordingFeatureStore,
+}))
+
 vi.mock('~/stores/ui', () => ({
   useUiStore: () => uiStore,
 }))
@@ -125,6 +132,7 @@ describe('useContextRealtime', () => {
     authStore.applyRuntimeSettingsStatus.mockClear()
     accessControlStore.refreshRealtimeState.mockClear()
     alertsStore.refreshRealtimeState.mockClear()
+    attendanceRecordingFeatureStore.load.mockClear()
     uiStore.notify.mockClear()
     multiStore.refreshOverview.mockClear()
     multiStore.refreshManagedStores.mockClear()
@@ -188,5 +196,27 @@ describe('useContextRealtime', () => {
         resource: 'settings',
       }),
     )
+  })
+
+  it('refreshes the account recording feature when its realtime event arrives', async () => {
+    const { useContextRealtime } = await import('./useContextRealtime')
+
+    useContextRealtime()
+    await flushRealtimeTicket()
+
+    const socket = MockWebSocket.instances[0]
+    socket?.open()
+    socket?.message({
+      type: 'context.updated',
+      tenantId: 'tenant-1',
+      resource: 'attendance_recording',
+      resourceId: 'tenant-1',
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(attendanceRecordingFeatureStore.load).toHaveBeenCalledWith(true)
+    expect(authStore.fetchContext).not.toHaveBeenCalled()
   })
 })

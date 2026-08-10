@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import AppCalendarPeriodRail from '~/components/ui/AppCalendarPeriodRail.vue'
 import type { CalendarView } from '~/utils/calendar'
 
-defineProps<{
+const props = defineProps<{
   weeks: { index: number; label: string; startKey: string }[]
   view: CalendarView
   focusedWeekIndex: number
@@ -9,35 +11,26 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{ select: [index: number]; month: [] }>()
+const options = computed(() =>
+  props.weeks.map((week) => ({
+    value: String(week.index),
+    label: week.label,
+    title: `Semana ${week.index + 1}`,
+    current: week.index === props.currentWeekIndex,
+  })),
+)
+const selected = computed(() => (props.view === 'month' ? 'month' : String(props.focusedWeekIndex)))
+function update(value: string): void {
+  if (value === 'month') emit('month')
+  else emit('select', Number(value))
+}
 </script>
 
 <template>
-  <nav class="calendar-weekrail" aria-label="Navegação do calendário">
-    <button
-      type="button"
-      class="calendar-weekrail__item calendar-weekrail__item--month"
-      :class="{ 'calendar-weekrail__item--active': view === 'month' }"
-      :aria-current="view === 'month' ? 'true' : undefined"
-      title="Visão Mês"
-      @click="emit('month')"
-    >
-      M
-    </button>
-
-    <button
-      v-for="week in weeks"
-      :key="week.index"
-      type="button"
-      class="calendar-weekrail__item"
-      :class="{
-        'calendar-weekrail__item--active': view === 'week' && week.index === focusedWeekIndex,
-        'calendar-weekrail__item--today': week.index === currentWeekIndex,
-      }"
-      :aria-current="view === 'week' && week.index === focusedWeekIndex ? 'true' : undefined"
-      :title="`Semana ${week.index + 1}`"
-      @click="emit('select', week.index)"
-    >
-      {{ week.label }}
-    </button>
-  </nav>
+  <AppCalendarPeriodRail
+    :model-value="selected"
+    :options="options"
+    aria-label="Navegação do calendário"
+    @update:model-value="update"
+  />
 </template>

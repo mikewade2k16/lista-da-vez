@@ -19,17 +19,33 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
-func (repository *PostgresRepository) ExperimentalFeatureEnabled(ctx context.Context) (bool, error) {
-	var enabled bool
+func (repository *PostgresRepository) GetRecordingFeature(ctx context.Context, accountID string) (RecordingFeature, error) {
+	feature := RecordingFeature{AccountID: accountID}
 	err := repository.pool.QueryRow(ctx, `
-		select coalesce((config ->> 'attendanceAudioRecording')::boolean, false)
-		from core.platform_settings
-		where key = 'experimental_features';
-	`).Scan(&enabled)
+		select enabled, updated_at, coalesce(updated_by::text, '')
+		from queue.attendance_recording_settings
+		where account_id = $1::uuid;
+	`, accountID).Scan(&feature.Enabled, &feature.UpdatedAt, &feature.UpdatedBy)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+		return feature, nil
 	}
-	return enabled, err
+	return feature, err
+}
+
+func (repository *PostgresRepository) PutRecordingFeature(ctx context.Context, accountID string, enabled bool, updatedBy string) (RecordingFeature, error) {
+	feature := RecordingFeature{AccountID: accountID}
+	err := repository.pool.QueryRow(ctx, `
+		insert into queue.attendance_recording_settings (
+			account_id, enabled, updated_by, updated_at
+		)
+		values ($1::uuid, $2, $3::uuid, now())
+		on conflict (account_id) do update set
+			enabled = excluded.enabled,
+			updated_by = excluded.updated_by,
+			updated_at = now()
+		returning enabled, updated_at, coalesce(updated_by::text, '');
+	`, accountID, enabled, updatedBy).Scan(&feature.Enabled, &feature.UpdatedAt, &feature.UpdatedBy)
+	return feature, err
 }
 
 func (repository *PostgresRepository) ResolveService(ctx context.Context, accountID, storeID, serviceID string) (ServiceReference, error) {

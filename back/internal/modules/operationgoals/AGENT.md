@@ -8,6 +8,13 @@ Metas de operacao por loja/consultor/mes (`queue.operation_goal_targets`). Expoe
 
 A tabela ganhou a coluna `week smallint` (0 = meta MENSAL/mes inteiro; 1..4 = semana do mes — S1=1-7, S2=8-14, S3=15-21, S4=22-fim). Os indices unicos incluem `week` (um registro por escopo por mes por semana). `GoalTarget.Week`/`GoalTargetView.week`/`CreateInput.Week` carregam a semana; `List` devolve TODAS as semanas do mes (o front particiona por `week`); `Create` grava a semana; `Update` NAO muda semana/mes/escopo. A leitura semanal + rateio da mensal (quando nao ha meta da semana) vive no CRM payout (`crm/erp/repository_crm_payout.go`: `crmPayoutTargetWeek` + `loadCRMGoalTargets(week)` + `weekProrationRatio`/`mergeWeekGoals`) — recebimento passa a ser apurado por semana. Valores editados so na tela Multi-loja/Metas (por semana via seletor de periodo).
 
+O Planejamento também é produtor autorizado destas linhas: ao salvar/gerar uma escala,
+substitui a meta individual da semana correspondente e recalcula a linha mensal do
+consultor (`week=0`) na mesma transação. Na primeira escala do mês, semanas individuais
+ainda ausentes ou zeradas são preenchidas pela participação calculada e pela meta semanal
+da loja; rateios positivos existentes são preservados. O fluxo publica
+`operationgoal:generated` para reidratação.
+
 ## Estado real (P0.5, 2026-06-07)
 
 Rotas REGISTRADAS no boot via `operationgoals.RegisterRoutes(mux, service, authMiddleware)` no `app.go`. Antes o modulo existia no codigo mas NAO era montado, e o front (`web/app/stores/operation-goals.ts` / `useContextRealtime`) recebia 404 ao chamar `/v1/operations/goals`.

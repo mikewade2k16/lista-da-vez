@@ -5,9 +5,11 @@ import ConsultantDetailsDrawer from '~/components/consultant/ConsultantDetailsDr
 import ConsultantIntegratedFilters from '~/components/consultant/ConsultantIntegratedFilters.vue'
 import ConsultantSingleStoreView from '~/components/consultant/ConsultantSingleStoreView.vue'
 import ConsultantStoreGroup from '~/components/consultant/ConsultantStoreGroup.vue'
+import PerformanceFeedbackModal from '~/components/performance-feedback/PerformanceFeedbackModal.vue'
 import { useConsultantDetailsDrawer } from '~/composables/useConsultantDetailsDrawer'
 import {
   useConsultantIntegratedRows,
+  type ConsultantRow,
   type ConsultantRosterItem,
 } from '~/composables/useConsultantIntegratedRows'
 import {
@@ -16,7 +18,12 @@ import {
   storeRolePayoutLabel,
 } from '~/domain/utils/consultant-payout-display'
 import { useConsultantsStore } from '~/stores/consultants'
+import { useAuthStore } from '~/stores/auth'
 import { useGoalQuickEditContext } from '~/composables/useGoalQuickEditContext'
+import { canViewPerformanceFeedback } from '~/domain/utils/permissions'
+import type { PerformanceFeedbackTarget } from '~/types/performance-feedback'
+import { performanceFeedbackMetricsFromCard } from '~/domain/utils/performance-feedback'
+import { buildMonthWeekRange } from '~/domain/utils/consultant-transforms'
 
 interface StaffItem {
   id: string
@@ -58,8 +65,18 @@ const selectedConsultantId = ref('')
 const simulationAdditionalSales = ref(0)
 
 const consultantsStore = useConsultantsStore()
-const { integratedDateFrom, integratedDateTo } = storeToRefs(consultantsStore)
+const auth = useAuthStore()
+const { integratedDateFrom, integratedDateTo, integratedPending } = storeToRefs(consultantsStore)
 const { buildContext: buildGoalContext } = useGoalQuickEditContext()
+const feedbackOpen = ref(false)
+const feedbackTarget = ref<PerformanceFeedbackTarget | null>(null)
+const canOpenFeedback = computed(() =>
+  canViewPerformanceFeedback(
+    auth.role,
+    auth.effectivePermissionKeys,
+    auth.effectivePermissionsResolved,
+  ),
+)
 
 const rosterRef = computed(() => props.roster || [])
 const rankingRef = computed(() => props.ranking || null)
@@ -72,6 +89,11 @@ const {
   storeProgressByStoreId,
   storePayoutByStoreId,
 } = useConsultantIntegratedRows(rosterRef, rankingRef, overviewRef)
+
+const feedbackSettingsStoreId = computed(() => {
+  if (storeFilter.value !== FILTER_ALL) return storeFilter.value
+  return String(consultantRows.value.find((row) => row.storeId)?.storeId || '').trim()
+})
 
 const staffByStoreId = computed(() => {
   const map: Record<string, StaffItem[]> = {}
@@ -321,6 +343,76 @@ const selectedDrawerStats = computed(() => {
 function openDetails(consultantId: string) {
   drawer.open(consultantId)
 }
+function buildFeedbackTarget(consultant: ConsultantRow): PerformanceFeedbackTarget {
+  return {
+    storeId: String(consultant.storeId || '').trim(),
+    storeName: consultant.storeName,
+    consultantId: consultant.id,
+    consultantName: consultant.name,
+    month: integratedDateFrom.value.slice(0, 7),
+    week: feedbackWeekFromRange(),
+    metrics: performanceFeedbackMetricsFromCard({
+      soldValue: consultant.soldValue,
+      attendances: consultant.attendances,
+      conversions: consultant.conversions,
+      nonConversions: Math.max(0, consultant.attendances - consultant.conversions),
+      conversionRate: consultant.conversionRate,
+      ticketAverage: consultant.ticketAverage,
+      paScore: consultant.paScore,
+      qualityScore: consultant.qualityScore,
+      avgDurationMs: consultant.avgDurationMs,
+      nonClientConversions: 0,
+      queueJumpServices: consultant.queueJumpServices,
+      salesGoal: consultant.monthlyGoal,
+      ticketGoal: Number(consultant.avgTicketGoal || 0),
+      conversionGoal: Number(consultant.conversionGoal || 0),
+      paGoal: Number(consultant.paGoal || 0),
+      cancellationRate: consultant.cancellationRate,
+      erpOrders: consultant.erpOrders,
+      soldValueSource: consultant.soldValueSource,
+      ticketAverageSource: consultant.ticketAverageSource,
+      paScoreSource: consultant.paScoreSource,
+    }),
+  }
+}
+
+function feedbackWeekFromRange(): number {
+  for (let week = 1; week <= 4; week += 1) {
+    const range = buildMonthWeekRange(integratedDateFrom.value, week)
+    if (range.dateFrom === integratedDateFrom.value && range.dateTo === integratedDateTo.value) {
+      return week
+    }
+  }
+  return 0
+}
+
+function refreshFeedbackTarget(): void {
+  const consultantId = feedbackTarget.value?.consultantId
+  if (!consultantId) return
+  const consultant = consultantRows.value.find((row) => row.id === consultantId)
+  if (!consultant?.storeId) return
+  feedbackTarget.value = buildFeedbackTarget(consultant)
+}
+
+function openFeedback(consultantId: string) {
+  const consultant = consultantRows.value.find((row) => row.id === consultantId)
+  if (!consultant?.storeId) return
+  feedbackTarget.value = buildFeedbackTarget(consultant)
+  feedbackOpen.value = true
+}
+
+async function changeFeedbackPeriod(value: { month: string; week: number }): Promise<void> {
+  if (!/^\d{4}-\d{2}$/.test(value.month)) return
+  const monthStart = `${value.month}-01`
+  const range =
+    value.week > 0
+      ? buildMonthWeekRange(monthStart, value.week)
+      : { dateFrom: monthStart, dateTo: buildMonthWeekRange(monthStart, 4).dateTo }
+  integratedDateFrom.value = range.dateFrom
+  integratedDateTo.value = range.dateTo
+  await consultantsStore.applyIntegratedFilters()
+  refreshFeedbackTarget()
+}
 function selectConsultant(consultantId: string) {
   selectedConsultantId.value = String(consultantId || '').trim()
 }
@@ -372,6 +464,7 @@ async function setWeekRange(week: number) {
         :goal-options="goalOptions"
         :date-from="integratedDateFrom"
         :date-to="integratedDateTo"
+        :feedback-store-id="feedbackSettingsStoreId"
         :pending="pending"
         @update:search-term="searchTerm = $event"
         @update:store-filter="storeFilter = $event"
@@ -393,8 +486,10 @@ async function setWeekRange(week: number) {
         :staff="selectedStoreStaff"
         :history="props.history || []"
         :simulation-additional-sales="simulationAdditionalSales"
+        :can-open-feedback="canOpenFeedback"
         @select="selectConsultant"
         @update:simulation-additional-sales="updateSimulationAdditionalSales"
+        @open-feedback="openFeedback"
       />
 
       <div v-else-if="groupedRows.length" class="consultant-integrated-groups">
@@ -407,7 +502,9 @@ async function setWeekRange(week: number) {
           :ranking-position-by-key="rankingPositionByKey"
           :store-progress-by-store-id="storeProgressByStoreId"
           :store-payout-by-store-id="storePayoutByStoreId"
+          :can-open-feedback="canOpenFeedback"
           @open-details="openDetails"
+          @open-feedback="openFeedback"
         />
       </div>
       <div v-else class="player-grid__empty" data-testid="player-grid-empty">
@@ -416,6 +513,13 @@ async function setWeekRange(week: number) {
     </template>
 
     <ConsultantDetailsDrawer :consultant="selectedDrawerConsultant" :stats="selectedDrawerStats" />
+    <PerformanceFeedbackModal
+      v-model:open="feedbackOpen"
+      :target="feedbackTarget"
+      period-controllable
+      :period-pending="integratedPending"
+      @change-period="changeFeedbackPeriod"
+    />
   </section>
 </template>
 

@@ -68,6 +68,7 @@ const props = withDefaults(
     rankingPositionByKey?: Record<string, number>
     storeProgressByStoreId?: Record<string, StoreProgress>
     storePayoutByStoreId?: Record<string, ErpStorePayout>
+    canOpenFeedback?: boolean
   }>(),
   {
     rows: () => [],
@@ -76,11 +77,12 @@ const props = withDefaults(
     rankingPositionByKey: () => ({}),
     storeProgressByStoreId: () => ({}),
     storePayoutByStoreId: () => ({}),
+    canOpenFeedback: false,
   },
 )
 
 const emit = defineEmits<{
-  (e: 'open-details', consultantId: string): void
+  (e: 'open-details' | 'open-feedback', consultantId: string): void
 }>()
 
 function storeProgressFor(storeId?: string): StoreProgress | null {
@@ -190,7 +192,9 @@ function handleOpen(consultantId: string) {
       :goal-context="row.goalContext"
       mode="mini"
       :show-details-button="false"
+      :show-feedback-button="canOpenFeedback"
       @open-details="handleOpen"
+      @open-feedback="emit('open-feedback', $event)"
     />
     <ConsultantStaffPayoutCard
       v-for="item in enrichedStaff"

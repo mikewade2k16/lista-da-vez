@@ -27,6 +27,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operationgoals"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/planning"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/alerts"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/analytics"
@@ -34,6 +35,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/consultants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/feedback"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/performancefeedback"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/reports"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/settings"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/transcriptions"
@@ -41,6 +43,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/roadmap"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/site"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/socialpublishing"
+	objectstorage "github.com/mikewade2k16/lista-da-vez/back/internal/modules/storage"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tasks"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
@@ -66,8 +69,6 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	tokenManager := auth.NewHMACTokenManager(cfg.AuthTokenSecret, cfg.AuthTokenTTL)
 	avatarStorage := auth.NewDiskAvatarStorage(cfg.UploadsDir)
 	feedbackImageStorage := feedback.NewDiskImageStorage(cfg.UploadsDir)
-	taskVideoStorage := tasks.NewDiskVideoStorage(cfg.UploadsDir)
-	calendarMediaStorage := calendar.NewDiskMediaStorage(cfg.UploadsDir)
 	passwordResetDelivery, err := auth.BuildPasswordResetDelivery(auth.SMTPPasswordResetDeliveryConfig{
 		AppName:            cfg.AppName,
 		Host:               cfg.SMTPHost,
@@ -142,6 +143,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	transcriptionsRepository := transcriptions.NewPostgresRepository(pool)
 	transcriptionsStorage := transcriptions.NewDiskAudioStorage(transcriptions.AudioDirectoryFromEnv())
 	transcriptionsService := transcriptions.NewService(transcriptionsRepository, transcriptionsStorage, transcriptionsCredentials)
+	transcriptionsService.SetContextPublisher(realtimeService)
 	transcriptionsWorker := transcriptions.NewWorker(
 		transcriptionsRepository,
 		transcriptionsStorage,
@@ -172,6 +174,12 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	reportsService := reports.NewService(reportsRepository, storeService)
 	analyticsRepository := analytics.NewPostgresRepository(pool)
 	analyticsService := analytics.NewService(analyticsRepository, storeService)
+	performanceFeedbackRepository := performancefeedback.NewPostgresRepository(pool)
+	performanceFeedbackService := performancefeedback.NewService(
+		performanceFeedbackRepository,
+		storeService,
+		newPerformanceFeedbackMetricsAdapter(analyticsService),
+	)
 	feedbackRepository := feedback.NewPostgresRepository(pool)
 	feedbackService := feedback.NewService(feedbackRepository, feedbackImageStorage)
 	go func() {
@@ -355,6 +363,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	realtime.RegisterRoutes(mux, realtimeService, authMiddleware)
 	reports.RegisterRoutes(mux, reportsService, authMiddleware)
 	analytics.RegisterRoutes(mux, analyticsService, authMiddleware)
+	performancefeedback.RegisterRoutes(mux, performanceFeedbackService, authMiddleware)
 	access.RegisterRoutes(mux, accessService, authMiddleware)
 	feedback.RegisterRoutes(mux, feedbackService, authMiddleware)
 	erp.RegisterRoutes(mux, erpService, authMiddleware)
@@ -377,6 +386,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 
 	operationGoalsService := operationgoals.NewService(operationgoals.NewPostgresRepository(pool), storeService, realtimeService)
 	operationgoals.RegisterRoutes(mux, operationGoalsService, authMiddleware)
+	planningService := planning.NewService(planning.NewPostgresRepository(pool), storeService, realtimeService)
+	planning.RegisterRoutes(mux, planningService, authMiddleware)
 
 	roadmapService := roadmap.NewService(roadmap.NewPostgresRepository(pool))
 	roadmap.RegisterRoutes(mux, roadmapService, authMiddleware)
@@ -412,6 +423,22 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 
 		registry := modules.NewRegistry(logger)
 		registry.MustRegister(core.New())
+		storageModule := objectstorage.New(objectstorage.Config{
+			Enabled:                           cfg.R2Enabled,
+			AccountID:                         cfg.R2AccountID,
+			Bucket:                            cfg.R2Bucket,
+			AccessKeyID:                       cfg.R2AccessKeyID,
+			SecretAccessKey:                   cfg.R2SecretAccessKey,
+			RequestTimeout:                    cfg.R2RequestTimeout,
+			UploadTimeout:                     cfg.R2UploadTimeout,
+			AnalyticsToken:                    cfg.R2AnalyticsToken,
+			AllowNonEmptyBucketInitialization: cfg.R2AllowNonEmptyBucketInitialization,
+			UploadsDir:                        cfg.UploadsDir,
+		})
+		registry.MustRegister(storageModule)
+		storageProvider := func() *objectstorage.Service { return storageModule.Service() }
+		taskVideoStorage := newHybridTaskVideoStorage(storageProvider, tasks.NewDiskVideoStorage(cfg.UploadsDir))
+		calendarMediaStorage := newHybridCalendarMediaStorage(storageProvider, calendar.NewDiskMediaStorage(cfg.UploadsDir))
 		registry.MustRegister(notifications.New(notificationService))
 		// tasksModule e retido para injetar seu Service no calendar (integracao C10) como
 		// provider LAZY — a closure resolve o Service so no primeiro uso, imune a ordem de
@@ -687,6 +714,7 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		{Prefix: "/v1/alerts", ModuleID: "queue"},
 		{Prefix: "/v1/reports", ModuleID: "queue"},
 		{Prefix: "/v1/analytics", ModuleID: "queue"},
+		{Prefix: "/v1/performance-feedback", ModuleID: "queue"},
 		{Prefix: "/v1/feedback", ModuleID: "queue"},
 		{Prefix: "/v1/consultants", ModuleID: "queue"},
 		{Prefix: "/v1/settings", ModuleID: "queue"},

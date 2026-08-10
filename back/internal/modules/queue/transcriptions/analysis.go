@@ -83,7 +83,7 @@ func normalizeAnalysisConfig(config AnalysisConfig) AnalysisConfig {
 }
 
 func (service *Service) GetAnalysisConfig(ctx context.Context, access AccessContext) (AnalysisConfigView, error) {
-	if !canRead(access) {
+	if !canManageTranscriptionsRead(access) {
 		return AnalysisConfigView{}, ErrForbidden
 	}
 	if access.AccountID == "" || service.analysis == nil {
@@ -97,7 +97,7 @@ func (service *Service) GetAnalysisConfig(ctx context.Context, access AccessCont
 }
 
 func (service *Service) PutAnalysisConfig(ctx context.Context, access AccessContext, input PutAnalysisConfigInput) (AnalysisConfigView, error) {
-	if !canWrite(access) {
+	if !canManageTranscriptionsWrite(access) {
 		return AnalysisConfigView{}, ErrForbidden
 	}
 	if access.AccountID == "" || service.analysis == nil || service.credentials == nil {
@@ -126,7 +126,7 @@ func (service *Service) PutAnalysisConfig(ctx context.Context, access AccessCont
 
 func (service *Service) RequestAnalysis(ctx context.Context, access AccessContext, recordingID string) (RecordingView, error) {
 	recordingID = strings.TrimSpace(recordingID)
-	if !canWrite(access) {
+	if !canManageTranscriptionsWrite(access) {
 		return RecordingView{}, ErrForbidden
 	}
 	if access.AccountID == "" || recordingID == "" || service.analysis == nil {

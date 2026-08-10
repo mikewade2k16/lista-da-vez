@@ -143,7 +143,7 @@ func (repository *PostgresRepository) CreateTask(ctx context.Context, accountID 
 		          created_at, updated_at
 	`, input.BoardID, input.ColumnID, input.Title, input.ContentHTML, input.Status, input.Priority,
 		input.DueDate, input.StartDate, input.SortOrder, createdByUserID, input.ResponsibleUserID, input.ClientAccountID,
-		mustJSON(normalizeMap(input.UIMetadata)), input.RoadmapModuleID, input.PinnedToRoadmap != nil && *input.PinnedToRoadmap)
+		mustJSON(normalizeTaskUIMetadata(input.UIMetadata)), input.RoadmapModuleID, input.PinnedToRoadmap != nil && *input.PinnedToRoadmap)
 
 	task, err := scanTask(repository.pool.QueryRow(ctx, sql, args...).Scan)
 	if errors.Is(err, pgx.ErrNoRows) {

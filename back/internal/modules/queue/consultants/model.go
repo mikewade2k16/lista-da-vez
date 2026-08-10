@@ -16,6 +16,7 @@ type Consultant struct {
 	AccessActive   bool
 	EmployeeCode   string
 	Name           string
+	Nick           string
 	RoleLabel      string
 	Initials       string
 	Color          string
@@ -40,6 +41,7 @@ type ConsultantView struct {
 	StoreID        string                `json:"storeId"`
 	EmployeeCode   string                `json:"employeeCode,omitempty"`
 	Name           string                `json:"name"`
+	Nick           string                `json:"nick"`
 	Role           string                `json:"role"`
 	Initials       string                `json:"initials"`
 	Color          string                `json:"color"`
@@ -135,6 +137,7 @@ func (consultant Consultant) View() ConsultantView {
 		StoreID:        consultant.StoreID,
 		EmployeeCode:   consultant.EmployeeCode,
 		Name:           consultant.Name,
+		Nick:           consultant.Nick,
 		Role:           consultant.RoleLabel,
 		Initials:       consultant.Initials,
 		Color:          consultant.Color,

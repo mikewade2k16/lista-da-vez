@@ -30,6 +30,13 @@ describe('account route access contract', () => {
     expect(findEditorModulePathGuard('/editorial')).toBeUndefined()
   })
 
+  it('keeps performance feedback inside the queue-gated consultant route', () => {
+    const item = findNavItemByPath('/consultor')
+    expect(item?.workspaceId).toBe('consultor')
+    expect(item?.moduleId).toBe('queue')
+    expect(findNavItemByPath('/feedback-desempenho')).toBeUndefined()
+  })
+
   it.each(AGENCY_ONLY_PATHS)(
     'keeps the internal path %s agency-only in navigation and direct routes',
     (path) => {

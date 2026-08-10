@@ -17,11 +17,13 @@ const props = withDefaults(
     // Atraso do debounce em ms. 0 = sem debounce (propaga na hora).
     debounceMs?: number
     ariaLabel?: string
+    compact?: boolean
   }>(),
   {
     placeholder: 'Buscar...',
     debounceMs: 220,
     ariaLabel: 'Buscar',
+    compact: false,
   },
 )
 
@@ -72,7 +74,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-search">
+  <div class="app-search" :class="{ 'app-search--compact': compact }">
     <UIcon name="i-lucide-search" class="app-search__icon" />
     <input
       :value="local"
@@ -156,5 +158,17 @@ onBeforeUnmount(() => {
 .app-search__clear-icon {
   width: 0.85rem;
   height: 0.85rem;
+}
+
+.app-search--compact {
+  min-height: 2rem;
+  padding: 0 0.65rem;
+  border-color: rgb(var(--ring) / 0.16);
+  border-radius: 0.55rem;
+  background: rgb(var(--surface-2) / 0.88);
+}
+
+.app-search--compact .app-search__input {
+  font-size: 0.72rem;
 }
 </style>

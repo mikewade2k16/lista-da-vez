@@ -41,13 +41,23 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 - os scripts nunca sobrescrevem o `.env.<ambiente>` remoto (so atualizam a linha `IMAGE_TAG`)
 - antes de copiar compose ou trocar `IMAGE_TAG`, o deploy valida segredos obrigatorios no
   `.env.<ambiente>` sem imprimir valores; `OMNI_SECRETS_KEY` deve ser base64 de exatamente 32 bytes
+- quando `R2_ENABLED=true`, o mesmo preflight remoto exige `R2_ACCOUNT_ID`, `R2_BUCKET`,
+  `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` e `R2_ANALYTICS_API_TOKEN` nao vazios; a validacao
+  acontece antes de copiar o Compose, trocar `IMAGE_TAG`, fazer pull ou recriar containers
+- `R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION` aceita somente `true` ou `false`; seu default seguro
+  e `false` e `true` serve apenas para registrar uma instalacao nova em bucket dedicado ja populado
 - antes de qualquer build/pull, `assert-compose-api-env.ps1` valida que o bloco `api.environment`
-  do Compose repassa `OMNI_SECRETS_KEY`, `EVOLUTION_BASE_URL`, `EVOLUTION_API_KEY` e
-  `WEBHOOK_RECEIVER_BASE_URL`; existir apenas no `.env` ou no servico `evolution` nao basta
+  do Compose repassa as variaveis criticas de boot, Evolution e R2; existir apenas no `.env` ou
+  em outro servico nao basta
 - os scripts nunca apagam volumes Docker de producao
 - `staging-down.ps1` so remove volumes com `-RemoveVolumes` explicito
 - smoke tests publicos continuam sendo a validacao padrao depois do deploy
-- imagens privadas no GHCR: a VPS precisa de `docker login ghcr.io` (PAT read-only) uma vez
+- `deploy:fast:prod` reconcilia por padrao os profiles `automation` e `omnichannel`;
+  workflows usam os JSONs versionados e a Evolution sobe com volumes preservados
+- `assert-compose-service-parity.ps1` impede que um container novo exista somente no
+  Compose local sem uma definicao prod ou excecao local-only documentada
+- imagens privadas no GHCR: o deploy rapido reutiliza a credencial local apenas num
+  `DOCKER_CONFIG` remoto temporario; nao persistir token na VPS
 
 ## Regras de implementacao
 
@@ -65,17 +75,24 @@ Fluxo RAPIDO (build local, sem git — recomendado pro dia a dia):
 - `deploy-fast.ps1` — builda as imagens na maquina local (`docker build` de back/ e web/),
   faz `docker push` pro GHCR (so as camadas que mudaram sobem) e chama o `deploy-pull.ps1`.
   `-Environment staging|prod`, `-Tag` (default `local-<timestamp>`), `-Service both|api|web`,
-  `-BackupDatabase`, `-GhcrUser`/`-GhcrToken` (login local one-time). Nao toca git, nao builda na VPS.
-  npm: `deploy:fast` (staging), `deploy:fast:prod`. Equivale ao incremental do crow-php, mas
-  com o build na maquina local em vez da VPS (o Nuxt pede 4GB de heap; nao cabe buildar na VPS).
+  `-BackupDatabase`, `-WebBuildHeapMB`, `-GhcrUser`/`-GhcrToken`. Sem parametros explicitos,
+  reutiliza com seguranca a credencial do Docker Desktop para o pull remoto temporario.
+  No build web, pausa e restaura somente os servicos locais que ja estavam rodando para liberar
+  memoria; `-KeepLocalStackRunning` e opt-out. Nao toca git, nao builda na VPS. npm:
+  `deploy:fast` (staging), `deploy:fast:prod`. Em prod, o alias inclui Automation/workflows
+  versionados e Omnichannel/Evolution por padrao.
 
 Fluxo registry via CI (opcao completa/rastreavel):
 
 - `assert-compose-api-env.ps1` — guarda fail-closed compartilhada por `deploy-fast.ps1`,
   `deploy-pull.ps1` e o workflow manual; impede recriar a API sem o wiring critico da Evolution.
+- `assert-compose-service-parity.ps1` — compara todos os servicos/profiles local x prod e falha
+  para container esquecido. Excecoes atuais: `crow-nuxt` (preview local) e
+  `meta-ads-assistant` (ainda sem runtime OAuth prod-safe).
 - `deploy-pull.ps1` — nucleo: `-Environment staging|prod`, `-Tag <sha>`, faz preflight remoto,
   envia/valida o compose, grava `IMAGE_TAG`, pull + `up --no-build`, smoke. Switches: `-BackupDatabase`,
-  `-ForceRecreate`, `-SkipSmokeTests`, `-GhcrUser`/`-GhcrToken` (login opcional).
+  `-ForceRecreate`, `-SkipSmokeTests`, `-DeployAutomation`, `-DeployOmnichannel`,
+  `-GhcrUser`/`-GhcrToken` (credencial opcional, efemera no pull remoto).
 - `staging-up.ps1` — atalho: sobe staging sob demanda (wrapper de `deploy-pull.ps1 -Environment staging`).
 - `staging-down.ps1` — derruba staging (preserva volumes; `-RemoveVolumes` zera o banco de staging).
 - `promote.ps1` — le o `IMAGE_TAG` testado em staging e promove a MESMA imagem pra prod (backup por padrao).

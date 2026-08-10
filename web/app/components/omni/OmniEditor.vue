@@ -23,6 +23,7 @@ const props = withDefaults(
     placeholder?: string
     minHeight?: string
     maxHeight?: string
+    compact?: boolean
   }>(),
   {
     modelValue: '',
@@ -35,6 +36,7 @@ const props = withDefaults(
       'Pressione / para comandos, @ para pessoas, # para clientes e tasks, : para emojis...',
     minHeight: '320px',
     maxHeight: '58vh',
+    compact: false,
   },
 )
 
@@ -117,6 +119,10 @@ const editorStyle = computed(() => ({
   '--omni-editor-min-height': props.minHeight,
   '--omni-editor-max-height': props.maxHeight,
 }))
+
+function appendEditorMenuTo(): HTMLElement {
+  return document.body
+}
 
 const userMentionItems = computed<EditorMentionMenuItem[]>(() =>
   uniqueLabels(props.people).map((label) => ({
@@ -610,7 +616,7 @@ function onImageFileChange(event: Event) {
 </script>
 
 <template>
-  <div class="omni-editor" :style="editorStyle">
+  <div class="omni-editor" :class="{ 'omni-editor--compact': props.compact }" :style="editorStyle">
     <UEditor
       v-slot="{ editor, handlers }"
       :key="props.editable ? 'editable' : 'readonly'"
@@ -825,13 +831,15 @@ function onImageFileChange(event: Event) {
       <UEditorSuggestionMenu
         :editor="editor"
         :items="suggestionItems"
-        :options="{ placement: 'bottom-start', offset: 6 }"
+        :append-to="appendEditorMenuTo"
+        :options="{ placement: 'bottom-start', offset: 6, strategy: 'fixed' }"
         :ui="{ content: 'z-[10020]' }"
       />
       <UEditorMentionMenu
         :editor="editor"
         :items="userMentionItems"
-        :options="{ placement: 'bottom-start', offset: 6 }"
+        :append-to="appendEditorMenuTo"
+        :options="{ placement: 'bottom-start', offset: 6, strategy: 'fixed' }"
         :ui="{ content: 'z-[10020]' }"
       />
       <UEditorMentionMenu
@@ -840,13 +848,15 @@ function onImageFileChange(event: Event) {
         :items="entityMentionItems"
         char="#"
         plugin-key="entityMentionMenu"
-        :options="{ placement: 'bottom-start', offset: 6 }"
+        :append-to="appendEditorMenuTo"
+        :options="{ placement: 'bottom-start', offset: 6, strategy: 'fixed' }"
         :ui="{ content: 'z-[10020]' }"
       />
       <UEditorEmojiMenu
         :editor="editor"
         :items="emojiItems"
-        :options="{ placement: 'bottom-start', offset: 6 }"
+        :append-to="appendEditorMenuTo"
+        :options="{ placement: 'bottom-start', offset: 6, strategy: 'fixed' }"
         :ui="{ content: 'z-[10020]' }"
       />
     </UEditor>
@@ -889,7 +899,7 @@ function onImageFileChange(event: Event) {
   border-bottom: 1px solid rgb(var(--border));
   background: rgb(var(--surface));
   padding: 0.45rem 0.15rem;
-  overflow-x: auto;
+  overflow: visible;
   scrollbar-width: none;
 }
 
@@ -906,6 +916,19 @@ function onImageFileChange(event: Event) {
   padding: 1.4rem 2.2rem 5rem 2.55rem;
   outline: none;
   line-height: 1.75;
+}
+
+.omni-editor--compact .omni-editor__toolbar {
+  padding: 0.2rem 0.1rem;
+}
+
+.omni-editor--compact :deep(.omni-editor__content) {
+  padding: 0.75rem 1rem 1.5rem;
+  line-height: 1.55;
+}
+
+.omni-editor--compact :deep(.tiptap > * + *) {
+  margin-top: 0.45rem;
 }
 
 .omni-editor :deep(.tiptap) {

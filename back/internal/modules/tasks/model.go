@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -120,18 +121,13 @@ type Task struct {
 }
 
 type TaskVideo struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	URL         string    `json:"url"`
-	Size        int       `json:"size"`
-	ContentType string    `json:"contentType"`
-	UploadedAt  time.Time `json:"uploadedAt"`
-}
-
-type TaskVideoUpload struct {
-	FileName    string
-	ContentType string
-	Content     []byte
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	URL             string    `json:"url"`
+	Size            int       `json:"size"`
+	ContentType     string    `json:"contentType"`
+	ChecklistItemID string    `json:"checklistItemId,omitempty"`
+	UploadedAt      time.Time `json:"uploadedAt"`
 }
 
 type StoredTaskVideo struct {
@@ -142,7 +138,30 @@ type StoredTaskVideo struct {
 }
 
 type TaskVideoStorage interface {
-	Save(ctx context.Context, taskID string, fileName string, contentType string, content []byte) (*StoredTaskVideo, error)
+	Save(ctx context.Context, accountID, actorID, taskID, idempotencyKey, fileName, contentType string, content []byte) (*StoredTaskVideo, error)
+}
+
+type TaskVideoStreamStorage interface {
+	SaveStream(ctx context.Context, accountID, actorID, taskID, idempotencyKey, fileName, contentType string, sizeBytes int64, content io.Reader) (*StoredTaskVideo, error)
+}
+
+type TaskVideoContent struct {
+	FileName      string
+	ContentType   string
+	SizeBytes     int64
+	Body          io.ReadCloser
+	ContentLength int64
+	ContentRange  string
+	ETag          string
+}
+
+type TaskVideoContentStorage interface {
+	Stat(ctx context.Context, accountID, objectID string) (TaskVideoContent, error)
+	Open(ctx context.Context, accountID, objectID, byteRange string) (TaskVideoContent, error)
+}
+
+type TaskVideoLimitStorage interface {
+	MaxVideoBytes(ctx context.Context) (int64, error)
 }
 
 type Comment struct {

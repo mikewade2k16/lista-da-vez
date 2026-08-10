@@ -132,6 +132,7 @@ export function buildConsultantStats({
   return {
     monthEntries,
     soldValue,
+    attendances: monthEntries.length,
     conversions: convertedEntries.length,
     nonConversions: monthEntries.length - convertedEntries.length,
     conversionRate,

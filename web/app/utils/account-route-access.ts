@@ -14,6 +14,7 @@ export const AGENCY_ONLY_PATHS = [
   '/manage/users',
   '/manage/organizations',
   '/manage/role-templates',
+  '/manage/storage',
   '/manage/clientes-web',
   '/themes',
   '/manage/auditoria',

@@ -6,12 +6,12 @@ Estas instrucoes valem para `web/app/components/campaigns`.
 
 ## Hub unificado de campanhas
 
-- A rota canonica e `/campanhas`, com `workspaceId: comunicados`, para manter a
-  leitura dos comunicados disponivel aos mesmos papeis da operacao.
+- A rota canonica e `/campanhas`, com `workspaceId: campanhas`; seu baseline e
+  exclusivo de `owner` e `platform_admin`.
 - `CampaignHubWorkspace.vue` concentra tres secoes compactas:
   `comunicados`, `campanhas` comerciais e `corridinhas`/premiacoes.
-- As secoes comerciais e internas so aparecem para quem possui acesso ao
-  workspace `campanhas`; unificar a pagina nunca amplia permissao.
+- Todas as secoes do hub exigem acesso ao workspace `campanhas`; os comunicados
+  publicados continuam visiveis na lateral da Operacao sem liberar esta pagina.
 - `/comunicados` permanece como redirect para
   `/campanhas?secao=comunicados`. O item principal do nav usa o nome
   `Campanhas` e nao deve existir uma segunda entrada duplicada em `Site`.

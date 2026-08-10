@@ -24,6 +24,7 @@ const props = withDefaults(
     rankingPosition?: number | null
     storeConversionAvg?: number | null
     showDetailsButton?: boolean
+    showFeedbackButton?: boolean
     storeGoalProgress?: number | null
     goalPayoutAmount?: number | null
     goalPayoutLabel?: string
@@ -35,6 +36,7 @@ const props = withDefaults(
     rankingPosition: null,
     storeConversionAvg: null,
     showDetailsButton: true,
+    showFeedbackButton: false,
     storeGoalProgress: null,
     goalPayoutAmount: null,
     goalPayoutLabel: '',
@@ -43,7 +45,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  (e: 'open-details', consultantId: string): void
+  (e: 'open-details' | 'open-feedback', consultantId: string): void
 }>()
 
 const { enabledBadges } = useGamificationConfig()
@@ -76,13 +78,6 @@ const gaugeStroke = computed(() => {
   }
 })
 
-const statusClass = computed(() => {
-  const code = props.consultant.liveStatusCode || 'available'
-  return `consultant-status consultant-status--${code}`
-})
-
-const statusLabel = computed(() => props.consultant.liveStatusLabel || 'Disponível')
-
 const goalProgressText = computed(() => {
   if (!props.stats.monthlyGoal) return 'Sem meta cadastrada'
   if (goalPercent.value >= 100) return 'Meta batida'
@@ -97,6 +92,10 @@ function handleClick() {
 
 function handleDetailsClick() {
   emit('open-details', props.consultant.id)
+}
+
+function handleFeedbackClick() {
+  emit('open-feedback', props.consultant.id)
 }
 </script>
 
@@ -211,14 +210,24 @@ function handleDetailsClick() {
       :store-conversion-avg="storeConversionAvg"
     />
 
-    <footer v-if="mode === 'full' && showDetailsButton" class="player-card__footer">
+    <footer v-if="showDetailsButton || showFeedbackButton" class="player-card__footer">
       <button
+        v-if="showDetailsButton"
         type="button"
         class="player-card__details-btn"
         data-testid="player-card-open-details"
-        @click="handleDetailsClick"
+        @click.stop="handleDetailsClick"
       >
         Ver detalhes
+      </button>
+      <button
+        v-if="showFeedbackButton"
+        type="button"
+        class="player-card__details-btn"
+        data-testid="player-card-open-feedback"
+        @click.stop="handleFeedbackClick"
+      >
+        Dar feedback
       </button>
     </footer>
   </article>
@@ -505,6 +514,7 @@ function handleDetailsClick() {
 .player-card__footer {
   display: flex;
   justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 .player-card__details-btn {

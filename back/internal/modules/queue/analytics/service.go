@@ -60,6 +60,37 @@ func (service *Service) Ranking(ctx context.Context, principal auth.Principal, s
 	}, nil
 }
 
+// ConsultantMetricsWithinAccessibleStore reutiliza o calculo canonico do ranking
+// em features que ja fizeram seu proprio gate de permissao. O acesso a loja ainda
+// e validado aqui pelo Principal; o chamador nunca recebe historico bruto.
+func (service *Service) ConsultantMetricsWithinAccessibleStore(
+	ctx context.Context,
+	principal auth.Principal,
+	storeID string,
+	consultantID string,
+	dateFrom string,
+	dateTo string,
+) (RankingRow, bool, error) {
+	_, bundles, err := service.loadBundles(
+		ctx,
+		principal,
+		strings.TrimSpace(storeID),
+		"",
+		historySinceMillis(dateFrom, time.Now().In(analyticsLocation)),
+	)
+	if err != nil {
+		return RankingRow{}, false, err
+	}
+
+	rows := buildRankingRowsAcrossBundles(bundles, "month", dateFrom, dateTo)
+	for _, row := range rows {
+		if strings.TrimSpace(row.ConsultantID) == strings.TrimSpace(consultantID) {
+			return row, true, nil
+		}
+	}
+	return RankingRow{}, false, nil
+}
+
 func (service *Service) Data(ctx context.Context, principal auth.Principal, storeID string, tenantID string) (DataResponse, error) {
 	if !canViewData(principal) {
 		return DataResponse{}, ErrForbidden

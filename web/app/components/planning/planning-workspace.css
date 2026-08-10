@@ -1,0 +1,269 @@
+.planning-workspace {
+  --planning-user-font-size: 0.82rem;
+  --planning-user-font-weight: 800;
+  --planning-user-meta-font-size: 0.64rem;
+  --planning-calendar-day-font-size: 0.72rem;
+  --planning-calendar-lane-font-size: 0.62rem;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.planning-workspace__hero {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.planning-workspace__hero > div:first-child {
+  display: grid;
+  gap: 0.24rem;
+}
+.planning-workspace__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgb(var(--primary));
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.planning-workspace h1 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: clamp(1.3rem, 2vw, 1.9rem);
+}
+.planning-workspace__hero p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.planning-workspace__hero-actions,
+.planning-workspace__section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.planning-workspace button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid rgb(var(--primary) / 0.32);
+  border-radius: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  background: rgb(var(--primary) / 0.11);
+  color: rgb(var(--primary));
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.planning-workspace button.is-ghost {
+  border-color: rgb(var(--border) / 0.7);
+  background: transparent;
+  color: var(--text-muted);
+}
+.planning-workspace button.is-success {
+  border-color: rgb(var(--success) / 0.34);
+  background: rgb(var(--success) / 0.1);
+  color: rgb(var(--success));
+}
+.planning-workspace__shell {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  flex: 0 0 auto;
+  min-height: 34rem;
+  border: 1px solid rgb(var(--border) / 0.68);
+  border-radius: var(--radius-card);
+  background: rgb(var(--surface) / 0.78);
+  overflow: visible;
+}
+.planning-workspace__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.8rem;
+  position: relative;
+}
+.planning-workspace__section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.65rem;
+}
+.planning-workspace__section-head > span {
+  display: grid;
+  gap: 0.14rem;
+}
+.planning-workspace__section-head strong {
+  color: var(--text-main);
+  font-size: 0.88rem;
+}
+.planning-workspace__section-head small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.planning-workspace__filters {
+  grid-column: 1 / -1;
+  display: grid;
+  align-items: end;
+  gap: 0.6rem;
+  border: 1px solid rgb(var(--border) / 0.58);
+  border-radius: 0.72rem;
+  padding: 0.65rem;
+  background: rgb(var(--surface-2) / 0.42);
+}
+.planning-workspace__filters.is-store-only {
+  grid-template-columns: minmax(13rem, 24rem);
+}
+.planning-workspace__filters.is-schedule {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.6rem;
+}
+.planning-workspace__schedule-store {
+  flex: 1 1 15rem;
+  min-width: 12rem;
+}
+.planning-workspace__period-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 2rem;
+  padding: 0.15rem;
+  border: 1px solid rgb(var(--ring) / 0.14);
+  border-radius: 999px;
+  background: rgb(var(--surface-2) / 0.72);
+  flex: 0 0 auto;
+}
+.planning-workspace__period-tabs button {
+  min-height: 1.7rem;
+  padding: 0 0.55rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.planning-workspace__period-tabs button:hover {
+  color: var(--text-main);
+}
+.planning-workspace__period-tabs button.is-active {
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
+}
+.planning-workspace__period-range {
+  flex: 0 0 100%;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+.planning-workspace__month-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 0.6rem;
+  border: 1px solid rgb(var(--ring) / 0.16);
+  border-radius: 0.55rem;
+  background: rgb(var(--surface-2) / 0.88);
+  flex: 0 0 auto;
+}
+.planning-workspace__month-chip input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color-scheme: dark light;
+}
+.planning-workspace__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  border-radius: 999px;
+  padding: 0 0.7rem;
+  background: rgb(var(--border) / 0.35);
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.planning-workspace__status.is-unsaved,
+.planning-workspace__status.is-saving {
+  background: rgb(var(--warning) / 0.12);
+  color: rgb(var(--warning));
+}
+.planning-workspace__status.is-saved,
+.planning-workspace__status.is-published {
+  background: rgb(var(--success) / 0.12);
+  color: rgb(var(--success));
+}
+.planning-workspace__warning {
+  margin: 0;
+  border: 1px solid rgb(var(--danger) / 0.4);
+  border-radius: 0.65rem;
+  padding: 0.5rem 0.7rem;
+  background: rgb(var(--danger) / 0.08);
+  color: rgb(var(--danger));
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.planning-workspace__warning.is-goal {
+  border-color: rgb(var(--warning) / 0.4);
+  background: rgb(var(--warning) / 0.08);
+  color: rgb(var(--warning));
+}
+.planning-workspace__empty-access {
+  margin: 0;
+  border: 1px solid rgb(var(--warning) / 0.32);
+  border-radius: 0.7rem;
+  padding: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+@media (max-width: 820px) {
+  .planning-workspace__hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .planning-workspace__shell {
+    grid-template-columns: 1fr;
+  }
+  .planning-workspace__content {
+    padding: 0.7rem;
+  }
+}
+@media (max-width: 620px) {
+  .planning-workspace {
+    padding: 0.65rem;
+  }
+  .planning-workspace__hero-actions,
+  .planning-workspace__section-actions {
+    width: 100%;
+  }
+  .planning-workspace__hero-actions button,
+  .planning-workspace__section-actions button {
+    flex: 1;
+  }
+  .planning-workspace__section-head {
+    grid-template-columns: 1fr;
+  }
+  .planning-workspace__filters.is-store-only,
+  .planning-workspace__filters.is-schedule {
+    width: 100%;
+  }
+  .planning-workspace__period-tabs {
+    flex: 0 0 auto;
+  }
+}

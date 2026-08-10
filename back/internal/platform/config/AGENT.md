@@ -22,6 +22,16 @@ Estas instrucoes valem para `back/internal/platform/config/`.
 - `AUTH_PRINCIPAL_CACHE_TTL` (duration, default `30s`) — TTL do cache de Principal autenticado (AC-01). `0s` desliga o cache e restaura o comportamento legado (1 rajada de queries por request), sem rebuild. Consumida em `platform/app/principal_cache_wiring.go`. Documentada comentada nos `.env*.example`.
 - `DATABASE_APP_URL` (AC-04) — URL de RUNTIME da api com a role least-privilege `omni_app` (sem DDL). `OpenAppPool` a usa; sem ela cai no fallback `DATABASE_URL` (dev). `Validate()` em `APP_ENV=production` aborta o boot se estiver vazia — a api nunca deve conectar como o superuser em prod. O binario `migrate` continua com `DATABASE_URL` (privilegiada). Runbook em `docs/MULTITENANT_COMPLETION_PLAN.md` (Notas de Deploy AC-04).
 
+- `R2_*`: conexao privada do modulo `storage`. `R2_ENABLED=false` preserva o boot sem
+  credenciais; quando `true`, o Build exige account, bucket, access key, secret e timeout positivo.
+  Os limites fail-closed nao sao env: vivem no singleton autoritativo `storage.settings` e sao
+  editados por `platform_admin`. Segredos nunca entram no banco nem sao expostos pela API.
+  `R2_UPLOAD_TIMEOUT` e separado do timeout curto das demais chamadas. O Bearer
+  `R2_ANALYTICS_API_TOKEN` e diferente da Access Key/Secret S3 e habilita metricas account-wide.
+  `R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION=false` mantem o bootstrap fail-closed; `true` deve ser
+  usado somente quando uma nova instalacao precisa adotar explicitamente um bucket dedicado ja
+  populado. A flag nao altera nem regrava os objetos existentes.
+
 ## Feature flags ativas
 
 | Flag | Tipo | Default | Propos

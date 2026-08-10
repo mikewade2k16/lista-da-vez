@@ -83,6 +83,7 @@ export function useCalendarMedia() {
 
       const token = auth.accessToken
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      xhr.setRequestHeader('Idempotency-Key', crypto.randomUUID())
       const accountId = accountStore.activeAccountId
       if (accountId) xhr.setRequestHeader('X-Account-Id', accountId)
 

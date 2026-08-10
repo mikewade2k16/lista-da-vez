@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CalendarDays } from 'lucide-vue-next'
+
+import PerformanceFeedbackSettingsButton from '~/components/performance-feedback/PerformanceFeedbackSettingsButton.vue'
+import AppDateRangeFilter from '~/components/ui/AppDateRangeFilter.vue'
+import AppFilterField from '~/components/ui/AppFilterField.vue'
+import AppFilterToolbar from '~/components/ui/AppFilterToolbar.vue'
+import AppGoalPeriodFilter from '~/components/ui/AppGoalPeriodFilter.vue'
+import AppSearchInput from '~/components/ui/AppSearchInput.vue'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
+import AppToolbarButton from '~/components/ui/AppToolbarButton.vue'
 import {
   buildCurrentMonthRange,
   buildMonthWeekRange,
@@ -24,6 +31,7 @@ const props = withDefaults(
     goalOptions?: FilterOption[]
     dateFrom?: string
     dateTo?: string
+    feedbackStoreId?: string
     pending?: boolean
   }>(),
   {
@@ -36,279 +44,168 @@ const props = withDefaults(
     goalOptions: () => [],
     dateFrom: '',
     dateTo: '',
+    feedbackStoreId: '',
     pending: false,
   },
 )
 
+const periodMonth = computed(() => props.dateFrom.slice(0, 7))
+
 /* eslint-disable @typescript-eslint/unified-signatures -- nomes de evento literais
    exigidos pelo vue/require-explicit-emits (o plugin nao resolve unioes via type alias). */
 const emit = defineEmits<{
-  (e: 'update:search-term', value: string): void
-  (e: 'update:store-filter', value: string): void
-  (e: 'update:status-filter', value: string): void
-  (e: 'update:goal-filter', value: string): void
-  (e: 'update:date-from', value: string): void
-  (e: 'update:date-to', value: string): void
-  (e: 'apply'): void
-  (e: 'reset-current-month'): void
-  (e: 'set-previous-month'): void
-  (e: 'set-week', value: number): void
+  (event: 'update:search-term', value: string): void
+  (event: 'update:store-filter', value: string): void
+  (event: 'update:status-filter', value: string): void
+  (event: 'update:goal-filter', value: string): void
+  (event: 'update:date-from', value: string): void
+  (event: 'update:date-to', value: string): void
+  (event: 'apply'): void
+  (event: 'reset-current-month'): void
+  (event: 'set-previous-month'): void
+  (event: 'set-week', value: number): void
 }>()
 /* eslint-enable @typescript-eslint/unified-signatures */
 
-// Metas por semana: fatias fixas do mes (S1 1-7, S2 8-14, S3 15-21, S4 22-fim).
-// O titulo vira tooltip; o botao ativo destaca a semana do periodo atual.
-const WEEK_PRESETS = [
-  { week: 1, label: 'S1', title: 'Semana 1 (dias 1 a 7)' },
-  { week: 2, label: 'S2', title: 'Semana 2 (dias 8 a 14)' },
-  { week: 3, label: 'S3', title: 'Semana 3 (dias 15 a 21)' },
-  { week: 4, label: 'S4', title: 'Semana 4 (dia 22 ao fim do mes)' },
-]
-
-function rangeMatches(range: { dateFrom: string; dateTo: string }) {
+function rangeMatches(range: { dateFrom: string; dateTo: string }): boolean {
   return range.dateFrom === props.dateFrom && range.dateTo === props.dateTo
 }
-// Detecta qual atalho corresponde ao range ativo (destaque visual). A semana usa o
-// mes do proprio dateFrom como ancora, entao respeita "Mes anterior".
+
 const activeWeek = computed(() => {
-  for (const preset of WEEK_PRESETS) {
-    if (rangeMatches(buildMonthWeekRange(props.dateFrom, preset.week))) return preset.week
+  for (let week = 1; week <= 4; week += 1) {
+    if (rangeMatches(buildMonthWeekRange(props.dateFrom, week))) return `p${week}`
   }
-  return 0
+  return 'none'
 })
 const isCurrentMonth = computed(() => rangeMatches(buildCurrentMonthRange()))
 const isPreviousMonth = computed(() => rangeMatches(buildPreviousMonthRange()))
+
+function selectWeek(value: string): void {
+  const week = Number(value.replace(/^p/, ''))
+  if (week >= 1 && week <= 4) emit('set-week', week)
+}
 </script>
 
 <template>
-  <article class="settings-card consultant-integrated-filters">
-    <div class="consultant-integrated-filters__bar">
-      <label
-        class="settings-field consultant-integrated-filters__field consultant-integrated-filters__field--search"
-      >
-        <span>Buscar consultor</span>
-        <input
-          :value="searchTerm"
-          type="text"
-          placeholder="Nome, loja ou cargo"
-          @input="emit('update:search-term', ($event.target as HTMLInputElement).value)"
-        />
-      </label>
-      <label class="settings-field consultant-integrated-filters__field">
-        <span>Loja</span>
-        <AppSelectField
-          :model-value="storeFilter"
-          :options="storeOptions"
-          placeholder="Filtrar loja"
-          @update:model-value="emit('update:store-filter', $event)"
-        />
-      </label>
-      <label class="settings-field consultant-integrated-filters__field">
-        <span>Status</span>
-        <AppSelectField
-          :model-value="statusFilter"
-          :options="statusOptions"
-          placeholder="Filtrar status"
-          @update:model-value="emit('update:status-filter', $event)"
-        />
-      </label>
-      <label class="settings-field consultant-integrated-filters__field">
-        <span>Meta</span>
-        <AppSelectField
-          :model-value="goalFilter"
-          :options="goalOptions"
-          placeholder="Filtrar meta"
-          @update:model-value="emit('update:goal-filter', $event)"
-        />
-      </label>
-      <label
-        class="settings-field consultant-integrated-filters__field consultant-integrated-filters__field--period"
-      >
-        <span>Periodo</span>
-        <AppDatePicker
-          :model-value="dateFrom"
-          :end-date="dateTo"
-          @update:model-value="emit('update:date-from', $event)"
-          @update:end-date="emit('update:date-to', $event)"
-        >
-          <template #default="{ label }">
-            <button type="button" class="consultant-integrated-date-trigger">
-              <CalendarDays :size="14" />
-              <span>{{ label || 'Mes atual' }}</span>
-            </button>
-          </template>
-        </AppDatePicker>
-      </label>
+  <AppFilterToolbar class="consultant-filters" aria-label="Filtros dos consultores">
+    <AppFilterField class="consultant-filters__search" label="Buscar consultor">
+      <AppSearchInput
+        :model-value="searchTerm"
+        placeholder="Nome, loja ou cargo"
+        aria-label="Buscar consultor"
+        :debounce-ms="0"
+        compact
+        @update:model-value="emit('update:search-term', $event)"
+      />
+    </AppFilterField>
 
-      <div
-        class="consultant-integrated-filters__field consultant-integrated-filters__actions-field"
-      >
-        <span>Semana da meta</span>
-        <div class="consultant-integrated-filters__actions">
-          <div class="consultant-integrated-weeks" role="group" aria-label="Semana da meta">
-            <button
-              v-for="preset in WEEK_PRESETS"
-              :key="preset.week"
-              type="button"
-              class="consultant-integrated-week"
-              :class="{ 'consultant-integrated-week--active': activeWeek === preset.week }"
-              :title="preset.title"
-              :aria-pressed="activeWeek === preset.week"
-              :disabled="pending"
-              @click="emit('set-week', preset.week)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-          <button
-            type="button"
-            class="consultant-integrated-btn consultant-integrated-btn--ghost"
-            :class="{ 'consultant-integrated-btn--active': isPreviousMonth }"
-            :aria-pressed="isPreviousMonth"
-            :disabled="pending"
-            @click="emit('set-previous-month')"
-          >
-            Mes anterior
-          </button>
-          <button
-            type="button"
-            class="consultant-integrated-btn consultant-integrated-btn--ghost"
-            :class="{ 'consultant-integrated-btn--active': isCurrentMonth }"
-            :aria-pressed="isCurrentMonth"
-            :disabled="pending"
-            @click="emit('reset-current-month')"
-          >
-            Mes atual
-          </button>
-          <button
-            type="button"
-            class="consultant-integrated-btn"
-            :disabled="pending"
-            @click="emit('apply')"
-          >
-            {{ pending ? 'Atualizando...' : 'Atualizar' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </article>
+    <AppFilterField class="consultant-filters__select" label="Loja">
+      <AppSelectField
+        :model-value="storeFilter"
+        :options="storeOptions"
+        placeholder="Todas as lojas"
+        :show-leading-icon="false"
+        compact
+        @update:model-value="emit('update:store-filter', $event)"
+      />
+    </AppFilterField>
+
+    <AppFilterField class="consultant-filters__select" label="Status">
+      <AppSelectField
+        :model-value="statusFilter"
+        :options="statusOptions"
+        placeholder="Todos os status"
+        :show-leading-icon="false"
+        compact
+        @update:model-value="emit('update:status-filter', $event)"
+      />
+    </AppFilterField>
+
+    <AppFilterField class="consultant-filters__select" label="Meta">
+      <AppSelectField
+        :model-value="goalFilter"
+        :options="goalOptions"
+        placeholder="Todas as metas"
+        :show-leading-icon="false"
+        compact
+        @update:model-value="emit('update:goal-filter', $event)"
+      />
+    </AppFilterField>
+
+    <AppFilterField class="consultant-filters__period" label="Período">
+      <AppDateRangeFilter
+        :model-value="dateFrom"
+        :end-date="dateTo"
+        placeholder="Mês atual"
+        :disabled="pending"
+        @update:model-value="emit('update:date-from', $event)"
+        @update:end-date="emit('update:date-to', $event)"
+      />
+    </AppFilterField>
+
+    <AppFilterField class="consultant-filters__weeks" label="Semana da meta">
+      <AppGoalPeriodFilter
+        :month="periodMonth"
+        :model-value="activeWeek"
+        :include-month="false"
+        aria-label="Semana da meta"
+        :disabled="pending"
+        @update:model-value="selectWeek"
+      />
+    </AppFilterField>
+
+    <template #actions>
+      <AppToolbarButton
+        label="Mês anterior"
+        variant="ghost"
+        :active="isPreviousMonth"
+        :disabled="pending"
+        @click="emit('set-previous-month')"
+      />
+      <AppToolbarButton
+        label="Mês atual"
+        variant="ghost"
+        :active="isCurrentMonth"
+        :disabled="pending"
+        @click="emit('reset-current-month')"
+      />
+      <AppToolbarButton
+        :label="pending ? 'Atualizando...' : 'Atualizar'"
+        icon="i-lucide-refresh-cw"
+        variant="primary"
+        :loading="pending"
+        @click="emit('apply')"
+      />
+      <PerformanceFeedbackSettingsButton :store-id="feedbackStoreId" :disabled="pending" />
+    </template>
+  </AppFilterToolbar>
 </template>
 
 <style scoped>
-/* Tudo numa linha so: campos + periodo + atalhos (semana/mes/atualizar) alinhados
-   pela base. Em telas estreitas quebra sozinho (flex-wrap) para seguir usavel. */
-.consultant-integrated-filters__bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.7rem;
+.consultant-filters__search {
+  flex: 1 1 14rem;
+  min-width: 11rem;
 }
-.consultant-integrated-filters__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  min-width: 0;
+
+.consultant-filters__select {
   flex: 0 1 8.5rem;
+  min-width: 7.5rem;
 }
-.consultant-integrated-filters__field > span {
-  font-size: 0.78rem;
-  color: rgb(var(--muted));
-  white-space: nowrap;
+
+.consultant-filters__period {
+  flex: 0 0 11.5rem;
+  min-width: 11.5rem;
 }
-.consultant-integrated-filters__field--search {
-  flex: 1 1 11rem;
+
+.consultant-filters__weeks {
+  flex: 0 0 auto;
 }
-.consultant-integrated-filters__field--period {
-  flex: 0 1 9.5rem;
-}
-.consultant-integrated-filters__actions-field {
-  flex: 1 1 auto;
-}
-.consultant-integrated-date-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 100%;
-  min-height: 42px;
-  padding: 0 0.85rem;
-  border-radius: 12px;
-  border: 1px solid rgb(var(--border) / 0.9);
-  background: rgb(var(--surface) / 0.95);
-  color: rgb(var(--text));
-  font-size: 0.88rem;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.consultant-integrated-filters__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-/* Grupo segmentado das 4 semanas: botoes colados, o ativo pinta de primary. */
-.consultant-integrated-weeks {
-  display: inline-flex;
-  border: 1px solid rgb(var(--border) / 0.9);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.consultant-integrated-week {
-  min-height: 38px;
-  min-width: 2.6rem;
-  padding: 0 0.55rem;
-  border: none;
-  border-left: 1px solid rgb(var(--border) / 0.9);
-  background: rgb(var(--surface) / 0.95);
-  color: rgb(var(--text));
-  font-weight: 700;
-  font-size: 0.82rem;
-  cursor: pointer;
-}
-.consultant-integrated-week:first-child {
-  border-left: none;
-}
-.consultant-integrated-week:hover:not(:disabled) {
-  background: rgb(var(--primary) / 0.12);
-  color: rgb(var(--primary));
-}
-.consultant-integrated-week--active {
-  background: rgb(var(--primary));
-  color: rgb(255 255 255);
-}
-.consultant-integrated-week:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-.consultant-integrated-btn {
-  min-height: 38px;
-  border: none;
-  border-radius: 12px;
-  padding: 0.6rem 0.9rem;
-  background: rgb(var(--primary));
-  color: rgb(255 255 255);
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.consultant-integrated-btn:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-.consultant-integrated-btn--ghost {
-  background: rgb(var(--primary) / 0.12);
-  color: rgb(var(--primary));
-}
-.consultant-integrated-btn--active {
-  background: rgb(var(--primary));
-  color: rgb(255 255 255);
-}
+
 @media (max-width: 720px) {
-  .consultant-integrated-filters__field {
+  .consultant-filters__search,
+  .consultant-filters__select,
+  .consultant-filters__period {
     flex: 1 1 100%;
-  }
-  .consultant-integrated-filters__actions {
     width: 100%;
   }
 }

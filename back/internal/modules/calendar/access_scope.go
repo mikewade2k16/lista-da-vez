@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"io"
 	"strings"
 )
 
@@ -70,12 +71,20 @@ func (s *Service) CreateTaskForScopedEvent(ctx context.Context, activeAccountID,
 	return s.createTaskForEvent(ctx, scope.StorageAccountID, eventID, scope.LockedClientID)
 }
 
-func (s *Service) SaveScopedMedia(ctx context.Context, activeAccountID, filename, contentType string, content []byte) (MediaItem, error) {
+func (s *Service) SaveScopedMedia(ctx context.Context, activeAccountID, actorID, idempotencyKey, filename, contentType string, content []byte) (MediaItem, error) {
 	scope, err := s.GetCalendarScope(ctx, activeAccountID)
 	if err != nil {
 		return MediaItem{}, err
 	}
-	return s.SaveMedia(ctx, scope.StorageAccountID, filename, contentType, content)
+	return s.SaveMedia(ctx, scope.StorageAccountID, actorID, idempotencyKey, filename, contentType, content)
+}
+
+func (s *Service) SaveScopedMediaStream(ctx context.Context, activeAccountID, actorID, idempotencyKey, filename, contentType string, sizeBytes int64, content io.Reader) (MediaItem, error) {
+	scope, err := s.GetCalendarScope(ctx, activeAccountID)
+	if err != nil {
+		return MediaItem{}, err
+	}
+	return s.SaveMediaStream(ctx, scope.StorageAccountID, actorID, idempotencyKey, filename, contentType, sizeBytes, content)
 }
 
 func scopeAllowsClient(scope CalendarScope, clientID string) bool {

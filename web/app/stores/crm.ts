@@ -201,6 +201,23 @@ export const useCrmStore = defineStore('crm', () => {
     lastLoadedKey.value = ''
   }
 
+  async function fetchOverviewRange(
+    rangeFrom: string,
+    rangeTo: string,
+  ): Promise<CRMOverviewResponse | null> {
+    if (!auth.isAuthenticated) return null
+
+    await auth.ensureSession()
+    if (!auth.isAuthenticated) return null
+
+    const params = new URLSearchParams()
+    if (activeTenantId.value) params.set('tenantId', activeTenantId.value)
+    if (rangeFrom) params.set('dateFrom', rangeFrom)
+    if (rangeTo) params.set('dateTo', rangeTo)
+
+    return (await apiRequest(`/v1/erp/crm?${params.toString()}`)) as CRMOverviewResponse
+  }
+
   async function refreshOverview() {
     if (!auth.isAuthenticated) {
       clearState()
@@ -278,6 +295,7 @@ export const useCrmStore = defineStore('crm', () => {
     dateTo,
     ensureLoaded,
     refreshOverview,
+    fetchOverviewRange,
     invalidateOverview,
     applyFilters,
     resetCurrentMonth,

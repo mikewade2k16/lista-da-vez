@@ -88,12 +88,70 @@ func normalizeTaskUIMetadata(value map[string]any) map[string]any {
 	if item, ok := raw["videos"]; ok {
 		normalized["videos"] = normalizeTaskVideoMetadata(item)
 	}
+	if item, ok := raw["checklist"]; ok {
+		normalized["checklist"] = normalizeTaskChecklistMetadata(item)
+	}
 	// calendarMedia (WAVE 6, cruzamento A): midia ESPELHADA do evento vinculado, read-only. O
 	// sync do calendario popula; aqui e' defesa (so /uploads/calendar/, dedup) contra body forjado.
 	if item, ok := raw["calendarMedia"]; ok {
 		normalized["calendarMedia"] = normalizeCalendarMediaMetadata(item)
 	}
 	return normalized
+}
+
+func normalizeTaskChecklistMetadata(value any) []map[string]any {
+	rawList, ok := value.([]any)
+	if !ok {
+		typed, typedOK := value.([]map[string]any)
+		if !typedOK {
+			return []map[string]any{}
+		}
+		rawList = make([]any, 0, len(typed))
+		for _, item := range typed {
+			rawList = append(rawList, item)
+		}
+	}
+
+	const maxItems = 200
+	normalized := make([]map[string]any, 0, min(len(rawList), maxItems))
+	seen := map[string]struct{}{}
+	for index, item := range rawList {
+		if len(normalized) >= maxItems {
+			break
+		}
+		raw, itemOK := item.(map[string]any)
+		if !itemOK {
+			continue
+		}
+		title := truncateMetadataText(raw["title"], 220)
+		if title == "" {
+			continue
+		}
+		id := truncateMetadataText(raw["id"], 120)
+		if id == "" {
+			id = fmt.Sprintf("item-%d", index+1)
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		completed, _ := raw["completed"].(bool)
+		normalized = append(normalized, map[string]any{
+			"id":        id,
+			"title":     title,
+			"completed": completed,
+		})
+	}
+	return normalized
+}
+
+func truncateMetadataText(value any, maxRunes int) string {
+	text := strings.TrimSpace(fmt.Sprint(value))
+	runes := []rune(text)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes])
+	}
+	return text
 }
 
 // normalizeCalendarMediaMetadata sanitiza a midia espelhada do calendario na task (cruzamento A,
@@ -189,12 +247,13 @@ func normalizeTaskVideoMetadata(value any) []map[string]any {
 			rawList = make([]any, 0, len(typed))
 			for _, item := range typed {
 				rawList = append(rawList, map[string]any{
-					"id":          item.ID,
-					"name":        item.Name,
-					"url":         item.URL,
-					"size":        item.Size,
-					"contentType": item.ContentType,
-					"uploadedAt":  item.UploadedAt.Format(time.RFC3339Nano),
+					"id":              item.ID,
+					"name":            item.Name,
+					"url":             item.URL,
+					"size":            item.Size,
+					"contentType":     item.ContentType,
+					"checklistItemId": item.ChecklistItemID,
+					"uploadedAt":      item.UploadedAt.Format(time.RFC3339Nano),
 				})
 			}
 		default:
@@ -209,12 +268,13 @@ func normalizeTaskVideoMetadata(value any) []map[string]any {
 		if !ok {
 			if typed, ok := item.(TaskVideo); ok {
 				raw = map[string]any{
-					"id":          typed.ID,
-					"name":        typed.Name,
-					"url":         typed.URL,
-					"size":        typed.Size,
-					"contentType": typed.ContentType,
-					"uploadedAt":  typed.UploadedAt.Format(time.RFC3339Nano),
+					"id":              typed.ID,
+					"name":            typed.Name,
+					"url":             typed.URL,
+					"size":            typed.Size,
+					"contentType":     typed.ContentType,
+					"checklistItemId": typed.ChecklistItemID,
+					"uploadedAt":      typed.UploadedAt.Format(time.RFC3339Nano),
 				}
 			} else {
 				continue
@@ -287,6 +347,9 @@ func normalizeTaskVideoMetadata(value any) []map[string]any {
 		}
 		if uploadedAt != "" {
 			normalizedItem["uploadedAt"] = uploadedAt
+		}
+		if checklistItemID := truncateMetadataText(raw["checklistItemId"], 120); checklistItemID != "" {
+			normalizedItem["checklistItemId"] = checklistItemID
 		}
 		normalized = append(normalized, normalizedItem)
 	}

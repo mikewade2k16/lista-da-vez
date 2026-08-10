@@ -68,6 +68,7 @@ export const MODULE_PATH_GUARDS: ModulePathGuard[] = [
   { prefix: '/inteligencia', moduleId: 'queue' },
   { prefix: '/relatorios', moduleId: 'queue' },
   { prefix: '/multiloja', moduleId: 'queue' },
+  { prefix: '/planejamento', moduleId: 'queue' },
   { prefix: '/configuracoes', moduleId: 'queue' },
   { prefix: '/alertas', moduleId: 'queue' },
   { prefix: '/suporte', moduleId: 'queue' },

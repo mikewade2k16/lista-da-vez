@@ -15,7 +15,8 @@ arquitetura da VPS e procedimentos raros (primeiro go-live, ERP, release especia
 **`npm run deploy:fast:prod`** -> builda na sua maquina e ja manda. Um comando, na hora.
 Nao depende de git nem de CI. (Faz backup do banco; rollback disponivel.) **E' o do dia-a-dia.**
 Tambem reconcilia o profile `automation` em prod (`redis`/`waha`/`n8n`/`whisper`) e reimporta os
-workflows versionados do n8n quando eles mudarem.
+workflows versionados do n8n quando eles mudarem. O profile `omnichannel`
+(`evolution-db`/`evolution`) tambem e reconciliado, sempre preservando volumes.
 
 **`npm run deploy:prod`** -> nao builda nada. So puxa uma imagem que o CI ja construiu.
 Por isso exige duas coisas, em ordem, com espera no meio:
@@ -37,8 +38,10 @@ npm run deploy:prod
 
 Regra de ouro por tras dos dois: **a VPS nunca compila.** A imagem e' buildada uma vez (no CI
 ou na sua maquina), publicada no GHCR (`ghcr.io/mikewade2k16/omni-{api,web}:<tag>`), e a VPS so
-faz `docker pull` + `up -d --no-build`. (O build do Nuxt pede ~4GB de heap numa VPS de ~6GB —
+faz `docker pull` + `up -d --no-build`. (O build do Nuxt supera 4GB de heap numa VPS de ~8GB —
 compilar la com prod no ar = risco de OOM.) O `push`/`pull` so transfere as camadas que mudaram.
+No Docker Desktop local, o deploy usa heap de 5120 MB e pausa/restaura somente os servicos deste
+projeto que ja estavam rodando; `-KeepLocalStackRunning` desliga essa protecao.
 
 Diferenca entre os dois: ONDE a imagem e' buildada.
 
@@ -57,9 +60,9 @@ npm run deploy:promote                     # promove a MESMA imagem do staging p
 
 ### Automation/n8n no deploy rapido
 
-Desde o fechamento E0 de ownership, `deploy:fast:prod` sobe API/web e **não** passa
-`-DeployAutomation` nem `-ForceAutomationWorkflowImport` implicitamente. O caminho de Automação
-abaixo continua existindo como operação explícita de plataforma, não como deploy de um módulo:
+`deploy:fast:prod` e a operacao explicita de plataforma do dia a dia e passa
+`-DeployAutomation -SkipWorkflowExport -DeployOmnichannel` por padrao. Portanto usa os JSONs
+versionados como fonte do rollout e nao consulta nem sobrescreve o repo a partir do n8n local:
 
 - envia para a VPS somente `automation/export/workflow-*.json` (NAO envia
   `credentials.decrypted.json`);
@@ -74,18 +77,20 @@ abaixo continua existindo como operação explícita de plataforma, não como de
   WAL) ficou identico aos `nodes` do arquivo versionado; se algum divergir ou algum import falhar,
   **aborta (exit 1) e NAO grava o marker** — o proximo deploy re-tenta em vez de "marcar como feito".
   So grava o hash novo quando import E verificacao passam 100%.
+- os comandos `docker compose exec -T` leem de `/dev/null`: como o bash remoto chega por stdin,
+  isso impede o container de consumir o restante do script e encerrar antes do import.
 
 O n8n vive no `docker-compose.prod.yml` (`profiles: ["automation"]`); os comandos do deploy usam
 `-f docker-compose.prod.yml`, entao enxergam o servico. Rodar `docker compose ... n8n` SEM esse `-f`
 (so o `docker-compose.yml`) NAO ve o n8n (retorna vazio) — foi o que mascarou o diagnostico.
 
-**Sync local antes de uma operação de plataforma:** `-DeployAutomation` exige
-`-WorkflowOwner <owner> -WorkflowOnly <key>`. O `deploy-fast.ps1` valida o registro/owner antes de
-qualquer Docker e sincroniza somente esse alvo local. Detalhes:
+**Sync local opcional antes de uma operacao de plataforma:** ao remover `-SkipWorkflowExport`,
+`-DeployAutomation` exige `-WorkflowOwner <owner> -WorkflowOnly <key>`. O `deploy-fast.ps1` valida
+o registro/owner antes de qualquer Docker e sincroniza somente esse alvo local. Detalhes:
 
-- Container n8n dev (`omni-n8n-1`) indisponível faz o comando falhar fechado. A opção
-  `-SkipWorkflowExport` só é aceita junto de `-DeployAutomation` e significa usar deliberadamente o
-  JSON versionado.
+- Container n8n dev (`omni-n8n-1`) indisponivel faz o sync opcional falhar fechado.
+  `-SkipWorkflowExport` (padrao do alias prod) significa usar deliberadamente os JSONs versionados
+  e nao exige owner/key.
 - O sync pode modificar somente o JSON selecionado; o dono revisa o diff antes de qualquer deploy.
 - Verificacao anti-credencial embutida: se um workflow trouxer campo de credencial alem de `id`/`name`,
   o export ABORTA aquele arquivo (segredo nunca vai pro repo/deploy).
@@ -163,9 +168,9 @@ recriado; a sessao voltou sozinha para `WORKING` sem QR. Apos tres minutos: heal
 `oom_kill=0`; o robo voltou a `active` e o monitor executou quiet/exit 0. API, web, Postgres, n8n,
 Redis, Whisper, workflows e volumes nao foram recriados.
 
-**Limite de escopo:** deploy normal continua subindo apenas API/web. O bloco de Automation so roda
-com `-DeployAutomation`; portanto um WAHA antigo em `unhealthy` nao prova que o deploy atual tocou
-o modulo.
+**Limite de escopo:** `deploy-pull.ps1` so toca Automation com `-DeployAutomation`. O alias diario
+`deploy:fast:prod` inclui esse switch por padrao desde 2026-07-27; portanto ele reconcilia WAHA,
+n8n, Redis, Whisper e workflows, alem de API/web e Evolution.
 
 ---
 
@@ -304,11 +309,9 @@ pre-requisito manual. Rastreado no roadmap (`ac-04b-migrate-auto-provision-role`
 
 - `.env.production` (e `.env.staging`) ja existem na VPS, a partir dos `.example`. Os scripts
   NUNCA sobrescrevem o `.env` remoto — so atualizam a linha `IMAGE_TAG`.
-- `docker login ghcr.io` **na VPS** (user `deploy`) com PAT classic `read:packages` — sem isso o
-  pull de imagem privada da `unauthorized`. One-time:
-  `ssh -t -i ~/.ssh/gh_actions_omnichannel_vps deploy@85.31.62.33 "docker login ghcr.io -u mikewade2k16"`
-  e cola o token `ghp_...` no prompt `Password:` (nao e' a senha do site; e' o PAT).
-- So pro `deploy:fast`: `docker login ghcr.io` **na sua maquina** com PAT `write:packages` (pra dar push).
+- So pro `deploy:fast`: `docker login ghcr.io` **na sua maquina** com PAT `write:packages` (pra dar
+  push). O script reutiliza essa credencial no pull remoto dentro de um `DOCKER_CONFIG` temporario,
+  removido ao final; a VPS nao precisa guardar token persistente.
 - Docker Desktop aberto na sua maquina (pro build local do `deploy:fast`).
 
 ---
@@ -512,8 +515,25 @@ CALENDAR_AI_SERVICE_TOKEN=<segredo-forte>
 CALENDAR_AI_CALLBACK_BASE=http://api:8080
 CALENDAR_CHAT_WEBHOOK_URL=http://n8n:5678/webhook/calendar-chat
 CALENDAR_TRANSCRIBE_WEBHOOK_URL=http://n8n:5678/webhook/calendar-transcribe
+R2_ENABLED=true
+R2_ACCOUNT_ID=<account-id-cloudflare>
+R2_BUCKET=<bucket-dedicado>
+R2_ACCESS_KEY_ID=<access-key-s3>
+R2_SECRET_ACCESS_KEY=<secret-key-s3>
+R2_ANALYTICS_API_TOKEN=<token-bearer-analytics-read>
+R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION=false
 IMAGE_TAG=<sha-ou-local-timestamp>   # gravado pelos scripts a cada deploy
 ```
+
+Quando `R2_ENABLED=true`, `deploy-pull.ps1` valida as cinco credenciais antes de copiar o Compose,
+trocar `IMAGE_TAG`, baixar imagens ou recriar containers. Os valores reais vivem somente no
+`.env.production` da VPS; nunca entram no Git, na imagem ou na saida do preflight.
+
+Se a instalacao ainda nao possui `storage.provider_state`, mas vai adotar um bucket dedicado que
+ja contem objetos validos, use temporariamente `R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION=true` e
+execute uma vez **Validar conexao** no painel depois do deploy. O backend apenas registra
+`account_id` e bucket no PostgreSQL; nao move, converte ou regrava os objetos. Instalacoes novas
+com bucket vazio e ambientes ja inicializados devem manter o valor seguro `false`.
 
 ---
 

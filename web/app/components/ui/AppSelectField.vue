@@ -345,9 +345,9 @@ onBeforeUnmount(() => {
 }
 
 .app-select-field--compact .app-select-field__trigger {
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
-  font-size: 0.74rem;
+  min-height: 2rem;
+  padding: 0 0.65rem;
+  border-radius: 0.55rem;
+  font-size: 0.72rem;
 }
 </style>

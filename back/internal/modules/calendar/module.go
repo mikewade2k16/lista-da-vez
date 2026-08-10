@@ -32,7 +32,7 @@ type Module struct {
 type Option func(*Module)
 
 // New cria um Module pronto para registrar no Registry. storage grava os anexos
-// (imagem/video) em disco (uploads/calendar/{account}/); pode ser nil sem upload.
+// (imagem/video) no provider injetado; pode ser nil sem upload.
 // opts injeta dependencias opcionais (ex.: WithTasksService para a integracao C10).
 func New(storage MediaStorage, opts ...Option) *Module {
 	m := &Module{storage: storage}

@@ -13,14 +13,23 @@ import (
 
 type fakeRepository struct {
 	featureEnabled bool
+	featureAccount string
 	reference      ServiceReference
 	recording      Recording
 	chunks         map[int]Chunk
 	listFilter     ListFilter
 }
 
-func (repository *fakeRepository) ExperimentalFeatureEnabled(context.Context) (bool, error) {
-	return repository.featureEnabled, nil
+func (repository *fakeRepository) GetRecordingFeature(_ context.Context, accountID string) (RecordingFeature, error) {
+	repository.featureAccount = accountID
+	return RecordingFeature{AccountID: accountID, Enabled: repository.featureEnabled}, nil
+}
+
+func (repository *fakeRepository) PutRecordingFeature(_ context.Context, accountID string, enabled bool, updatedBy string) (RecordingFeature, error) {
+	repository.featureAccount = accountID
+	repository.featureEnabled = enabled
+	now := time.Now().UTC()
+	return RecordingFeature{AccountID: accountID, Enabled: enabled, UpdatedAt: &now, UpdatedBy: updatedBy}, nil
 }
 
 func (repository *fakeRepository) ResolveService(context.Context, string, string, string) (ServiceReference, error) {
@@ -140,6 +149,40 @@ func testAccess() AccessContext {
 	}
 }
 
+func testTranscriptionAccess(permission string) AccessContext {
+	access := testAccess()
+	access.PermissionsResolved = true
+	access.Permissions = []string{permission}
+	return access
+}
+
+func TestTranscriptionManagementIsSeparateFromOperationalCapture(t *testing.T) {
+	t.Parallel()
+	operator := AccessContext{
+		Role:                "manager",
+		PermissionsResolved: true,
+		Permissions:         []string{"workspace.operacao.view", "workspace.operacao.edit"},
+	}
+	owner := AccessContext{
+		Role:                "owner",
+		PermissionsResolved: true,
+		Permissions: []string{
+			"workspace.transcricoes.view",
+			"workspace.transcricoes.edit",
+		},
+	}
+
+	if !canCaptureRecording(operator) {
+		t.Fatal("operation edit must continue allowing audio capture")
+	}
+	if canManageTranscriptionsRead(operator) || canManageTranscriptionsWrite(operator) {
+		t.Fatal("operation permissions must not expose transcription management")
+	}
+	if !canManageTranscriptionsRead(owner) || !canManageTranscriptionsWrite(owner) {
+		t.Fatal("transcription permissions must allow the owner management access")
+	}
+}
+
 func testRepository() *fakeRepository {
 	return &fakeRepository{
 		featureEnabled: true,
@@ -193,6 +236,76 @@ func TestCreateFailsClosedWhenFeatureDisabled(t *testing.T) {
 	if !errors.Is(err, ErrFeatureDisabled) {
 		t.Fatalf("err = %v, want ErrFeatureDisabled", err)
 	}
+	if repository.featureAccount != "account-1" {
+		t.Fatalf("feature account = %q, want account-1", repository.featureAccount)
+	}
+}
+
+func TestListRemainsAvailableWhenFeatureDisabled(t *testing.T) {
+	t.Parallel()
+	repository := testRepository()
+	repository.featureEnabled = false
+	service := NewService(repository, &fakeStorage{})
+
+	access := testTranscriptionAccess("workspace.transcricoes.view")
+	if _, err := service.List(context.Background(), access, ListFilter{}); err != nil {
+		t.Fatalf("List: %v, want historical list available while capture is disabled", err)
+	}
+}
+
+type fakeRecordingFeaturePublisher struct {
+	tenantID   string
+	resource   string
+	action     string
+	resourceID string
+}
+
+func (publisher *fakeRecordingFeaturePublisher) PublishContextEvent(_ context.Context, tenantID string, resource string, action string, resourceID string, _ time.Time) {
+	publisher.tenantID = tenantID
+	publisher.resource = resource
+	publisher.action = action
+	publisher.resourceID = resourceID
+}
+
+func TestPlatformAdminUpdatesAccountFeatureAndPublishesRealtime(t *testing.T) {
+	t.Parallel()
+	repository := testRepository()
+	service := NewService(repository, &fakeStorage{})
+	publisher := &fakeRecordingFeaturePublisher{}
+	service.SetContextPublisher(publisher)
+
+	access := testAccess()
+	access.Role = "platform_admin"
+	feature, err := service.PutRecordingFeature(
+		context.Background(),
+		access,
+		PutRecordingFeatureInput{Enabled: false},
+	)
+	if err != nil {
+		t.Fatalf("PutRecordingFeature: %v", err)
+	}
+	if feature.Enabled || repository.featureAccount != "account-1" {
+		t.Fatalf("feature = %#v, account = %q", feature, repository.featureAccount)
+	}
+	if publisher.tenantID != "account-1" || publisher.resource != "attendance_recording" || publisher.action != "updated" || publisher.resourceID != "account-1" {
+		t.Fatalf("published event = %#v", publisher)
+	}
+}
+
+func TestOwnerCannotUpdateAccountFeature(t *testing.T) {
+	t.Parallel()
+	service := NewService(testRepository(), &fakeStorage{})
+	access := testAccess()
+	access.Role = "owner"
+
+	_, err := service.PutRecordingFeature(
+		context.Background(),
+		access,
+		PutRecordingFeatureInput{Enabled: true},
+	)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
 }
 
 func TestSaveChunkIsIdempotent(t *testing.T) {
@@ -238,7 +351,8 @@ func TestListRestrictsStoreScopedRoles(t *testing.T) {
 	repository := testRepository()
 	service := NewService(repository, &fakeStorage{})
 
-	if _, err := service.List(context.Background(), testAccess(), ListFilter{}); err != nil {
+	access := testTranscriptionAccess("workspace.transcricoes.view")
+	if _, err := service.List(context.Background(), access, ListFilter{}); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if len(repository.listFilter.StoreIDs) != 1 || repository.listFilter.StoreIDs[0] != "store-1" {
@@ -258,7 +372,8 @@ func TestRequestTranscriptionUsesScopedReadyRecording(t *testing.T) {
 	}
 	service := NewService(repository, &fakeStorage{})
 
-	view, err := service.RequestTranscription(context.Background(), testAccess(), "recording-1")
+	access := testTranscriptionAccess("workspace.transcricoes.edit")
+	view, err := service.RequestTranscription(context.Background(), access, "recording-1")
 	if err != nil {
 		t.Fatalf("RequestTranscription: %v", err)
 	}

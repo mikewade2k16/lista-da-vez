@@ -39,6 +39,7 @@ incrementalmente conforme forem tocados.
 - `title?`, `subtitle?` — cabeçalho opcional (o Tasks não usa: põe o título no corpo).
 - `mode` (`v-model:mode`) — `side | center | fullscreen`.
 - `width` (`v-model:width`) — largura do modo `side` em px. Sem binding, usa estado interno.
+- `preferenceKey?` — quando informado, persiste no navegador o último modo e a largura lateral daquele drawer.
 
 ## Exemplo (mínimo)
 

@@ -16,6 +16,7 @@ defineProps<{
   modelValue: string
   options: SegmentOption[]
   ariaLabel?: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
@@ -30,6 +31,7 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>()
       class="app-segmented__btn"
       :class="{ 'app-segmented__btn--active': modelValue === option.value }"
       :aria-pressed="modelValue === option.value"
+      :disabled="disabled"
       @click="emit('update:modelValue', option.value)"
     >
       <span class="app-segmented__label">{{ option.label }}</span>
@@ -43,25 +45,28 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>()
 <style scoped>
 .app-segmented {
   display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  padding: 0.2rem;
-  border-radius: var(--radius-md);
-  border: 1px solid rgb(var(--border));
-  background: rgb(var(--surface-2));
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.15rem;
+  overflow-x: auto;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--ring) / 0.14);
+  background: rgb(var(--surface-2) / 0.72);
 }
 
 .app-segmented__btn {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.28rem 0.6rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  min-height: 1.7rem;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: 999px;
   background: transparent;
   color: rgb(var(--muted));
-  font-size: 0.76rem;
-  font-weight: 600;
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -70,9 +75,13 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>()
 }
 
 .app-segmented__btn--active {
-  background: rgb(var(--surface));
-  border-color: rgb(var(--border));
-  color: rgb(var(--text));
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
+}
+
+.app-segmented__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .app-segmented__count {

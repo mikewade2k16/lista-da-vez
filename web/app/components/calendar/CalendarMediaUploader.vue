@@ -64,6 +64,7 @@ interface Pending {
   kind: 'image' | 'video'
   pct: number
   phase: CalendarMediaUploadPhase | 'slow'
+  previewUrl: string
 }
 const pending = ref<Pending[]>([])
 const error = ref('')
@@ -115,6 +116,7 @@ onMounted(() => void fetchMediaLimits())
 onUnmounted(() => {
   for (const timer of slowTimers.values()) clearTimeout(timer)
   slowTimers.clear()
+  for (const item of pending.value) URL.revokeObjectURL(item.previewUrl)
 })
 
 function clearSlowTimer(key: number): void {
@@ -141,11 +143,11 @@ function pendingLabel(item: Pending): string {
     case 'slow':
       return 'Conexão lenta · ainda tentando'
     case 'processing':
-      return 'Upload concluído · processando'
+      return 'Arquivo recebido · preparando entrega segura'
     case 'poster':
       return 'Gerando miniatura do vídeo'
     default:
-      return 'Enviando arquivo'
+      return 'Preview disponível · enviando arquivo'
   }
 }
 
@@ -220,7 +222,11 @@ async function handleFile(file: File): Promise<void> {
   }
 
   const key = ++pendingSeq
-  pending.value = [...pending.value, { key, name: file.name, kind, pct: 0, phase: 'uploading' }]
+  const previewUrl = URL.createObjectURL(file)
+  pending.value = [
+    ...pending.value,
+    { key, name: file.name, kind, pct: 0, phase: 'uploading', previewUrl },
+  ]
   armSlowTimer(key)
 
   const onPct = (pct: number): void => {
@@ -246,6 +252,7 @@ async function handleFile(file: File): Promise<void> {
       : await uploadMedia(file, onPct, onErr, onPhase)
   clearSlowTimer(key)
   pending.value = pending.value.filter((p) => p.key !== key)
+  URL.revokeObjectURL(previewUrl)
 
   if (!item) {
     error.value = uploadFailMessage(file.name, failure)
@@ -422,7 +429,17 @@ function onDragEnd(): void {
         :class="{ 'is-slow': p.phase === 'slow' }"
         aria-live="polite"
       >
+        <video
+          v-if="p.kind === 'video'"
+          :src="p.previewUrl"
+          class="calendar-media__pending-preview"
+          controls
+          muted
+          playsinline
+        ></video>
+        <img v-else :src="p.previewUrl" :alt="p.name" class="calendar-media__pending-preview" />
         <UIcon
+          v-if="!p.previewUrl"
           :name="p.kind === 'video' ? 'i-lucide-film' : 'i-lucide-image'"
           class="calendar-media__loading-icon"
           aria-hidden="true"

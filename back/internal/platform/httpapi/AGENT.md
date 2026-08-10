@@ -11,7 +11,8 @@ Logging, Gzip, `AccountModulesGuard` (multi-tenant), helpers de erro padronizado
 - `chain.go` — `Chain(handler, middlewares...)` para empilhar middlewares (índice 0 = mais externo).
 - `security_headers.go` — `SecurityHeaders(enableHSTS)` (P1.10): X-Content-Type-Options, X-Frame-Options, Referrer-Policy, COOP e CSP (`default-src 'none'; frame-ancestors 'none'`) em toda resposta; HSTS só em produção. Mais externo no Chain.
 - `compress.go` — `Gzip()` (P1.16): comprime respostas quando o cliente aceita gzip; pula WebSocket (Hijack), uploads/binários (Content-Type não-comprimível) e respostas sem corpo (204/304/1xx). Preserva Flush/Hijack e implementa `Unwrap`, assim como o `statusRecorder` do Logging, para `http.ResponseController` alcançar deadlines por rota. Mais interno (após Logging, para o status logado ser o real).
-- `cors.go` — `CORS(allowedOrigins)`.
+- `cors.go` — `CORS(allowedOrigins)`. O CORS autenticado permite `Idempotency-Key`, usado por
+  uploads controlados contra duplicacao por retry; novos headers de contrato exigem preflight testado.
 - `request_id.go` — `RequestID` injeta X-Request-Id e logging structure key.
 - `rate_limit.go` — `RateLimit(opts)`: token bucket por identidade (preferida
   `Principal.UserID`, fallback IP). Resposta 429 com `Retry-After`. Coberto

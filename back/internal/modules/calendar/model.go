@@ -183,8 +183,10 @@ type MediaItem struct {
 // MediaLimits sao os tetos de upload definidos NA PLATAFORMA (global, editavel por
 // platform_admin) — core.platform_settings, chave 'media_limits'.
 type MediaLimits struct {
-	ImageMaxBytes int64 `json:"imageMaxBytes"`
-	VideoMaxBytes int64 `json:"videoMaxBytes"`
+	ImageMaxBytes           int64 `json:"imageMaxBytes"`
+	VideoMaxBytes           int64 `json:"videoMaxBytes"`
+	R2UploadsEnabled        bool  `json:"r2UploadsEnabled,omitempty"`
+	MultipartThresholdBytes int64 `json:"multipartThresholdBytes,omitempty"`
 }
 
 // defaultMediaLimits: imagem 10MB, video 300MB (o "atualmente 300mb").

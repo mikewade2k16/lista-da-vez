@@ -8,7 +8,7 @@ import { useCampaignsStore } from '~/stores/campaigns'
 
 definePageMeta({
   layout: 'dashboard',
-  workspaceId: 'comunicados',
+  workspaceId: 'campanhas',
   alias: ['/operacao/campanhas'],
   supportsAllStoresScope: true,
 })

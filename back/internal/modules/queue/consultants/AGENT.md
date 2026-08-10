@@ -31,6 +31,11 @@ Ele nao deve cuidar de:
 - `PATCH /v1/consultants/{id}`
 - `POST /v1/consultants/{id}/archive`
 
+`GET /v1/consultants` expoe `nick` a partir de `core.users.nick`, com fallback
+para `queue.consultants.name` quando o usuario vinculado ainda nao possui apelido.
+Telas densas de escala usam `nick`; o nome completo permanece no contrato para
+identificacao e pesquisa.
+
 ## `GET /v1/store-staff` (membros de loja que NAO atendem na fila)
 
 Projecao enxuta dos membros das lojas acessiveis que NAO operam a fila

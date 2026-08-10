@@ -175,11 +175,14 @@ publicacao. O adapter Meta no Go e pre-requisito para qualquer entrega real.
 **Guardas automáticos atuais:**
 - **git (pre-commit, `-Check`):** valida somente o inventário local e bloqueia registro/ID inválido;
   não consulta Docker e não afirma se o runtime está alinhado.
-- **deploy rápido normal:** `deploy:fast:prod` sobe API/web e não aciona Automação implicitamente.
-- **deploy de Automação:** `-DeployAutomation` exige `-WorkflowOwner` e `-WorkflowOnly` para o sync
-  local, mas o `deploy-pull.ps1` downstream ainda importa o conjunto global. Portanto esse caminho
-  é operação de plataforma, exige autorização explícita do dono e é proibido numa tarefa isolada
-  do Omnichannel até existir deploy owner-scoped de ponta a ponta.
+- **deploy rápido de produção:** `deploy:fast:prod` é a operação explícita de plataforma do dono:
+  usa os JSONs versionados (`-SkipWorkflowExport`), reconcilia o profile `automation`, faz backup,
+  importa somente quando o manifest muda e verifica banco n8n == arquivo. Não consulta nem
+  sobrescreve o repo a partir do runtime local.
+- **sync local opcional:** `-DeployAutomation` sem `-SkipWorkflowExport` exige `-WorkflowOwner` e
+  `-WorkflowOnly`, mas o `deploy-pull.ps1` downstream ainda importa o conjunto global. Portanto
+  esse caminho continua proibido numa tarefa isolada do Omnichannel, Calendar, Operação ou
+  Automação até existir deploy owner-scoped de ponta a ponta.
 
 **Follow-ups (evolucao, NAO no MVP):**
 - (B) trigger dentro do proprio n8n ("workflow salvo" -> `n8n export:workflow` para um

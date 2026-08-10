@@ -139,6 +139,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  portalBaseZIndex: {
+    type: Number,
+    default: 9000,
+  },
 })
 
 const emit = defineEmits([
@@ -272,6 +276,17 @@ const filteredOptions = computed(() => {
     ).includes(normalizedSearch)
   })
 })
+const normalizedPortalBaseZIndex = computed(() => {
+  const value = Number(props.portalBaseZIndex)
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 9000
+})
+const portalScrimStyle = computed(() => ({
+  zIndex: normalizedPortalBaseZIndex.value,
+}))
+const portalDropdownStyle = computed(() => ({
+  ...dropdownStyle.value,
+  zIndex: normalizedPortalBaseZIndex.value + 1,
+}))
 
 function formatCurrency(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -876,12 +891,13 @@ onBeforeUnmount(() => {
             type="button"
             tabindex="-1"
             aria-label="Fechar seletor"
+            :style="portalScrimStyle"
             @click="closeDropdown"
           ></button>
 
           <div
             class="product-pick__dropdown is-open"
-            :style="dropdownStyle"
+            :style="portalDropdownStyle"
             :data-testid="testidPrefix ? `${testidPrefix}-dropdown` : null"
           >
             <label class="catalog-picker__search">

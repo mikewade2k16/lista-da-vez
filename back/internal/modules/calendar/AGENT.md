@@ -361,8 +361,15 @@ helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToS
   `posterUrl` e a
   capa do video (opcional, so p/ `type "video"`), capturada no FRONT via canvas e subida como
   imagem normal via `POST /v1/calendar/media` (upload nao muda). Contrato C1 (SPEC-B1).
-- Storage em disco (`media_storage.go`, `DiskMediaStorage` sob `cfg.UploadsDir`/calendar/{account}/),
-  injetado via `calendar.New(storage, ...opts)` no `app.go` (igual `tasks`). Servido em `/uploads/...`.
+- Novos uploads usam o modulo central `storage`/Cloudflare R2 por adapter fino no `app.go`.
+
+- O viewer de midia e modal, compartilhado com Tasks, navega lateralmente e sempre usa `contain`
+  com aspect-ratio original. Miniatura de video tambem usa `contain`; nenhum quadro pode ser cortado.
+- Depois que a API recebe integralmente o arquivo, o worker Go do storage entrega e retoma no R2
+  pelo staging duravel; o usuario nunca reenviara o mesmo arquivo para concluir essa entrega.
+  As URLs continuam `/uploads/calendar/{accountId}/{objectId}/{arquivo}` e sao lidas pela API com
+  suporte a Range; o file server em disco permanece para arquivos legados. O original nao e
+  convertido nem alterado; poster e um objeto derivado separado.
 - Upload stateless: `POST /v1/calendar/media` valida mime (jpg/png/webp/gif/avif, mp4/webm/mov) +
   tamanho e devolve o `MediaItem`; o front anexa ao evento/dia e salva (full replace).
   A rota limpa, via `http.ResponseController`, os deadlines globais de leitura (15s) e escrita

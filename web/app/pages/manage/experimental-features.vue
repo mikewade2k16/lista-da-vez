@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import ExperimentalFeaturesWorkspace from '~/components/admin/ExperimentalFeaturesWorkspace.vue'
-
 definePageMeta({
   layout: 'dashboard',
-  workspaceId: 'menu_layout',
+  workspaceId: 'transcricoes',
   pageLabel: 'Recursos experimentais',
 })
+
+await navigateTo('/transcricoes', { replace: true })
 </script>
 
 <template>
-  <ExperimentalFeaturesWorkspace />
+  <div></div>
 </template>

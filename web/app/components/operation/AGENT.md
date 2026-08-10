@@ -8,11 +8,22 @@ Estas instruções valem para `web/app/components/operation/`.
 
 - Handoff detalhado do bloco atual e do proximo passo com Whisper:
   `docs/operacao/GRAVACAO_TRANSCRICOES_HANDOFF_2026-07-24.md`.
-- O gate global continua em `core.platform_settings` pela feature
-  `attendanceAudioRecording`; somente o admin da plataforma pode altera-lo.
+- O gate de novas gravacoes e por account e vem de
+  `GET /v1/operations/transcriptions/feature`; somente o admin da plataforma
+  pode altera-lo para a account cliente ativa.
+- O toggle desse gate fica na propria rota `/transcricoes`. O dono da account
+  ve o estado, mas somente `platform_admin` pode alterna-lo; a antiga rota
+  `/manage/experimental-features` apenas redireciona para a fonte unica.
+- A captura usa `workspace.operacao.edit`, enquanto listar, ouvir, reprocessar e
+  configurar exige `workspace.transcricoes.view/edit`. Assim terminais operam a
+  gravacao sem receber acesso ao conteudo sensivel.
 - Quando o backend confirma um novo atendimento, `OperationQueueColumns` inicia
   `useAttendanceAudioRecordingStore` e vincula a sessao local ao `serviceId`,
   `storeId` e consultor retornados pelo snapshot.
+- A alteracao do gate publica `context.updated`/`attendance_recording` no
+  WebSocket do tenant. Todas as sessoes dessa account reidratam o estado sem
+  reload; ativado, os proximos atendimentos iniciam captura; desativado, o
+  controller encerra capturas em curso e bloqueia novas.
 - O `MediaRecorder` emite blocos a cada 5 segundos. Cada bloco e persistido no
   IndexedDB `omni-attendance-audio-v1`, separado dos demais atendimentos. Ao
   recarregar a pagina, uma sessao que ainda estava `recording` vira
@@ -28,14 +39,16 @@ Estas instruções valem para `web/app/components/operation/`.
   entrega o audio por endpoint autenticado e solicita a transcricao duravel no
   Whisper local. A pagina fica dentro do shell visual da Fila e faz polling curto
   para receber novas gravacoes e atualizacoes do Whisper sem recarregar.
+- O historico nunca depende do gate de novas capturas: mesmo desativado, audios,
+  transcricoes, analises e configuracao anteriores permanecem visiveis.
 - Na pagina de transcricoes, cada loja e um bloco recolhivel e os atendimentos
   aparecem em cards compactos num grid. O card mostra somente resumo/estado;
   audio amplo, relatorio e transcricao completa ficam em `OmniEntityDrawer`.
 - Os selects de Loja e Consultor continuam no topo como filtros compactos. A
   organizacao recolhivel por loja complementa esses filtros e nunca autoriza
   remove-los sem pedido explicito.
-- Loja, Consultor e Configurar compartilham a mesma linha de controles no
-  desktop; Configurar usa `margin-left: auto` para permanecer no extremo direito.
+- Modo de gravacao, Loja, Consultor, Configurar, status e toggle compartilham a
+  mesma linha de controles no desktop.
   Todo controle com icone e texto nesta pagina preserva um `gap` visivel.
 - Componentes desta pagina importam `AppPanelButton` explicitamente de
   `components/ui`; deixar o nome sem resolver faz o Vue renderizar um componente
@@ -67,6 +80,17 @@ Este diretório cuida da renderização visual da operação, incluindo:
 - Queue visível
 - Alertas operacionais em diversos formatos
 - Modais e diálogos operacionais
+
+## Camadas de dialogs e seletores teleportados
+
+- `OperationProductPicker` teleporta scrim e dropdown para o `body`; por padrão,
+  eles usam as camadas `9000` e `9001`.
+- Dialogs baseados em `.ui-dialog-backdrop` ficam na camada `11000`. Quando um
+  picker for renderizado dentro deles, o dialog deve informar
+  `portal-base-z-index` maior que o backdrop. Sem isso, a lista abre na posição
+  correta, mas fica invisível e sem clique atrás do modal.
+- Não aumente globalmente a camada de todos os pickers: dialogs globais precisam
+  continuar podendo sobrepor seletores de superfícies comuns.
 
 ## Anel de meta no avatar da fila (OperationConsultantAvatarRing)
 

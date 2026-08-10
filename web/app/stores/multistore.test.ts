@@ -112,4 +112,38 @@ describe('useMultiStoreStore', () => {
     )
     expect(postCalls).toHaveLength(0)
   })
+
+  it('sends only fields explicitly provided in a partial store update', async () => {
+    authenticateSession()
+    const fetchMock = getFetchMock()
+    const currentStore = {
+      id: 's1',
+      tenantId: 'tenant-1',
+      name: 'Loja Jardins',
+      code: 'JAR',
+      city: 'Aracaju',
+      storeType: 'bairro',
+      isActive: true,
+    }
+    fetchMock.mockImplementation((path: string, options?: Record<string, unknown>) => {
+      if (path === '/v1/stores/s1' && options?.method === 'PATCH') {
+        return Promise.resolve({ store: { ...currentStore, storeType: 'shopping' } })
+      }
+      if (path.includes('/v1/stores')) {
+        return Promise.resolve({ stores: [currentStore] })
+      }
+      return Promise.resolve({})
+    })
+    const store = useMultiStoreStore()
+    await store.refreshManagedStores()
+
+    await expect(store.updateStore('s1', { storeType: 'shopping' })).resolves.toEqual(
+      expect.objectContaining({ ok: true }),
+    )
+
+    const patchCall = fetchMock.mock.calls.find(
+      ([path, options]: [string, any]) => path === '/v1/stores/s1' && options?.method === 'PATCH',
+    )
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ storeType: 'shopping' })
+  })
 })

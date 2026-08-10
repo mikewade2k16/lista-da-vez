@@ -8,9 +8,9 @@ import OperationConsultantAvatarRing from '~/components/operation/OperationConsu
 import OperationSidePanel from '~/components/operation/OperationSidePanel.vue'
 import OperationPendingListModal from '~/components/operation/OperationPendingListModal.vue'
 import { useAttendanceAudioRecordingStore } from '~/stores/attendanceAudioRecording'
+import { useAttendanceRecordingFeatureStore } from '~/stores/attendanceRecordingFeature'
 import { useAuthStore } from '~/stores/auth'
 import { useOperationsStore } from '~/stores/operations'
-import { usePlatformFeaturesStore } from '~/stores/platformFeatures'
 import { useUiStore } from '~/stores/ui'
 
 const props = defineProps({
@@ -37,8 +37,9 @@ const props = defineProps({
 })
 
 const operationsStore = useOperationsStore()
-const platformFeaturesStore = usePlatformFeaturesStore()
+const recordingFeatureStore = useAttendanceRecordingFeatureStore()
 const audioRecordingStore = useAttendanceAudioRecordingStore()
+const auth = useAuthStore()
 const ui = useUiStore()
 const now = ref(0)
 const isClockReady = ref(false)
@@ -85,7 +86,10 @@ const stopReasonOptions = computed(() =>
 )
 const isLimitReached = computed(() => activeServices.value.length >= maxConcurrentServices.value)
 const audioRecordingEnabled = computed(
-  () => !props.readOnly && platformFeaturesStore.attendanceAudioRecordingEnabled,
+  () => !props.readOnly && recordingFeatureStore.loaded && recordingFeatureStore.enabled,
+)
+const canViewRecordingIndicators = computed(() =>
+  (auth.effectivePermissionKeys || []).includes('workspace.transcricoes.view'),
 )
 const recordingServiceIds = computed(() => {
   const ids = new Set(audioRecordingStore.activeRecordingServiceIds || [])
@@ -391,8 +395,8 @@ function activeServiceIds() {
 }
 
 async function startAudioForNewService(previousServiceIds) {
-  if (!platformFeaturesStore.loaded) {
-    await platformFeaturesStore.load()
+  if (!recordingFeatureStore.loaded) {
+    await recordingFeatureStore.load()
   }
   if (!audioRecordingEnabled.value) {
     return
@@ -420,10 +424,13 @@ async function startAudioForNewService(previousServiceIds) {
 }
 
 async function refreshRecordingIndicators() {
-  if (!platformFeaturesStore.loaded) {
-    await platformFeaturesStore.load()
+  if (!canViewRecordingIndicators.value) {
+    return
   }
-  if (platformFeaturesStore.attendanceAudioRecordingEnabled) {
+  if (!recordingFeatureStore.loaded) {
+    await recordingFeatureStore.load()
+  }
+  if (recordingFeatureStore.enabled) {
     await audioRecordingStore.refreshActiveRecordings()
   }
 }
@@ -480,7 +487,6 @@ async function keepServiceOpen(serviceOrId) {
 // da fila") abre a lista; "Encerrar" abre o MESMO modal de encerramento do fluxo
 // normal — fica registrado que foi pelo gerente, quando, e com a justificativa
 // obrigatoria de por que o consultor nao encerrou (base das metricas de cobranca).
-const auth = useAuthStore()
 const communicationStoreIds = computed(() => {
   const storeIds = new Set()
   const addStoreId = (value) => {
@@ -617,7 +623,7 @@ async function assignTask(person) {
 }
 
 onMounted(() => {
-  void platformFeaturesStore.load()
+  void recordingFeatureStore.load()
   void refreshRecordingIndicators()
   now.value = Date.now()
   isClockReady.value = true

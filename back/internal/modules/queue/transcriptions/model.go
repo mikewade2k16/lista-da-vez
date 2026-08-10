@@ -220,8 +220,20 @@ type ListResponse struct {
 	Offset int             `json:"offset"`
 }
 
+type RecordingFeature struct {
+	AccountID string     `json:"accountId"`
+	Enabled   bool       `json:"enabled"`
+	UpdatedAt *time.Time `json:"updatedAt"`
+	UpdatedBy string     `json:"updatedBy,omitempty"`
+}
+
+type PutRecordingFeatureInput struct {
+	Enabled bool `json:"enabled"`
+}
+
 type Repository interface {
-	ExperimentalFeatureEnabled(ctx context.Context) (bool, error)
+	GetRecordingFeature(ctx context.Context, accountID string) (RecordingFeature, error)
+	PutRecordingFeature(ctx context.Context, accountID string, enabled bool, updatedBy string) (RecordingFeature, error)
 	ResolveService(ctx context.Context, accountID, storeID, serviceID string) (ServiceReference, error)
 	CreateRecording(ctx context.Context, recording Recording) (Recording, error)
 	GetRecording(ctx context.Context, accountID, recordingID string) (Recording, error)

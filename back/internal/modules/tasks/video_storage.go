@@ -24,7 +24,7 @@ func NewDiskVideoStorage(rootDir string) *DiskVideoStorage {
 	return &DiskVideoStorage{rootDir: strings.TrimSpace(rootDir)}
 }
 
-func (storage *DiskVideoStorage) Save(_ context.Context, taskID string, fileName string, contentType string, content []byte) (*StoredTaskVideo, error) {
+func (storage *DiskVideoStorage) Save(_ context.Context, _, _, taskID, _, fileName, contentType string, content []byte) (*StoredTaskVideo, error) {
 	if len(content) == 0 || len(content) > maxTaskVideoBytes {
 		return nil, ErrInvalidVideo
 	}
@@ -41,7 +41,7 @@ func (storage *DiskVideoStorage) Save(_ context.Context, taskID string, fileName
 	}
 
 	videosDir := filepath.Join(rootDir, "tasks")
-	if err := os.MkdirAll(videosDir, 0o750); err != nil {
+	if err := os.MkdirAll(videosDir, 0o750); err != nil { //nolint:gosec // root vem da config; nao do request
 		return nil, err
 	}
 
@@ -49,7 +49,7 @@ func (storage *DiskVideoStorage) Save(_ context.Context, taskID string, fileName
 	videoID := fmt.Sprintf("%s-%s", baseName, randomTaskVideoSuffix())
 	videoFileName := videoID + extension
 	videoFilePath := filepath.Join(videosDir, videoFileName)
-	if err := os.WriteFile(videoFilePath, content, 0o600); err != nil {
+	if err := os.WriteFile(videoFilePath, content, 0o600); err != nil { //nolint:gosec // nome usa task sanitizada + sufixo aleatorio
 		return nil, err
 	}
 

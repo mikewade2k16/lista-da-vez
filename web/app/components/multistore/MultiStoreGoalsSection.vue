@@ -4,7 +4,12 @@ import { storeToRefs } from 'pinia'
 import { Sparkles, Download, RotateCcw, Trash2, UserPlus } from 'lucide-vue-next'
 
 import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
+import AppGoalPeriodFilter from '~/components/ui/AppGoalPeriodFilter.vue'
+import AppMonthInput from '~/components/ui/AppMonthInput.vue'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
+import AppToolbarButton from '~/components/ui/AppToolbarButton.vue'
+import { useGoalPeriodAutomation } from '~/composables/useGoalPeriodAutomation'
+import { suggestRemainingWeeklyGoals } from '~/domain/operation/goal-period-distribution'
 import { formatCurrencyBRL, formatPercent } from '~/domain/utils/admin-metrics'
 import { useAuthStore } from '~/stores/auth'
 import { useCrmStore } from '~/stores/crm'
@@ -52,6 +57,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  planningAllocations: {
+    type: Array,
+    default: () => [],
+  },
 })
 
 const emit = defineEmits([
@@ -83,19 +92,14 @@ const rowSaveInFlight = new Map()
 const bulkCreating = ref(false)
 const bulkConsultantStoreId = ref('')
 const bulkConsultantCreating = ref(false)
-
-const periodOptions = [
-  { value: 'month', label: 'Mes' },
-  { value: 'p1', label: 'Semana 1' },
-  { value: 'p2', label: 'Semana 2' },
-  { value: 'p3', label: 'Semana 3' },
-  { value: 'p4', label: 'Semana 4' },
-]
+const cumulativeOverview = ref(null)
+const cumulativePending = ref(false)
+let cumulativeRequestId = 0
 
 // Semana selecionada como inteiro do banco: 0 = meta mensal; 1..4 = semana do mes.
 // As metas do multi-loja passam a ser CADASTRADAS por semana (fonte dos valores).
 const selectedWeek = computed(() => {
-  const match = /^p([1-4])$/.exec(String(selectedPeriod.value || ''))
+  const match = /^p([1-5])$/.exec(String(selectedPeriod.value || ''))
   return match ? Number(match[1]) : 0
 })
 
@@ -158,6 +162,12 @@ const canBulkConsultant = computed(
     !bulkConsultantCreating.value && !saving.value && !!normalizeText(bulkConsultantStoreId.value),
 )
 
+const {
+  syncing: syncingGoalPeriods,
+  syncMonthlyGoal,
+  applyRemainingSuggestion,
+} = useGoalPeriodAutomation({ goals })
+
 /* ===== Cards BI (performance vs realizado) ===== */
 
 const isCurrentMonthSelected = computed(() => selectedMonth.value === currentMonth())
@@ -194,6 +204,22 @@ const crmQueueStoreRows = computed(() =>
 const crmStoreRowsByKey = computed(() => {
   const map = {}
   for (const row of crmStoreRows.value) {
+    addStoreLookupKeys(map, row, {
+      storeId: '',
+      storeCode: row.storeCode,
+      storeSlug: row.storeSlug,
+      storeName: row.storeName || row.storeLabel,
+    })
+  }
+  return map
+})
+
+const cumulativeCrmRowsByKey = computed(() => {
+  const map = {}
+  const rows = Array.isArray(cumulativeOverview.value?.stores)
+    ? cumulativeOverview.value.stores
+    : []
+  for (const row of rows) {
     addStoreLookupKeys(map, row, {
       storeId: '',
       storeCode: row.storeCode,
@@ -336,7 +362,7 @@ const storeGridColumns = computed(() => {
     {
       id: 'monthlyGoal',
       label: isFullMonthPeriod.value ? 'Meta total' : 'Meta da semana',
-      width: '140px',
+      width: isFullMonthPeriod.value ? '140px' : '210px',
       align: 'end',
       sortable: true,
     },
@@ -388,6 +414,25 @@ const consultantGridColumns = computed(() => {
       align: 'end',
       sortable: true,
     },
+    ...(props.planningAllocations.length
+      ? [
+          { id: 'scheduledHours', label: 'Horas', width: '90px', align: 'end', sortable: true },
+          {
+            id: 'participation',
+            label: 'Participação',
+            width: '110px',
+            align: 'end',
+            sortable: true,
+          },
+          {
+            id: 'calculatedTarget',
+            label: 'Meta calculada',
+            width: '140px',
+            align: 'end',
+            sortable: true,
+          },
+        ]
+      : []),
     { id: 'avgTicketGoal', label: 'Ticket medio', width: '140px', align: 'end', sortable: true },
     { id: 'conversionGoal', label: 'Conversao', width: '120px', align: 'end', sortable: true },
     { id: 'paGoal', label: 'P.A.', width: '100px', align: 'end', sortable: true },
@@ -437,21 +482,57 @@ const sortedConsultantRows = computed(() => {
   return rows.map(decorateRow)
 })
 
+const planningAllocationByConsultant = computed(
+  () => new Map(props.planningAllocations.map((item) => [item.staffId, item])),
+)
+
 function decorateRow(row) {
   const performance = row.scope === 'store' ? buildStorePerformance(row) : null
   const monthlyGoal = Number(row.monthlyGoal) || 0
   // Linha ja e do periodo (mensal ou semana N): a meta do periodo e o proprio valor.
   const periodGoal = monthlyGoal
   const realizedSales = performance ? Number(performance.soldValue || 0) : null
+  const planningAllocation = planningAllocationByConsultant.value.get(row.consultantId)
   return {
     ...row,
     storeLabel: row.storeName,
     consultantLabel: row.consultantName || 'Meta da loja',
     periodGoal,
     realizedSales,
+    scheduledHours: Number(planningAllocation?.scheduledHours || 0),
+    participation: Number(planningAllocation?.share || 0) * 100,
+    calculatedTarget: Number(planningAllocation?.target || 0),
     goalCompletionPct:
       realizedSales !== null && periodGoal > 0 ? (realizedSales / periodGoal) * 100 : null,
+    remainingSuggestion: buildRemainingSuggestion(row),
     updatedAtLabel: formatUpdatedAt(row.updatedAt),
+  }
+}
+
+function buildRemainingSuggestion(row) {
+  const week = selectedWeek.value
+  if (row.scope !== 'store' || week < 1 || week >= 4 || !cumulativeOverview.value) return null
+
+  const monthlyGoal = goals.value.find(
+    (goal) =>
+      goal.scope === 'store' &&
+      goal.storeId === row.storeId &&
+      goal.month === row.month &&
+      Number(goal.week || 0) === 0,
+  )
+  if (!monthlyGoal || Number(monthlyGoal.monthlyGoal || 0) <= 0) return null
+
+  const performance = findStoreLookupRow(cumulativeCrmRowsByKey.value, row)
+  const realizedToDate = moneyFromCents(performance?.salesCents)
+  const values = suggestRemainingWeeklyGoals(monthlyGoal.monthlyGoal, realizedToDate, 4 - week)
+  if (!values.length) return null
+
+  return {
+    monthlyGoal,
+    realizedToDate,
+    values,
+    fromWeek: week + 1,
+    toWeek: 4,
   }
 }
 
@@ -580,6 +661,15 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => [auth.isAuthenticated, auth.activeTenantId, selectedMonth.value, selectedWeek.value],
+  () => {
+    if (!props.showTables || !props.canEditGoals) return
+    void refreshCumulativeOverview()
+  },
+  { immediate: true },
+)
+
 onBeforeUnmount(() => {
   for (const row of goals.value) {
     if (rowBusy[row.id]) continue
@@ -619,6 +709,29 @@ async function refreshCrmOverview() {
     return null
   }
   return true
+}
+
+async function refreshCumulativeOverview() {
+  const requestId = ++cumulativeRequestId
+  if (!auth.isAuthenticated || selectedWeek.value < 1 || selectedWeek.value >= 4) {
+    cumulativeOverview.value = null
+    cumulativePending.value = false
+    return null
+  }
+
+  cumulativePending.value = true
+  const monthRange = buildMonthDateRange(selectedMonth.value)
+  const periodRange = buildGoalPeriodDateRange(selectedMonth.value, selectedPeriod.value)
+  try {
+    const response = await crmStore.fetchOverviewRange(monthRange.dateFrom, periodRange.dateTo)
+    if (requestId === cumulativeRequestId) cumulativeOverview.value = response
+    return response
+  } catch {
+    if (requestId === cumulativeRequestId) cumulativeOverview.value = null
+    return null
+  } finally {
+    if (requestId === cumulativeRequestId) cumulativePending.value = false
+  }
 }
 
 async function createAllStoreGoals() {
@@ -753,6 +866,16 @@ async function saveRow(row) {
         if (result?.goal?.id && payloadMatchesDraft(result.goal.id, payload)) {
           drafts.value[result.goal.id] = createMetricDraft(result.goal)
         }
+        if (result?.goal && Number(result.goal.week || 0) === 0) {
+          const financialGoalChanged =
+            Number(payload.monthlyGoal || 0) !== Number(latestRow.monthlyGoal || 0)
+          const synchronized = await syncMonthlyGoal(result.goal, financialGoalChanged)
+          if (!synchronized) {
+            ui.error('A meta mensal foi salva, mas uma ou mais semanas nao foram atualizadas.')
+          } else if (financialGoalChanged && result.goal.scope === 'store') {
+            ui.success('Meta mensal salva e distribuida automaticamente nas semanas 1 a 4.')
+          }
+        }
         crmStore.invalidateOverview()
         if (crmOverviewMatchesSelectedMonth.value) {
           void refreshCrmOverview()
@@ -805,6 +928,29 @@ async function handleInlineBlur(row) {
   draft.paGoal = formatMoneyInput(draft.paGoal)
 
   await saveRow(row)
+}
+
+async function applySmartSuggestion(row) {
+  const saved = await saveRow(row)
+  if (saved?.ok === false) return
+
+  const suggestion = buildRemainingSuggestion(row)
+  if (!suggestion) return
+
+  const applied = await applyRemainingSuggestion(
+    suggestion.monthlyGoal,
+    selectedWeek.value,
+    suggestion.realizedToDate,
+  )
+  if (!applied) {
+    ui.error('Nao foi possivel atualizar todas as semanas restantes.')
+    return
+  }
+
+  await refreshGoals()
+  ui.success(
+    `Metas das semanas ${suggestion.fromWeek} a ${suggestion.toWeek} recalculadas para preservar a meta mensal.`,
+  )
 }
 
 function handleInlineEnter(event) {
@@ -1145,6 +1291,12 @@ function currentMonth() {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
+function previousMonth() {
+  const [year, monthNumber] = selectedMonth.value.split('-').map(Number)
+  const date = new Date(Date.UTC(year || new Date().getUTCFullYear(), (monthNumber || 1) - 2, 1))
+  selectedMonth.value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
 function normalizeMonthValue(value) {
   const normalized = normalizeText(value)
   return /^\d{4}-\d{2}$/.test(normalized) ? normalized : ''
@@ -1152,7 +1304,7 @@ function normalizeMonthValue(value) {
 
 function normalizePeriodValue(value) {
   const normalized = normalizeText(value)
-  return ['month', 'p1', 'p2', 'p3', 'p4'].includes(normalized) ? normalized : 'month'
+  return ['month', 'p1', 'p2', 'p3', 'p4', 'p5'].includes(normalized) ? normalized : 'month'
 }
 
 /* Recebe número OU string; devolve string formatada pt-BR (ex: "40.000" ou "1.750,5") */
@@ -1217,9 +1369,8 @@ function escapeCsvCell(value) {
 <template>
   <section class="multistore-goals" data-testid="multistore-goals-section">
     <div v-if="showCards" class="multistore-goals__period-bar">
-      <label class="multistore-goals__month-chip">
-        <input v-model="selectedMonth" type="month" />
-      </label>
+      <AppMonthInput v-model="selectedMonth" />
+      <AppToolbarButton label="Mês anterior" icon="i-lucide-chevron-left" @click="previousMonth" />
 
       <AppSelectField
         class="multistore-goals__toolbar-select"
@@ -1230,18 +1381,11 @@ function escapeCsvCell(value) {
         @update:model-value="selectedStoreId = $event"
       />
 
-      <div class="multistore-goals__period-tabs" role="tablist" aria-label="Semana da meta">
-        <button
-          v-for="option in periodOptions"
-          :key="option.value"
-          class="multistore-goals__period-tab"
-          :class="{ 'is-active': selectedPeriod === option.value }"
-          type="button"
-          @click="selectedPeriod = option.value"
-        >
-          {{ option.label }}
-        </button>
-      </div>
+      <AppGoalPeriodFilter
+        v-model="selectedPeriod"
+        :month="selectedMonth"
+        aria-label="Semana da meta"
+      />
     </div>
 
     <!-- Cards BI: performance vs realizado -->
@@ -1402,22 +1546,18 @@ function escapeCsvCell(value) {
         @sort="(col) => toggleSort('store', col)"
       >
         <template #toolbar-filters>
-          <label class="multistore-goals__month-chip">
-            <input v-model="selectedMonth" type="month" />
-          </label>
+          <AppMonthInput v-model="selectedMonth" />
+          <AppToolbarButton
+            label="Mês anterior"
+            icon="i-lucide-chevron-left"
+            @click="previousMonth"
+          />
 
-          <div class="multistore-goals__period-tabs" role="tablist" aria-label="Semana da meta">
-            <button
-              v-for="option in periodOptions"
-              :key="option.value"
-              class="multistore-goals__period-tab"
-              :class="{ 'is-active': selectedPeriod === option.value }"
-              type="button"
-              @click="selectedPeriod = option.value"
-            >
-              {{ option.label }}
-            </button>
-          </div>
+          <AppGoalPeriodFilter
+            v-model="selectedPeriod"
+            :month="selectedMonth"
+            aria-label="Semana da meta"
+          />
 
           <AppSelectField
             class="multistore-goals__toolbar-select"
@@ -1482,19 +1622,33 @@ function escapeCsvCell(value) {
         </template>
 
         <template #cell-monthlyGoal="{ row }">
-          <label v-if="canEditGoals" class="multistore-goals__field">
-            <span class="multistore-goals__affix multistore-goals__affix--prefix">R$</span>
-            <input
-              :value="getDraft(row.id).monthlyGoal"
-              class="multistore-goals__inline-input"
-              type="text"
-              inputmode="decimal"
-              placeholder="0"
-              @input="updateMetricField(row, 'monthlyGoal', $event)"
-              @blur="handleInlineBlur(row)"
-              @keydown.enter.prevent="handleInlineEnter($event)"
-            />
-          </label>
+          <div v-if="canEditGoals" class="multistore-goals__goal-editor">
+            <label class="multistore-goals__field">
+              <span class="multistore-goals__affix multistore-goals__affix--prefix">R$</span>
+              <input
+                :value="getDraft(row.id).monthlyGoal"
+                class="multistore-goals__inline-input"
+                type="text"
+                inputmode="decimal"
+                placeholder="0"
+                @input="updateMetricField(row, 'monthlyGoal', $event)"
+                @blur="handleInlineBlur(row)"
+                @keydown.enter.prevent="handleInlineEnter($event)"
+              />
+            </label>
+            <button
+              v-if="row.remainingSuggestion"
+              class="multistore-goals__suggestion"
+              type="button"
+              :disabled="syncingGoalPeriods || cumulativePending"
+              :title="`Realizado ate a semana ${selectedWeek}: ${formatCurrencyBRL(row.remainingSuggestion.realizedToDate)}. Aplicar o saldo da meta mensal nas semanas futuras.`"
+              @click="applySmartSuggestion(row)"
+            >
+              Sugestao S{{ row.remainingSuggestion.fromWeek }}-S{{
+                row.remainingSuggestion.toWeek
+              }}: {{ formatCurrencyBRL(row.remainingSuggestion.values[0]) }}/sem
+            </button>
+          </div>
           <span v-else>{{ formatCurrencyBRL(row.monthlyGoal) }}</span>
         </template>
 
@@ -1699,6 +1853,18 @@ function escapeCsvCell(value) {
             />
           </label>
           <span v-else>{{ formatCurrencyBRL(row.monthlyGoal) }}</span>
+        </template>
+
+        <template #cell-scheduledHours="{ row }">
+          <strong>{{ row.scheduledHours.toFixed(1) }}h</strong>
+        </template>
+
+        <template #cell-participation="{ row }">
+          <strong>{{ formatPercent(row.participation) }}</strong>
+        </template>
+
+        <template #cell-calculatedTarget="{ row }">
+          <strong>{{ formatCurrencyBRL(row.calculatedTarget) }}</strong>
         </template>
 
         <template #cell-avgTicketGoal="{ row }">
@@ -2026,61 +2192,6 @@ function escapeCsvCell(value) {
   padding-bottom: 0.1rem;
 }
 
-.multistore-goals__period-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  min-height: 2rem;
-  padding: 0.15rem;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--ring) / 0.14);
-  background: rgb(var(--surface-2) / 0.72);
-  flex: 0 0 auto;
-}
-
-.multistore-goals__period-tab {
-  min-height: 1.7rem;
-  padding: 0 0.55rem;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 0.68rem;
-  font-weight: 800;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.multistore-goals__period-tab:hover {
-  color: var(--text-main);
-}
-
-.multistore-goals__period-tab.is-active {
-  background: rgb(var(--primary) / 0.16);
-  color: rgb(var(--primary));
-}
-
-.multistore-goals__month-chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2rem;
-  padding: 0 0.6rem;
-  border-radius: 0.55rem;
-  border: 1px solid rgb(var(--ring) / 0.16);
-  background: rgb(var(--surface-2) / 0.88);
-  flex-shrink: 0;
-}
-
-.multistore-goals__month-chip input {
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-main);
-  font-size: 0.72rem;
-  font-weight: 600;
-  color-scheme: dark light;
-}
-
 .multistore-goals__icon-btn {
   display: inline-flex;
   align-items: center;
@@ -2264,6 +2375,34 @@ function escapeCsvCell(value) {
   transition:
     border-color 0.12s ease,
     box-shadow 0.12s ease;
+}
+
+.multistore-goals__goal-editor {
+  display: grid;
+  gap: 0.22rem;
+  width: 100%;
+}
+
+.multistore-goals__suggestion {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgb(var(--primary));
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: right;
+  cursor: pointer;
+}
+
+.multistore-goals__suggestion:hover {
+  text-decoration: underline;
+}
+
+.multistore-goals__suggestion:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .multistore-goals__field:focus-within {

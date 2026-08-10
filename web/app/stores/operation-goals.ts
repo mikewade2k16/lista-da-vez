@@ -6,6 +6,19 @@ import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 type LooseRecord = Record<string, unknown>
 
+type GoalsResponse = {
+  items?: LooseRecord[]
+  summary?: LooseRecord
+}
+
+type ConsultantsResponse = {
+  consultants?: LooseRecord[]
+}
+
+type GoalMutationResponse = {
+  goal?: LooseRecord
+}
+
 export type OperationGoalTarget = {
   id: string
   tenantId: string
@@ -39,10 +52,17 @@ export type OperationGoalSummary = {
 export type OperationGoalConsultant = {
   id: string
   name: string
+  nick: string
   role: string
+  employeeCode: string
 }
 
 type UpdateGoalOptions = {
+  reload?: boolean
+  skipLoadingIndicator?: boolean
+}
+
+type CreateGoalOptions = {
   reload?: boolean
   skipLoadingIndicator?: boolean
 }
@@ -187,7 +207,9 @@ function normalizeConsultant(consultant: LooseRecord = {}): OperationGoalConsult
   return {
     id: normalizeText(consultant.id),
     name: normalizeText(consultant.name),
+    nick: normalizeText(consultant.nick) || normalizeText(consultant.name),
     role: normalizeText(consultant.role),
+    employeeCode: normalizeText(consultant.employeeCode),
   }
 }
 
@@ -343,11 +365,14 @@ export const useOperationGoalsStore = defineStore('operation-goals', () => {
       }
       params.set('month', month)
 
-      const response = await apiRequest(`/v1/operations/goals?${params.toString()}`)
-      goals.value = Array.isArray(response?.items) ? response.items.map(normalizeGoal) : []
+      const response = (await apiRequest(
+        `/v1/operations/goals?${params.toString()}`,
+      )) as GoalsResponse
+      const loadedGoals = Array.isArray(response?.items) ? response.items.map(normalizeGoal) : []
+      goals.value = loadedGoals
       summary.value = normalizeSummary(response?.summary, month)
       ready.value = true
-      return goals.value
+      return loadedGoals
     } catch (error) {
       goals.value = []
       summary.value = emptySummary(month)
@@ -370,9 +395,9 @@ export const useOperationGoalsStore = defineStore('operation-goals', () => {
 
     consultantsPending.value = true
     try {
-      const response = await apiRequest(
+      const response = (await apiRequest(
         `/v1/consultants?storeId=${encodeURIComponent(normalizedStoreId)}`,
-      )
+      )) as ConsultantsResponse
       const consultants = Array.isArray(response?.consultants)
         ? response.consultants.map(normalizeConsultant)
         : []
@@ -386,22 +411,28 @@ export const useOperationGoalsStore = defineStore('operation-goals', () => {
     }
   }
 
-  async function createGoal(payload: LooseRecord = {}) {
+  async function createGoal(payload: LooseRecord = {}, options: CreateGoalOptions = {}) {
     if (!auth.isAuthenticated) {
       return { ok: false, message: 'Sessao indisponivel.' }
     }
 
     saving.value = true
     try {
-      const response = await apiRequest('/v1/operations/goals', {
+      const response = (await apiRequest('/v1/operations/goals', {
         method: 'POST',
         body: buildCreatePayload(payload),
-      })
+        skipLoadingIndicator: options.skipLoadingIndicator ?? options.reload === false,
+      })) as GoalMutationResponse
 
-      await loadGoals(lastFilters.value)
+      const goal = normalizeGoal(response?.goal)
+      if (options.reload === false) {
+        replaceGoalLocally(goal)
+      } else {
+        await loadGoals(lastFilters.value)
+      }
       return {
         ok: true,
-        goal: normalizeGoal(response?.goal),
+        goal,
       }
     } catch (error) {
       return {
@@ -427,14 +458,14 @@ export const useOperationGoalsStore = defineStore('operation-goals', () => {
 
     saving.value = true
     try {
-      const response = await apiRequest(
+      const response = (await apiRequest(
         `/v1/operations/goals/${encodeURIComponent(normalizedGoalId)}`,
         {
           method: 'PATCH',
           body: buildUpdatePayload(payload),
           skipLoadingIndicator: options.skipLoadingIndicator ?? options.reload === false,
         },
-      )
+      )) as GoalMutationResponse
 
       const goal = normalizeGoal(response?.goal)
 

@@ -28,6 +28,12 @@ Barra superior da tabela. Renderiza filtros declarados em `OmniFilterDefinition[
 
 Popover simples reutilizável. Emite `opened` quando abre (use isso para fetch lazy de detalhes em vez de `@click` no botão trigger — o popover engole o click).
 
+### `OmniEditor.vue`
+
+Editor rico reutilizável. A prop `compact` reduz toolbar, espaçamento e área de escrita para
+modais densos. Menus de comando, menção e emoji são portaled no `document.body` com
+posicionamento fixo para não serem recortados por painéis e modais com rolagem.
+
 ## Composable de suporte
 
 ### `useOmniVisibleColumns({ preferenceKey, allColumns, columnExcludeKeys })`

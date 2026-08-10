@@ -39,7 +39,7 @@
     "prod:ps": "docker compose --env-file .env.production -f docker-compose.prod.yml ps",
     "prod:down": "docker compose --env-file .env.production -f docker-compose.prod.yml down",
     "deploy:fast": "powershell.exe -ExecutionPolicy Bypass -File scripts\\deploy\\deploy-fast.ps1 -Environment staging",
-    "deploy:fast:prod": "powershell.exe -ExecutionPolicy Bypass -File scripts\\deploy\\deploy-fast.ps1 -Environment prod -BackupDatabase",
+    "deploy:fast:prod": "powershell.exe -ExecutionPolicy Bypass -File scripts\\deploy\\deploy-fast.ps1 -Environment prod -BackupDatabase -DeployAutomation -SkipWorkflowExport -DeployOmnichannel",
     "deploy:staging": "powershell.exe -ExecutionPolicy Bypass -File scripts\\deploy\\staging-up.ps1",
     "deploy:staging:down": "powershell.exe -ExecutionPolicy Bypass -File scripts\\deploy\\staging-down.ps1",
     "deploy:prod": "powershell.exe -ExecutionPolicy Bypass -File scripts\\deploy\\deploy-pull.ps1 -Environment prod -BackupDatabase",

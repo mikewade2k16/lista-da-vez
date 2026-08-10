@@ -8,6 +8,20 @@ Estas instrucoes valem para `web/app/components/consultant`.
 
 Esta pasta concentra a experiencia da workspace `consultor`.
 
+## Feedback de desempenho
+
+- `ConsultantPlayerCard.vue` exibe `Dar feedback` somente quando o usuario possui
+  `workspace.performance_feedback.view` (ou o fallback coarse equivalente).
+- `ConsultantWorkspace.vue` e `ConsultantIntegratedWorkspace.vue` resolvem o alvo real
+  do card (`storeId + consultantId`) e abrem `PerformanceFeedbackModal`; o modal nao
+  possui seletor paralelo de consultores e nao duplica a navegacao da pagina.
+- A visao integrada exibe `Configurar feedback` na mesma barra dos filtros e a visao
+  de loja unica mantem a acao no cabecalho. O botao aparece para quem possui
+  `workspace.performance_feedback.edit`, abre o template-core `OmniEntityDrawer` e
+  usa uma loja acessivel apenas para validar o tenant no backend.
+- Gerente e consultor precisam de `workspace.consultor.view` para participar do fluxo;
+  a gestao edita e o consultor vinculado responde conforme as permissoes da API.
+
 ## Regras atuais
 
 - [ConsultantWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantWorkspace.vue) decide entre 2 modos: com apenas uma loja acessivel, renderiza a leitura da loja ativa (`ConsultantPlayerCard` full + `ConsultantHistoryPanel` + `ConsultantSimulator` inline); com multiplas lojas acessiveis, delega para `ConsultantIntegratedWorkspace.vue`, que controla o filtro de loja localmente sem depender de seletor global no header.
@@ -18,7 +32,7 @@ Esta pasta concentra a experiencia da workspace `consultor`.
 - [ConsultantHistoryPanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantHistoryPanel.vue) renderiza o historico inline da tela individual com filtros de periodo (`Hoje`, `7 dias`, `30 dias`, `Mes`), sparkline e resumo do intervalo selecionado.
 - [ConsultantDetailedMetrics.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantDetailedMetrics.vue) ficou legado e nao e mais montado pela workspace principal.
 - [ConsultantIntegratedWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantIntegratedWorkspace.vue) e a ORQUESTRADORA: concentra todo estado, computeds (filtros, `groupedRows`, `selectedStoreConsultantCard`, `selectedStoreStaff`), watches, fiacao do quick-edit (`useGoalQuickEditContext` → `goalContext`/`storeContext`) e o `ConsultantDetailsDrawer`. Alterna 2 layouts locais: com filtro de `Loja` em uma loja especifica delega para `ConsultantSingleStoreView`; em `Todas as lojas` renderiza um `ConsultantStoreGroup` por loja. A toolbar de periodo/filtros foi extraida para `ConsultantIntegratedFilters`. Os 3 sub-componentes sao PRESENTACIONAIS (props + emits); nenhuma logica/computed vive neles. (Refactor de fatiamento para ficar < 500 linhas do `max-lines`; comportamento inalterado.)
-  - [ConsultantIntegratedFilters.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantIntegratedFilters.vue) — toolbar de busca/loja/status/meta + seletor de periodo (`AppDatePicker`) e botoes `Mes anterior`/`Mes atual`/`Atualizar`. Recebe valores + opcoes + `pending`; emite `update:*` por filtro e `apply`/`reset-current-month`/`set-previous-month`.
+  - [ConsultantIntegratedFilters.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantIntegratedFilters.vue) — toolbar de busca/loja/status/meta + periodo, semanas e acoes. Compoe exclusivamente o kit compacto compartilhado (`AppFilterToolbar`, `AppFilterField`, `AppSearchInput`, `AppSelectField`, `AppDateRangeFilter`, `AppSegmentedFilter` e `AppToolbarButton`); nao manter uma segunda familia de paddings/alturas em CSS local. Recebe valores + opcoes + `pending`; emite `update:*` por filtro e `apply`/`reset-current-month`/`set-previous-month`.
   - [ConsultantSingleStoreView.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantSingleStoreView.vue) — visao single-store (1 loja): `ConsultantSelector` + banner de avisos da loja (2x `InlineFieldGuard` ticket/PA com o `goalContext` do card) + `ConsultantPlayerCard` full + insights (`ConsultantHistoryPanel` + `ConsultantSimulator`) + equipe sem fila (`ConsultantStaffPayoutCard`) + `ConsultantRecentAttendancesTable`. Recebe `rows`/`selectedConsultant`/`card`/`staff`/`history`/`simulationAdditionalSales` ja prontos; emite `select` e `update:simulation-additional-sales`.
   - [ConsultantStoreGroup.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantStoreGroup.vue) — UMA loja da visao agrupada: cabecalho (nome + contagem + 2x `InlineFieldGuard` ticket/PA com o `group.storeContext`) + `ConsultantPlayerGrid`. Recebe `group` + os mapas compartilhados (`storeConversionAvgByStoreId`, `rankingPositionByKey`, `storeProgressByStoreId`, `storePayoutByStoreId`) + `staff` da loja; re-emite `open-details`.
 - [ConsultantBadges.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantBadges.vue) e puro: recebe `stats` + `badges` (config) e renderiza apenas os badges aplicaveis. Regras default em `useGamificationConfig()`.

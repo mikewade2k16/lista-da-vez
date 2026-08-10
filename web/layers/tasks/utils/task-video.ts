@@ -21,6 +21,7 @@ export function normalizeTaskVideoItem(value: unknown): TaskVideoItem | null {
     url,
     size: Math.max(0, Number(raw.size || 0) || 0),
     contentType: normalizeText(raw.contentType, 120),
+    checklistItemId: normalizeText(raw.checklistItemId, 120) || undefined,
     uploadedAt: normalizeText(raw.uploadedAt, 80),
   }
 }
@@ -45,6 +46,7 @@ export function taskVideoSignature(value: unknown): string {
       url: video.url,
       size: video.size,
       contentType: video.contentType,
+      checklistItemId: video.checklistItemId || '',
     })),
   )
 }

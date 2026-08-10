@@ -3,6 +3,7 @@ package calendar
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -13,16 +14,18 @@ import (
 // Erros de dominio. Fora-do-escopo e nao-encontrado colapsam em ErrNotFound
 // (404) para nao vazar existencia de recurso de outra account.
 var (
-	ErrNotFound        = errors.New("calendar: not found")
-	ErrForbidden       = errors.New("calendar: forbidden")
-	ErrInvalidDate     = errors.New("calendar: invalid date")
-	ErrInvalidTitle    = errors.New("calendar: invalid title")
-	ErrInvalidMedia    = errors.New("calendar: invalid media")
-	ErrMediaTooLarge   = errors.New("calendar: media too large")
-	ErrInvalidClient   = errors.New("calendar: invalid client")
-	ErrAINotConfigured = errors.New("calendar: ai not configured")
-	ErrPlanConflict    = errors.New("calendar: plan conflict")
-	ErrInvalidStatus   = errors.New("calendar: invalid status")
+	ErrNotFound          = errors.New("calendar: not found")
+	ErrForbidden         = errors.New("calendar: forbidden")
+	ErrInvalidDate       = errors.New("calendar: invalid date")
+	ErrInvalidTitle      = errors.New("calendar: invalid title")
+	ErrInvalidMedia      = errors.New("calendar: invalid media")
+	ErrMediaTooLarge     = errors.New("calendar: media too large")
+	ErrMediaUnavailable  = errors.New("calendar: media unavailable")
+	ErrInvalidMediaRange = errors.New("calendar: invalid media range")
+	ErrInvalidClient     = errors.New("calendar: invalid client")
+	ErrAINotConfigured   = errors.New("calendar: ai not configured")
+	ErrPlanConflict      = errors.New("calendar: plan conflict")
+	ErrInvalidStatus     = errors.New("calendar: invalid status")
 	// ErrTasksNotConfigured: pediu createTask mas a config C6 nao tem tasks.boardId
 	// (integracao desligada). 400 tasks_not_configured — NAO cria evento orfao.
 	ErrTasksNotConfigured = errors.New("calendar: tasks integration not configured")
@@ -661,7 +664,24 @@ func (s *Service) ListResponsibles(ctx context.Context, accountID string) ([]Mem
 // GetMediaLimits devolve os tetos de upload (globais da plataforma; default se
 // nao configurado).
 func (s *Service) GetMediaLimits(ctx context.Context) (MediaLimits, error) {
-	return s.store.GetMediaLimits(ctx)
+	legacy, err := s.store.GetMediaLimits(ctx)
+	if err != nil {
+		return MediaLimits{}, err
+	}
+	storage, ok := s.storage.(MediaLimitStorage)
+	if !ok {
+		return legacy, nil
+	}
+	managed, err := storage.Limits(ctx)
+	if err != nil {
+		return MediaLimits{}, err
+	}
+	return MediaLimits{
+		ImageMaxBytes:           min(legacy.ImageMaxBytes, managed.ImageMaxBytes),
+		VideoMaxBytes:           min(legacy.VideoMaxBytes, managed.VideoMaxBytes),
+		R2UploadsEnabled:        managed.R2UploadsEnabled,
+		MultipartThresholdBytes: managed.MultipartThresholdBytes,
+	}, nil
 }
 
 // SaveMediaLimits persiste os tetos de upload (so platform_admin, gate no HTTP).
@@ -678,15 +698,43 @@ func (s *Service) SaveMediaLimits(ctx context.Context, limits MediaLimits, updat
 
 // SaveMedia valida (mime + tamanho contra os limites da plataforma) e grava o
 // anexo, devolvendo o MediaItem para o front anexar a um evento ou dia.
-func (s *Service) SaveMedia(ctx context.Context, accountID, fileName, contentType string, content []byte) (MediaItem, error) {
+func (s *Service) SaveMedia(ctx context.Context, accountID, actorID, idempotencyKey, fileName, contentType string, content []byte) (MediaItem, error) {
 	if s.storage == nil {
 		return MediaItem{}, ErrInvalidMedia
 	}
-	limits, err := s.store.GetMediaLimits(ctx)
+	limits, err := s.GetMediaLimits(ctx)
 	if err != nil {
 		return MediaItem{}, err
 	}
-	return s.storage.Save(strings.TrimSpace(accountID), fileName, contentType, content, limits)
+	return s.storage.Save(ctx, strings.TrimSpace(accountID), strings.TrimSpace(actorID), strings.TrimSpace(idempotencyKey), fileName, contentType, content, limits)
+}
+
+func (s *Service) SaveMediaStream(ctx context.Context, accountID, actorID, idempotencyKey, fileName, contentType string, sizeBytes int64, content io.Reader) (MediaItem, error) {
+	storage, ok := s.storage.(MediaStreamStorage)
+	if !ok {
+		return MediaItem{}, ErrMediaUnavailable
+	}
+	limits, err := s.GetMediaLimits(ctx)
+	if err != nil {
+		return MediaItem{}, err
+	}
+	return storage.SaveStream(ctx, strings.TrimSpace(accountID), strings.TrimSpace(actorID), strings.TrimSpace(idempotencyKey), fileName, contentType, sizeBytes, content, limits)
+}
+
+func (s *Service) StatMedia(ctx context.Context, accountID, objectID string) (MediaContent, error) {
+	storage, ok := s.storage.(MediaContentStorage)
+	if !ok {
+		return MediaContent{}, ErrMediaUnavailable
+	}
+	return storage.Stat(ctx, strings.TrimSpace(accountID), strings.TrimSpace(objectID))
+}
+
+func (s *Service) OpenMedia(ctx context.Context, accountID, objectID, byteRange string) (MediaContent, error) {
+	storage, ok := s.storage.(MediaContentStorage)
+	if !ok {
+		return MediaContent{}, ErrMediaUnavailable
+	}
+	return storage.Open(ctx, strings.TrimSpace(accountID), strings.TrimSpace(objectID), strings.TrimSpace(byteRange))
 }
 
 // WAVE 13: "anexos do dia" (calendar.day_media) foi ELIMINADO — toda midia do calendario

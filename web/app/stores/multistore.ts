@@ -53,9 +53,11 @@ function normalizeNullableNumber(value) {
   return Math.max(0, parsed)
 }
 
-function assignIfChanged(body, key, nextValue, currentValue, normalize = (value) => value) {
-  const next = normalize(nextValue)
-  const current = normalize(currentValue)
+function assignIfChanged(body, payload, currentStore, key, normalize = (value) => value) {
+  if (!Object.prototype.hasOwnProperty.call(payload, key)) return
+
+  const next = normalize(payload[key])
+  const current = normalize(currentStore[key])
 
   if (next !== current) {
     body[key] = next
@@ -114,48 +116,18 @@ function buildCreatePayload(payload: LooseRecord = {}, tenantId) {
 function buildUpdatePayload(payload: LooseRecord = {}, currentStore: LooseRecord = {}) {
   const body: LooseRecord = {}
 
-  assignIfChanged(body, 'name', payload.name, currentStore.name, normalizeText)
-  assignIfChanged(body, 'code', payload.code, currentStore.code, normalizeCode)
-  assignIfChanged(body, 'city', payload.city, currentStore.city, normalizeText)
+  assignIfChanged(body, payload, currentStore, 'name', normalizeText)
+  assignIfChanged(body, payload, currentStore, 'code', normalizeCode)
+  assignIfChanged(body, payload, currentStore, 'city', normalizeText)
   // store_type (Shopping/Bairro): só envia quando o usuário muda. Trilha A confirma
   // o nome exato do campo aceito pelo handler de update de loja (assumido: storeType).
-  assignIfChanged(body, 'storeType', payload.storeType, currentStore.storeType, normalizeStoreType)
-  assignIfChanged(
-    body,
-    'defaultTemplateId',
-    payload.defaultTemplateId,
-    currentStore.defaultTemplateId,
-    normalizeText,
-  )
-  assignIfChanged(
-    body,
-    'monthlyGoal',
-    payload.monthlyGoal,
-    currentStore.monthlyGoal,
-    normalizeNullableNumber,
-  )
-  assignIfChanged(
-    body,
-    'weeklyGoal',
-    payload.weeklyGoal,
-    currentStore.weeklyGoal,
-    normalizeNullableNumber,
-  )
-  assignIfChanged(
-    body,
-    'avgTicketGoal',
-    payload.avgTicketGoal,
-    currentStore.avgTicketGoal,
-    normalizeNullableNumber,
-  )
-  assignIfChanged(
-    body,
-    'conversionGoal',
-    payload.conversionGoal,
-    currentStore.conversionGoal,
-    normalizeNullableNumber,
-  )
-  assignIfChanged(body, 'paGoal', payload.paGoal, currentStore.paGoal, normalizeNullableNumber)
+  assignIfChanged(body, payload, currentStore, 'storeType', normalizeStoreType)
+  assignIfChanged(body, payload, currentStore, 'defaultTemplateId', normalizeText)
+  assignIfChanged(body, payload, currentStore, 'monthlyGoal', normalizeNullableNumber)
+  assignIfChanged(body, payload, currentStore, 'weeklyGoal', normalizeNullableNumber)
+  assignIfChanged(body, payload, currentStore, 'avgTicketGoal', normalizeNullableNumber)
+  assignIfChanged(body, payload, currentStore, 'conversionGoal', normalizeNullableNumber)
+  assignIfChanged(body, payload, currentStore, 'paGoal', normalizeNullableNumber)
 
   return body
 }

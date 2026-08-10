@@ -10,6 +10,7 @@ import (
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/goalperiod"
 )
 
 type Service struct {
@@ -223,7 +224,7 @@ func (service *Service) buildGoalForCreate(ctx context.Context, principal auth.P
 		StoreCode:       strings.TrimSpace(storeView.Code),
 		StoreName:       strings.TrimSpace(storeView.Name),
 		TargetMonth:     targetMonth,
-		Week:            normalizeWeek(input.Week),
+		Week:            normalizeWeek(targetMonth, input.Week),
 		MonthlyGoal:     maxFloat(input.MonthlyGoal, 0),
 		AvgTicketGoal:   maxFloat(input.AvgTicketGoal, 0),
 		ConversionGoal:  clampFloat(input.ConversionGoal, 0, 100),
@@ -336,13 +337,13 @@ func mapStoreAccessError(err error) error {
 	}
 }
 
-// normalizeWeek limita a semana a 0..4 (0 = meta mensal; 1..4 = semana do mes).
-func normalizeWeek(week int) int {
+// normalizeWeek limita a semana aos periodos existentes no mes.
+func normalizeWeek(month time.Time, week int) int {
 	if week < 0 {
 		return 0
 	}
-	if week > 4 {
-		return 4
+	if week > goalperiod.Count(month) {
+		return goalperiod.Count(month)
 	}
 
 	return week

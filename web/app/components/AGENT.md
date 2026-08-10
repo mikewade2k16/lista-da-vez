@@ -16,6 +16,8 @@ Antes de criar componente novo:
 
 ## Regras de reutilizacao
 
+- para barras compactas de filtros e acoes, usar o kit canonico de `ui`: `AppFilterToolbar` agrupa a linha, `AppFilterField` fornece rotulo acessivel, `AppSearchInput compact` cobre busca, `AppSelectField compact` cobre selecao unica, `AppMonthInput` cobre mes, `AppDateRangeFilter` cobre intervalo, `AppGoalPeriodFilter` cobre `Mes`/`S1`-`S4`, `AppSegmentedFilter` cobre outros grupos e `AppToolbarButton` cobre acoes. Nao recriar altura, padding, borda, capsula, rotulo ou estado ativo em CSS local; estender o componente compartilhado quando surgir uma variacao legitima.
+- para calendarios, escalas e agendas, reutilizar `AppCalendarPeriodRail` (`M`, `S1...Sn`), `AppCalendarSurface` (superficie da grade) e `AppDayItemsPanel` (painel dos itens do dia). O modulo consumidor adapta valores e conteudo, sem copiar estrutura ou CSS.
 - para selects simples de filtro e escolha unica, preferir [AppSelectField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSelectField.vue)
   Ele segue a mesma linguagem visual do `.product-pick` do fechamento e deve substituir selects nativos soltos.
 - para grades administrativas reutilizaveis sem `<table>`, preferir [AppEntityGrid.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppEntityGrid.vue)
@@ -27,6 +29,22 @@ Antes de criar componente novo:
 - para toasts globais, usar [AppToastStack.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppToastStack.vue) via `uiStore`
 - para selecao pesquisavel, multi-select e detalhes por item, verificar primeiro o componente de feature [OperationProductPicker.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/operation/OperationProductPicker.vue) antes de inventar outro picker
 - workspaces devem continuar finos: recebem estado/stores prontos e compoem a tela
+
+### `ui` — kit compacto de filtros
+
+- [AppFilterToolbar.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppFilterToolbar.vue): superficie responsiva para filtros e acoes.
+- [AppFilterField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppFilterField.vue): rotulo acessivel, visivel ou somente para leitor de tela.
+- [AppSearchInput.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSearchInput.vue): busca com debounce; usar `compact` em toolbars.
+- [AppSelectField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSelectField.vue): select canonico; usar `compact` em toolbars.
+- [AppMonthInput.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppMonthInput.vue): seletor nativo de mes com aparencia canonica.
+- [AppDateRangeFilter.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppDateRangeFilter.vue): gatilho compacto para intervalo de datas.
+- [AppSegmentedFilter.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSegmentedFilter.vue): opcoes curtas mutuamente exclusivas.
+- [AppGoalPeriodFilter.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppGoalPeriodFilter.vue): periodo canonico de metas e feedback; encapsula `Mes`, `S1`, `S2`, `S3`, `S4`. Paginas nao devem declarar rotulos alternativos como `Semana 1`.
+- [AppToolbarButton.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppToolbarButton.vue): acoes compactas `primary`, `soft`, `ghost` e `danger`, inclusive loading/ativo.
+- [AppCalendarPeriodRail.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppCalendarPeriodRail.vue): navegacao vertical canonica `M`/`S1...Sn`.
+- [AppCalendarSurface.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppCalendarSurface.vue): superficie compartilhada para mes, semana e escala.
+- [AppMonthCalendarGrid.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppMonthCalendarGrid.vue): matriz mensal canônica, com slots de célula e sobreposição; calendário e escala usam este mesmo componente.
+- [AppDayItemsPanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppDayItemsPanel.vue): shell compartilhado do painel lateral de itens do dia.
 
 ## Catalogo atual
 
@@ -146,6 +164,15 @@ Area cross-account de plataforma (so `platform_admin`), backed pela API real
 - [MultiStoreUserAccessCard.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/multistore/MultiStoreUserAccessCard.vue)
   Card de gerenciamento de acessos, papeis e onboarding de usuarios.
 
+### `planning`
+
+- [PlanningWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/planning/PlanningWorkspace.vue)
+  Workspace persistida de `/planejamento`: configura loja, politica de jornada e
+  disponibilidade, edita modelos de turno, gera a escala semanal no backend,
+  valida conflitos e apresenta o rateio canonico de metas.
+  Dados sao reidratados da API Go e PostgreSQL. Contratos e
+  invariantes completos em [planning/AGENT.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/planning/AGENT.md).
+
 ### `ranking`
 
 - [RankingWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ranking/RankingWorkspace.vue)
@@ -258,6 +285,13 @@ explicito de override por loja.
   Workspace `/suporte` para visualizar, filtrar e responder chamados.
   Permitir filtros por tipo (sugestao, duvida, problema) e status (aberto, em analise, resolvido, fechado).
   Acessivel apenas para owner, manager e platform_admin.
+
+### `performance-feedback` (acao dentro de Consultor)
+
+- `PerformanceFeedbackModal.vue` abre a partir dos cards de `/consultor`, recebe loja e
+  consultor ja selecionados e oferece blocos livres com titulo + `OmniEditor`, snapshot
+  de indicadores, devolutiva do consultor e historico comparavel. A rota antiga
+  `/feedback-desempenho` e somente um redirect. Nao reutiliza o store nem a API de Suporte.
 
 ### `omnichannel`
 
@@ -740,6 +774,11 @@ com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMess
     ganhou `createTask?` (omitindo `id`/`taskId`/`version`) em `utils/calendar.ts`.
 
 ## Diretrizes rapidas
+
+- [AdminStorageWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/admin/storage/AdminStorageWorkspace.vue)
+  usa o `OmniEntityDrawer` canonico para configurar o R2. A aba `Limites` edita a fonte
+  PostgreSQL com tetos separados por tipo; `Teste de upload` usa XHR para progresso, grava pelo
+  endpoint controlado e rele o objeto privado antes de liberar preview com o viewer do Calendario.
 
 - se a tela for um painel inteiro, procurar primeiro um `*Workspace.vue`
 - se for tabela ou card especializado, procurar primeiro na pasta de dominio correspondente

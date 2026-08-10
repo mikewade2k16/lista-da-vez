@@ -9,8 +9,11 @@ FROM deps AS build
 
 COPY . .
 
-# Aumentar heap do Node para evitar OOM no build do Nuxt (default ~1.5GB)
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+# O Nitro ultrapassa 4 GB ao empacotar o servidor. O ARG permite ajuste pelo
+# deploy sem mudar a imagem final; 5120 MB cabe no Docker Desktop atual (~6 GB)
+# quando o deploy pausa temporariamente a stack local.
+ARG WEB_BUILD_HEAP_MB=5120
+ENV NODE_OPTIONS="--max-old-space-size=${WEB_BUILD_HEAP_MB}"
 RUN npm run build
 
 FROM deps AS dev

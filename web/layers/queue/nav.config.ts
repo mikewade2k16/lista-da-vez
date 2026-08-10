@@ -104,7 +104,7 @@ export default {
           label: 'Campanhas',
           icon: 'megaphone',
           path: '/campanhas',
-          workspaceId: 'comunicados',
+          workspaceId: 'campanhas',
           moduleId: 'queue',
         },
         {
@@ -169,6 +169,15 @@ export default {
       id: 'team-site',
       label: 'Operacao comercial',
       items: [
+        {
+          id: 'planejamento',
+          label: 'Planejamento',
+          icon: 'calendar',
+          path: '/planejamento/metas',
+          workspaceId: 'planejamento',
+          moduleId: 'queue',
+          beta: true,
+        },
         {
           id: 'team-menu',
           label: 'Team',
@@ -384,6 +393,14 @@ export default {
               icon: 'audit',
               path: '/manage/role-templates',
               workspaceId: 'role_templates_admin',
+              agencyOnly: true,
+            },
+            {
+              id: 'manage-storage',
+              label: 'Storage R2',
+              icon: 'database',
+              path: '/manage/storage',
+              workspaceId: 'storage_admin',
               agencyOnly: true,
             },
             {

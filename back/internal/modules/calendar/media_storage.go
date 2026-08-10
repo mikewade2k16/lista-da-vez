@@ -1,8 +1,10 @@
 package calendar
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,7 +16,33 @@ type MediaStorage interface {
 	// Save valida mime/tamanho (contra limits) e grava a midia em
 	// uploads/calendar/{accountId}/, devolvendo o MediaItem pronto para anexar a
 	// um evento ou dia. content/contentType/fileName ja lidos pelo handler.
-	Save(accountID, fileName, contentType string, content []byte, limits MediaLimits) (MediaItem, error)
+	Save(ctx context.Context, accountID, actorID, idempotencyKey, fileName, contentType string, content []byte, limits MediaLimits) (MediaItem, error)
+}
+
+type MediaStreamStorage interface {
+	SaveStream(ctx context.Context, accountID, actorID, idempotencyKey, fileName, contentType string, sizeBytes int64, content io.Reader, limits MediaLimits) (MediaItem, error)
+}
+
+type MediaContent struct {
+	FileName      string
+	ContentType   string
+	SizeBytes     int64
+	Body          io.ReadCloser
+	ContentLength int64
+	ContentRange  string
+	ETag          string
+}
+
+// MediaContentStorage e implementado pelo adapter remoto. Fica separado de
+// MediaStorage para o storage em disco legado continuar sendo um fallback de
+// leitura pelo file server global.
+type MediaContentStorage interface {
+	Stat(ctx context.Context, accountID, objectID string) (MediaContent, error)
+	Open(ctx context.Context, accountID, objectID, byteRange string) (MediaContent, error)
+}
+
+type MediaLimitStorage interface {
+	Limits(ctx context.Context) (MediaLimits, error)
 }
 
 // DiskMediaStorage grava no disco local sob rootDir/calendar/{accountId}/.
@@ -34,7 +62,7 @@ func NewDiskMediaStorage(rootDir string) *DiskMediaStorage {
 
 // Save valida tipo/tamanho e grava com permissoes restritas. O teto depende do
 // tipo (limits.ImageMaxBytes vs limits.VideoMaxBytes).
-func (s *DiskMediaStorage) Save(accountID, fileName, contentType string, content []byte, limits MediaLimits) (MediaItem, error) {
+func (s *DiskMediaStorage) Save(_ context.Context, accountID, _, _, fileName, contentType string, content []byte, limits MediaLimits) (MediaItem, error) {
 	normalized := detectMediaContentType(content, contentType, fileName)
 	extension := mediaExtension(normalized, fileName)
 	if normalized == "" || extension == "" {

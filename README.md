@@ -53,6 +53,19 @@ Arquivo opcional para customizar portas e credenciais do Compose:
 cp .env.docker.example .env
 ```
 
+### Variaveis e segredos de integracoes
+
+- `.env.docker.example` e `.env.production.example` sao somente modelos versionados; nunca recebem
+  tokens ou chaves reais.
+- Docker local le os valores reais do `.env` ignorado pelo Git na raiz.
+- Producao le o `.env.production` protegido que ja existe na VPS; os scripts de deploy preservam
+  esse arquivo e variaveis novas nao viajam dentro da imagem.
+- `back/.env` e usado apenas no fallback em que a API Go roda diretamente fora do Docker.
+
+No Cloudflare R2, `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` e
+`R2_SECRET_ACCESS_KEY` ficam nesses envs privados. Os limites de consumo nao sao segredos nem env:
+sao editados no painel e persistidos em `storage.settings`.
+
 ## Scripts principais
 
 - `npm run dev`

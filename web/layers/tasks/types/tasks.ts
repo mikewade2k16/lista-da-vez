@@ -6,7 +6,14 @@ export interface TaskVideoItem {
   url: string
   size: number
   contentType: string
+  checklistItemId?: string
   uploadedAt: string
+}
+
+export interface TaskChecklistItem {
+  id: string
+  title: string
+  completed: boolean
 }
 
 // TaskCalendarMediaItem = midia ESPELHADA do evento vinculado no calendario (WAVE 6 cruzamento A,
@@ -132,6 +139,7 @@ export interface TaskItem {
   createdAt: string
   updatedAt: string
   videos?: TaskVideoItem[]
+  checklist?: TaskChecklistItem[]
   // calendarMedia = midia do evento vinculado, espelhada read-only (WAVE 6 cruzamento A).
   calendarMedia?: TaskCalendarMediaItem[]
 }

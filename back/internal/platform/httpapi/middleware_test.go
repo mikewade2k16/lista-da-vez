@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -134,5 +135,22 @@ func TestCORS_NormalRouteAllowedOrigin(t *testing.T) {
 
 	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://painel.omni.app" {
 		t.Fatalf("rota normal allowlist: esperava o proprio origin, recebi %q", got)
+	}
+}
+
+func TestCORSAllowsIdempotencyKeyForControlledUploads(t *testing.T) {
+	handler := CORS([]string{"http://localhost:3003"})(newOkHandler())
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodOptions, "/v1/storage/test-upload", nil)
+	req.Header.Set("Origin", "http://localhost:3003")
+	req.Header.Set("Access-Control-Request-Headers", "authorization,x-account-id,idempotency-key")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("preflight: esperava 204, recebi %d", rr.Code)
+	}
+	if !strings.Contains(strings.ToLower(rr.Header().Get("Access-Control-Allow-Headers")), "idempotency-key") {
+		t.Fatalf("Idempotency-Key ausente em Access-Control-Allow-Headers: %q", rr.Header().Get("Access-Control-Allow-Headers"))
 	}
 }

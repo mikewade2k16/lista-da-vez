@@ -15,4 +15,7 @@ var (
 	ErrForbidden         = errors.New("tasks: forbidden")
 	ErrValidation        = errors.New("tasks: validation error")
 	ErrInvalidVideo      = errors.New("tasks: invalid video")
+	ErrVideoTooLarge     = errors.New("tasks: video too large")
+	ErrVideoUnavailable  = errors.New("tasks: video unavailable")
+	ErrInvalidVideoRange = errors.New("tasks: invalid video range")
 )

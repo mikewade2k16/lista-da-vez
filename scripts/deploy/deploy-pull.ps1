@@ -16,9 +16,11 @@ param(
   # os workflows versionados em automation/export/workflow-*.json quando houver mudanca.
   # Nao envia credentials.decrypted.json; credenciais continuam geridas no volume do n8n.
   [switch]$DeployAutomation,
+  # Reconcilia o profile omnichannel (Evolution + banco proprio, volumes preservados).
+  [switch]$DeployOmnichannel,
   [switch]$ForceAutomationWorkflowImport,
-  # Login opcional no GHCR antes do pull (imagens privadas). Se vazios, assume que
-  # a VPS ja tem `docker login ghcr.io` valido (~/.docker/config.json).
+  # Credencial opcional do GHCR para o pull de imagens privadas. Quando informada,
+  # vive somente em um DOCKER_CONFIG temporario remoto e e removida ao final do pull.
   [string]$GhcrUser = "",
   [string]$GhcrToken = ""
 )
@@ -121,6 +123,7 @@ $remotePathQ = Convert-ToBashSingleQuoted $remotePath
 $envFileQ = Convert-ToBashSingleQuoted $envFile
 $composeArgs = "--env-file $envFileQ -f docker-compose.prod.yml"
 $composeAutomationArgs = "$composeArgs --profile automation"
+$composeOmnichannelArgs = "$composeArgs --profile omnichannel"
 
 Write-Host "Ambiente:     $Environment"
 Write-Host "Host remoto:  ${remoteTarget}:$remotePath"
@@ -128,9 +131,14 @@ Write-Host "Imagem tag:   $Tag"
 if ($DeployAutomation) {
   Write-Host "Automation:   redis/waha/n8n/whisper + $($automationWorkflowFiles.Count) workflow(s)"
 }
+if ($DeployOmnichannel) {
+  Write-Host "Omnichannel:  evolution-db/evolution"
+}
 
 # 1. Falha ANTES de copiar compose/trocar tag se o segredo obrigatorio do boot
 #    estiver ausente ou malformado. Nunca imprime o valor da chave.
+$deployAutomationValue = if ($DeployAutomation) { "1" } else { "0" }
+$deployOmnichannelValue = if ($DeployOmnichannel) { "1" } else { "0" }
 $preflightCmd = @"
 set -euo pipefail
 mkdir -p $remotePathQ
@@ -156,6 +164,50 @@ unset omni_key
 if [ "`$decoded_bytes" != "32" ]; then
   echo "ERRO: OMNI_SECRETS_KEY deve decodificar exatamente 32 bytes; encontrado(s): `$decoded_bytes." >&2
   exit 1
+fi
+r2_enabled=`$(sed -n 's/^R2_ENABLED=//p' $envFileQ | tail -n 1 | tr '[:upper:]' '[:lower:]')
+case "`$r2_enabled" in
+  true)
+    for required_key in R2_ACCOUNT_ID R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ANALYTICS_API_TOKEN; do
+      if ! grep -q "^`$required_key=." $envFileQ; then
+        echo "ERRO: `$required_key ausente/vazia em $envFile enquanto R2_ENABLED=true." >&2
+        exit 1
+      fi
+    done
+    ;;
+  false|"")
+    ;;
+  *)
+    echo "ERRO: R2_ENABLED deve ser true ou false em $envFile." >&2
+    exit 1
+    ;;
+esac
+unset r2_enabled
+r2_allow_nonempty=`$(sed -n 's/^R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION=//p' $envFileQ | tail -n 1 | tr '[:upper:]' '[:lower:]')
+case "`$r2_allow_nonempty" in
+  true|false|"")
+    ;;
+  *)
+    echo "ERRO: R2_ALLOW_NONEMPTY_BUCKET_INITIALIZATION deve ser true ou false em $envFile." >&2
+    exit 1
+    ;;
+esac
+unset r2_allow_nonempty
+if [ "$deployAutomationValue" = "1" ]; then
+  for required_key in AUTOMATION_REDIS_PASSWORD AUTOMATION_N8N_ENCRYPTION_KEY AUTOMATION_RUNTIME_TOKEN; do
+    if ! grep -q "^`$required_key=." $envFileQ; then
+      echo "ERRO: `$required_key ausente/vazia em $envFile para o profile automation." >&2
+      exit 1
+    fi
+  done
+fi
+if [ "$deployOmnichannelValue" = "1" ]; then
+  for required_key in EVOLUTION_API_KEY EVOLUTION_DB_PASSWORD; do
+    if ! grep -q "^`$required_key=." $envFileQ; then
+      echo "ERRO: `$required_key ausente/vazia em $envFile para o profile omnichannel." >&2
+      exit 1
+    fi
+  done
 fi
 echo "Preflight de segredos obrigatorios: OK"
 "@
@@ -184,11 +236,19 @@ grep '^IMAGE_TAG=' $envFileQ
 "@
 Invoke-RemoteCommand -Description "Gravando IMAGE_TAG=$Tag em $envFile" -Command $setTagCmd
 
-# 4. Login opcional no GHCR (imagens privadas).
+# 4. Auth opcional do GHCR e efemera: o config vive somente no comando de pull
+# e o trap o remove mesmo se o registry/deploy falhar. Nunca persiste token na VPS.
+$registryAuthSetup = ""
 if (-not [string]::IsNullOrWhiteSpace($GhcrToken)) {
   if ([string]::IsNullOrWhiteSpace($GhcrUser)) { throw "-GhcrToken informado sem -GhcrUser." }
-  $loginCmd = "printf '%s' " + (Convert-ToBashSingleQuoted $GhcrToken) + " | docker login ghcr.io -u " + (Convert-ToBashSingleQuoted $GhcrUser) + " --password-stdin"
-  Invoke-RemoteCommand -Description "docker login ghcr.io" -Command $loginCmd
+  $ghcrUserQ = Convert-ToBashSingleQuoted $GhcrUser
+  $ghcrTokenQ = Convert-ToBashSingleQuoted $GhcrToken
+  $registryAuthSetup = @"
+ghcr_auth_dir=`$(mktemp -d)
+trap 'rm -rf "`$ghcr_auth_dir"' EXIT
+printf '%s' $ghcrTokenQ | DOCKER_CONFIG="`$ghcr_auth_dir" docker login ghcr.io -u $ghcrUserQ --password-stdin >/dev/null
+export DOCKER_CONFIG="`$ghcr_auth_dir"
+"@
 }
 
 # 5. Backup opcional do Postgres (antes de mexer nos containers).
@@ -197,7 +257,7 @@ if ($BackupDatabase) {
 set -euo pipefail
 cd $remotePathQ
 mkdir -p backups
-docker compose $composeArgs exec -T postgres sh -lc 'pg_dump -U "`$POSTGRES_USER" -d "`$POSTGRES_DB"' | gzip > "backups/backup_`$(date +%Y%m%d_%H%M%S).sql.gz"
+docker compose $composeArgs exec -T postgres sh -lc 'pg_dump -U "`$POSTGRES_USER" -d "`$POSTGRES_DB"' </dev/null | gzip > "backups/backup_`$(date +%Y%m%d_%H%M%S).sql.gz"
 latest=`$(ls -t backups | head -n 1)
 printf '%s\n' "$remotePath/backups/`$latest"
 "@
@@ -216,13 +276,27 @@ printf '%s\n' "$remotePath/backups/`$latest"
 $deployCmd = @"
 set -euo pipefail
 cd $remotePathQ
+$registryAuthSetup
 docker compose $composeArgs pull api web
 docker compose $composeArgs up -d --no-build$forceRecreateFlag api web
 docker compose $composeArgs ps api web
 "@
 Invoke-RemoteCommand -Description "Pull + up --no-build (api web) no $Environment" -Command $deployCmd
 
-# 7. Automation opcional: sobe profile automation e reimporta workflows versionados se mudaram.
+# 7. Omnichannel opcional: reconcilia Evolution e seu banco proprio. O up normal
+# preserva os volumes; nunca usa down nem remove dados.
+if ($DeployOmnichannel) {
+  $omnichannelCmd = @"
+set -euo pipefail
+cd $remotePathQ
+docker compose $composeOmnichannelArgs pull evolution-db evolution
+docker compose $composeOmnichannelArgs up -d --no-build$forceRecreateFlag evolution-db evolution
+docker compose $composeOmnichannelArgs ps evolution-db evolution
+"@
+  Invoke-RemoteCommand -Description "Profile omnichannel (Evolution) no $Environment" -Command $omnichannelCmd
+}
+
+# 8. Automation opcional: sobe profile automation e reimporta workflows versionados se mudaram.
 if ($DeployAutomation) {
   $remoteWorkflowDir = "$remotePath/automation/export"
   $remoteWorkflowDirQ = Convert-ToBashSingleQuoted $remoteWorkflowDir
@@ -261,8 +335,11 @@ fi
 backup_name="backups/n8n/workflows-before-automation-deploy_`$(date +%Y%m%d_%H%M%S).json"
 active_ids_file=.deploy/n8n-active-workflows-before.txt
 : > "`$active_ids_file"
-if docker compose $composeAutomationArgs exec -T n8n n8n export:workflow --all --output=/tmp/workflows-before-automation-deploy.json; then
-  docker compose $composeAutomationArgs exec -T n8n node -e "const fs=require('fs'); const raw=JSON.parse(fs.readFileSync('/tmp/workflows-before-automation-deploy.json','utf8')); const list=Array.isArray(raw)?raw:(Array.isArray(raw.data)?raw.data:(Array.isArray(raw.workflows)?raw.workflows:[raw])); for (const w of list) { if (w && w.id && (w.active===true || w.active==='true' || w.isActive===true)) console.log(w.id); }" > "`$active_ids_file" || true
+# Este bash chega por stdin (`bash -s`). Todo `docker compose exec -T` precisa ler de
+# /dev/null; caso contrario o processo dentro do container pode consumir silenciosamente
+# o restante do script remoto e devolver exit 0 antes do import/verificacao.
+if docker compose $composeAutomationArgs exec -T n8n n8n export:workflow --all --output=/tmp/workflows-before-automation-deploy.json </dev/null; then
+  docker compose $composeAutomationArgs exec -T n8n node -e "const fs=require('fs'); const raw=JSON.parse(fs.readFileSync('/tmp/workflows-before-automation-deploy.json','utf8')); const list=Array.isArray(raw)?raw:(Array.isArray(raw.data)?raw.data:(Array.isArray(raw.workflows)?raw.workflows:[raw])); for (const w of list) { if (w && w.id && (w.active===true || w.active==='true' || w.isActive===true)) console.log(w.id); }" </dev/null > "`$active_ids_file" || true
   docker compose $composeAutomationArgs cp n8n:/tmp/workflows-before-automation-deploy.json "`$backup_name" || true
   echo "Backup workflows n8n: $remotePath/`$backup_name"
 else
@@ -276,7 +353,7 @@ for wf in automation/export/workflow-*.json; do
   # O import tem de reportar "Successfully imported"; senao a versao nova NAO entrou
   # (import silencioso ja deixou a VPS defasada do arquivo por dias). Falhou -> nao
   # grava o marker (proximo deploy re-tenta em vez de "marcar como feito").
-  import_out=`$(docker compose $composeAutomationArgs exec -T n8n n8n import:workflow --input="/tmp/`$base" 2>&1)
+  import_out=`$(docker compose $composeAutomationArgs exec -T n8n n8n import:workflow --input="/tmp/`$base" </dev/null 2>&1)
   printf '%s\n' "`$import_out" | grep -qiE 'Successfully imported' || { echo "ERRO: import de `$base falhou:" >&2; printf '%s\n' "`$import_out" >&2; import_ok=0; }
 done
 
@@ -286,7 +363,7 @@ done
   printf '%s\n' calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001
   cat "`$active_ids_file"
 } | awk 'NF && !seen[`$0]++' | while IFS= read -r workflow_id; do
-  docker compose $composeAutomationArgs exec -T n8n n8n update:workflow --id="`$workflow_id" --active=true
+  docker compose $composeAutomationArgs exec -T n8n n8n update:workflow --id="`$workflow_id" --active=true </dev/null
 done
 docker compose $composeAutomationArgs restart n8n
 
@@ -297,9 +374,9 @@ docker compose $composeAutomationArgs restart n8n
 verify_ok=1
 sleep 8
 for wf in automation/export/workflow-*.json; do
-  wid=`$(docker compose $composeAutomationArgs exec -T n8n node -e "console.log((JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).id)||'')" "/tmp/`$(basename "`$wf")" 2>/dev/null | tr -d '\r')
+  wid=`$(docker compose $composeAutomationArgs exec -T n8n node -e "console.log((JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).id)||'')" "/tmp/`$(basename "`$wf")" </dev/null 2>/dev/null | tr -d '\r')
   [ -z "`$wid" ] && continue
-  if docker compose $composeAutomationArgs exec -T n8n n8n export:workflow --id="`$wid" --output="/tmp/verify_`$wid.json" >/dev/null 2>&1; then
+  if docker compose $composeAutomationArgs exec -T n8n n8n export:workflow --id="`$wid" --output="/tmp/verify_`$wid.json" </dev/null >/dev/null 2>&1; then
     # compara os 'nodes' normalizados (ordem estavel) entre arquivo e banco
     same=`$(docker compose $composeAutomationArgs exec -T n8n node -e "
       const fs=require('fs');
@@ -307,7 +384,7 @@ for wf in automation/export/workflow-*.json; do
       const a=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));
       const b=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
       process.stdout.write(norm(a)===norm(b)?'SAME':'DIFF');
-    " "/tmp/`$(basename "`$wf")" "/tmp/verify_`$wid.json" 2>/dev/null)
+    " "/tmp/`$(basename "`$wf")" "/tmp/verify_`$wid.json" </dev/null 2>/dev/null)
     if [ "`$same" != "SAME" ]; then echo "ERRO: n8n `$wid diverge do arquivo apos import." >&2; verify_ok=0; fi
   else
     echo "AVISO: nao consegui verificar `$wid (export falhou)." >&2
@@ -325,7 +402,7 @@ echo "Workflows n8n importados, reiniciados e VERIFICADOS (banco == arquivo)."
   Invoke-RemoteCommand -Description "Profile automation + import de workflows n8n no $Environment" -Command $automationCmd
 }
 
-# 8. Smoke tests publicos.
+# 9. Smoke tests publicos.
 if (-not $SkipSmokeTests) {
   $smokeCmd = @"
 set -euo pipefail

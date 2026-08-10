@@ -24,6 +24,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'confirm'])
 const selectedItems = ref([])
+const PAUSE_REASON_PORTAL_BASE_Z_INDEX = 11001
 
 const pickerOptions = computed(() =>
   (props.options || [])
@@ -108,6 +109,7 @@ function displayName(employee) {
             search-placeholder="Busque e selecione o motivo da pausa"
             empty-selected-label="Nenhum motivo selecionado"
             testid-prefix="operation-pause-reason"
+            :portal-base-z-index="PAUSE_REASON_PORTAL_BASE_Z_INDEX"
             @update:selected-items="selectedItems = $event"
           />
 

@@ -101,6 +101,8 @@ export interface CalendarMediaItem {
 export interface CalendarMediaLimits {
   imageMaxBytes: number
   videoMaxBytes: number
+  r2UploadsEnabled?: boolean
+  multipartThresholdBytes?: number
 }
 
 export function defaultCalendarMediaLimits(): CalendarMediaLimits {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 )
@@ -23,6 +24,11 @@ type Service struct {
 	storage     AudioStorage
 	analysis    AnalysisRepository
 	credentials CredentialResolver
+	notifier    RealtimePublisher
+}
+
+type RealtimePublisher interface {
+	PublishContextEvent(ctx context.Context, tenantID string, resource string, action string, resourceID string, savedAt time.Time)
 }
 
 func NewService(repository Repository, storage AudioStorage, credentials ...CredentialResolver) *Service {
@@ -34,22 +40,41 @@ func NewService(repository Repository, storage AudioStorage, credentials ...Cred
 	return service
 }
 
-func canRead(access AccessContext) bool {
+func (service *Service) SetContextPublisher(notifier RealtimePublisher) {
+	service.notifier = notifier
+}
+
+func canManageTranscriptionsRead(access AccessContext) bool {
 	if access.PermissionsResolved {
 		return accesscontrol.HasPermission(
 			access.Permissions,
-			accesscontrol.PermissionOperationsView,
+			accesscontrol.PermissionTranscriptionsView,
 		)
 	}
 	switch access.Role {
-	case "consultant", "store_terminal", "manager", "marketing", "director", "owner", "platform_admin":
+	case "owner", "platform_admin":
 		return true
 	default:
 		return false
 	}
 }
 
-func canWrite(access AccessContext) bool {
+func canManageTranscriptionsWrite(access AccessContext) bool {
+	if access.PermissionsResolved {
+		return accesscontrol.HasPermission(
+			access.Permissions,
+			accesscontrol.PermissionTranscriptionsEdit,
+		)
+	}
+	switch access.Role {
+	case "owner", "platform_admin":
+		return true
+	default:
+		return false
+	}
+}
+
+func canCaptureRecording(access AccessContext) bool {
 	if access.PermissionsResolved {
 		return accesscontrol.HasPermission(
 			access.Permissions,
@@ -85,20 +110,60 @@ func normalizeCreateInput(input CreateRecordingInput) CreateRecordingInput {
 	return input
 }
 
-func (service *Service) ensureFeature(ctx context.Context) error {
-	enabled, err := service.repository.ExperimentalFeatureEnabled(ctx)
+func (service *Service) ensureFeature(ctx context.Context, accountID string) error {
+	feature, err := service.repository.GetRecordingFeature(ctx, accountID)
 	if err != nil {
 		return err
 	}
-	if !enabled {
+	if !feature.Enabled {
 		return ErrFeatureDisabled
 	}
 	return nil
 }
 
+func (service *Service) GetRecordingFeature(ctx context.Context, access AccessContext) (RecordingFeature, error) {
+	if access.AccountID == "" {
+		return RecordingFeature{}, ErrValidation
+	}
+	return service.repository.GetRecordingFeature(ctx, access.AccountID)
+}
+
+func (service *Service) PutRecordingFeature(ctx context.Context, access AccessContext, input PutRecordingFeatureInput) (RecordingFeature, error) {
+	if access.Role != "platform_admin" {
+		return RecordingFeature{}, ErrForbidden
+	}
+	if access.AccountID == "" || access.UserID == "" {
+		return RecordingFeature{}, ErrValidation
+	}
+	feature, err := service.repository.PutRecordingFeature(
+		ctx,
+		access.AccountID,
+		input.Enabled,
+		access.UserID,
+	)
+	if err != nil {
+		return RecordingFeature{}, err
+	}
+	if service.notifier != nil {
+		savedAt := time.Now().UTC()
+		if feature.UpdatedAt != nil {
+			savedAt = feature.UpdatedAt.UTC()
+		}
+		service.notifier.PublishContextEvent(
+			ctx,
+			access.AccountID,
+			"attendance_recording",
+			"updated",
+			access.AccountID,
+			savedAt,
+		)
+	}
+	return feature, nil
+}
+
 func (service *Service) Create(ctx context.Context, access AccessContext, input CreateRecordingInput) (RecordingView, error) {
 	input = normalizeCreateInput(input)
-	if !canWrite(access) {
+	if !canCaptureRecording(access) {
 		return RecordingView{}, ErrForbidden
 	}
 	if access.AccountID == "" || input.StoreID == "" || input.ServiceID == "" ||
@@ -111,7 +176,7 @@ func (service *Service) Create(ctx context.Context, access AccessContext, input 
 	if _, supported := audioExtension(input.MimeType); !supported {
 		return RecordingView{}, ErrUnsupported
 	}
-	if err := service.ensureFeature(ctx); err != nil {
+	if err := service.ensureFeature(ctx, access.AccountID); err != nil {
 		return RecordingView{}, err
 	}
 
@@ -161,7 +226,7 @@ func readChunk(source io.Reader) ([]byte, string, error) {
 func (service *Service) SaveChunk(ctx context.Context, access AccessContext, recordingID string, sequence int, mimeType string, source io.Reader) (RecordingView, error) {
 	recordingID = strings.TrimSpace(recordingID)
 	mimeType = normalizeAudioMime(mimeType)
-	if !canWrite(access) {
+	if !canCaptureRecording(access) {
 		return RecordingView{}, ErrForbidden
 	}
 	if access.AccountID == "" || recordingID == "" || sequence < 0 || sequence > maxChunkSequence {
@@ -228,7 +293,7 @@ func (service *Service) SaveChunk(ctx context.Context, access AccessContext, rec
 
 func (service *Service) Complete(ctx context.Context, access AccessContext, recordingID string, input CompleteRecordingInput) (RecordingView, error) {
 	recordingID = strings.TrimSpace(recordingID)
-	if !canWrite(access) {
+	if !canCaptureRecording(access) {
 		return RecordingView{}, ErrForbidden
 	}
 	if access.AccountID == "" || recordingID == "" {
@@ -295,16 +360,12 @@ func (service *Service) Complete(ctx context.Context, access AccessContext, reco
 }
 
 func (service *Service) List(ctx context.Context, access AccessContext, filter ListFilter) (ListResponse, error) {
-	if !canRead(access) {
+	if !canManageTranscriptionsRead(access) {
 		return ListResponse{}, ErrForbidden
 	}
 	if access.AccountID == "" {
 		return ListResponse{}, ErrValidation
 	}
-	if err := service.ensureFeature(ctx); err != nil {
-		return ListResponse{}, err
-	}
-
 	filter.StoreID = strings.TrimSpace(filter.StoreID)
 	filter.ConsultantID = strings.TrimSpace(filter.ConsultantID)
 	if filter.StoreID != "" && !storeAllowed(access, filter.StoreID) {
@@ -345,16 +406,12 @@ func (service *Service) List(ctx context.Context, access AccessContext, filter L
 
 func (service *Service) RequestTranscription(ctx context.Context, access AccessContext, recordingID string) (RecordingView, error) {
 	recordingID = strings.TrimSpace(recordingID)
-	if !canWrite(access) {
+	if !canManageTranscriptionsWrite(access) {
 		return RecordingView{}, ErrForbidden
 	}
 	if access.AccountID == "" || recordingID == "" {
 		return RecordingView{}, ErrValidation
 	}
-	if err := service.ensureFeature(ctx); err != nil {
-		return RecordingView{}, err
-	}
-
 	recording, err := service.repository.GetRecording(ctx, access.AccountID, recordingID)
 	if err != nil {
 		return RecordingView{}, err
@@ -373,7 +430,7 @@ func (service *Service) RequestTranscription(ctx context.Context, access AccessC
 }
 
 func (service *Service) OpenAudio(ctx context.Context, access AccessContext, recordingID string) (OpenedAudio, error) {
-	if !canRead(access) {
+	if !canManageTranscriptionsRead(access) {
 		return OpenedAudio{}, ErrForbidden
 	}
 	if access.AccountID == "" || strings.TrimSpace(recordingID) == "" {

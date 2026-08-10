@@ -24,8 +24,10 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 
 - `module.go` adapta o core para a interface `modules.Module`. Agora o core
   passa pelo Registry no boot (em vez de wiring direto via `core.RegisterRoutes`).
-- 8 permissoes declaradas (`core.account.view/manage`, `core.users.view/manage`,
-  `core.roles.view/manage`, `core.modules.manage`, `core.organization.consolidated_read`).
+- O catalogo declarativo tambem registra `workspace.planejamento.view/edit`, usadas
+  exclusivamente para visualizar e editar o Planejamento, sem acoplamento a Multi-loja.
+- As permissoes core incluem `core.account.view/manage`, `core.users.view/manage`,
+  `core.roles.view/manage`, `core.modules.manage` e `core.organization.consolidated_read`.
 - 3 role templates: `core.owner` (acesso total, locked nas accounts), `core.admin`
   (gerencia usuarios e cargos), `core.member` (membership basica).
 - `SyncCatalog` no boot popula `core.modules`, `core.permissions`,
@@ -248,6 +250,10 @@ que consumidores gateiem o produto. A escrita exige `platform_admin`.
 - Resposta: `{ "features": <Features>, "updatedAt": <RFC3339|null>, "updatedBy": <userId|null> }`.
 - `attendanceAudioRecording` nasce `false`. Consumidores devem falhar fechados
   enquanto a leitura não tiver sido confirmada pelo backend.
+- Desde a migration `0267`, `attendanceAudioRecording` e legado apenas para o
+  backfill inicial. O runtime da fila usa exclusivamente o gate account-scoped
+  em `queue.attendance_recording_settings` e
+  `/v1/operations/transcriptions/feature`.
 - Este contrato controla somente rollout. Captura, upload em blocos e
   transcrição pertencem aos módulos próprios e não podem depender da
   disponibilidade do serviço de IA para preservar o áudio.

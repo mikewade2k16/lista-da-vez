@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import DayCell from '~/components/calendar/DayCell.vue'
+import AppMonthCalendarGrid from '~/components/ui/AppMonthCalendarGrid.vue'
 import {
   NEUTRAL_COLOR,
   buildMonthMatrix,
@@ -42,7 +43,6 @@ const emit = defineEmits<{
 
 const title = computed(() => formatMonthTitle(props.monthKey))
 const weeks = computed(() => buildMonthMatrix(props.monthKey, props.weekStartsOn))
-const days = computed(() => weeks.value.flat())
 
 // Posicao EXPLICITA de cada celula no grid (linha da semana + coluna do dia): permite
 // que as BARRAS multi-dia entrem no MESMO grid (mesma row, colunas start/end) sem
@@ -93,8 +93,14 @@ function bgUrlsFor(dateKey: string): string[] {
 </script>
 
 <template>
-  <section
+  <AppMonthCalendarGrid
     class="calendar-month calendar-snap"
+    :month-key="monthKey"
+    :title="title"
+    :weekdays="weekdays"
+    :week-starts-on="weekStartsOn"
+    :current="isCurrent"
+    :focus="isFocus"
     :class="{
       'calendar-month--focus': isFocus,
       'calendar-month--peek': !isFocus,
@@ -103,47 +109,35 @@ function bgUrlsFor(dateKey: string): string[] {
     :data-block-key="monthKey"
     :data-focus="isFocus ? 'true' : 'false'"
   >
-    <header class="calendar-month__header">
-      <h3 class="calendar-month__title">{{ title }}</h3>
-      <span v-if="isCurrent" class="calendar-month__tag">Mês atual</span>
-    </header>
-
-    <div class="calendar-grid">
-      <div class="calendar-grid__weekdays">
-        <span v-for="label in weekdays" :key="label" class="calendar-grid__weekday">
-          {{ label }}
-        </span>
-      </div>
-      <div class="calendar-grid__days" role="grid" :aria-label="title">
-        <DayCell
-          v-for="(cell, index) in days"
-          :key="cell.dateKey"
-          :style="cellStyle(index)"
-          :day="cell"
-          :events="eventsFor(cell.dateKey)"
-          :holidays="holidaysFor(cell.dateKey)"
-          :bg-urls="bgUrlsFor(cell.dateKey)"
-          :clients-by-id="clientsById"
-          :type-colors="typeColors || {}"
-          :max-chips="0"
-          :selected="cell.dateKey === selectedDate"
-          @select-day="emit('select-day', $event)"
-          @select-event="emit('select-event', $event)"
-        />
-        <!-- Barras multi-dia (WAVE 11): mesma linha da semana, colunas start..end. -->
-        <button
-          v-for="({ row, seg }, idx) in spanSegments"
-          :key="`${seg.span.id}-${row}-${idx}`"
-          type="button"
-          class="calendar-span-bar"
-          :class="{ 'is-start': seg.startsHere, 'is-end': seg.endsHere }"
-          :style="spanStyle(row, seg)"
-          :title="`${seg.span.title} (tarefa com início e fim)`"
-          @click.stop="emit('select-span', seg.span)"
-        >
-          <span v-if="seg.startsHere" class="calendar-span-bar__label">{{ seg.span.title }}</span>
-        </button>
-      </div>
-    </div>
-  </section>
+    <template #day="{ day: cell, index }">
+      <DayCell
+        :style="cellStyle(index)"
+        :day="cell"
+        :events="eventsFor(cell.dateKey)"
+        :holidays="holidaysFor(cell.dateKey)"
+        :bg-urls="bgUrlsFor(cell.dateKey)"
+        :clients-by-id="clientsById"
+        :type-colors="typeColors || {}"
+        :max-chips="0"
+        :selected="cell.dateKey === selectedDate"
+        @select-day="emit('select-day', $event)"
+        @select-event="emit('select-event', $event)"
+      />
+    </template>
+    <template #overlay>
+      <!-- Barras multi-dia (WAVE 11): mesma linha da semana, colunas start..end. -->
+      <button
+        v-for="({ row, seg }, idx) in spanSegments"
+        :key="`${seg.span.id}-${row}-${idx}`"
+        type="button"
+        class="calendar-span-bar"
+        :class="{ 'is-start': seg.startsHere, 'is-end': seg.endsHere }"
+        :style="spanStyle(row, seg)"
+        :title="`${seg.span.title} (tarefa com início e fim)`"
+        @click.stop="emit('select-span', seg.span)"
+      >
+        <span v-if="seg.startsHere" class="calendar-span-bar__label">{{ seg.span.title }}</span>
+      </button>
+    </template>
+  </AppMonthCalendarGrid>
 </template>

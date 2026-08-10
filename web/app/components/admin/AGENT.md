@@ -85,13 +85,20 @@ com `/operacao/usuarios` (módulo Fila legado, `back/internal/modules/users` + `
   (`AppSearchInput`) + filtro por módulo (`AppSegmentedFilter`, sentinela `'all'`); reusa
   `admin/users/AdminRolePermissionMatrix.vue` na grade. Em readonly mostra só o resumo das permissões.
 - `LegacyMarker.vue` — badge "LEGADO"/"MOCK" (só platform_admin).
-- `ExperimentalFeaturesWorkspace.vue` — painel global exclusivo de
-  `platform_admin` em `/manage/experimental-features`. Usa
-  `usePlatformFeaturesStore`, carrega `GET /v1/platform/experimental-features`
-  antes de habilitar qualquer switch e reidrata toda escrita pelo retorno
-  autoritativo do `PUT`. O primeiro rollout é
-  `attendanceAudioRecording`; o toggle não inicia captura de microfone neste
-  bloco.
+- O rollout `attendanceAudioRecording` usa `usePlatformFeaturesStore`, mas seu
+  controle visual vive na pagina `/transcricoes`; nao recriar painel duplicado
+  em Manage. Somente `platform_admin` escreve no endpoint global.
+
+### Storage R2
+
+- `storage/AdminStorageWorkspace.vue`: painel global `/manage/storage`, exclusivo de
+  `platform_admin`, que apresenta metricas account-wide da Cloudflare, freshness, reservas locais
+  pendentes e o seletor persistido de destino para novos uploads (`R2`/`local`). Nunca rotular o
+  ledger local como consumo real do provider nem substituir metricas indisponiveis por estimativa.
+  A janela exibida inicia no `billingCycleDay`; payload aparece como o total da Cloudflare, enquanto
+  metadata e reservas aparecem separadas e entram no bloqueio conservador.
+- `storage/StorageLimitsDialog.vue`: modal padrao com sliders e inputs numericos sincronizados;
+  salva os tetos autoritativos via `PUT /v1/storage/settings`, sem receber credenciais.
 
 ## Camada de dados
 

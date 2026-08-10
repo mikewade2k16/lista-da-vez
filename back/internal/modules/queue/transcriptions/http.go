@@ -47,6 +47,43 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware) {
 	requireAccount := middleware.RequireAuthWithAccount
 
+	mux.Handle("GET /v1/operations/transcriptions/feature", requireAccount(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			access, ok := accessFromRequest(r)
+			if !ok {
+				writeError(w, r, ErrForbidden)
+				return
+			}
+			feature, err := service.GetRecordingFeature(r.Context(), access)
+			if err != nil {
+				writeError(w, r, err)
+				return
+			}
+			httpapi.WriteJSON(w, http.StatusOK, map[string]any{"feature": feature})
+		},
+	)))
+
+	mux.Handle("PUT /v1/operations/transcriptions/feature", requireAccount(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			access, ok := accessFromRequest(r)
+			if !ok {
+				writeError(w, r, ErrForbidden)
+				return
+			}
+			var input PutRecordingFeatureInput
+			if err := decodeJSON(w, r, &input); err != nil {
+				httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+				return
+			}
+			feature, err := service.PutRecordingFeature(r.Context(), access, input)
+			if err != nil {
+				writeError(w, r, err)
+				return
+			}
+			httpapi.WriteJSON(w, http.StatusOK, map[string]any{"feature": feature})
+		},
+	)))
+
 	mux.Handle("GET /v1/operations/transcriptions/config", requireAccount(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			access, ok := accessFromRequest(r)

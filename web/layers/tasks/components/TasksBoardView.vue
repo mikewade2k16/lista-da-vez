@@ -7,6 +7,7 @@ import OmniLazySelectMenuInput from './inputs/OmniLazySelectMenuInput.vue'
 import AppDatePicker from './AppDatePicker.vue'
 import { getApiBase } from '~/utils/api-client'
 import type { TaskCalendarMediaItem, TaskVideoItem } from '../types/tasks'
+import { taskChecklistProgress } from '../utils/task-checklist'
 
 const ctx = inject(TASKS_PAGE_CONTEXT_KEY)!
 const {
@@ -76,6 +77,14 @@ const {
   draftAvailableFields,
   addDraftField,
 } = ctx
+
+const checklistProgressByTask = computed(() => {
+  const progress = new Map<string, ReturnType<typeof taskChecklistProgress>>()
+  boardColumns.value.forEach((column) => {
+    column.tasks.forEach((task) => progress.set(task.id, taskChecklistProgress(task.checklist)))
+  })
+  return progress
+})
 
 // Render progressivo: cada coluna pinta os primeiros INITIAL_RENDER cards na hora (above-the-fold)
 // e o resto entra em lotes via requestIdleCallback, depois do primeiro paint. Num board com
@@ -550,6 +559,30 @@ watch(
             >
               {{ task.description }}
             </p>
+
+            <div
+              v-if="task.checklist?.length"
+              class="mt-2 grid gap-1"
+              :aria-label="'Progresso: ' + checklistProgressByTask.get(task.id)!.percent + '%'"
+            >
+              <div
+                class="flex items-center justify-between gap-2 text-[11px] font-medium text-[rgb(var(--muted))]"
+              >
+                <span class="inline-flex items-center gap-1">
+                  <UIcon name="i-lucide-list-checks" class="h-3.5 w-3.5" />
+                  {{ checklistProgressByTask.get(task.id)!.completed }}/{{
+                    checklistProgressByTask.get(task.id)!.total
+                  }}
+                </span>
+                <span>{{ checklistProgressByTask.get(task.id)!.percent }}%</span>
+              </div>
+              <div class="h-1.5 overflow-hidden rounded-full bg-[rgb(var(--border))]">
+                <span
+                  class="block h-full rounded-full bg-[rgb(var(--primary))] transition-[width] duration-200"
+                  :style="{ width: checklistProgressByTask.get(task.id)!.percent + '%' }"
+                ></span>
+              </div>
+            </div>
 
             <div
               class="tasks-page__board-card-inline mt-2 flex flex-col items-start gap-1"

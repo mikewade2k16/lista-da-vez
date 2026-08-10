@@ -33,6 +33,9 @@ Logging) e retorna o handler HTTP final.
 
 ### Gating por path (espelha o front)
 
+O prefixo `/v1/performance-feedback` tambem pertence ao modulo `queue` e segue o
+mesmo gate por account das rotas de analytics e operacao.
+
 Gateados: `queue` (`/v1/operations,/v1/alerts,/v1/reports,/v1/analytics,/v1/feedback,/v1/consultants,/v1/settings,/v1/stores`), `crm` (`/v1/erp,/v1/catalog`), `tasks` (`/v1/tasks,/v1/task-boards`) e os módulos satélites declarados em `moduleGatingRules()`, incluindo `social_publishing` (`/v1/social-publishing`). Rotas não listadas (auth, me, **admin**, users, notifications, access, tenants, webhooks, realtime, bi, roadmap) passam direto. O front injeta `X-Account-Id = auth.activeTenantId` em todo request via `createApiRequest` (plugin `account-id-bridge.client.ts`).
 
 ### O que ainda está pendente

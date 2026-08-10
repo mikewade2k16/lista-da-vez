@@ -19,6 +19,7 @@ type DrawerMode = 'side' | 'center' | 'fullscreen'
 const SIDE_MIN_WIDTH = 560
 const SIDE_MAX_CAP = 1120
 const SIDE_DEFAULT_WIDTH = 720
+const DRAWER_PREFERENCE_PREFIX = 'omni.entity-drawer.'
 
 const props = withDefaults(
   defineProps<{
@@ -32,12 +33,15 @@ const props = withDefaults(
     mode?: DrawerMode
     // Largura do modo 'side' em px (v-model:width). Sem binding, usa estado interno.
     width?: number
+    // Chave opcional para lembrar modo e largura neste navegador.
+    preferenceKey?: string
   }>(),
   {
     title: '',
     subtitle: '',
     mode: 'side',
     width: undefined,
+    preferenceKey: '',
   },
 )
 
@@ -124,6 +128,44 @@ function setWidth(next: number) {
   emit('update:width', clamped)
 }
 
+function preferenceStorageKey(): string {
+  return `${DRAWER_PREFERENCE_PREFIX}${props.preferenceKey.trim()}`
+}
+
+function restorePreference(): void {
+  if (!import.meta.client || !props.preferenceKey.trim()) return
+  try {
+    const raw = window.localStorage.getItem(preferenceStorageKey())
+    if (!raw) return
+    const saved = JSON.parse(raw) as { mode?: unknown; width?: unknown }
+    if (saved.mode === 'side' || saved.mode === 'center' || saved.mode === 'fullscreen') {
+      emit('update:mode', saved.mode)
+    }
+    if (typeof saved.width === 'number' && Number.isFinite(saved.width)) {
+      setWidth(saved.width)
+    }
+  } catch {
+    window.localStorage.removeItem(preferenceStorageKey())
+  }
+}
+
+function savePreference(): void {
+  if (!import.meta.client || !props.preferenceKey.trim()) return
+  try {
+    window.localStorage.setItem(
+      preferenceStorageKey(),
+      JSON.stringify({ mode: props.mode, width: internalWidth.value }),
+    )
+  } catch {
+    // Preferencia visual e best-effort; o drawer continua funcional sem storage.
+  }
+}
+
+watch(
+  () => [props.mode, internalWidth.value] as const,
+  () => savePreference(),
+)
+
 // Resize do modo side: arrasta a borda esquerda do painel (à direita). Mesma
 // mecanica comprovada do modal de tasks.
 function startResize(event: MouseEvent) {
@@ -162,7 +204,9 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
-  if (import.meta.client) document.addEventListener('keydown', onKeydown)
+  if (!import.meta.client) return
+  restorePreference()
+  document.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {

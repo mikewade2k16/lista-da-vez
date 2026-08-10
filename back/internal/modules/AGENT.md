@@ -66,5 +66,6 @@ Preferir esta sequencia para cada modulo:
 - `reports`: relatorios server-side sobre historico operacional
 - `analytics`: agregados para ranking, dados e inteligencia
 - `users`: administracao de contas, papeis, escopo, convite e reset administrativo
+- `storage`: storage privado compartilhado, ledger global de cotas e adapter Cloudflare R2
 
 `campaigns` ainda nao existe como modulo Go em `back/internal/modules`; enquanto isso, seus dados aparecem como campos/filtros em historico, relatorios e analytics.

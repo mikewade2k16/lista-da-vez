@@ -28,6 +28,7 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
     description:
       "Orquestrador de tarefas multi-tenant (boards + tabela). EM USO REAL: board geral da agencia (Crow Visuals, 247 tasks) + boards por cliente (Duby). Backend completo (T1-T9), realtime, tracking, RBAC, render progressivo. Multi-tenant fechado (board vive na conta-agencia; acesso org-aware). Refino continuo de performance e do editor segue como melhoria, nao bloqueio.",
     scope: [
+      "Eliminar refresh full/cascata de requests: reconciliar somente task, board ou campo alterado via REST + WS versionado",
       "Refinar performance do board para >500 cards",
       "Melhorar feedback de drag-and-drop entre colunas",
       "Adicionar filtros salvos por usuario",

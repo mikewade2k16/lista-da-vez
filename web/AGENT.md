@@ -101,6 +101,11 @@ Toda implementacao nova em `web/` deve:
 - `web/app/stores/users.ts` ja expõe o papel `store_terminal` para o acesso fixo da unidade.
 - `web/app/stores/access-control.ts` consome a matriz de acessos por perfil e os overrides individuais de usuario via `/v1/access/*`.
 - `web/app/stores/feedback.ts` gerencia o fluxo de feedback dos usuarios: envio por qualquer usuario autenticado e gestao (listar, filtrar, atualizar) por administradores via `/v1/feedback`. Feedback e feature do modulo `queue` (gating em `module-enabled.global.ts`); o `FeedbackNotificationsDropdown` so busca e so mostra o sino quando `enabledModules.includes('queue')` — conta sem o modulo (cardapio/bio-only) nao dispara `/v1/feedback/*` (evita 403).
+- O feedback de desempenho vive dentro de `/consultor`: o card abre
+  `PerformanceFeedbackModal`, que usa `/v1/performance-feedback`, snapshots de KPI e
+  blocos livres de `OmniEditor`. `/feedback-desempenho` apenas redireciona por
+  compatibilidade e nao possui item de menu ou workspace propria. O dominio continua
+  separado do canal publico `/suporte` acima.
 - `store_terminal` deve permanecer com workspace enxuta, operacao completa da propria loja e acesso apenas a telas seguras de leitura como `consultor`, `ranking`, `dados`, `inteligencia` e `relatorios`.
 - `web/app/components/users/UsersAccessManager.vue` e a referencia atual de grade administrativa sem `<table>`, com filtros locais, colunas configuraveis, detalhes e edicao inline.
 - `web/app/components/users/UsersRoleMatrixManager.vue` concentra a edicao do padrao de visibilidade/edicao por papel dentro da workspace de usuarios.

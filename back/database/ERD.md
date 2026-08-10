@@ -2,6 +2,29 @@
 
 ## Visao atual do banco
 
+### Storage compartilhado (migrations 0268-0272)
+
+- `storage.provider_state`: vinculo singleton do adapter `cloudflare_r2` ao account ID e bucket
+  dedicado validados na primeira conexao. Troca silenciosa de bucket e proibida.
+- `storage.monthly_usage`: ledger global mensal de operacoes Classe A/B mediadas pelo Omni e bytes
+  enviados. A reserva ocorre antes da chamada externa e permanece consumida mesmo se ela falhar.
+- `storage.settings`: singleton dos limites globais editaveis por `platform_admin`, seletor
+  `uploads_enabled` para novos uploads R2/local e `billing_cycle_day` (1..28) alinhado ao inicio do
+  periodo exibido pela Cloudflare, com tetos
+  absolutos dentro da franquia gratuita, limites independentes para imagem/video/audio/documento
+  e auditoria da ultima alteracao. `max_object_bytes` acompanha o maior teto especifico para o
+  limite tecnico do multipart HTTP.
+- `storage.objects`: metadados tenant-scoped dos objetos privados, com chave R2 unica, origem,
+  idempotencia por `account_id + source_module`, tamanho/MIME, ator e lifecycle
+  `pending|available|failed|deleted`. Objetos pending contam na reserva global de bytes.
+- `storage.multipart_uploads` e `storage.multipart_parts`: sessao R2 e ETags autoritativos de cada
+  parte, usados pelo worker Go para continuar sem repetir partes confirmadas.
+- `storage.multipart_deliveries`: fila duravel tenant-scoped do staging para o R2, com estado,
+  tentativas e proxima execucao. O path aponta para o volume privado `UPLOADS_DIR`; o original so
+  e removido depois da confirmacao integral do provider.
+- O PostgreSQL nao guarda binarios. O bucket R2 Standard e privado e as credenciais ficam somente
+  no ambiente da API.
+
 ```mermaid
 erDiagram
     USERS {
@@ -693,6 +716,15 @@ erDiagram
 - `consultants`
   - roster administrativo por loja para a operacao
   - no seed MVP cada consultor ja nasce com vinculo 1:1 em `users`
+- `planning_store_configs`
+  - configuracao versionada de funcionamento, modelos de turno, politica e equipe por `tenant_id + store_id`
+- `planning_staff_contracts`
+  - jornada, limite diario, peso de meta e disponibilidade normalizados por consultor e loja
+- `planning_schedules`
+  - escala versionada por `tenant_id + store_id + week_start`, com periodo de meta, rateio individual e estados `saved` e `published`
+  - metas individuais derivadas de escalas antigas sao reconciliadas pela migration `0276`; a geracao atual preenche semanas vazias e o consolidado mensal na mesma transacao
+- `planning_schedule_revisions`
+  - historico imutavel de cada versao salva, publicada ou reaberta da escala
 - `consultant_erp_links`
   - vinculo manual e auditavel entre funcionario ERP (`erp_employee_id`) e consultor da Lista de Vez
   - o CRM tenta primeiro esse vinculo manual; quando ele nao existe, usa `users.employee_code` e depois match exato de nome normalizado
@@ -736,6 +768,9 @@ erDiagram
   - solicitacao, retry, lease e tentativas formam o job duravel da transcricao
   - `summary_text`, `analysis_report` e o snapshot da configuracao preservam o resultado auditavel
   - guarda apenas a chave do audio privado, hash e tamanho; nunca o binario
+- `attendance_recording_settings`
+  - gate account-scoped para iniciar novas gravacoes, com autor e instante da alteracao
+  - desativar nao remove nem oculta gravacoes, transcricoes ou analises existentes
 - `attendance_recording_chunks`
   - manifesto idempotente dos blocos por `account_id + recording_id + sequence`
   - guarda chave privada, MIME, tamanho e SHA-256 de cada parte
@@ -955,6 +990,24 @@ A migration de seed cria:
   - terminal de loja como conta fixa com operacao completa da propria unidade
   - futuras amarras de dispositivo/origem por loja
   - editor de grants/overrides aproveitando `access_permissions` e `user_access_overrides`
+
+## Feedback de desempenho (migrations 0277, 0278, 0279 e 0280)
+
+- `queue.performance_feedback_reviews` possui uma linha unica por
+  `tenant_id + store_id + consultant_id + period_month + week`.
+- `week=0` representa o mes; S1-S4 cobrem os blocos de sete dias ate o dia 28.
+  Meses com dia 29 possuem S5, cobrindo 29-fim; o total e derivado automaticamente.
+- `metrics_snapshot` preserva exatamente os KPIs e metas exibidos no card no momento
+  em que o feedback e salvo. `feedback_sections` guarda uma lista ordenada de blocos livres com id, titulo
+  e HTML; a devolutiva do consultor permanece separada para autorizacao individual.
+- `queue.performance_feedback_settings` possui uma linha por `tenant_id` e define
+  `cadence` (`monthly` ou `weekly`) e `default_sections`; `version` protege edicoes
+  concorrentes da configuracao.
+- `consultant_user_id` registra o vinculo que autoriza a devolutiva individual,
+  sem FK cross-schema de `queue` para `core`.
+- `version` implementa concorrencia otimista; `tenant_id` e repetido em todos os
+  hot paths e os indices cobrem consulta por loja e historico por consultor.
+- O dominio e separado de `queue.user_feedback`, que continua sendo Suporte.
 
 ## Customer Intelligence (migrations 0242, 0243, 0246, 0248, 0250, 0251, 0254 e 0255)
 

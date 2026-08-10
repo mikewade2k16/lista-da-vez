@@ -82,7 +82,19 @@ POST   /v1/tasks/:taskId/comments
 POST   /v1/tasks/:taskId/shares           { clientAccountId, permission }
 ```
 
-**Metadata visual da task (2026-05-15):** `tasks.tasks.ui_metadata` persiste os campos que ainda nao viraram field values dedicados no backend: `responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet`, `createdBy`, `source` (procedencia; ex.: `"calendar"` no contrato C10 — WAVE 2), `videos` (`/uploads/tasks/` only) e `calendarMedia` (WAVE 6 cruzamento A: midia ESPELHADA read-only do evento vinculado; `/uploads/calendar/` only via `normalizeCalendarMediaMetadata`; populada pelo sync do calendar, o front so exibe). `normalizeTaskUIMetadata` (`repository_helpers.go`) e WHITELIST: chave fora da lista e descartada. O DTO de task deve sempre devolver `uiMetadata`, mesmo `{}`, para impedir que o front use cache local antigo como fonte autoritativa entre usuarios.
+**Metadata visual da task (2026-05-15):** `tasks.tasks.ui_metadata` persiste os campos que ainda nao viraram field values dedicados no backend: `responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet`, `createdBy`, `source` (procedencia; ex.: `"calendar"` no contrato C10 — WAVE 2), `videos` (`/uploads/tasks/` only), `checklist` (ate 200 itens genericos `{id,title,completed}`, titulo de ate 220 caracteres) e `calendarMedia` (WAVE 6 cruzamento A: midia ESPELHADA read-only do evento vinculado; `/uploads/calendar/` only via `normalizeCalendarMediaMetadata`; populada pelo sync do calendar, o front so exibe). `normalizeTaskUIMetadata` (`repository_helpers.go`) e WHITELIST: chave fora da lista e descartada tanto no create quanto no update. O DTO de task deve sempre devolver `uiMetadata`, mesmo `{}`, para impedir que o front use cache local antigo como fonte autoritativa entre usuarios.
+
+**Videos no R2:** novos uploads de task usam o modulo central `storage` por adapter da composition
+root. A URL segue `/uploads/tasks/{accountId}/{objectId}/{arquivo}`, com GET/HEAD e Range pela API;
+o caminho antigo de um unico arquivo continua no file server legado. O arquivo original e imutavel:
+nenhuma conversao de formato/container/codec/frame rate/resolucao/bitrate ou recompressao e permitida.
+Com `storage.settings.uploads_enabled=false`, a gravacao continua no storage local legado e respeita
+100 MiB; com R2 ativo, respeita o limite global configurado para video. `GET /v1/tasks/video-limit`
+e a fonte do limite ativo para o frontend validar antes de iniciar o multipart.
+Cada video pode carregar `checklistItemId` opcional em `ui_metadata.videos`. O frontend pergunta a
+associacao antes do upload quando a tarefa possui checklist e permite corrigi-la depois. O backend
+limita o identificador a 120 caracteres; o binario e o objeto R2 continuam independentes desse
+metadado e jamais sao regravados ao trocar o item.
 
 **Paginacao cursor-based em ListTasks (T5 — fechamento 2026-05-15):** o repository usa keyset pagination
 sobre a tupla `(sort_order, created_at, id)` — ordem total estavel mesmo quando varias tasks
@@ -111,7 +123,7 @@ estrategia (ex: adicionar filtro) sem quebrar URLs salvas.
   no repository garante que recursos de outras accounts nunca aparecem (vira `pgx.ErrNoRows` ->
   `ErrTaskNotFound`/`ErrBoardNotFound`). Nao misturar os dois.
 - **accountId nunca vem do body**: `withPermission` em `http.go` resolve a partir de `X-Account-Id`
-  (header), `accountId` (query) e `principal.TenantID` (fallback) — *nessa ordem*. Inputs com
+  (header), `accountId` (query) e `principal.TenantID` (fallback) — _nessa ordem_. Inputs com
   campo `AccountID` JSON sao ignorados pelo service. Para alterar a account de uma mutation, o
   cliente DEVE trocar o header.
 - **Logger injetado via `deps.Logger`**: `module.Build(...)` chama `service.SetLogger(deps.Logger)`.
@@ -228,31 +240,31 @@ const (
 
 `BuildTaskDTO(task, perspective)` decide o shape:
 
-| Campo                    | agency | client_viewer |
-|--------------------------|--------|---------------|
-| id, title, status, etc.  | ✅     | ✅ se share permite |
-| client_account_id        | ✅     | ❌ omitido |
-| tracking total           | ✅     | ❌ (a menos que tasks.tracking.view_all) |
-| audit_log                | ✅     | ❌ |
-| assignees                | ✅     | apenas os marcados como "compartilhar" |
-| tasks de outros clientes | listadas | **nunca aparecem** (filtro SQL) |
+| Campo                    | agency   | client_viewer                            |
+| ------------------------ | -------- | ---------------------------------------- |
+| id, title, status, etc.  | ✅       | ✅ se share permite                      |
+| client_account_id        | ✅       | ❌ omitido                               |
+| tracking total           | ✅       | ❌ (a menos que tasks.tracking.view_all) |
+| audit_log                | ✅       | ❌                                       |
+| assignees                | ✅       | apenas os marcados como "compartilhar"   |
+| tasks de outros clientes | listadas | **nunca aparecem** (filtro SQL)          |
 
 ## Permissões (13 keys)
 
-| Key                       | Notas |
-|---------------------------|-------|
-| `tasks.boards.view`       | Lista boards |
-| `tasks.boards.manage`     | CRUD board/columns/fields |
-| `tasks.tasks.view`        | Default para membros |
-| `tasks.tasks.create`      | |
-| `tasks.tasks.edit`        | Inclui mover |
-| `tasks.tasks.delete`      | Soft delete |
-| `tasks.tasks.assign`      | |
-| `tasks.tasks.comment`     | |
-| `tasks.tracking.use`      | Tracking próprio |
-| `tasks.tracking.view_all` | Tracking de outros + métricas |
-| `tasks.relations.manage`  | Vincular cross-module |
-| `tasks.shares.manage`     | Compartilhar com cliente externo |
+| Key                       | Notas                             |
+| ------------------------- | --------------------------------- |
+| `tasks.boards.view`       | Lista boards                      |
+| `tasks.boards.manage`     | CRUD board/columns/fields         |
+| `tasks.tasks.view`        | Default para membros              |
+| `tasks.tasks.create`      |                                   |
+| `tasks.tasks.edit`        | Inclui mover                      |
+| `tasks.tasks.delete`      | Soft delete                       |
+| `tasks.tasks.assign`      |                                   |
+| `tasks.tasks.comment`     |                                   |
+| `tasks.tracking.use`      | Tracking próprio                  |
+| `tasks.tracking.view_all` | Tracking de outros + métricas     |
+| `tasks.relations.manage`  | Vincular cross-module             |
+| `tasks.shares.manage`     | Compartilhar com cliente externo  |
 | `tasks.client_view`       | Visão limitada do cliente externo |
 
 ## Role templates
@@ -278,6 +290,7 @@ Payload: leve, orientado a invalidação (front busca snapshot via REST).
 ## Padrão Go
 
 Seguir `back/internal/modules/operations/` e `back/internal/modules/core/`:
+
 - UUID como `string`; scan nullable com `*string`
 - Sem `github.com/google/uuid` no service
 - Permissões catalogadas no DB via `core.permissions` (SyncCatalog no boot)
@@ -289,3 +302,10 @@ Seguir `back/internal/modules/operations/` e `back/internal/modules/core/`:
 2. Fase T4: RelationResolver registry para expand cross-module
 3. Fase T5: Front substitui localStorage por este backend e abre os canais WS
 4. Fase T10: Sistema de views (11 tipos) com endpoints /views/:id/data por layout
+
+## Video: fidelidade e entrega
+
+- Clicar em video abre o viewer modal compartilhado, com `contain`, aspect-ratio original e
+  navegacao lateral entre todos os videos da tarefa. Miniatura nunca reproduz com crop.
+- Depois que a API recebe o arquivo completo, a entrega/retomada no R2 pertence ao worker Go;
+  nunca pedir outro upload ao usuario para recuperar parte ou conclusao que falhou.

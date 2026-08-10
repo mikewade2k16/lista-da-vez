@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { buildConsultantStats } from '~/domain/utils/admin-metrics'
 import ConsultantHistoryPanel from '~/components/consultant/ConsultantHistoryPanel.vue'
 import ConsultantIntegratedWorkspace from '~/components/consultant/ConsultantIntegratedWorkspace.vue'
@@ -7,8 +7,14 @@ import ConsultantPlayerCard from '~/components/consultant/ConsultantPlayerCard.v
 import ConsultantRecentAttendancesTable from '~/components/consultant/ConsultantRecentAttendancesTable.vue'
 import ConsultantSelector from '~/components/consultant/ConsultantSelector.vue'
 import ConsultantSimulator from '~/components/consultant/ConsultantSimulator.vue'
+import PerformanceFeedbackModal from '~/components/performance-feedback/PerformanceFeedbackModal.vue'
+import PerformanceFeedbackSettingsButton from '~/components/performance-feedback/PerformanceFeedbackSettingsButton.vue'
+import { canViewPerformanceFeedback } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
 import { useConsultantsStore } from '~/stores/consultants'
 import type { ConsultantRosterItem } from '~/composables/useConsultantIntegratedRows'
+import type { PerformanceFeedbackTarget } from '~/types/performance-feedback'
+import { performanceFeedbackMetricsFromCard } from '~/domain/utils/performance-feedback'
 
 // Espelha a interface StaffItem de ConsultantIntegratedWorkspace.vue (não exportada lá);
 // usada apenas para tipar o prop integratedStaff repassado ao componente filho.
@@ -75,6 +81,17 @@ const props = withDefaults(
 )
 
 const consultantsStore = useConsultantsStore()
+const auth = useAuthStore()
+const feedbackOpen = ref(false)
+const feedbackTarget = ref<PerformanceFeedbackTarget | null>(null)
+
+const canOpenFeedback = computed(() =>
+  canViewPerformanceFeedback(
+    auth.role,
+    auth.effectivePermissionKeys,
+    auth.effectivePermissionsResolved,
+  ),
+)
 
 const roster = computed(() => props.state.roster || [])
 const selectedConsultant = computed(
@@ -82,6 +99,9 @@ const selectedConsultant = computed(
     roster.value.find((consultant) => consultant.id === props.state.selectedConsultantId) ||
     roster.value[0] ||
     null,
+)
+const feedbackSettingsStoreId = computed(() =>
+  String(selectedConsultant.value?.storeId || auth.activeStoreId || '').trim(),
 )
 const stats = computed(() => {
   if (!selectedConsultant.value) {
@@ -118,6 +138,36 @@ function selectConsultant(consultantId: string) {
 function updateSimulation(amount: number) {
   void consultantsStore.setConsultantSimulationAdditionalSales(amount)
 }
+
+function openFeedback(consultantId: string) {
+  const consultant = roster.value.find((item) => item.id === consultantId)
+  const storeId = String(consultant?.storeId || auth.activeStoreId || '').trim()
+  if (!consultant || !storeId || !stats.value) return
+  feedbackTarget.value = {
+    storeId,
+    storeName: String(consultant.storeName || '').trim(),
+    consultantId: consultant.id,
+    consultantName: consultant.name,
+    metrics: performanceFeedbackMetricsFromCard({
+      soldValue: stats.value.soldValue,
+      attendances: stats.value.attendances,
+      conversions: stats.value.conversions,
+      nonConversions: stats.value.nonConversions,
+      conversionRate: stats.value.conversionRate,
+      ticketAverage: stats.value.ticketAverage,
+      paScore: stats.value.paScore,
+      qualityScore: 0,
+      avgDurationMs: stats.value.averageDurationMs,
+      nonClientConversions: stats.value.nonClientConversions,
+      queueJumpServices: stats.value.queueJumpServices,
+      salesGoal: stats.value.monthlyGoal,
+      ticketGoal: stats.value.avgTicketGoal,
+      conversionGoal: stats.value.conversionGoal,
+      paGoal: stats.value.paGoal,
+    }),
+  }
+  feedbackOpen.value = true
+}
 </script>
 
 <template>
@@ -133,9 +183,12 @@ function updateSimulation(amount: number) {
   />
 
   <section v-else class="admin-panel" data-testid="consultant-panel">
-    <header class="admin-panel__header">
-      <h2 class="admin-panel__title">Perfil do consultor</h2>
-      <p class="admin-panel__text">Meta mensal, desempenho e simulação de venda.</p>
+    <header class="admin-panel__header consultant-workspace__header">
+      <div>
+        <h2 class="admin-panel__title">Perfil do consultor</h2>
+        <p class="admin-panel__text">Meta mensal, desempenho e simulação de venda.</p>
+      </div>
+      <PerformanceFeedbackSettingsButton :store-id="feedbackSettingsStoreId" />
     </header>
 
     <template v-if="selectedConsultant && stats">
@@ -151,6 +204,8 @@ function updateSimulation(amount: number) {
         :store-conversion-avg="storeConversionAvg"
         mode="full"
         :show-details-button="false"
+        :show-feedback-button="canOpenFeedback"
+        @open-feedback="openFeedback"
       />
 
       <div class="consultant-workspace__insights">
@@ -184,9 +239,18 @@ function updateSimulation(amount: number) {
 
     <div v-else class="admin-panel__empty">Nenhum consultor disponível para exibir.</div>
   </section>
+
+  <PerformanceFeedbackModal v-model:open="feedbackOpen" :target="feedbackTarget" />
 </template>
 
 <style scoped>
+.consultant-workspace__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .consultant-workspace__insights {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
@@ -205,6 +269,13 @@ function updateSimulation(amount: number) {
 @media (max-width: 1100px) {
   .consultant-workspace__insights {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .consultant-workspace__header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

@@ -18,13 +18,24 @@ consulta e entrega privada do audio ligado a um atendimento.
 - `POST /v1/operations/transcriptions/{id}/transcribe` cria ou recupera a
   solicitacao duravel para o Whisper local. Retry de falha reinicia as tentativas.
 - `GET /v1/operations/transcriptions` lista metadados paginados.
+- `GET /v1/operations/transcriptions/feature` le o gate de novas gravacoes da
+  account ativa. `PUT` no mesmo path exige `platform_admin` e publica
+  `context.updated` com resource `attendance_recording` no tenant alterado.
 - `GET /v1/operations/transcriptions/{id}/audio` serve o arquivo somente depois
   de validar autenticacao, membership, permissao e `account_id`.
+- Criar, enviar blocos e concluir uma gravacao continuam usando a permissao
+  operacional `workspace.operacao.edit`. Listar/abrir audio exige
+  `workspace.transcricoes.view`; reprocessar/configurar exige
+  `workspace.transcricoes.edit`. O baseline dessas chaves e owner/dev.
 
 ## Fonte de verdade e storage
 
 - PostgreSQL: `queue.attendance_recordings` e
   `queue.attendance_recording_chunks`.
+- O gate de captura e account-scoped e vive em
+  `queue.attendance_recording_settings`. Desativar impede somente a criacao de
+  novas gravacoes; listagem, audio, transcricao, analise e configuracao dos
+  registros existentes continuam disponiveis conforme a RBAC.
 - Binario: `ATTENDANCE_AUDIO_DIR`, fora de `/uploads`, com diretorios `0750` e
   arquivos `0600`.
 - O caminho nunca entra no JSON; o frontend recebe apenas `hasAudio`.

@@ -46,7 +46,7 @@ Ele nao deve cuidar de:
 
 ## Permissoes atuais
 
-O catalogo cobre workspaces (`operacao`, `consultor`, `ranking`, `dados`, `inteligencia`, `relatorios`, `campanhas`, `clientes`, `multiloja`, `usuarios`, `configuracoes`) e acoes administrativas de plataforma (`users.password.manage`, `access.role_defaults.manage`).
+O catalogo cobre workspaces (`operacao`, `transcricoes`, `consultor`, `ranking`, `dados`, `inteligencia`, `relatorios`, `campanhas`, `clientes`, `multiloja`, `planejamento`, `usuarios`, `configuracoes`) e acoes administrativas de plataforma (`users.password.manage`, `access.role_defaults.manage`). Planejamento usa `workspace.planejamento.view/edit`, sem herdar as permissoes de Multi-loja. `transcricoes` e `campanhas` pertencem por padrao somente a owner/platform_admin; overrides explicitos permanecem auditaveis e soberanos.
 
 WebSocket ainda nao usa permissoes `realtime.*` no catalogo Go atual; a conexao operacional valida `workspace.operacao.view` quando o principal ja vem com permissoes resolvidas.
 

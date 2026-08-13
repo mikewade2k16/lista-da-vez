@@ -71,6 +71,10 @@ const dayTitle = computed(() => (props.dateKey ? formatDayTitle(props.dateKey) :
 // secao read-only separada (nao se edita daqui — a fonte e a task).
 const activeEventMedia = computed<CalendarMediaItem[]>(() => activeEvent.value?.media || [])
 const activeTaskMedia = computed<CalendarMediaItem[]>(() => activeEvent.value?.linkedMedia || [])
+const activeViewerMedia = computed<CalendarMediaItem[]>(() => [
+  ...activeEventMedia.value,
+  ...activeTaskMedia.value,
+])
 
 // onEventMedia grava a nova lista de midia do evento ativo (upload/remove/reorder). Full-replace
 // do campo media via updateField (mesmo caminho dos demais campos inline; optimistic locking C12).
@@ -525,6 +529,7 @@ function addField(key: DrawerField): void {
           <div class="calendar-drawer__media">
             <CalendarMediaUploader
               :model-value="activeEventMedia"
+              :viewer-items="activeViewerMedia"
               label="Mídia do post"
               @update:model-value="onEventMedia"
             />
@@ -532,7 +537,12 @@ function addField(key: DrawerField): void {
 
           <!-- Mídia da task vinculada (espelho read-only; a fonte é a task). -->
           <div v-if="activeTaskMedia.length" class="calendar-drawer__media">
-            <CalendarMediaUploader :model-value="activeTaskMedia" readonly label="Mídia da task" />
+            <CalendarMediaUploader
+              :model-value="activeTaskMedia"
+              :viewer-items="activeViewerMedia"
+              readonly
+              label="Mídia da task"
+            />
           </div>
         </div>
       </div>

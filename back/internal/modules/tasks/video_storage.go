@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	maxTaskImageBytes           = 10 * 1024 * 1024
 	maxTaskVideoBytes           = 100 * 1024 * 1024
 	maxTaskVideoMultipartMemory = 8 * 1024 * 1024
 )
@@ -25,14 +26,21 @@ func NewDiskVideoStorage(rootDir string) *DiskVideoStorage {
 }
 
 func (storage *DiskVideoStorage) Save(_ context.Context, _, _, taskID, _, fileName, contentType string, content []byte) (*StoredTaskVideo, error) {
-	if len(content) == 0 || len(content) > maxTaskVideoBytes {
+	if len(content) == 0 {
 		return nil, ErrInvalidVideo
 	}
 
-	normalizedContentType := detectTaskVideoContentType(content, contentType)
-	extension := taskVideoExtension(normalizedContentType, fileName)
+	normalizedContentType := detectTaskMediaContentType(content, contentType, fileName)
+	extension := taskMediaExtension(normalizedContentType, fileName)
 	if normalizedContentType == "" || extension == "" {
 		return nil, ErrInvalidVideo
+	}
+	limit := maxTaskVideoBytes
+	if strings.HasPrefix(normalizedContentType, "image/") {
+		limit = maxTaskImageBytes
+	}
+	if len(content) > limit {
+		return nil, ErrVideoTooLarge
 	}
 
 	rootDir := strings.TrimSpace(storage.rootDir)
@@ -61,33 +69,87 @@ func (storage *DiskVideoStorage) Save(_ context.Context, _, _, taskID, _, fileNa
 	}, nil
 }
 
-func detectTaskVideoContentType(content []byte, fallback string) string {
+func detectTaskMediaContentType(content []byte, fallback, fileName string) string {
 	if len(content) > 0 {
 		sniffLen := len(content)
 		if sniffLen > 512 {
 			sniffLen = 512
 		}
-		detected := strings.ToLower(strings.TrimSpace(http.DetectContentType(content[:sniffLen])))
-		if strings.HasPrefix(detected, "video/") {
+		detected := normalizeTaskMediaContentType(http.DetectContentType(content[:sniffLen]))
+		if strings.HasPrefix(detected, "image/") ||
+			(strings.HasPrefix(detected, "video/") && taskMediaExtension(detected, fileName) != "") {
 			return detected
 		}
 	}
 
-	fallbackValue := strings.ToLower(strings.TrimSpace(fallback))
-	if strings.HasPrefix(fallbackValue, "video/") {
+	fallbackValue := normalizeTaskMediaContentType(fallback)
+	if fallbackValue != "" && taskMediaExtension(fallbackValue, fileName) != "" {
 		return fallbackValue
 	}
 	return ""
 }
 
-func taskVideoExtension(contentType string, fileName string) string {
+func normalizeTaskMediaContentType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(strings.Split(value, ";")[0])) {
+	case "image/jpeg", "image/jpg":
+		return "image/jpeg"
+	case "image/png":
+		return "image/png"
+	case "image/webp":
+		return "image/webp"
+	case "image/gif":
+		return "image/gif"
+	case "image/avif":
+		return "image/avif"
+	case "video/mp4", "video/quicktime", "video/webm", "video/ogg", "video/x-msvideo", "video/x-m4v", "video/mp4v-es", "video/m4v":
+		return strings.ToLower(strings.TrimSpace(strings.Split(value, ";")[0]))
+	default:
+		return ""
+	}
+}
+
+func taskMediaExtension(contentType string, fileName string) string {
 	switch strings.ToLower(strings.TrimSpace(contentType)) {
+	case "image/jpeg", "image/jpg":
+		if ext := strings.ToLower(filepath.Ext(strings.TrimSpace(fileName))); ext == ".jpg" || ext == ".jpeg" {
+			return ".jpg"
+		}
+		return ""
+	case "image/png":
+		if strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".png") {
+			return ".png"
+		}
+		return ""
+	case "image/webp":
+		if strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".webp") {
+			return ".webp"
+		}
+		return ""
+	case "image/gif":
+		if strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".gif") {
+			return ".gif"
+		}
+		return ""
+	case "image/avif":
+		if strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".avif") {
+			return ".avif"
+		}
+		return ""
 	case "video/mp4":
-		return ".mp4"
+		if strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".mp4") {
+			return ".mp4"
+		}
+		return ""
 	case "video/quicktime":
-		return ".mov"
+		if strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".mov") {
+			return ".mov"
+		}
+		return ""
 	case "video/webm":
-		return ".webm"
+		if strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".webm") {
+			return ".webm"
+		}
+		return ""
 	case "video/ogg":
 		return ".ogv"
 	case "video/x-msvideo":
@@ -97,6 +159,16 @@ func taskVideoExtension(contentType string, fileName string) string {
 	}
 
 	switch strings.ToLower(filepath.Ext(strings.TrimSpace(fileName))) {
+	case ".jpg", ".jpeg":
+		return ".jpg"
+	case ".png":
+		return ".png"
+	case ".webp":
+		return ".webp"
+	case ".gif":
+		return ".gif"
+	case ".avif":
+		return ".avif"
 	case ".mp4":
 		return ".mp4"
 	case ".mov":

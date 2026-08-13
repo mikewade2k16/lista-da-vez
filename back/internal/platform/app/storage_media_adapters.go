@@ -230,23 +230,33 @@ func (adapter *hybridTaskVideoStorage) Stat(ctx context.Context, accountID, obje
 }
 
 func (adapter *hybridTaskVideoStorage) MaxVideoBytes(ctx context.Context) (int64, error) {
+	limits, err := adapter.MediaLimits(ctx)
+	return limits.VideoMaxBytes, err
+}
+
+func (adapter *hybridTaskVideoStorage) MediaLimits(ctx context.Context) (tasks.TaskMediaLimits, error) {
+	fallback := tasks.TaskMediaLimits{ImageMaxBytes: 10 * 1024 * 1024, VideoMaxBytes: 100 * 1024 * 1024}
 	service := adapter.resolve()
 	if service == nil {
-		return 100 * 1024 * 1024, nil
+		return fallback, nil
 	}
 	enabled, err := service.UploadsEnabled(ctx)
 	if err != nil {
-		return 0, tasks.ErrVideoUnavailable
+		return tasks.TaskMediaLimits{}, tasks.ErrVideoUnavailable
 	}
 	if !enabled {
-		return 100 * 1024 * 1024, nil
+		return fallback, nil
 	}
 	settings, err := service.Settings(ctx)
 	if err != nil {
-		return 0, tasks.ErrVideoUnavailable
+		return tasks.TaskMediaLimits{}, tasks.ErrVideoUnavailable
 	}
-	return settings.VideoMaxBytes, nil
+	return tasks.TaskMediaLimits{
+		ImageMaxBytes: settings.ImageMaxBytes,
+		VideoMaxBytes: settings.VideoMaxBytes,
+	}, nil
 }
+
 func (adapter *hybridTaskVideoStorage) Open(ctx context.Context, accountID, objectID, byteRange string) (tasks.TaskVideoContent, error) {
 	service := adapter.resolve()
 	if service == nil {
@@ -316,6 +326,10 @@ func mapTaskStorageError(err error) error {
 		return tasks.ErrVideoTooLarge
 	case errors.Is(err, objectstorage.ErrInvalidUpload), errors.Is(err, objectstorage.ErrUnsupportedFileType):
 		return tasks.ErrInvalidVideo
+	case errors.Is(err, objectstorage.ErrAnalyticsUnavailable):
+		return fmt.Errorf("%w: %v", tasks.ErrVideoMetricsUnavailable, err)
+	case errors.Is(err, objectstorage.ErrClassAQuotaExceeded), errors.Is(err, objectstorage.ErrClassBQuotaExceeded), errors.Is(err, objectstorage.ErrStorageQuotaExceeded):
+		return fmt.Errorf("%w: %v", tasks.ErrVideoQuotaExceeded, err)
 	default:
 		return fmt.Errorf("%w: %v", tasks.ErrVideoUnavailable, err)
 	}

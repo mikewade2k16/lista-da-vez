@@ -48,6 +48,46 @@ Antes de criar componente novo:
 
 ## Catalogo atual
 
+### `ui` — mídia compartilhada
+
+- [OmniMediaGrid.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/OmniMediaGrid.vue)
+  e a grade canonica de midia compacta usada por Calendar e Tasks. Centraliza miniaturas com
+  `object-fit: contain`, upload por clique ou drop de arquivos, progresso, remocao, badge de capa,
+  reordenacao por drag-and-drop e abertura no `OmniMediaViewer`. O componente emite `files`,
+  `remove` e `reorder`; `reorder` inclui `{ from, to, orderedIds }`, pois indices isolados nao sao
+  suficientes quando a grade mistura fontes. Cada dominio continua responsavel por validar, enviar
+  e persistir seus dados.
+  A primeira midia reordenavel e a capa quando `showCover` estiver ativo. Itens podem declarar
+  `badgeLabel`, `badgeTone`, `removable=false` e `reorderable=false`. Propriedade e ordenacao sao
+  capacidades independentes: um item pode ser `removable=false` e ainda `reorderable=true`, como a
+  midia do Calendar dentro de Tasks. O badge de origem nao substitui o indicador `Capa`/ordem.
+  Nao duplicar grids locais de anexos.
+- [media-grid/utils.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/media-grid/utils.ts)
+  contem as operacoes imutaveis de reordenacao e reconciliacao por ids compartilhadas pelos adapters.
+  `orderMediaItemsByIds` ignora ids removidos/duplicados e acrescenta novos itens no final.
+
+  **Falha conhecida corrigida (2026-08-11):** nao calcular a possibilidade de arraste somente pelo
+  numero de itens proprios quando a grade visual e unificada. Isso ocultou o drag-and-drop em Tasks
+  no caso 1 proprio + N herdados. O adapter decide quais itens podem mudar de posicao e persiste ids,
+  enquanto `removable` continua controlando exclusivamente exclusao.
+
+- [OmniVideoPlayer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/OmniVideoPlayer.vue)
+  e o player canonico para videos do produto. Aceita os temas `omni`, `cinema`, `social` e
+  `minimal`, os presets de aspecto `auto`, `landscape`, `portrait`, `square` e `cinema`,
+  `fit="contain|cover"`, titulo/descricao e tracks WebVTT. A prop `controls` recebe somente os
+  controles que o contexto deve mostrar: `previous`, `next`, `play`, `seek-back`, `seek-forward`,
+  `progress`, `time`, `volume`, `speed`, `quality`, `captions`, `pip`, `download` e `fullscreen`.
+  `sources` habilita qualidades alternativas preservando tempo/playback. Nao criar
+  `<video controls>` paralelo. Atalhos do player focado seguem o padrao YouTube: Espaco/Backspace/K
+  alternam play-pause, setas esquerda/direita buscam 5s, setas cima/baixo ajustam volume em 5%,
+  `M` silencia, `F` alterna fullscreen e `C` alterna legenda.
+  A prop `autofocus` deve ser ativada em viewers modais para que os atalhos funcionem assim que
+  o player abrir; ela permanece desativada por padrao em players inline para nao roubar foco.
+- [OmniMediaViewer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/OmniMediaViewer.vue)
+  usa o `OmniVideoPlayer` com tema `cinema` e `autofocus`; continua responsavel pelo overlay,
+  navegacao entre arquivos e fallback de codec, enquanto o player concentra reproducao e controles.
+  O overlay fica acima dos modais de dominio para poder ser aberto de drawers e formularios teleportados.
+
 ### `pwa`
 
 - [PwaReloadPrompt.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/pwa/PwaReloadPrompt.vue)
@@ -751,11 +791,15 @@ com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMess
     contar como uma celula extra. Usado no [CalendarEventForm.vue] e no [DayDrawer.vue]. Clicar num item abre o
     [CalendarMediaViewer.vue] (botao remover via `@click.stop`); thumb de video usa `posterUrl` como
     `<img>` quando existe (senao `<video preload="metadata">`). Video sobe por `uploadVideoWithPoster`.
+    O componente e o adaptador de Calendar para `OmniMediaGrid`: mantem limites, upload/poster e
+    associacao ao item do evento, enquanto a grade compartilhada fornece clique, drop, viewer e
+    reordenacao. A prop opcional `viewerItems` permite unir secoes do mesmo item numa galeria unica;
+    sem ela, a navegacao fica restrita ao `modelValue`.
 - [CalendarMediaViewer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarMediaViewer.vue)
-  Overlay em tela cheia (Teleport body) para imagem OU `<video controls autoplay :poster>`. Props
-  `items: CalendarMediaItem[]` + `startIndex`; navegacao < > (setas do teclado tambem), nome+tamanho
-  no rodape. Fecha por X, Esc E clique no backdrop (as tres coexistem). Estilos em
-  `assets/styles/calendar/media.css` (`.calendar-viewer__*`, so tokens).
+  adapta `CalendarMediaItem[]` para o `OmniMediaViewer`, que renderiza imagens e o
+  `OmniVideoPlayer`. Recebe `items` + `startIndex`, preserva navegacao anterior/proximo, nome,
+  tamanho, fechamento por X/Esc/backdrop e resolve URLs relativas contra a API. O componente
+  compartilhado deve ter import executavel explicito; `import type` sozinho nao o registra em runtime.
 - [CalendarEventForm.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarEventForm.vue)
   Modal de **criar/editar** evento (titulo, cliente, responsavel, data, horario, tipo, status,
   prioridade, descricao). Emite `submit`/`cancel`/`remove`; a pagina chama

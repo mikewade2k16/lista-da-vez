@@ -160,6 +160,19 @@ func (fakeUsageClient) Usage(_ context.Context, start, end time.Time) (CloudUsag
 	return CloudUsage{Available: true, Configured: true, Source: "test", WindowStart: start, WindowEnd: end, FetchedAt: end}, nil
 }
 
+type sequenceUsageClient struct {
+	calls  int
+	errors []error
+}
+
+func (client *sequenceUsageClient) Usage(_ context.Context, start, end time.Time) (CloudUsage, error) {
+	client.calls++
+	if client.calls <= len(client.errors) && client.errors[client.calls-1] != nil {
+		return CloudUsage{}, client.errors[client.calls-1]
+	}
+	return CloudUsage{Available: true, Configured: true, Source: "test", WindowStart: start, WindowEnd: end, FetchedAt: end}, nil
+}
+
 func newTestService(cfg Config, repository Repository, client ObjectClient) *Service {
 	return NewService(cfg, repository, client, fakeUsageClient{})
 }
@@ -193,6 +206,43 @@ func TestUploadPreservesOriginalBytesExactly(t *testing.T) {
 	}
 	if !reflect.DeepEqual(client.putContent, upload.Content) {
 		t.Fatalf("provider received modified bytes: got %v want %v", client.putContent, upload.Content)
+	}
+}
+
+func TestUploadRetriesTransientCloudUsageFailureOnce(t *testing.T) {
+	cfg := validConfig()
+	repository := &fakeRepository{state: ProviderState{AccountID: cfg.AccountID, Bucket: cfg.Bucket}}
+	client := &fakeClient{}
+	usageClient := &sequenceUsageClient{errors: []error{ErrAnalyticsUnavailable}}
+	service := NewService(cfg, repository, client, usageClient)
+
+	if _, err := service.Upload(context.Background(), validUpload()); err != nil {
+		t.Fatalf("Upload returned error after transient metrics failure: %v", err)
+	}
+	if usageClient.calls != 2 {
+		t.Fatalf("expected two analytics attempts, got %d", usageClient.calls)
+	}
+	if client.putCalls != 1 {
+		t.Fatalf("expected upload after retry, got %d R2 calls", client.putCalls)
+	}
+}
+
+func TestUploadFailsClosedAfterCloudUsageRetryIsExhausted(t *testing.T) {
+	cfg := validConfig()
+	repository := &fakeRepository{state: ProviderState{AccountID: cfg.AccountID, Bucket: cfg.Bucket}}
+	client := &fakeClient{}
+	usageClient := &sequenceUsageClient{errors: []error{ErrAnalyticsUnavailable, ErrAnalyticsUnavailable}}
+	service := NewService(cfg, repository, client, usageClient)
+
+	_, err := service.Upload(context.Background(), validUpload())
+	if !errors.Is(err, ErrAnalyticsUnavailable) {
+		t.Fatalf("expected ErrAnalyticsUnavailable, got %v", err)
+	}
+	if usageClient.calls != 2 {
+		t.Fatalf("expected exactly two analytics attempts, got %d", usageClient.calls)
+	}
+	if client.putCalls != 0 {
+		t.Fatalf("R2 upload must remain blocked without metrics, got %d calls", client.putCalls)
 	}
 }
 
@@ -292,6 +342,48 @@ func TestUploadStopsBeforeR2WhenQuotaIsExhausted(t *testing.T) {
 	}
 	if client.putCalls != 0 {
 		t.Fatalf("R2 must not be called after quota rejection, got %d calls", client.putCalls)
+	}
+}
+
+func TestUploadProtectsBytesConfirmedLocallyBeforeCloudflareReflectsThem(t *testing.T) {
+	cfg := validConfig()
+	settings := validSettings()
+	settings.StorageLimitBytes = 95
+	repository := &fakeRepository{
+		state:    ProviderState{AccountID: cfg.AccountID, Bucket: cfg.Bucket},
+		settings: settings,
+		usage:    Usage{UploadedBytes: 90},
+	}
+	client := &fakeClient{}
+	service := newTestService(cfg, repository, client)
+
+	_, err := service.Upload(context.Background(), validUpload())
+	if !errors.Is(err, ErrStorageQuotaExceeded) {
+		t.Fatalf("expected local confirmed bytes to protect quota, got %v", err)
+	}
+	if client.putCalls != 0 {
+		t.Fatalf("R2 must not be called after conservative quota rejection, got %d calls", client.putCalls)
+	}
+}
+
+func TestUploadProtectsClassAReservedLocallyBeforeCloudflareReflectsIt(t *testing.T) {
+	cfg := validConfig()
+	settings := validSettings()
+	settings.ClassALimit = 2
+	repository := &fakeRepository{
+		state:    ProviderState{AccountID: cfg.AccountID, Bucket: cfg.Bucket},
+		settings: settings,
+		usage:    Usage{ClassARequests: 2},
+	}
+	client := &fakeClient{}
+	service := newTestService(cfg, repository, client)
+
+	_, err := service.Upload(context.Background(), validUpload())
+	if !errors.Is(err, ErrClassAQuotaExceeded) {
+		t.Fatalf("expected local Class A reservations to protect quota, got %v", err)
+	}
+	if client.putCalls != 0 {
+		t.Fatalf("R2 must not be called after conservative Class A rejection, got %d calls", client.putCalls)
 	}
 }
 

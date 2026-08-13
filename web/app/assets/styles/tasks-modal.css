@@ -436,61 +436,6 @@
   font-size: 0.74rem;
 }
 
-/* WAVE 6 (cruzamento A): midia do calendario espelhada na task (read-only, do evento vinculado). */
-.tasks-page__task-calmedia {
-  margin-top: 1rem;
-}
-
-.tasks-page__task-calmedia-head {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: rgb(var(--text));
-  font-size: 0.86rem;
-  font-weight: 700;
-}
-
-.tasks-page__task-calmedia-hint {
-  color: rgb(var(--muted));
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
-.tasks-page__task-calmedia-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
-  gap: 0.5rem;
-  margin-top: 0.6rem;
-}
-
-.tasks-page__task-calmedia-item {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-  border: 1px solid rgb(var(--border));
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface-2));
-}
-
-.tasks-page__task-calmedia-item img,
-.tasks-page__task-calmedia-item video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.tasks-page__task-calmedia-play {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  background: rgb(0 0 0 / 0.28);
-  font-size: 1.2rem;
-  pointer-events: none;
-}
-
 .tasks-page__task-relations,
 .tasks-page__task-comments {
   margin-top: 1.4rem;

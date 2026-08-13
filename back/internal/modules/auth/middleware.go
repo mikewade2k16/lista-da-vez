@@ -107,6 +107,20 @@ func (middleware *Middleware) RequireAuthWithAccount(next http.Handler) http.Han
 			return
 		}
 
+		// A autorizacao dos modulos e por-account. Quando o checker oferece a
+		// capacidade, substitui a matriz global/coarse pela RBAC efetiva da account
+		// antes do handler (papel custom + overrides inclusos). Checkers simples de
+		// testes/integracoes continuam validos e preservam o comportamento anterior.
+		if resolver, ok := middleware.accountChecker.(AccountPermissionResolver); ok {
+			permissions, err := resolver.ResolveAccountPermissions(r.Context(), accountID, principal.UserID)
+			if err != nil {
+				httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao resolver permissoes da account.")
+				return
+			}
+			principal.Permissions = append([]string{}, permissions...)
+			principal.PermissionsResolved = true
+		}
+
 		principal.AccountID = accountID
 		ctx := context.WithValue(r.Context(), principalContextKey, principal)
 		next.ServeHTTP(w, r.WithContext(ctx))

@@ -400,8 +400,12 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   update, delete e criacao de task devolvem 404 para evento de outro cliente.
 - Defesa em profundidade: o store filtra por `account_id` em todo GET/UPDATE/DELETE
   (recurso de outra account => `pgx.ErrNoRows` => 404, nunca 403).
-- Rotas principais usam membership validada e as permissoes `calendar.view`/`calendar.manage`
-  quando o Principal ja vem com matriz resolvida; `owner`/`platform_admin` preservam o acesso.
+- Rotas principais usam membership validada e as permissoes ACCOUNT-SCOPED
+  `calendar.view`/`calendar.manage`; `RequireAuthWithAccount` hidrata a RBAC custom efetiva
+  antes de `requireCalendarPermission`, incluindo overrides allow/deny. Nao voltar a ler apenas
+  a matriz coarse global: em 2026-08-12 isso barrava com 403 a agency_member Crow com papel
+  custom `editor`, mesmo com `calendar.view/manage` ativos na conta. `owner`/`platform_admin`
+  preservam o bypass existente.
 - Gating por modulo em `app.go` (`{Prefix: "/v1/calendar", ModuleID: "calendar"}`);
   platform_admin tem bypass.
 

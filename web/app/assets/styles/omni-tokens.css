@@ -21,6 +21,10 @@
   --border: 226 232 240;
   --text: 15 23 42;
   --muted: 100 116 139;
+  /* Scrim semantico: overlays precisam escurecer a pagina em todos os temas.
+     Derivar de --text inverte o resultado no dark e cria um veu branco. */
+  --modal-scrim: 3 6 12;
+  --video-player-foreground: 248 250 252;
   --primary: 99 102 241;
   --primary-600: 79 70 229;
   --success: 34 197 94;

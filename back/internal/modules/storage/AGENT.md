@@ -29,13 +29,18 @@ credenciais R2 e nao escrevem diretamente no bucket.
   chamar o R2 novamente.
 - Reserva de bytes inclui objetos `pending` e `available`; concorrencia global usa advisory lock na
   mesma transacao. Ao atingir qualquer teto, o service falha fechado.
+- Como Analytics pode refletir uploads com atraso, o preflight e o painel somam conservadoramente
+  `monthly_usage.uploaded_bytes` e as operacoes A/B do ciclo atual aos totais account-wide, alem de metadados e pendencias.
+  A duplicacao temporaria depois que a Cloudflare refletir o objeto e intencional e fail-safe.
 - Falha/timeout de `PutObject` e resultado ambiguo: o objeto permanece `pending` e os bytes ficam
   reservados ate uma reconciliacao futura provar ausencia ou remover o objeto. Nunca liberar no escuro.
 - `connection-check` reconcilia por `HeadObject`: existente vira `available`; ausente so vira
   `failed` depois de transcorrer ao menos todo o `R2_UPLOAD_TIMEOUT`.
 - O ciclo de faturamento e persistido em `storage.settings.billing_cycle_day` (1..28; inicialmente
   27 conforme o painel da conta). Consultas de operacoes usam esse inicio de ciclo, nunca o primeiro
-  dia do mes por suposicao. Antes de cada novo upload, as metricas sao atualizadas sem cache.
+  dia do mes por suposicao. Antes de cada novo upload, as metricas sao atualizadas sem cache. Uma
+  falha transitoria da Cloudflare recebe exatamente uma nova tentativa apos 200 ms; se ela tambem
+  falhar, o upload continua fail-closed e nenhum snapshot anterior do painel autoriza a gravacao.
 - O cartao de armazenamento mostra `payloadSize`, igual ao total do painel Cloudflare; `metadataSize`
   aparece separado e e somado apenas ao total conservador usado para bloquear novos uploads.
 - O teto instantaneo de 9 GB garante que a media dos picos diarios nao ultrapasse 9 GB-mes, desde

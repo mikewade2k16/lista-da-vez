@@ -67,6 +67,13 @@ type AccountMemberChecker interface {
 	IsMember(ctx context.Context, accountID, userID string) (bool, error)
 }
 
+// AccountPermissionResolver e uma capacidade opcional do checker de account.
+// Quando presente, RequireAuthWithAccount troca a matriz global/coarse pela RBAC
+// efetiva da account validada antes de entregar o Principal ao handler.
+type AccountPermissionResolver interface {
+	ResolveAccountPermissions(ctx context.Context, accountID, userID string) ([]string, error)
+}
+
 type LoginInput struct {
 	Email    string
 	Password string

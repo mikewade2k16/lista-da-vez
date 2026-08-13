@@ -164,6 +164,15 @@ type TaskVideoLimitStorage interface {
 	MaxVideoBytes(ctx context.Context) (int64, error)
 }
 
+type TaskMediaLimits struct {
+	ImageMaxBytes int64 `json:"imageMaxBytes"`
+	VideoMaxBytes int64 `json:"videoMaxBytes"`
+}
+
+type TaskMediaLimitStorage interface {
+	MediaLimits(ctx context.Context) (TaskMediaLimits, error)
+}
+
 type Comment struct {
 	ID           string     `json:"id"`
 	TaskID       string     `json:"taskId"`

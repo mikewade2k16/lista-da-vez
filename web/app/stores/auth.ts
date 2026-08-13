@@ -156,8 +156,13 @@ export const useAuthStore = defineStore('auth', () => {
       effectivePermissionsResolved.value,
     ),
   )
-  const homeWorkspaceId = computed(() => allowedWorkspaces.value[0] || 'operacao')
-  const homePath = computed(() => getWorkspacePath(homeWorkspaceId.value))
+  // Usuario ativo sem nenhum workspace continua autenticado. `/perfil` e a rota
+  // universal (sem workspace/module gate); usar `/operacao` como fallback criava
+  // um loop no auth.global: a rota negada redirecionava para ela mesma.
+  const homeWorkspaceId = computed(() => allowedWorkspaces.value[0] || '')
+  const homePath = computed(() =>
+    homeWorkspaceId.value ? getWorkspacePath(homeWorkspaceId.value) : '/perfil',
+  )
   const accessibleStoreIds = computed(() =>
     storeContext.value.length
       ? storeContext.value.map((store) => String(store?.id || '').trim()).filter(Boolean)

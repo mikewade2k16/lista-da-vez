@@ -77,6 +77,31 @@ func TestBuildFindAccessibleQueryReadsStoreScopedTenantFromCoreSettings(t *testi
 	assertStringSliceArgContains(t, args, 2, "queue.consultant")
 }
 
+func TestBuildListAccessibleQueryBuildsOrganizationClientCatalogForCustomRole(t *testing.T) {
+	query, args := buildListAccessibleQuery(auth.Principal{
+		UserID: "user-agency-member",
+		Role:   "",
+	}, ListInput{ClientCatalog: true})
+
+	assertQueryContains(t, query, "t.is_agency = false")
+	assertQueryContains(t, query, "core.organization_users")
+	assertQueryContains(t, query, "ou.organization_id = t.organization_id")
+	assertQueryContains(t, query, "core.account_users")
+	if len(args) != 1 || args[0] != "user-agency-member" {
+		t.Fatalf("expected only user id arg, got %#v", args)
+	}
+}
+
+func TestBuildListAccessibleQueryBuildsGlobalClientCatalogForPlatformAdmin(t *testing.T) {
+	query, _ := buildListAccessibleQuery(auth.Principal{
+		UserID: "platform-user",
+		Role:   auth.RolePlatformAdmin,
+	}, ListInput{ClientCatalog: true})
+
+	assertQueryContains(t, query, "t.is_agency = false")
+	assertQueryContains(t, query, "true or")
+}
+
 func assertQueryUsesCoreRoles(t *testing.T, query string) {
 	t.Helper()
 	assertQueryContains(t, query, "core.account_users")

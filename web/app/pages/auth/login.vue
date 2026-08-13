@@ -189,7 +189,7 @@ async function submitLogin() {
       </button>
 
       <p class="admin-auth-meta">
-        Se o acesso estiver inativo, bloqueado ou sem cliente vinculado, fale com um administrador.
+        Se o acesso estiver inativo ou bloqueado, fale com um administrador.
       </p>
     </form>
   </AdminAuthShell>

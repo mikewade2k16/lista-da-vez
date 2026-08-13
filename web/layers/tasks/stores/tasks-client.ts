@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { useAuthStore } from '~/stores/auth'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
-// Fonte de verdade: core.accounts, exposta por GET /v1/tenants. O "cliente" de uma task e o id
+// Fonte de verdade: core.accounts, exposta pelo catalogo GET /v1/tenants/clients. O "cliente" de uma task e o id
 // UUID do account (gravado em clientAccountId). NAO ha mais lista mock — ver docs/LEGADO.md §4 +
 // memoria project_tasks_client_source.
 interface TaskClientOption {
@@ -56,7 +56,7 @@ export const useTasksClientStore = defineStore('tasks-client', () => {
     loadingClientOptions.value = true
     clientOptionsError.value = ''
     try {
-      const response = await apiRequest('/v1/tenants')
+      const response = await apiRequest('/v1/tenants/clients')
       const list = Array.isArray(response?.tenants) ? (response.tenants as BackendTenant[]) : []
       clientOptions.value = list
         .filter((tenant) => tenant?.id && (tenant.active ?? tenant.isActive ?? true))

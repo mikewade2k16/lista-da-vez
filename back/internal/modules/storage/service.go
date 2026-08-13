@@ -24,6 +24,8 @@ var (
 	byteRangePattern         = regexp.MustCompile(`^bytes=\d*-\d*$`)
 )
 
+const cloudUsageRetryDelay = 200 * time.Millisecond
+
 type Service struct {
 	config           Config
 	repository       Repository
@@ -260,7 +262,7 @@ func (service *Service) Upload(ctx context.Context, input UploadInput) (Object, 
 	if err != nil {
 		return Object{}, err
 	}
-	cloudUsage := service.readCloudUsage(ctx, true, settings.BillingCycleDay)
+	cloudUsage := service.readCloudUsageForUpload(ctx, settings.BillingCycleDay)
 	if !cloudUsage.Available {
 		return Object{}, ErrAnalyticsUnavailable
 	}
@@ -268,10 +270,10 @@ func (service *Service) Upload(ctx context.Context, input UploadInput) (Object, 
 	if err != nil {
 		return Object{}, err
 	}
-	if cloudUsage.StoredBytes+cloudUsage.MetadataBytes+localUsage.PendingBytes+object.SizeBytes > settings.StorageLimitBytes {
+	if cloudUsage.StoredBytes+cloudUsage.MetadataBytes+localUsage.UploadedBytes+localUsage.PendingBytes+object.SizeBytes > settings.StorageLimitBytes {
 		return Object{}, ErrStorageQuotaExceeded
 	}
-	if cloudUsage.ClassARequests+1 > settings.ClassALimit {
+	if cloudUsage.ClassARequests+localUsage.ClassARequests+1 > settings.ClassALimit {
 		return Object{}, ErrClassAQuotaExceeded
 	}
 	reserved, existing, err := service.repository.ReserveUpload(
@@ -295,6 +297,24 @@ func (service *Service) Upload(ctx context.Context, input UploadInput) (Object, 
 		return Object{}, fmt.Errorf("R2 object uploaded but metadata remains pending: %w", err)
 	}
 	return available, nil
+}
+
+// readCloudUsageForUpload repete uma unica vez a consulta account-wide quando
+// a Cloudflare falha transitoriamente. O segundo erro continua fail-closed: o
+// cache do painel nunca autoriza upload e nenhum budget e relaxado.
+func (service *Service) readCloudUsageForUpload(ctx context.Context, cycleDay int) CloudUsage {
+	usage := service.readCloudUsage(ctx, true, cycleDay)
+	if usage.Available || !usage.Configured || ctx.Err() != nil {
+		return usage
+	}
+	timer := time.NewTimer(cloudUsageRetryDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return usage
+	case <-timer.C:
+		return service.readCloudUsage(ctx, true, cycleDay)
+	}
 }
 
 func (service *Service) readCloudUsage(ctx context.Context, force bool, cycleDay int) CloudUsage {

@@ -2,21 +2,35 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 )
 
 func (service *Service) TaskVideoMaxBytes(ctx context.Context) int64 {
+	return service.TaskMediaLimits(ctx).VideoMaxBytes
+}
+
+func (service *Service) TaskMediaLimits(ctx context.Context) TaskMediaLimits {
+	fallback := TaskMediaLimits{ImageMaxBytes: maxTaskImageBytes, VideoMaxBytes: maxTaskVideoBytes}
+	if storage, ok := service.videoStore.(TaskMediaLimitStorage); ok {
+		limits, err := storage.MediaLimits(ctx)
+		if err == nil && limits.ImageMaxBytes > 0 && limits.VideoMaxBytes > 0 {
+			return limits
+		}
+	}
 	storage, ok := service.videoStore.(TaskVideoLimitStorage)
 	if !ok {
-		return maxTaskVideoBytes
+		return fallback
 	}
 	limit, err := storage.MaxVideoBytes(ctx)
 	if err != nil || limit <= 0 {
-		return maxTaskVideoBytes
+		return fallback
 	}
-	return limit
+	fallback.VideoMaxBytes = limit
+	return fallback
 }
 
 func (service *Service) UploadTaskVideoStream(ctx context.Context, access AccessContext, taskID, idempotencyKey, fileName, contentType, checklistItemID string, sizeBytes int64, content io.Reader) (TaskVideo, error) {
@@ -36,6 +50,7 @@ func (service *Service) UploadTaskVideoStream(ctx context.Context, access Access
 	}
 	stored, err := storage.SaveStream(ctx, access.AccountID, access.UserID, taskID, idempotencyKey, fileName, contentType, sizeBytes, content)
 	if err != nil {
+		service.logVideoUploadFailure(ctx, access, taskID, err)
 		return TaskVideo{}, err
 	}
 	name := strings.TrimSpace(fileName)
@@ -43,6 +58,27 @@ func (service *Service) UploadTaskVideoStream(ctx context.Context, access Access
 		name = stored.ID
 	}
 	return TaskVideo{ID: stored.ID, Name: name, URL: stored.Path, Size: stored.SizeBytes, ContentType: stored.ContentType, ChecklistItemID: strings.TrimSpace(checklistItemID), UploadedAt: time.Now().UTC()}, nil
+}
+
+func (service *Service) logVideoUploadFailure(ctx context.Context, access AccessContext, taskID string, err error) {
+	if service.logger == nil || (!errors.Is(err, ErrVideoMetricsUnavailable) &&
+		!errors.Is(err, ErrVideoQuotaExceeded) && !errors.Is(err, ErrVideoUnavailable)) {
+		return
+	}
+	kind := "storage_unavailable"
+	switch {
+	case errors.Is(err, ErrVideoMetricsUnavailable):
+		kind = "metrics_unavailable"
+	case errors.Is(err, ErrVideoQuotaExceeded):
+		kind = "quota_exceeded"
+	}
+	service.logger.LogAttrs(ctx, slog.LevelWarn, "tasks.video_upload_failed",
+		slog.String("account_id", access.AccountID),
+		slog.String("user_id", access.UserID),
+		slog.String("task_id", strings.TrimSpace(taskID)),
+		slog.String("reason", kind),
+		slog.String("error", err.Error()),
+	)
 }
 
 func (service *Service) StatTaskVideo(ctx context.Context, accountID, objectID string) (TaskVideoContent, error) {

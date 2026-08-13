@@ -12,8 +12,9 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
 
-func (handler *HTTPHandler) uploadTaskVideo(w http.ResponseWriter, r *http.Request, ctx taskHTTPContext) {
-	maxBytes := handler.service.TaskVideoMaxBytes(r.Context())
+func (handler *HTTPHandler) uploadTaskMedia(w http.ResponseWriter, r *http.Request, ctx taskHTTPContext) {
+	limits := handler.service.TaskMediaLimits(r.Context())
+	maxBytes := max(limits.ImageMaxBytes, limits.VideoMaxBytes)
 	if err := clearTaskVideoUploadDeadlines(w); err != nil {
 		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "upload_unavailable", "O servidor nao conseguiu preparar o upload.")
 		return
@@ -28,13 +29,20 @@ func (handler *HTTPHandler) uploadTaskVideo(w http.ResponseWriter, r *http.Reque
 		writeServiceError(w, r, ErrInvalidVideo)
 		return
 	}
-	file, header, err := r.FormFile("video")
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		file, header, err = r.FormFile("video")
+	}
 	if err != nil {
 		writeServiceError(w, r, ErrInvalidVideo)
 		return
 	}
 	defer file.Close()
-	if header.Size <= 0 || header.Size > maxBytes {
+	fileLimit := limits.VideoMaxBytes
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(header.Header.Get("Content-Type"))), "image/") {
+		fileLimit = limits.ImageMaxBytes
+	}
+	if header.Size <= 0 || header.Size > fileLimit {
 		writeServiceError(w, r, ErrVideoTooLarge)
 		return
 	}
@@ -43,13 +51,17 @@ func (handler *HTTPHandler) uploadTaskVideo(w http.ResponseWriter, r *http.Reque
 		writeServiceError(w, r, err)
 		return
 	}
-	httpapi.WriteJSON(w, http.StatusCreated, map[string]any{"video": video})
+	httpapi.WriteJSON(w, http.StatusCreated, map[string]any{"media": video, "video": video})
 }
 
 func (handler *HTTPHandler) taskVideoLimit(w http.ResponseWriter, r *http.Request, _ taskHTTPContext) {
 	httpapi.WriteJSON(w, http.StatusOK, map[string]any{
 		"maxBytes": handler.service.TaskVideoMaxBytes(r.Context()),
 	})
+}
+
+func (handler *HTTPHandler) taskMediaLimits(w http.ResponseWriter, r *http.Request, _ taskHTTPContext) {
+	httpapi.WriteJSON(w, http.StatusOK, handler.service.TaskMediaLimits(r.Context()))
 }
 
 func clearTaskVideoUploadDeadlines(w http.ResponseWriter) error {

@@ -6,6 +6,7 @@ import OmniSelectMenuInput from './inputs/OmniSelectMenuInput.vue'
 import OmniLazySelectMenuInput from './inputs/OmniLazySelectMenuInput.vue'
 import AppDatePicker from './AppDatePicker.vue'
 import { getApiBase } from '~/utils/api-client'
+import { orderMediaItemsByIds } from '~/components/ui/media-grid/utils'
 import type { TaskCalendarMediaItem, TaskVideoItem } from '../types/tasks'
 import { taskChecklistProgress } from '../utils/task-checklist'
 
@@ -136,8 +137,8 @@ function visibleColumnTasks(column: BoardColumnView) {
 }
 
 // --- Primeira midia no card -----------------------------------------------------
-// O card do board mostra SO a primeira midia da task (a ordem vem do espelho do
-// calendario — calendarMedia — e, sem ele, dos videos proprios). Resolvida uma vez
+// O card do board mostra SO a primeira midia propria da task; quando nao existe,
+// usa a primeira midia read-only espelhada do calendario. Resolvida uma vez
 // por task num Map (o board renderiza centenas de cards; nada de recomputar por hover).
 interface BoardCardMedia {
   image: string
@@ -161,19 +162,33 @@ function taskMediaSrc(path: unknown): string {
 function firstTaskMedia(task: {
   calendarMedia?: TaskCalendarMediaItem[]
   videos?: TaskVideoItem[]
+  mediaOrder?: string[]
 }): BoardCardMedia | null {
   const count = (task.calendarMedia?.length || 0) + (task.videos?.length || 0)
-  const cal = task.calendarMedia?.[0]
-  if (cal) {
-    if (cal.type === 'image')
-      return { image: taskMediaSrc(cal.url), video: '', name: cal.name, count }
-    if (cal.posterUrl)
-      return { image: taskMediaSrc(cal.posterUrl), video: '', name: cal.name, count }
-    return { image: '', video: taskMediaSrc(cal.url), name: cal.name, count }
+  const ordered = orderMediaItemsByIds(
+    [
+      ...(task.videos || []).map((item) => ({ id: item.id, item, source: 'task' as const })),
+      ...(task.calendarMedia || []).map((item) => ({
+        id: `calendar:${item.id}`,
+        item,
+        source: 'calendar' as const,
+      })),
+    ],
+    task.mediaOrder || [],
+  )
+  const first = ordered[0]
+  if (!first) return null
+  if (first.source === 'task') {
+    if (first.item.contentType.toLowerCase().startsWith('image/')) {
+      return { image: taskMediaSrc(first.item.url), video: '', name: first.item.name, count }
+    }
+    return { image: '', video: taskMediaSrc(first.item.url), name: first.item.name, count }
   }
-  const video = task.videos?.[0]
-  if (video) return { image: '', video: taskMediaSrc(video.url), name: video.name, count }
-  return null
+  if (first.item.type === 'image')
+    return { image: taskMediaSrc(first.item.url), video: '', name: first.item.name, count }
+  if (first.item.posterUrl)
+    return { image: taskMediaSrc(first.item.posterUrl), video: '', name: first.item.name, count }
+  return { image: '', video: taskMediaSrc(first.item.url), name: first.item.name, count }
 }
 
 const firstMediaByTask = computed(() => {

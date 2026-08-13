@@ -88,6 +88,9 @@ func normalizeTaskUIMetadata(value map[string]any) map[string]any {
 	if item, ok := raw["videos"]; ok {
 		normalized["videos"] = normalizeTaskVideoMetadata(item)
 	}
+	if item, ok := raw["mediaOrder"]; ok {
+		normalized["mediaOrder"] = normalizeTaskMediaOrder(item)
+	}
 	if item, ok := raw["checklist"]; ok {
 		normalized["checklist"] = normalizeTaskChecklistMetadata(item)
 	}
@@ -97,6 +100,27 @@ func normalizeTaskUIMetadata(value map[string]any) map[string]any {
 		normalized["calendarMedia"] = normalizeCalendarMediaMetadata(item)
 	}
 	return normalized
+}
+
+func normalizeTaskMediaOrder(value any) []string {
+	rawList := normalizeStringList(value)
+	seen := make(map[string]struct{}, len(rawList))
+	result := make([]string, 0, min(len(rawList), 100))
+	for _, rawID := range rawList {
+		id := truncateMetadataText(rawID, 300)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+		if len(result) == 100 {
+			break
+		}
+	}
+	return result
 }
 
 func normalizeTaskChecklistMetadata(value any) []map[string]any {
@@ -348,8 +372,10 @@ func normalizeTaskVideoMetadata(value any) []map[string]any {
 		if uploadedAt != "" {
 			normalizedItem["uploadedAt"] = uploadedAt
 		}
-		if checklistItemID := truncateMetadataText(raw["checklistItemId"], 120); checklistItemID != "" {
-			normalizedItem["checklistItemId"] = checklistItemID
+		if checklistValue, exists := raw["checklistItemId"]; exists && checklistValue != nil {
+			if checklistItemID := truncateMetadataText(checklistValue, 120); checklistItemID != "" {
+				normalizedItem["checklistItemId"] = checklistItemID
+			}
 		}
 		normalized = append(normalized, normalizedItem)
 	}

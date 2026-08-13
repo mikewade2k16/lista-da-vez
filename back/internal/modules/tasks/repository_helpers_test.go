@@ -51,3 +51,31 @@ func TestNormalizeTaskVideoMetadataKeepsChecklistAssociation(t *testing.T) {
 		t.Fatalf("associacao com checklist foi perdida: %+v", videos[0])
 	}
 }
+
+func TestNormalizeTaskVideoMetadataOmitsMissingChecklistAssociation(t *testing.T) {
+	metadata := normalizeTaskUIMetadata(map[string]any{
+		"videos": []any{map[string]any{
+			"id": "video-1", "name": "original.mp4",
+			"url": "/uploads/tasks/account/video-1/original.mp4",
+		}},
+	})
+
+	videos := metadata["videos"].([]map[string]any)
+	if _, exists := videos[0]["checklistItemId"]; exists {
+		t.Fatalf("associacao ausente nao pode virar texto: %+v", videos[0])
+	}
+}
+
+func TestNormalizeTaskMediaOrderKeepsUnifiedSources(t *testing.T) {
+	metadata := normalizeTaskUIMetadata(map[string]any{
+		"mediaOrder": []any{"calendar:media-2", "task-media-1", "calendar:media-2", ""},
+	})
+
+	order, ok := metadata["mediaOrder"].([]string)
+	if !ok {
+		t.Fatalf("mediaOrder deveria ser uma lista normalizada; got %#v", metadata["mediaOrder"])
+	}
+	if len(order) != 2 || order[0] != "calendar:media-2" || order[1] != "task-media-1" {
+		t.Fatalf("mediaOrder deveria preservar fontes e remover duplicados; got %#v", order)
+	}
+}

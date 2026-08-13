@@ -34,10 +34,15 @@ const storageUsed = computed(
   () =>
     (status.value?.cloudUsage.storedBytes || 0) +
     (status.value?.cloudUsage.metadataBytes || 0) +
+    (status.value?.usage.uploadedBytes || 0) +
     (status.value?.usage.pendingBytes || 0),
 )
-const classAUsed = computed(() => status.value?.cloudUsage.classARequests || 0)
-const classBUsed = computed(() => status.value?.cloudUsage.classBRequests || 0)
+const classAUsed = computed(
+  () => (status.value?.cloudUsage.classARequests || 0) + (status.value?.usage.classARequests || 0),
+)
+const classBUsed = computed(
+  () => (status.value?.cloudUsage.classBRequests || 0) + (status.value?.usage.classBRequests || 0),
+)
 
 async function saveLimits(input: StorageSettingsInput) {
   await storageStore.saveSettings(input)
@@ -186,7 +191,8 @@ onMounted(() => {
             <p class="storage-workspace__detail">
               Proteção conservadora: {{ formatBytes(storageUsed) }} · inclui
               {{ formatBytes(status.cloudUsage.metadataBytes) }} de metadados e
-              {{ formatBytes(status.usage.pendingBytes) }} pendentes.
+              {{ formatBytes(status.usage.uploadedBytes) }} confirmados pelo Omni neste ciclo, além
+              de {{ formatBytes(status.usage.pendingBytes) }} pendentes.
             </p>
           </article>
 
@@ -207,7 +213,7 @@ onMounted(() => {
               max="100"
             ></progress>
             <p class="storage-workspace__detail">
-              Conta Cloudflare inteira · ciclo de faturamento.
+              Proteção conservadora: conta Cloudflare + reservas Omni do ciclo.
             </p>
           </article>
 
@@ -228,7 +234,7 @@ onMounted(() => {
               max="100"
             ></progress>
             <p class="storage-workspace__detail">
-              Conta Cloudflare inteira · ciclo de faturamento.
+              Proteção conservadora: conta Cloudflare + reservas Omni do ciclo.
             </p>
           </article>
 

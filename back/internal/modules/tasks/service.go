@@ -120,7 +120,7 @@ func (service *Service) ResolveAccessContext(ctx context.Context, principal auth
 		}
 	}
 
-	permissionKeys := []string{}
+	var permissionKeys []string
 	if isPlatformAdmin {
 		permissionKeys = adminPermissions
 	} else {
@@ -521,9 +521,8 @@ func (service *Service) dispatchTaskSync(ctx context.Context, access AccessConte
 	service.syncRegistry.Dispatch(ctx, access.AccountID, snap, deleted)
 }
 
-// taskMetadataMediaSnapshots extrai os videos da task (ui_metadata.videos) como MediaSnapshot
-// neutros (WAVE 6 cruzamento B), para o dono do recurso espelhar read-only (ex.: linked_media do
-// evento). Todos type="video" (a task so guarda video); url interna /uploads/tasks/.
+// taskMetadataMediaSnapshots extrai a midia propria da task (mantida na chave legada
+// ui_metadata.videos) como MediaSnapshot neutro para o recurso vinculado espelhar read-only.
 func taskMetadataMediaSnapshots(md map[string]any) []platformmodules.MediaSnapshot {
 	if md == nil {
 		return nil
@@ -546,12 +545,17 @@ func taskMetadataMediaSnapshots(md map[string]any) []platformmodules.MediaSnapsh
 		if id == "" {
 			id = url
 		}
+		contentType := strings.TrimSpace(fmt.Sprint(v["contentType"]))
+		mediaType := "video"
+		if strings.HasPrefix(strings.ToLower(contentType), "image/") {
+			mediaType = "image"
+		}
 		out = append(out, platformmodules.MediaSnapshot{
 			ID:          id,
 			URL:         url,
 			Name:        strings.TrimSpace(fmt.Sprint(v["name"])),
-			Type:        "video",
-			ContentType: strings.TrimSpace(fmt.Sprint(v["contentType"])),
+			Type:        mediaType,
+			ContentType: contentType,
 			SizeBytes:   metadataInt(v["size"]),
 		})
 	}

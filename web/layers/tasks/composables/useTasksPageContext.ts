@@ -10,6 +10,7 @@ import { useTasksRealtime, type TasksRealtimeEvent } from './useTasksRealtime'
 import { useTaskRelations } from './useTaskRelations'
 import { useTaskComments } from './useTaskComments'
 import { createApiRequest, getApiBase, getApiErrorMessage } from '~/utils/api-client'
+import { orderMediaItemsByIds, reorderMediaItems } from '~/components/ui/media-grid/utils'
 // Taxonomia de conteudo compartilhada com o Calendario (WAVE 6): mesmos TIPOS nos dois modulos.
 import { CONTENT_TYPES } from '~/utils/content-taxonomy'
 import { sanitizeTaskContentHtml } from '../utils/content'
@@ -252,6 +253,7 @@ export function useTasksPageContext() {
   const taskVideoDrafts = ref<TaskVideoDraft[]>([])
   const taskVideoSaving = ref(false)
   const taskVideoError = ref('')
+  const taskImageMaxBytes = ref(10 * 1024 * 1024)
   const taskVideoMaxBytes = ref(100 * 1024 * 1024)
   const taskVideoUploads = ref<TaskVideoUploadProgress[]>([])
   const taskVideoItemDialogOpen = ref(false)
@@ -392,7 +394,7 @@ export function useTasksPageContext() {
     tasksWorkspace.projects.value.map((p) => ({ label: p.name, value: p.id })),
   )
   const isPlatformAdmin = computed(() => String(auth.role || '') === 'platform_admin')
-  // Clientes reais de core.accounts (/v1/tenants); sem marcador de mock (WAVE 6: mock removido).
+  // Clientes reais de core.accounts (/v1/tenants/clients); sem marcador de mock (WAVE 6: mock removido).
   const clientOptions = computed(() =>
     tasksClient.clientOptions.map((c) => ({
       label: c.label,
@@ -1084,17 +1086,34 @@ export function useTasksPageContext() {
     const currentTaskId = normalizeText(taskDraft.id, 80)
     if (currentTaskId) return currentTaskId
     if (!normalizeText(taskDraft.title, 220)) {
-      taskVideoError.value = 'Adicione um titulo na task antes de enviar videos.'
+      taskVideoError.value = 'Adicione um título na task antes de enviar mídias.'
       return ''
     }
     await saveTask()
     return normalizeText(taskDraft.id, 80)
   }
 
+  function normalizedTaskMediaOrder(
+    nextVideos: TaskVideoItem[],
+    requestedOrder?: readonly string[],
+  ): string[] {
+    const currentTask = tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id)
+    const available = [
+      ...nextVideos.map((item) => ({ id: item.id })),
+      ...(currentTask?.calendarMedia || []).map((item) => ({ id: `calendar:${item.id}` })),
+    ]
+    return orderMediaItemsByIds(available, requestedOrder || currentTask?.mediaOrder || []).map(
+      (item) => item.id,
+    )
+  }
+
   async function persistTaskVideos(nextVideos: TaskVideoItem[]) {
     const taskId = normalizeText(taskDraft.id, 80)
     if (!taskId) return null
-    return tasksWorkspace.updateTask(taskId, { videos: nextVideos })
+    return tasksWorkspace.updateTask(taskId, {
+      videos: nextVideos,
+      mediaOrder: normalizedTaskMediaOrder(nextVideos),
+    })
   }
 
   // Re-bind do helper puro (impl. canonica em `utils/task-video.ts`).
@@ -1102,14 +1121,21 @@ export function useTasksPageContext() {
     return sharedFormatFileSize(size)
   }
 
+  function taskMediaKind(file: File): 'image' | 'video' | '' {
+    if (file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|avif)$/i.test(file.name)) {
+      return 'image'
+    }
+    if (file.type.startsWith('video/') || /\.(mp4|mov|webm|ogg|ogv|avi|m4v)$/i.test(file.name)) {
+      return 'video'
+    }
+    return ''
+  }
+
   async function prepareTaskVideoFiles(files: FileList | File[] | null | undefined) {
     if (!files) return
-    const nextFiles = Array.from(files).filter(
-      (file) =>
-        file.type.startsWith('video/') || /\.(mp4|mov|webm|ogg|ogv|avi|m4v)$/i.test(file.name),
-    )
+    const nextFiles = Array.from(files).filter((file) => taskMediaKind(file) !== '')
     if (nextFiles.length === 0) {
-      taskVideoError.value = 'Selecione um arquivo de video valido.'
+      taskVideoError.value = 'Selecione uma imagem ou um vídeo válido.'
       return
     }
 
@@ -1117,25 +1143,35 @@ export function useTasksPageContext() {
     if (!accountId) return
 
     try {
-      const limitResponse = (await taskVideoRequest('/v1/tasks/video-limit', {
+      const limitResponse = (await taskVideoRequest('/v1/tasks/media-limits', {
         headers: { 'X-Account-Id': accountId },
         skipLoadingIndicator: true,
-      })) as { maxBytes?: number }
-      const resolvedLimit = Number(limitResponse?.maxBytes || 0)
-      if (Number.isFinite(resolvedLimit) && resolvedLimit > 0) {
-        taskVideoMaxBytes.value = resolvedLimit
+      })) as { imageMaxBytes?: number; videoMaxBytes?: number }
+      const imageLimit = Number(limitResponse?.imageMaxBytes || 0)
+      const videoLimit = Number(limitResponse?.videoMaxBytes || 0)
+      if (Number.isFinite(imageLimit) && imageLimit > 0) {
+        taskImageMaxBytes.value = imageLimit
+      }
+      if (Number.isFinite(videoLimit) && videoLimit > 0) {
+        taskVideoMaxBytes.value = videoLimit
       }
     } catch (error) {
       taskVideoError.value = getApiErrorMessage(
         error,
-        'Nao foi possivel consultar o limite de video.',
+        'Não foi possível consultar os limites de mídia.',
       )
       return
     }
 
-    const oversized = nextFiles.find((file) => file.size > taskVideoMaxBytes.value)
+    const oversized = nextFiles.find((file) => {
+      const limit =
+        taskMediaKind(file) === 'image' ? taskImageMaxBytes.value : taskVideoMaxBytes.value
+      return file.size > limit
+    })
     if (oversized) {
-      taskVideoError.value = `${oversized.name} tem ${formatFileSize(oversized.size)} e supera o limite ativo de ${formatFileSize(taskVideoMaxBytes.value)}.`
+      const limit =
+        taskMediaKind(oversized) === 'image' ? taskImageMaxBytes.value : taskVideoMaxBytes.value
+      taskVideoError.value = `${oversized.name} tem ${formatFileSize(oversized.size)} e supera o limite ativo de ${formatFileSize(limit)}.`
       return
     }
 
@@ -1184,6 +1220,7 @@ export function useTasksPageContext() {
         progress: {
           key,
           name: file.name,
+          type: taskMediaKind(file) || 'video',
           percent: 0,
           phase: 'uploading' as const,
           previewUrl: URL.createObjectURL(file),
@@ -1197,7 +1234,7 @@ export function useTasksPageContext() {
       let nextVideos = currentTaskVideoItems()
       for (const job of jobs) {
         const response = await uploadTaskVideoFile({
-          endpoint: `${getApiBase(runtimeConfig).replace(/\/$/, '')}/v1/tasks/${encodeURIComponent(taskId)}/videos`,
+          endpoint: `${getApiBase(runtimeConfig).replace(/\/$/, '')}/v1/tasks/${encodeURIComponent(taskId)}/media`,
           token: auth.accessToken || '',
           accountId,
           file: job.file,
@@ -1208,7 +1245,7 @@ export function useTasksPageContext() {
         updateTaskVideoUpload(job.key, { percent: 100, phase: 'linking' })
         const uploadedVideo = normalizeTaskVideoItem(response)
         if (!uploadedVideo) {
-          throw new Error('Upload de video retornou metadata invalida.')
+          throw new Error('O upload retornou metadados de mídia inválidos.')
         }
         nextVideos = [...nextVideos.filter((item) => item.id !== uploadedVideo.id), uploadedVideo]
       }
@@ -1220,7 +1257,7 @@ export function useTasksPageContext() {
       taskVideoError.value =
         error instanceof Error
           ? error.message
-          : getApiErrorMessage(error, 'Nao foi possivel enviar o video.')
+          : getApiErrorMessage(error, 'Não foi possível enviar a mídia.')
     } finally {
       for (const job of jobs) URL.revokeObjectURL(job.progress.previewUrl)
       const completedKeys = new Set<string>(jobs.map((job) => job.key))
@@ -1229,15 +1266,8 @@ export function useTasksPageContext() {
     }
   }
 
-  function onTaskVideoInput(event: Event) {
-    const input = event.target as HTMLInputElement | null
-    const files = input?.files ? Array.from(input.files) : []
-    if (input) input.value = ''
+  function onTaskVideoFiles(files: File[]) {
     void prepareTaskVideoFiles(files)
-  }
-
-  function onTaskVideoDrop(event: DragEvent) {
-    void prepareTaskVideoFiles(event.dataTransfer?.files)
   }
 
   async function updateTaskVideoChecklistItem(fileId: string, checklistItemId: string) {
@@ -1257,7 +1287,7 @@ export function useTasksPageContext() {
       )
     } catch (error) {
       taskVideoDrafts.value = previousDrafts
-      taskVideoError.value = getApiErrorMessage(error, 'Nao foi possivel vincular o video ao item.')
+      taskVideoError.value = getApiErrorMessage(error, 'Não foi possível vincular a mídia ao item.')
     } finally {
       taskVideoSaving.value = false
     }
@@ -1279,7 +1309,48 @@ export function useTasksPageContext() {
       )
     } catch (error) {
       taskVideoDrafts.value = previousDrafts
-      taskVideoError.value = getApiErrorMessage(error, 'Nao foi possivel remover o video.')
+      taskVideoError.value = getApiErrorMessage(error, 'Não foi possível remover a mídia.')
+    } finally {
+      taskVideoSaving.value = false
+    }
+  }
+
+  async function reorderTaskVideoDrafts(payload: {
+    from: number
+    to: number
+    orderedIds?: string[]
+  }) {
+    if (taskVideoSaving.value) return
+    const taskId = normalizeText(taskDraft.id, 80)
+    if (!taskId) return
+    if (payload.orderedIds) {
+      taskVideoSaving.value = true
+      taskVideoError.value = ''
+      try {
+        await tasksWorkspace.updateTask(taskId, {
+          mediaOrder: normalizedTaskMediaOrder(currentTaskVideoItems(), payload.orderedIds),
+        })
+      } catch (error) {
+        taskVideoError.value = getApiErrorMessage(error, 'Não foi possível reordenar as mídias.')
+      } finally {
+        taskVideoSaving.value = false
+      }
+      return
+    }
+    const previousDrafts = [...taskVideoDrafts.value]
+    const nextDrafts = reorderMediaItems(previousDrafts, payload.from, payload.to)
+    taskVideoDrafts.value = nextDrafts
+
+    taskVideoSaving.value = true
+    taskVideoError.value = ''
+    try {
+      const updatedTask = await persistTaskVideos(normalizeTaskVideoItems(nextDrafts))
+      syncTaskVideoDrafts(
+        (updatedTask as (TaskItem & { videos?: TaskVideoItem[] }) | null)?.videos || nextDrafts,
+      )
+    } catch (error) {
+      taskVideoDrafts.value = previousDrafts
+      taskVideoError.value = getApiErrorMessage(error, 'Não foi possível reordenar as mídias.')
     } finally {
       taskVideoSaving.value = false
     }
@@ -3010,6 +3081,9 @@ export function useTasksPageContext() {
   const taskCalendarMedia = computed<TaskCalendarMediaItem[]>(
     () => tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id)?.calendarMedia || [],
   )
+  const taskMediaOrder = computed<string[]>(
+    () => tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id)?.mediaOrder || [],
+  )
 
   watch(
     () => tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id),
@@ -3170,6 +3244,7 @@ export function useTasksPageContext() {
     taskVideoDrafts,
     taskVideoSaving,
     taskVideoError,
+    taskImageMaxBytes,
     taskVideoMaxBytes,
     taskVideoUploads,
     taskVideoItemDialogOpen,
@@ -3291,13 +3366,14 @@ export function useTasksPageContext() {
     updateTaskDraftType,
     saveTask,
     flushTaskDraftAutosave,
-    onTaskVideoInput,
-    onTaskVideoDrop,
+    onTaskVideoFiles,
     cancelTaskVideoUpload,
     confirmTaskVideoUpload,
     updateTaskVideoChecklistItem,
     removeTaskVideoDraft,
+    reorderTaskVideoDrafts,
     taskCalendarMedia,
+    taskMediaOrder,
     onCreateProject,
     saveProjectSettings,
     deleteProject,

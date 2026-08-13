@@ -10,7 +10,7 @@ migrar para backend Go nas Fases T1–T5.
 - `web/layers/tasks/pages/tasks.vue` — protótipo monolítico (foi ~2955 linhas, agora dividido em sub-componentes)
 - `web/layers/tasks/composables/useTasksWorkspace.ts` — CRUD localStorage, chave `omni.admin.tasks.workspace.v1`
 - `web/layers/tasks/composables/useTimeTracking.ts` — timer localStorage, chave `tasks-tracking-v1`
-- `web/layers/tasks/stores/tasks-client.ts` — store de contexto do cliente (userType/clientId derivados do `useAuthStore().role`). Substituiu o antigo store de simulação de sessão (shim de re-export removido em 2026-06-04, critério 5 da multitenant-completion). `clientId`/`clientOptions` ainda são placeholders até a API de contatos do CRM.
+- `web/layers/tasks/stores/tasks-client.ts` — store do catalogo real de clientes. Consome `GET /v1/tenants/clients`, que resolve no backend os clientes da organizacao para `agency_owner` e `agency_member` inclusive com papel custom, e nunca inclui a conta-agencia. Nao voltar para `/v1/tenants`: essa rota usa escopo coarse legado e em 2026-08-12 devolvia vazio para o papel custom `editor` da Crow, embora a usuaria tivesse RBAC de Tasks.
 - `web/layers/tasks/composables/useTasksPageContext.ts` — contexto compartilhado via provide/inject (Fase T0.5)
 
 ## Backend disponível após Fase T1
@@ -384,10 +384,13 @@ export function useCan(permissionKey: string) {
 
 ## Regras de arquitetura
 
-### Upload de video e destino hibrido
+### Upload de midia e destino hibrido
 
-- Consultar `GET /v1/tasks/video-limit` antes do envio e rejeitar no cliente qualquer arquivo acima
-  do limite ativo, evitando iniciar um multipart que o backend recusaria.
+- Tasks exibe uma unica secao `Midia`: anexos proprios editaveis e anexos do Calendar na mesma grade.
+  Itens herdados recebem badge `Calendario`, continuam sem remocao/edicao do arquivo, mas participam
+  da ordem visual unificada para poder virar capa; URL repetida entre as duas fontes aparece uma vez.
+- O input aceita imagens e videos. Consultar `GET /v1/tasks/media-limits` antes do envio e validar
+  cada arquivo contra `imageMaxBytes` ou `videoMaxBytes`, evitando multipart que o backend recusaria.
 - O seletor administrativo de Storage decide o destino: local preserva o fluxo anterior; R2 usa o
   modulo central e os limites por tipo. A tela de Tasks nao duplica nem persiste essa configuracao.
 - Nunca converter, recomprimir ou alterar formato, container, codec, frame rate, resolucao, bitrate
@@ -397,6 +400,30 @@ export function useCan(permissionKey: string) {
   generico `salvando video...` sem barra.
 - Se o checklist tiver itens, abrir a escolha antes do envio. Persistir `checklistItemId` opcional no
   metadata do video e permitir reassociacao sem reenviar ou modificar o arquivo.
+- Erro nativo de codec no viewer nunca fica silencioso: a UI informa a incompatibilidade e oferece
+  abrir o arquivo original. Nunca criar `playbackUrl`, proxy, variante ou conversao para contornar
+  limitacoes do navegador.
+- O viewer nao depende de autoplay: o botao central chama `HTMLVideoElement.play()` dentro do gesto
+  do usuario e os controles nativos continuam disponiveis depois que a reproducao inicia.
+- `TasksTaskModal.vue` usa o `OmniMediaGrid` compartilhado com Calendar. Upload por clique/drop,
+  miniaturas compactas e viewer nao devem ganhar implementacoes paralelas dentro do layer.
+- A reordenacao persiste imediatamente `ui_metadata.mediaOrder`, uma lista de ids da galeria unificada;
+  ids herdados usam `calendar:<id>`. O primeiro item e a `Capa`, inclusive quando sua origem e Calendar.
+  `videos` continua guardando apenas os anexos proprios e `calendarMedia` continua sendo o espelho
+  read-only: ordenar nunca copia, duplica ou muda a propriedade do arquivo. Em caso de falha, o store
+  reidrata a ordem anterior e a UI mostra o erro do backend.
+- Midia espelhada do calendario dentro da task abre no `OmniMediaViewer` integrado ao grid. Nunca
+  navegar diretamente para `/uploads/calendar/...`; essa e a rota estavel da API para o objeto
+  privado no R2.
+
+#### Falha registrada — drag-and-drop sumia na galeria mista (2026-08-11)
+
+- Sintoma: uma task com uma midia propria e duas midias do Calendar nao exibia alca nem aceitava
+  reordenacao, embora houvesse tres itens visiveis.
+- Causa: `OmniMediaGrid` contava apenas itens marcados `reorderable`; o adapter de Tasks marcava todo
+  item `Calendario` como nao reordenavel e o handler persistia indices somente do array `videos`.
+- Prevencao: a grade emite tambem `orderedIds`; Tasks ordena a colecao unificada por ids estaveis e
+  persiste `mediaOrder`. Nao usar indices de um subconjunto quando a UI mistura fontes diferentes.
 
 - Front nunca é fonte de autoridade para permissões — usar `useCan` contra dados do backend
 - Modal e card sempre espelham os mesmos campos (memória feedback_modal_board_mirror)

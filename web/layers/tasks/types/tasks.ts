@@ -139,6 +139,8 @@ export interface TaskItem {
   createdAt: string
   updatedAt: string
   videos?: TaskVideoItem[]
+  /** Ordem unificada da galeria; ids de Calendar usam o prefixo `calendar:`. */
+  mediaOrder?: string[]
   checklist?: TaskChecklistItem[]
   // calendarMedia = midia do evento vinculado, espelhada read-only (WAVE 6 cruzamento A).
   calendarMedia?: TaskCalendarMediaItem[]

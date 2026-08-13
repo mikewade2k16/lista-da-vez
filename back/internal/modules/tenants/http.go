@@ -30,6 +30,22 @@ type updateRequest struct {
 }
 
 func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware) {
+	mux.Handle("GET /v1/tenants/clients", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		clients, err := service.ListAccessible(r.Context(), principal, ListInput{ClientCatalog: true})
+		if err != nil {
+			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao carregar os clientes.")
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, listResponse{Tenants: clients})
+	})))
+
 	mux.Handle("GET /v1/tenants", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {

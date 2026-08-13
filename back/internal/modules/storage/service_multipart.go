@@ -41,7 +41,7 @@ func (service *Service) reserveMultipart(ctx context.Context, input MultipartUpl
 	}
 	partCount := int(math.Ceil(float64(object.SizeBytes) / float64(MultipartPartSizeBytes)))
 	planned := int64(partCount + 2)
-	cloud := service.readCloudUsage(ctx, true, settings.BillingCycleDay)
+	cloud := service.readCloudUsageForUpload(ctx, settings.BillingCycleDay)
 	if !cloud.Available {
 		return MultipartUpload{}, false, ErrAnalyticsUnavailable
 	}
@@ -49,10 +49,10 @@ func (service *Service) reserveMultipart(ctx context.Context, input MultipartUpl
 	if err != nil {
 		return MultipartUpload{}, false, err
 	}
-	if cloud.StoredBytes+cloud.MetadataBytes+local.PendingBytes+object.SizeBytes > settings.StorageLimitBytes {
+	if cloud.StoredBytes+cloud.MetadataBytes+local.UploadedBytes+local.PendingBytes+object.SizeBytes > settings.StorageLimitBytes {
 		return MultipartUpload{}, false, ErrStorageQuotaExceeded
 	}
-	if cloud.ClassARequests+planned > settings.ClassALimit {
+	if cloud.ClassARequests+local.ClassARequests+planned > settings.ClassALimit {
 		return MultipartUpload{}, false, ErrClassAQuotaExceeded
 	}
 	sessionID, err := randomObjectID()

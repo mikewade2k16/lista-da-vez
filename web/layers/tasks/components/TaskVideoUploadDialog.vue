@@ -39,8 +39,8 @@ function confirm(): void {
           <div class="task-video-link-dialog__header">
             <UIcon name="i-lucide-list-checks" />
             <div>
-              <h3>Este vídeo pertence a algum item?</h3>
-              <p>Escolha um item da tarefa ou deixe o vídeo vinculado à tarefa inteira.</p>
+              <h3>Esta mídia pertence a algum item?</h3>
+              <p>Escolha um item da tarefa ou deixe a mídia vinculada à tarefa inteira.</p>
             </div>
           </div>
         </template>

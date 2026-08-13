@@ -3,6 +3,7 @@ export type TaskVideoUploadPhase = 'uploading' | 'processing' | 'linking'
 export interface TaskVideoUploadProgress {
   key: string
   name: string
+  type: 'image' | 'video'
   percent: number
   phase: TaskVideoUploadPhase
   previewUrl: string
@@ -48,7 +49,7 @@ function responseError(xhr: XMLHttpRequest): TaskVideoUploadError {
 export function uploadTaskVideoFile(request: TaskVideoUploadRequest): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
-    form.append('video', request.file)
+    form.append('file', request.file)
     if (request.checklistItemId) form.append('checklistItemId', request.checklistItemId)
 
     const xhr = new XMLHttpRequest()
@@ -73,10 +74,10 @@ export function uploadTaskVideoFile(request: TaskVideoUploadRequest): Promise<un
         return
       }
       try {
-        const body = JSON.parse(xhr.responseText) as { video?: unknown }
-        resolve(body.video)
+        const body = JSON.parse(xhr.responseText) as { media?: unknown; video?: unknown }
+        resolve(body.media ?? body.video)
       } catch {
-        reject(new TaskVideoUploadError('A API devolveu uma resposta de upload invalida.'))
+        reject(new TaskVideoUploadError('A API devolveu uma resposta de upload de mídia inválida.'))
       }
     }
     xhr.onerror = () =>

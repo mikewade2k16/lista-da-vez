@@ -44,3 +44,21 @@ func TestAccountAccessibleQueryIsParameterized(t *testing.T) {
 		t.Error("accountAccessibleQuery nao deve concatenar ids na query")
 	}
 }
+
+func TestAccountPermissionsQueryUsesEffectiveAccountRBAC(t *testing.T) {
+	q := accountPermissionsQuery
+	checks := []string{
+		"core.user_role_assignments",
+		"core.role_permissions",
+		"core.user_permission_overrides",
+		"upo.effect = 'allow'",
+		"upo.effect = 'deny'",
+		"ura.account_id = $1::uuid",
+		"ura.user_id = $2::uuid",
+	}
+	for _, want := range checks {
+		if !strings.Contains(q, want) {
+			t.Errorf("accountPermissionsQuery deveria conter %q", want)
+		}
+	}
+}

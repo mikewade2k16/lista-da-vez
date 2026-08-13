@@ -27,12 +27,21 @@ Ele nao deve cuidar de:
 ## Contrato atual
 
 - `GET /v1/tenants`
+- `GET /v1/tenants/clients`
 - `POST /v1/tenants`
 - `PATCH /v1/tenants/{id}`
 - `POST /v1/tenants/{id}/archive`
 - `POST /v1/tenants/{id}/restore`
 
 `GET /v1/tenants` aceita `includeInactive=true` para leitura administrativa.
+
+`GET /v1/tenants/clients` e o catalogo autoritativo para seletores de cliente de modulos
+como Tasks. Ele nunca inclui a conta-agencia (`is_agency=false`): `platform_admin` ve os
+clientes ativos globais; membro de `core.organization_users` (owner OU member, inclusive
+com papel custom sem coarse role) ve os clientes ativos da propria organizacao; membership
+direta em `core.account_users` preserva o proprio cliente. Esta rota foi criada em 2026-08-12
+porque `/v1/tenants` resolve o escopo legado pelo papel coarse e devolvia lista vazia para o
+papel custom `editor` da agencia, apesar da RBAC de Tasks estar correta.
 
 O catálogo interno aceita `ListInput.ModuleID` para restringir contas às que possuem
 `core.account_modules.enabled=true`; esse filtro não é exposto como query pública. O Omnichannel
@@ -41,6 +50,7 @@ usa `ModuleID: "omnichannel"` no seletor de clientes da automação de atendimen
 ## Regras de escopo
 
 - `platform_admin` pode listar todos os tenants ativos
+- o catalogo `/clients` e org-aware e nao depende de papel coarse; ser membro da organizacao e a prova server-side para listar os clientes dela
 - `owner`, `director` e `marketing` listam os tenants em que possuem membership
 - `manager` e `consultant` enxergam o tenant derivado das lojas a que pertencem
 - leituras de escopo devem usar `core.account_users`, `core.user_role_assignments`/`core.roles` e, para papeis de loja, `core.user_module_settings(module_id='queue').config.storeIdsByAccount`

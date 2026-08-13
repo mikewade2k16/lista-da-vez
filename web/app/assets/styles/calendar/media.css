@@ -190,6 +190,36 @@
   display: block;
 }
 
+.calendar-media__cover-badge,
+.calendar-media__drag-hint {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(var(--surface) / 0.82);
+  color: rgb(var(--text));
+  pointer-events: none;
+}
+
+.calendar-media__cover-badge {
+  top: 0.2rem;
+  left: 0.2rem;
+  min-height: 1.2rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 700;
+}
+
+.calendar-media__drag-hint {
+  right: 0.2rem;
+  bottom: 0.2rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: var(--radius-sm);
+}
+
 .calendar-media__badge {
   position: absolute;
   inset: 0;
@@ -295,6 +325,7 @@
 }
 
 .calendar-media__add {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -307,6 +338,8 @@
   color: var(--text-muted);
   font-size: 1.2rem;
   cursor: pointer;
+  overflow: hidden;
+  user-select: none;
 }
 
 .calendar-media__add:hover {
@@ -326,7 +359,11 @@
 }
 
 .calendar-media__input {
-  display: none;
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Anexos do dia no drawer: separador acima da secao. */

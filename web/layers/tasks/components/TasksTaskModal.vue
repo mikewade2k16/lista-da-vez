@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, ref, unref } from 'vue'
-import type { OmniMediaViewerItem } from '~/components/ui/OmniMediaViewer.vue'
+import { computed, inject, unref } from 'vue'
+import OmniMediaGrid, { type OmniMediaGridItem } from '~/components/ui/OmniMediaGrid.vue'
+import { orderMediaItemsByIds } from '~/components/ui/media-grid/utils'
 import { getApiBase } from '~/utils/api-client'
 import { TASKS_PAGE_CONTEXT_KEY } from '../composables/useTasksPageContext'
 import OmniLazySelectMenuInput from './inputs/OmniLazySelectMenuInput.vue'
@@ -70,19 +71,21 @@ const {
   taskVideoDrafts,
   taskVideoSaving,
   taskVideoError,
+  taskImageMaxBytes,
   taskVideoMaxBytes,
   taskVideoUploads,
   taskVideoItemDialogOpen,
   taskVideoPendingFileNames,
   taskVideoChecklistItems,
   flushTaskDraftAutosave,
-  onTaskVideoInput,
-  onTaskVideoDrop,
+  onTaskVideoFiles,
   cancelTaskVideoUpload,
   confirmTaskVideoUpload,
   updateTaskVideoChecklistItem,
   removeTaskVideoDraft,
+  reorderTaskVideoDrafts,
   taskCalendarMedia,
+  taskMediaOrder,
   deleteCurrentDraftTask,
 } = ctx
 
@@ -93,8 +96,6 @@ const presenceViewingParticipants = computed(() =>
 )
 
 const runtimeConfig = useRuntimeConfig()
-const taskVideoViewerIndex = ref<number | null>(null)
-
 const taskVideoChecklistOptions = computed(() =>
   unref(taskVideoChecklistItems).map((item) => ({ label: item.title, value: item.id })),
 )
@@ -104,7 +105,7 @@ function taskVideoProgressLabel(phase: 'uploading' | 'processing' | 'linking'): 
     case 'processing':
       return 'Arquivo recebido · preparando entrega segura'
     case 'linking':
-      return 'Gravação concluída · vinculando à tarefa'
+      return 'Upload concluído · vinculando à tarefa'
     default:
       return 'Preview disponível · enviando arquivo'
   }
@@ -120,22 +121,54 @@ function taskVideoSrc(path: unknown) {
   }
 }
 
-const taskVideoViewerItems = computed<OmniMediaViewerItem[]>(() => [
-  ...unref(taskVideoUploads).map((upload) => ({
-    id: upload.key,
-    name: upload.name,
-    url: upload.previewUrl,
-    type: 'video' as const,
-    sizeLabel: `${upload.percent}%`,
-  })),
-  ...unref(taskVideoDrafts).map((file) => ({
+const taskMediaGridItems = computed<OmniMediaGridItem[]>(() => {
+  const ownMedia = unref(taskVideoDrafts).map((file) => ({
     id: file.id,
     name: file.name,
     url: taskVideoSrc(file.url),
-    type: 'video',
+    type: file.contentType.toLowerCase().startsWith('image/')
+      ? ('image' as const)
+      : ('video' as const),
     sizeLabel: file.sizeLabel,
-  })),
-])
+    removable: true,
+    reorderable: true,
+  }))
+  const ownUrls = new Set(ownMedia.map((item) => item.url))
+  const inheritedMedia = unref(taskCalendarMedia)
+    .map((media) => ({
+      id: `calendar:${media.id}`,
+      name: media.name,
+      url: taskVideoSrc(media.url),
+      type: media.type,
+      posterUrl: media.posterUrl ? taskVideoSrc(media.posterUrl) : undefined,
+      sizeLabel: formatFileSize(media.sizeBytes),
+      removable: false,
+      reorderable: true,
+      badgeLabel: 'Calendário',
+      badgeTone: 'primary' as const,
+    }))
+    .filter((media) => !ownUrls.has(media.url))
+  const orderedMedia = orderMediaItemsByIds([...ownMedia, ...inheritedMedia], unref(taskMediaOrder))
+  return [
+    ...unref(taskVideoUploads).map((upload) => ({
+      id: upload.key,
+      name: upload.name,
+      url: upload.previewUrl,
+      type: upload.type,
+      sizeLabel: `${upload.percent}%`,
+      pending: true,
+      progress: upload.percent,
+      status: taskVideoProgressLabel(upload.phase),
+      removable: false,
+      reorderable: false,
+    })),
+    ...orderedMedia,
+  ]
+})
+
+function taskVideoDraftById(id: string) {
+  return unref(taskVideoDrafts).find((file) => file.id === id)
+}
 
 const presenceViewingLabel = computed(() => {
   if (!presenceViewingParticipants.value.length) return ''
@@ -603,8 +636,8 @@ function onEditorWidth(width: number) {
       >
         <div class="tasks-page__task-video-head">
           <span class="tasks-page__task-video-title">
-            <UIcon name="i-lucide-video" />
-            Videos
+            <UIcon name="i-lucide-images" />
+            Mídia
             <span
               v-if="presenceFieldLabel('videos')"
               class="tasks-page__presence-field tasks-page__presence-field--inline"
@@ -612,90 +645,23 @@ function onEditorWidth(width: number) {
               {{ presenceFieldLabel('videos') }}
             </span>
           </span>
-          <label class="tasks-page__task-video-action">
-            <UIcon name="i-lucide-upload" />
-            <span>Adicionar video</span>
-            <input
-              class="sr-only"
-              type="file"
-              accept="video/*"
-              multiple
-              @change="onTaskVideoInput"
-            />
-          </label>
         </div>
-        <label
-          class="tasks-page__task-video-drop"
-          @dragover.prevent
-          @drop.prevent="onTaskVideoDrop"
+        <OmniMediaGrid
+          :items="taskMediaGridItems"
+          :hint="`Imagens até ${formatFileSize(taskImageMaxBytes)} · vídeos até ${formatFileSize(taskVideoMaxBytes)}`"
+          :error="taskVideoError"
+          accept="image/*,video/*"
+          upload-label="Adicionar mídia"
+          :reorderable="!taskVideoSaving && taskVideoUploads.length === 0"
+          @files="onTaskVideoFiles"
+          @remove="removeTaskVideoDraft"
+          @reorder="reorderTaskVideoDrafts"
         >
-          <UIcon name="i-lucide-film" />
-          <span>Solte arquivos de video aqui</span>
-          <small>MP4, MOV, WebM · limite ativo {{ formatFileSize(taskVideoMaxBytes) }}</small>
-          <input class="sr-only" type="file" accept="video/*" multiple @change="onTaskVideoInput" />
-        </label>
-        <div v-if="taskVideoUploads.length" class="tasks-page__task-video-progress-list">
-          <div
-            v-for="(upload, uploadIndex) in taskVideoUploads"
-            :key="upload.key"
-            class="tasks-page__task-video-progress"
-            :class="{ 'is-processing': upload.phase === 'processing' }"
-            aria-live="polite"
-          >
-            <video
-              :src="upload.previewUrl"
-              muted
-              playsinline
-              preload="metadata"
-              tabindex="0"
-              @click="taskVideoViewerIndex = uploadIndex"
-              @keydown.enter.prevent="taskVideoViewerIndex = uploadIndex"
-            ></video>
-            <div>
-              <span class="truncate">{{ upload.name }}</span>
-              <strong>{{ upload.percent }}%</strong>
-            </div>
-            <progress :value="upload.percent" max="100"></progress>
-            <small>{{ taskVideoProgressLabel(upload.phase) }}</small>
-          </div>
-        </div>
-        <p v-if="taskVideoError" class="text-xs text-[rgb(var(--error))]">
-          {{ taskVideoError }}
-        </p>
-        <div v-if="taskVideoDrafts.length" class="tasks-page__task-video-list">
-          <div
-            v-for="(file, fileIndex) in taskVideoDrafts"
-            :key="file.id"
-            class="tasks-page__task-video-item"
-          >
-            <video
-              v-if="file.url"
-              :src="taskVideoSrc(file.url)"
-              preload="metadata"
-              muted
-              playsinline
-              tabindex="0"
-              :aria-label="`Abrir ${file.name}`"
-              @click="taskVideoViewerIndex = taskVideoUploads.length + fileIndex"
-              @keydown.enter.prevent="taskVideoViewerIndex = taskVideoUploads.length + fileIndex"
-              @keydown.space.prevent="taskVideoViewerIndex = taskVideoUploads.length + fileIndex"
-            ></video>
-            <button
-              type="button"
-              class="tasks-page__task-video-play"
-              aria-label="Reproduzir no visualizador"
-              @click="taskVideoViewerIndex = taskVideoUploads.length + fileIndex"
-            >
-              <UIcon name="i-lucide-play" />
-            </button>
-            <div class="tasks-page__task-video-meta min-w-0">
-              <p class="truncate">{{ file.name }}</p>
-              <span>{{ file.sizeLabel }}</span>
-            </div>
+          <template #item-footer="{ item }">
             <OmniLazySelectMenuInput
-              v-if="taskVideoChecklistOptions.length"
+              v-if="taskVideoChecklistOptions.length && taskVideoDraftById(item.id)"
               class="tasks-page__task-video-checklist"
-              :model-value="file.checklistItemId || null"
+              :model-value="taskVideoDraftById(item.id)?.checklistItemId || null"
               :items="taskVideoChecklistOptions"
               placeholder="Tarefa inteira"
               :searchable="taskVideoChecklistOptions.length > 6"
@@ -703,57 +669,11 @@ function onEditorWidth(width: number) {
               :disabled="taskVideoSaving"
               @update:model-value="
                 (value: unknown) =>
-                  updateTaskVideoChecklistItem(file.id, value ? String(value) : '')
+                  updateTaskVideoChecklistItem(item.id, value ? String(value) : '')
               "
             />
-            <UButton
-              icon="i-lucide-x"
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              title="Remover video"
-              @click="removeTaskVideoDraft(file.id)"
-            />
-          </div>
-        </div>
-      </div>
-
-      <OmniMediaViewer
-        v-if="taskVideoViewerIndex !== null"
-        :items="taskVideoViewerItems"
-        :start-index="taskVideoViewerIndex"
-        @close="taskVideoViewerIndex = null"
-      />
-
-      <!-- WAVE 6 (cruzamento A): midia do evento vinculado, espelhada read-only (do calendario). -->
-      <div v-if="taskCalendarMedia.length" class="tasks-page__task-calmedia">
-        <div class="tasks-page__task-calmedia-head">
-          <UIcon name="i-lucide-calendar" />
-          <span>Mídia do calendário</span>
-          <span class="tasks-page__task-calmedia-hint">do evento vinculado · só leitura</span>
-        </div>
-        <div class="tasks-page__task-calmedia-grid">
-          <a
-            v-for="media in taskCalendarMedia"
-            :key="media.id"
-            :href="taskVideoSrc(media.url)"
-            target="_blank"
-            rel="noopener"
-            class="tasks-page__task-calmedia-item"
-            :title="media.name"
-          >
-            <img v-if="media.type === 'image'" :src="taskVideoSrc(media.url)" :alt="media.name" />
-            <img
-              v-else-if="media.posterUrl"
-              :src="taskVideoSrc(media.posterUrl)"
-              :alt="media.name"
-            />
-            <video v-else :src="taskVideoSrc(media.url)" preload="metadata" muted></video>
-            <span v-if="media.type === 'video'" class="tasks-page__task-calmedia-play">
-              <UIcon name="i-lucide-play" />
-            </span>
-          </a>
-        </div>
+          </template>
+        </OmniMediaGrid>
       </div>
 
       <div

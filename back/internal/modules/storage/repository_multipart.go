@@ -52,7 +52,7 @@ func (repository *PostgresRepository) ReserveMultipart(ctx context.Context, uplo
 	}
 
 	var settings Settings
-	if err = tx.QueryRow(ctx, `select uploads_enabled, storage_limit_bytes, class_a_limit, class_b_limit, max_object_bytes,
+	if err = tx.QueryRow(ctx, `select uploads_enabled, billing_cycle_day, storage_limit_bytes, class_a_limit, class_b_limit, max_object_bytes,
 		image_max_bytes, video_max_bytes, audio_max_bytes, document_max_bytes, coalesce(updated_by::text,''), updated_at
 		from storage.settings where id=1`).Scan(settingsScanTargets(&settings)...); err != nil {
 		return MultipartUpload{}, false, err

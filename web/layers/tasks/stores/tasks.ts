@@ -139,6 +139,7 @@ interface TaskUiMetadata {
   prioritySet?: boolean
   createdBy?: string
   videos?: TaskVideoItem[]
+  mediaOrder?: string[]
   checklist?: TaskChecklistItem[]
 }
 
@@ -622,6 +623,20 @@ function normalizeTaskVideos(value: unknown): TaskVideoItem[] {
   return normalized
 }
 
+function normalizeTaskMediaOrder(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const normalized: string[] = []
+  for (const valueItem of value) {
+    const id = normalizeText(valueItem, 300)
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    normalized.push(id)
+    if (normalized.length >= 100) break
+  }
+  return normalized
+}
+
 // normalizeCalendarMedia le a midia espelhada do evento vinculado (WAVE 6 cruzamento A, read-only).
 // So url sob /uploads/calendar/ (o backend ja valida; aqui e' defesa e dedup). type video|image.
 function normalizeCalendarMedia(value: unknown): TaskCalendarMediaItem[] {
@@ -692,6 +707,9 @@ function taskUiPatchFromPayload(payload: Record<string, any>): TaskUiMetadata {
   if (Object.prototype.hasOwnProperty.call(payload, 'videos')) {
     patch.videos = normalizeTaskVideos(payload.videos)
   }
+  if (Object.prototype.hasOwnProperty.call(payload, 'mediaOrder')) {
+    patch.mediaOrder = normalizeTaskMediaOrder(payload.mediaOrder)
+  }
   if (Object.prototype.hasOwnProperty.call(payload, 'checklist')) {
     patch.checklist = normalizeTaskChecklist(payload.checklist)
   }
@@ -714,6 +732,7 @@ function normalizeTaskUiMetadata(value: unknown): TaskUiMetadata {
     'prioritySet',
     'createdBy',
     'videos',
+    'mediaOrder',
     'checklist',
   ].forEach((key) => {
     if (Object.prototype.hasOwnProperty.call(raw, key)) {
@@ -802,6 +821,7 @@ function mapTaskToStoreItem(
     createdAt: normalizeText(task.createdAt, 80) || new Date().toISOString(),
     updatedAt: normalizeText(task.updatedAt, 80) || new Date().toISOString(),
     videos: normalizeTaskVideos(resolvedTaskUi?.videos),
+    mediaOrder: normalizeTaskMediaOrder(resolvedTaskUi?.mediaOrder),
     checklist: normalizeTaskChecklist(resolvedTaskUi?.checklist),
     // calendarMedia e ESPELHO server-populated (WAVE 6 cruzamento A), read-only: vem direto
     // do ui_metadata do BACK, sem passar pelo pipeline de patch local (normalizeTaskUiMetadata
@@ -1869,6 +1889,9 @@ export const useTasksStore = defineStore('tasks', () => {
       optimisticTask.type = normalizeText(patch.type, 120)
     if (Object.prototype.hasOwnProperty.call(patch, 'videos')) {
       optimisticTask.videos = normalizeTaskVideos((patch as TasksStoreTaskItem).videos)
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'mediaOrder')) {
+      optimisticTask.mediaOrder = normalizeTaskMediaOrder((patch as TasksStoreTaskItem).mediaOrder)
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'checklist')) {
       optimisticTask.checklist = normalizeTaskChecklist((patch as TasksStoreTaskItem).checklist)

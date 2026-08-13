@@ -35,8 +35,10 @@ func (handler *HTTPHandler) RegisterRoutes(mux *http.ServeMux, middleware *auth.
 	mux.Handle("POST /v1/tasks/boards/{boardId}/tasks", middleware.RequireAuth(handler.withPermission(PermTasksCreate, handler.createTask)))
 	mux.Handle("GET /v1/tasks/{taskId}", middleware.RequireAuth(handler.withPermission(PermTasksView, handler.getTask)))
 	mux.Handle("PATCH /v1/tasks/{taskId}", middleware.RequireAuth(handler.withPermission(PermTasksEdit, handler.updateTask)))
-	mux.Handle("POST /v1/tasks/{taskId}/videos", middleware.RequireAuth(handler.withPermission(PermTasksEdit, handler.uploadTaskVideo)))
+	mux.Handle("POST /v1/tasks/{taskId}/videos", middleware.RequireAuth(handler.withPermission(PermTasksEdit, handler.uploadTaskMedia)))
+	mux.Handle("POST /v1/tasks/{taskId}/media", middleware.RequireAuth(handler.withPermission(PermTasksEdit, handler.uploadTaskMedia)))
 	mux.Handle("GET /v1/tasks/video-limit", middleware.RequireAuth(handler.withPermission(PermTasksView, handler.taskVideoLimit)))
+	mux.Handle("GET /v1/tasks/media-limits", middleware.RequireAuth(handler.withPermission(PermTasksView, handler.taskMediaLimits)))
 	mux.HandleFunc("GET /uploads/tasks/{accountID}/{objectID}/{fileName}", handler.taskVideoContent)
 	mux.HandleFunc("HEAD /uploads/tasks/{accountID}/{objectID}/{fileName}", handler.taskVideoContent)
 	mux.Handle("DELETE /v1/tasks/{taskId}", middleware.RequireAuth(handler.withPermission(PermTasksDelete, handler.archiveTask)))
@@ -364,9 +366,14 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, ErrAccountRequired), errors.Is(err, ErrValidation), errors.Is(err, ErrInvalidVideo):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Verifique os dados enviados.")
 	case errors.Is(err, ErrVideoTooLarge):
-		httpapi.WriteError(w, r, http.StatusRequestEntityTooLarge, "video_too_large", "O video supera o limite configurado.")
+		httpapi.WriteError(w, r, http.StatusRequestEntityTooLarge, "video_too_large", "O arquivo supera o limite configurado para esse tipo de midia.")
+	case errors.Is(err, ErrVideoMetricsUnavailable):
+		w.Header().Set("Retry-After", "2")
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "video_metrics_unavailable", "A validacao de uso do R2 falhou temporariamente. Tente novamente.")
+	case errors.Is(err, ErrVideoQuotaExceeded):
+		httpapi.WriteError(w, r, http.StatusTooManyRequests, "video_storage_quota_exceeded", "O limite de seguranca configurado para o storage foi atingido.")
 	case errors.Is(err, ErrVideoUnavailable):
-		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "video_unavailable", "O storage de videos esta indisponivel ou atingiu o limite de seguranca.")
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "video_unavailable", "O storage de midia esta indisponivel.")
 	case errors.Is(err, ErrAccountNotFound), errors.Is(err, ErrBoardNotFound), errors.Is(err, ErrColumnNotFound), errors.Is(err, ErrFieldNotFound), errors.Is(err, ErrTaskNotFound), errors.Is(err, ErrShareRequired):
 		httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Recurso nao encontrado.")
 	case errors.Is(err, ErrVersionConflict):

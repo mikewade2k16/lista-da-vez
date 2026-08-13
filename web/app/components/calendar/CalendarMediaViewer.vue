@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import OmniMediaViewer, { type OmniMediaViewerItem } from '~/components/ui/OmniMediaViewer.vue'
 import { getApiBase } from '~/utils/api-client'
 import { resolveMediaUrl } from '~/utils/media'
 import { formatBytes, type CalendarMediaItem } from '~/utils/calendar'
-import type { OmniMediaViewerItem } from '~/components/ui/OmniMediaViewer.vue'
 
 const props = defineProps<{ items: CalendarMediaItem[]; startIndex?: number }>()
 const emit = defineEmits<{ close: [] }>()

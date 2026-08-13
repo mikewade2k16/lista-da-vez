@@ -12,6 +12,9 @@ func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string
 		activeClause = ""
 	}
 	moduleID := strings.TrimSpace(input.ModuleID)
+	if input.ClientCatalog {
+		return buildClientCatalogQuery(principal, activeClause, moduleID)
+	}
 
 	switch principal.Role {
 	case auth.RolePlatformAdmin:
@@ -86,6 +89,43 @@ func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string
 			order by t.name asc;
 		`, args
 	}
+}
+
+func buildClientCatalogQuery(principal auth.Principal, activeClause, moduleID string) (string, []any) {
+	args := []any{principal.UserID}
+	moduleClause := ""
+	if moduleID != "" {
+		args = append(args, moduleID)
+		moduleClause = listModuleScopeClause("$2")
+	}
+
+	platformClause := ""
+	if principal.Role == auth.RolePlatformAdmin {
+		platformClause = "true or"
+	}
+
+	return tenantSelectDistinctSQL() + `
+		from core.accounts t
+		where t.is_agency = false
+		  and (` + platformClause + `
+			exists (
+				select 1
+				from core.organization_users ou
+				join core.organizations o
+				  on o.id = ou.organization_id and o.is_active = true
+				where ou.user_id = $1::uuid
+				  and ou.organization_id = t.organization_id
+			)
+			or exists (
+				select 1
+				from core.account_users au
+				where au.user_id = $1::uuid
+				  and au.account_id = t.id
+				  and au.is_active = true
+			)
+		  )` + activeClause + moduleClause + `
+		order by t.name asc;
+	`, args
 }
 
 func listModuleScopeClause(placeholder string) string {

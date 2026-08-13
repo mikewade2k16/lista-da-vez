@@ -82,19 +82,31 @@ POST   /v1/tasks/:taskId/comments
 POST   /v1/tasks/:taskId/shares           { clientAccountId, permission }
 ```
 
-**Metadata visual da task (2026-05-15):** `tasks.tasks.ui_metadata` persiste os campos que ainda nao viraram field values dedicados no backend: `responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet`, `createdBy`, `source` (procedencia; ex.: `"calendar"` no contrato C10 — WAVE 2), `videos` (`/uploads/tasks/` only), `checklist` (ate 200 itens genericos `{id,title,completed}`, titulo de ate 220 caracteres) e `calendarMedia` (WAVE 6 cruzamento A: midia ESPELHADA read-only do evento vinculado; `/uploads/calendar/` only via `normalizeCalendarMediaMetadata`; populada pelo sync do calendar, o front so exibe). `normalizeTaskUIMetadata` (`repository_helpers.go`) e WHITELIST: chave fora da lista e descartada tanto no create quanto no update. O DTO de task deve sempre devolver `uiMetadata`, mesmo `{}`, para impedir que o front use cache local antigo como fonte autoritativa entre usuarios.
+**Metadata visual da task (2026-05-15):** `tasks.tasks.ui_metadata` persiste os campos que ainda nao viraram field values dedicados no backend: `responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet`, `createdBy`, `source` (procedencia; ex.: `"calendar"` no contrato C10 — WAVE 2), `videos` (nome legado da midia propria em `/uploads/tasks/`, imagem ou video), `mediaOrder` (ordem unificada da galeria; ate 100 ids de 300 caracteres, com ids herdados `calendar:<id>`), `checklist` (ate 200 itens genericos `{id,title,completed}`, titulo de ate 220 caracteres) e `calendarMedia` (WAVE 6 cruzamento A: midia ESPELHADA read-only do evento vinculado; `/uploads/calendar/` only via `normalizeCalendarMediaMetadata`; populada pelo sync do calendar, o front so exibe). `normalizeTaskUIMetadata` (`repository_helpers.go`) e WHITELIST: chave fora da lista e descartada tanto no create quanto no update. O DTO de task deve sempre devolver `uiMetadata`, mesmo `{}`, para impedir que o front use cache local antigo como fonte autoritativa entre usuarios.
 
-**Videos no R2:** novos uploads de task usam o modulo central `storage` por adapter da composition
+**Midia no R2:** novos uploads de task usam o modulo central `storage` por adapter da composition
 root. A URL segue `/uploads/tasks/{accountId}/{objectId}/{arquivo}`, com GET/HEAD e Range pela API;
 o caminho antigo de um unico arquivo continua no file server legado. O arquivo original e imutavel:
 nenhuma conversao de formato/container/codec/frame rate/resolucao/bitrate ou recompressao e permitida.
-Com `storage.settings.uploads_enabled=false`, a gravacao continua no storage local legado e respeita
-100 MiB; com R2 ativo, respeita o limite global configurado para video. `GET /v1/tasks/video-limit`
-e a fonte do limite ativo para o frontend validar antes de iniciar o multipart.
-Cada video pode carregar `checklistItemId` opcional em `ui_metadata.videos`. O frontend pergunta a
+Imagens e videos usam o mesmo input e `POST /v1/tasks/{taskId}/media`; a rota `/videos` permanece
+como alias de compatibilidade. A chave `ui_metadata.videos` tambem permanece como nome legado para
+nao migrar ou perder anexos existentes, mas agora pode conter ambos os tipos, diferenciados por
+`contentType`. `GET /v1/tasks/media-limits` devolve `imageMaxBytes` e `videoMaxBytes`; o endpoint
+`/video-limit` continua disponivel para clientes antigos.
+Falhas de preflight preservam o motivo no contrato HTTP: `video_metrics_unavailable` (503 com
+`Retry-After: 2`), `video_storage_quota_exceeded` (429) e `video_unavailable` (503 para provider,
+banco ou staging). O service registra `tasks.video_upload_failed` com conta, usuario, task,
+categoria e erro interno, sem nome ou bytes do arquivo.
+Cada midia pode carregar `checklistItemId` opcional em `ui_metadata.videos`. O frontend pergunta a
 associacao antes do upload quando a tarefa possui checklist e permite corrigi-la depois. O backend
 limita o identificador a 120 caracteres; o binario e o objeto R2 continuam independentes desse
 metadado e jamais sao regravados ao trocar o item.
+`mediaOrder` altera somente apresentacao/capa em Tasks: nao move bytes, nao insere midia do Calendar em
+`videos` e nao altera `calendarMedia`. O merge de metadata deve preservar a chave quando o sync entre
+Calendar e Tasks atualizar o espelho; ids ausentes sao tolerados para compatibilidade e ignorados no front.
+Quando o navegador rejeita o codec do original, a API continua entregando exatamente os mesmos
+bytes e a UI informa a incompatibilidade, oferecendo acesso ao arquivo original. Incompatibilidade
+do player nao autoriza criar proxy, variante, remux, transcode ou qualquer outro arquivo derivado.
 
 **Paginacao cursor-based em ListTasks (T5 — fechamento 2026-05-15):** o repository usa keyset pagination
 sobre a tupla `(sort_order, created_at, id)` — ordem total estavel mesmo quando varias tasks
@@ -303,9 +315,9 @@ Seguir `back/internal/modules/operations/` e `back/internal/modules/core/`:
 3. Fase T5: Front substitui localStorage por este backend e abre os canais WS
 4. Fase T10: Sistema de views (11 tipos) com endpoints /views/:id/data por layout
 
-## Video: fidelidade e entrega
+## Midia: fidelidade e entrega
 
-- Clicar em video abre o viewer modal compartilhado, com `contain`, aspect-ratio original e
-  navegacao lateral entre todos os videos da tarefa. Miniatura nunca reproduz com crop.
+- Clicar em imagem ou video abre o viewer modal compartilhado, com `contain`, aspect-ratio original
+  e navegacao lateral entre todas as midias da tarefa. Miniatura nunca usa crop.
 - Depois que a API recebe o arquivo completo, a entrega/retomada no R2 pertence ao worker Go;
   nunca pedir outro upload ao usuario para recuperar parte ou conclusao que falhou.

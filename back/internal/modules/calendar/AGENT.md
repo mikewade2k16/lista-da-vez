@@ -101,6 +101,18 @@ no `AIContextClientLean` (escopo all) + o no "Montar contexto" calcula de `ctx.c
 client) — e o prompt manda a IA avisar o que falta e insistir com moderacao. Sem migration/env nova; so
 re-importar o workflow `calendar-chat` (nos "Montar contexto" + "Extrair resposta" atualizados). Doc
 [docs/CALENDARIO_SPECS6.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/CALENDARIO_SPECS6.md).
+
+ITEM DE TASK PELO CROW: `kind=taskItem` usa `fields.targetId` para a task-pai e
+`fields.taskItem={id?,title?,itemTitle?,taskTitle?,status?,statusDate?,completed?,completedDate?}`.
+`chat_tasks_context.go` projeta defensivamente ate 200 entradas de `ui_metadata.checklist` em
+`AIContextTask.Items`; status aceitos: `captured|editing|approval|approved|scheduled|posted`, e datas
+sao estritamente `YYYY-MM-DD`. `chat_task_items.go` resolve task/item somente no contexto autorizado,
+por ID real ou titulo unico, sobrescreve `taskTitle/itemTitle` com snapshots autoritativos e descarta
+alvo inventado/ambiguo. Create exige task real + titulo (o front gera o ID); update exige item real +
+campo editavel; delete exige task/item reais. Mudanca de status/conclusao sem data recebe hoje em
+`America/Sao_Paulo`; `completed=false` limpa `completedDate`. Data isolada so sobrevive se o estado
+atual correspondente existir. `taskItem` NAO passa pela guarda de prioridade do Calendar. Descartes
+sem alvo geram aviso deterministico; outras propostas validas ficam.
 Secrets de IA (WAVE 3, SEC) em `secrets.go` (tipos `KeyStatus{set,last4}`/`KeyStatusView{scope,keys}`/
 `GlobalSecrets` + service: `GetAccountKeyStatus`/`PutAccountKey`/`GetGlobalKeyStatus`/`PutGlobalKey`/
 `resolveAIKey`/`mask`), `store_secrets.go` (interface `secretStore` + CRUD de `calendar.ai_secrets` por
@@ -278,6 +290,9 @@ helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToS
   O front (`applyProposal`) executa evento via `store.updateEvent`/`deleteEvent`; task via store de tasks
   quando `targetId` for id real de `context.tasks` ou evento com `taskId` vinculado. `buildChatContext` acrescenta
   `tasks` com a projecao lean do board configurado (`maxContextTasks=100`) usando permissao real do usuario.
+  Cada task pode incluir `items[]` (max 200) com `{id,title,completed,status?,statusDate?,completedDate?}`;
+  propostas `taskItem` continuam em `calendar.chat_messages.proposals` e so sao executadas depois da
+  confirmacao explicita do card, nunca pelo n8n.
   O `proposal`/`proposal_status` singular vira retrocompat: o backfill da 0195 migra mensagem antiga para a
   lista de 1 (id '0') e o scan tem a mesma rede de seguranca. `calendar_items` guarda o snapshot de eventos
   reais cujos IDs vieram do contexto e foram revalidados pelo Go. Sem soft-delete (some junto com a conversa
@@ -651,3 +666,13 @@ Ao subir a WAVE 3 pra producao, NAO basta o deploy da imagem. Fazer, em ordem:
   sem primeiro alterar e testar este contrato owner-owned.
 - A fonte `calendar.client_profile` e somente `on_demand`. Ausencia de perfil
   retorna conjunto vazio; falha desta fonte nao pode interromper o chat.
+
+## Operação de conteúdo no Crow (somente leitura)
+
+- `WithContentOperationsBrief` injeta uma closure lazy da composition root; Calendar não consulta
+  tabelas do módulo de alertas.
+- `buildChatContext` recebe o `Brief` já calculado e filtrado pelos clientes visíveis do chat.
+- O bloco `contentOperations` é somente leitura. Enquanto o workflow atual serializa `monthNotes`,
+  uma cópia com prefixo explícito de leitura é anexada apenas ao contexto do prompt; a nota real
+  do mês nunca é alterada.
+- Falha do provider não interrompe o Crow e, principalmente, o Crow não dispara, agenda nem grava alertas.

@@ -3,6 +3,7 @@ import { useAuthStore } from '~/stores/auth'
 import { useCalendarStore } from '~/stores/calendar'
 import type { CalendarEventInput } from '~/utils/calendar'
 import { applyClientProfileProposal, applyNoteProposal } from '~/utils/calendar-chat-crud'
+import { applyCalendarChatTaskItem } from '~/utils/calendar-chat-task-items'
 // Store de Tasks vive em outra layer; import cross-layer (precedente: ConfigTasks.vue). So
 // e usado ao CONFIRMAR uma proposta de task (WAVE 5, E7); a Pinia instancia sob demanda.
 import { useTasksStore } from '../../layers/tasks/stores/tasks'
@@ -549,6 +550,7 @@ export function useCalendarChat() {
   async function applyProposal(
     proposal: CalendarChatStoredProposal,
     clientId: string,
+    messageId: string,
   ): Promise<string> {
     const f = proposal.fields || {}
     const action = proposal.action || 'create'
@@ -590,6 +592,31 @@ export function useCalendarChat() {
           .catch(() => undefined)
       }
       return boardId
+    }
+
+    async function applyTaskItemTarget(): Promise<string> {
+      const boardId = await loadConfiguredTasksBoard(action !== 'create')
+      if (!boardId) {
+        return 'Configure um board na aba Integrações da config para usar itens pelo Crow.'
+      }
+      const tasksStore = useTasksStore()
+      let task = tasksStore.tasks.find((candidate) => candidate.id === targetId)
+      if (!task) task = matchByTitle(tasksStore.tasks, targetId)
+      if (!task || task.projectId !== boardId) {
+        return 'Não encontrei a task desse item no board configurado. Recarregue o board e tente de novo.'
+      }
+
+      const mutation = applyCalendarChatTaskItem({
+        action,
+        items: task.checklist,
+        item: f.taskItem || {},
+        createId: `crow:${messageId}:${proposal.id}`,
+      })
+      if (mutation.error) return mutation.error
+      if (!mutation.changed) return ''
+
+      const updated = await tasksStore.updateTask(task.id, { checklist: mutation.items })
+      return updated ? '' : 'Não consegui atualizar esse item da task.'
     }
 
     async function applyTaskTarget(): Promise<string> {
@@ -688,6 +715,8 @@ export function useCalendarChat() {
       })
       return created ? '' : 'Não consegui criar a task.'
     }
+
+    if (proposal.kind === 'taskItem') return applyTaskItemTarget()
 
     if (action === 'update' || action === 'delete') {
       // Roteia primeiro pelo targetId real: a IA as vezes rotula um evento do calendario como
@@ -811,6 +840,7 @@ export function useCalendarChat() {
           const err = await applyProposal(
             edited ? { ...proposal, fields: edited } : proposal,
             clientById.get(proposal.id) || '',
+            messageId,
           )
           if (err) {
             failed++

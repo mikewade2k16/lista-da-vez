@@ -291,5 +291,23 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
       "Contrato futuro por source_ref para Calendário e Crow Assistant"
     ],
     dependsOn: []
+  },
+  {
+    id: "content_operations",
+    label: "Operação de conteúdo",
+    route: "/operacao-conteudo",
+    status: "in_progress",
+    priority: "P1",
+    category: "operacao-comercial",
+    description:
+      "Módulo pausado e incompleto. Cruza Tasks e Calendário para calcular lembretes por cliente e os entrega à central global de notificações. O Crow possui apenas acesso de leitura ao resumo. A base funcional existe, mas ainda faltam testes amplos, homologação das regras e definição dos disparos fora da sessão.",
+    scope: [
+      "Já existe: API de brief, regras por cliente, página própria e integração com a central global",
+      "Já existe: contexto somente leitura para o Crow responder perguntas",
+      "Pendente: testes HTTP/repository/permissões/multi-tenant/fuso e testes frontend/E2E",
+      "Pendente: homologação com dados reais representativos e revisão de falsos alertas",
+      "Pendente: histórico, confirmar/adiar/dispensar, preferências e disparos fora da sessão"
+    ],
+    dependsOn: ["tasks", "calendar"]
   }
 ];

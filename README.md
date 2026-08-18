@@ -104,10 +104,10 @@ O fluxo sem Docker continua disponivel so como contingencia:
 Para o root local da plataforma no seed MVP use:
 
 - `mikewade2k16@gmail.com`
-- senha: `Mvp@2026!`
+- senha de teste local: `123123456`
 
-Em Docker dev, a migration `0033_seed_dev_platform_admin_password.sql` reestabelece essa senha no `platform_admin` local.
-Ela e pulada em producao.
+Credenciais existentes nunca devem ser alteradas para viabilizar testes. Se a senha local nao estiver
+disponivel ou nao funcionar, interrompa o teste e pergunte ao responsavel antes de qualquer reset.
 
 ## Quando rebuildar
 

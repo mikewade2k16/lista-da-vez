@@ -56,6 +56,14 @@ const pickId = ref('')
 const editingIds = ref<Set<string>>(new Set())
 const edits = ref<Map<string, CalendarChatProposalFields>>(new Map())
 const calendarStore = useCalendarStore()
+const taskItemStatusOptions = [
+  { value: 'captured', label: 'Gravado' },
+  { value: 'editing', label: 'Em edição' },
+  { value: 'approval', label: 'Em aprovação' },
+  { value: 'approved', label: 'Aprovado' },
+  { value: 'scheduled', label: 'Agendado' },
+  { value: 'posted', label: 'Postado' },
+]
 
 const isAll = computed(() => props.scopeMode === 'all')
 const pending = computed(() => props.message.proposals.filter((p) => p.status === 'pending'))
@@ -114,12 +122,19 @@ function proposalTitle(p: CalendarChatStoredProposal): string {
     const month = String(p.fields.note?.month || '').trim()
     return month ? `Anotações · ${month}` : 'Anotações do mês'
   }
+  if (p.kind === 'taskItem') {
+    const item = p.fields.taskItem || {}
+    return String(item.itemTitle || item.title || '').trim() || '(item sem título)'
+  }
   // Update/delete: o cabecalho mostra o item ALVO (titulo atual, resolvido do snapshot
   // server-side nos calendarItems) — e o que sera alterado; o titulo novo aparece no diff.
   if (p.action !== 'create') {
     return targetTitle(p) || String(p.fields.title || '').trim() || '(sem titulo)'
   }
   return String(p.fields.title || '').trim() || targetTitle(p) || '(sem titulo)'
+}
+function proposalTaskTitle(p: CalendarChatStoredProposal): string {
+  return p.kind === 'taskItem' ? String(p.fields.taskItem?.taskTitle || '').trim() : ''
 }
 function proposalChanges(p: CalendarChatStoredProposal) {
   return calendarProposalChanges(p, previewContext.value)
@@ -166,7 +181,7 @@ const selectedItems = computed(() =>
 // needsClient: propostas que EXIGEM um cliente resolvido. Evento/task so no create; perfil do
 // cliente em qualquer acao (WAVE 7); anotacao nunca (e por mes, nao por cliente).
 function needsClient(p: CalendarChatStoredProposal): boolean {
-  if (p.kind === 'note') return false
+  if (p.kind === 'note' || p.kind === 'taskItem') return false
   if (p.kind === 'clientProfile') return true
   return p.action === 'create'
 }
@@ -211,7 +226,7 @@ function cancelEdit(id: string): void {
 function getEdit(id: string, path: string): string {
   return getFieldByPath(edits.value.get(id), path)
 }
-function setEdit(id: string, path: string, value: string): void {
+function setEdit(id: string, path: string, value: unknown): void {
   setFieldByPath(edits.value.get(id), path, value)
   edits.value = new Map(edits.value)
 }
@@ -293,6 +308,7 @@ function rejectOne(id: string): void {
 
 function kindLabel(p: CalendarChatStoredProposal): string {
   if (p.kind === 'task') return 'Tarefa'
+  if (p.kind === 'taskItem') return 'Item da tarefa'
   if (p.kind === 'note') return 'Anotação'
   if (p.kind === 'clientProfile') return 'Perfil'
   return 'Evento'
@@ -300,6 +316,7 @@ function kindLabel(p: CalendarChatStoredProposal): string {
 // Icone por kind da proposta.
 function kindIcon(p: CalendarChatStoredProposal): string {
   if (p.kind === 'task') return 'i-lucide-square-check-big'
+  if (p.kind === 'taskItem') return 'i-lucide-list-checks'
   if (p.kind === 'note') return 'i-lucide-notebook-pen'
   if (p.kind === 'clientProfile') return 'i-lucide-user-round-cog'
   return 'i-lucide-calendar-plus'
@@ -331,6 +348,11 @@ function resolvedStatusLabel(p: CalendarChatStoredProposal): string {
 }
 function proposalDate(p: CalendarChatStoredProposal): string {
   const f = p.fields || {}
+  if (p.kind === 'taskItem') {
+    const item = f.taskItem || {}
+    const value = item.statusDate || item.completedDate || ''
+    return value ? dateLabel(value) : ''
+  }
   const date = f.date || f.dueDate || ''
   if (!date) return ''
   const label = dateLabel(date)
@@ -488,6 +510,7 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
                 </span>
                 <UIcon :name="kindIcon(p)" aria-hidden="true" />
                 {{ kindLabel(p) }}
+                <template v-if="proposalTaskTitle(p)">· {{ proposalTaskTitle(p) }}</template>
                 <template v-if="proposalDate(p)">· {{ proposalDate(p) }}</template>
               </span>
               <dl
@@ -537,9 +560,32 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
                   >
                     {{ noteModeLabel(p.id) }}
                   </button>
+                  <select
+                    v-else-if="ef.kind === 'taskStatus'"
+                    class="calendar-chat__proposal-edit-input"
+                    :value="getEdit(p.id, ef.path)"
+                    :disabled="busy"
+                    @change="setEdit(p.id, ef.path, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option
+                      v-for="option in taskItemStatusOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                  <input
+                    v-else-if="ef.kind === 'boolean'"
+                    type="checkbox"
+                    :checked="getEdit(p.id, ef.path) === 'true'"
+                    :disabled="busy"
+                    @change="setEdit(p.id, ef.path, ($event.target as HTMLInputElement).checked)"
+                  />
                   <input
                     v-else
                     class="calendar-chat__proposal-edit-input"
+                    :type="ef.kind === 'date' ? 'date' : 'text'"
                     :value="getEdit(p.id, ef.path)"
                     :disabled="busy"
                     @input="setEdit(p.id, ef.path, ($event.target as HTMLInputElement).value)"

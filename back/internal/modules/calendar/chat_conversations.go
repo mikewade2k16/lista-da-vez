@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -145,6 +146,8 @@ func (s *Service) buildChatContext(ctx context.Context, accountID string, princi
 		fillLeanClientNames(block.Clients, names)
 		block.Tasks = s.chatTasksContext(ctx, accountID, principal, "", access.VisibleClientIDs)
 		block.People = s.chatPeopleContext(ctx, accountID)
+		block.ContentOperations = s.readContentOperations(ctx, accountID, principal, access.VisibleClientIDs)
+		block.MonthNotes = appendContentOperationsReadOnly(block.MonthNotes, block.ContentOperations)
 		return block, nil
 	}
 	aic, err := s.BuildAIContext(ctx, accountID, clientID, month)
@@ -160,6 +163,8 @@ func (s *Service) buildChatContext(ctx context.Context, accountID string, princi
 	}
 	block.Tasks = s.chatTasksContext(ctx, accountID, principal, clientID, []string{clientID})
 	block.People = s.chatPeopleContext(ctx, accountID)
+	block.ContentOperations = s.readContentOperations(ctx, accountID, principal, []string{clientID})
+	block.MonthNotes = appendContentOperationsReadOnly(block.MonthNotes, block.ContentOperations)
 	// Planos sao metadata da conta INTEIRA (todos os clientes); so a agencia ve. Cliente-side
 	// (ou usuario subset) NAO recebe metadata (mes/status/provider) de planos de clientes que
 	// nao pode ver — WAVE 4, achado da revisao.
@@ -167,6 +172,35 @@ func (s *Service) buildChatContext(ctx context.Context, accountID string, princi
 		block.Plans = nil
 	}
 	return block, nil
+}
+
+// O workflow atual ja serializa monthNotes. O bloco tipado continua separado no JSON,
+// mas esta copia explicitamente read-only garante que o Crow o enxergue sem lhe dar
+// qualquer participacao no disparo ou na escrita dos alertas.
+func appendContentOperationsReadOnly(monthNotes string, brief any) string {
+	if brief == nil {
+		return monthNotes
+	}
+	raw, err := json.Marshal(brief)
+	if err != nil || len(raw) == 0 {
+		return monthNotes
+	}
+	prefix := "[RESUMO OPERACIONAL SOMENTE LEITURA — calculado por Tasks + Calendário; não é uma anotação e o Crow não dispara alertas] "
+	if strings.TrimSpace(monthNotes) == "" {
+		return prefix + string(raw)
+	}
+	return monthNotes + "\n\n" + prefix + string(raw)
+}
+
+func (s *Service) readContentOperations(ctx context.Context, accountID string, principal auth.Principal, clientIDs []string) any {
+	if s.contentOperationsProvider == nil {
+		return nil
+	}
+	brief, err := s.contentOperationsProvider(ctx, accountID, principal, clientIDs)
+	if err != nil {
+		return nil
+	}
+	return brief
 }
 
 // deriveChatTitle deriva o titulo da conversa da 1a pergunta (contrato D4): colapsa

@@ -1,5 +1,6 @@
 import type {
   CalendarChatCalendarItem,
+  CalendarChatProposalTaskItem,
   CalendarChatScopeClient,
   CalendarChatStoredProposal,
 } from '~/domain/calendar/calendar-chat-api'
@@ -219,10 +220,70 @@ function noteProposalChanges(proposal: CalendarChatStoredProposal): CalendarProp
   return out
 }
 
+const TASK_ITEM_STATUS_LABELS: Record<string, string> = {
+  captured: 'Gravado',
+  editing: 'Em edição',
+  approval: 'Em aprovação',
+  approved: 'Aprovado',
+  scheduled: 'Agendado',
+  posted: 'Postado',
+}
+
+function taskItemProposalChanges(proposal: CalendarChatStoredProposal): CalendarProposalChange[] {
+  const item: CalendarChatProposalTaskItem = proposal.fields.taskItem || {}
+  if (proposal.action === 'delete') return []
+
+  const out: CalendarProposalChange[] = []
+  const proposedTitle = String(item.title || '').trim()
+  const currentTitle = String(item.itemTitle || '').trim()
+  if (proposedTitle && (proposal.action === 'create' || proposedTitle !== currentTitle)) {
+    out.push({
+      key: 'taskItem.title',
+      label: 'Item',
+      before: proposal.action === 'update' ? currentTitle : '',
+      after: proposedTitle,
+    })
+  }
+  if (item.status) {
+    out.push({
+      key: 'taskItem.status',
+      label: 'Status',
+      before: '',
+      after: TASK_ITEM_STATUS_LABELS[item.status] || item.status,
+    })
+  }
+  if (item.statusDate) {
+    out.push({
+      key: 'taskItem.statusDate',
+      label: 'Data do status',
+      before: '',
+      after: dateLabel(item.statusDate),
+    })
+  }
+  if (typeof item.completed === 'boolean') {
+    out.push({
+      key: 'taskItem.completed',
+      label: 'Finalizado',
+      before: '',
+      after: item.completed ? 'Sim' : 'Não',
+    })
+  }
+  if (item.completedDate) {
+    out.push({
+      key: 'taskItem.completedDate',
+      label: 'Finalizado em',
+      before: '',
+      after: dateLabel(item.completedDate),
+    })
+  }
+  return out
+}
+
 export function calendarProposalTargetClientId(
   proposal: CalendarChatStoredProposal,
   ctx: CalendarProposalPreviewContext,
 ): string {
+  if (proposal.kind === 'taskItem') return ''
   const target = targetSnapshot(proposal, ctx)
   return String(target?.clientId || '')
 }
@@ -231,6 +292,9 @@ export function calendarProposalTargetTitle(
   proposal: CalendarChatStoredProposal,
   ctx: CalendarProposalPreviewContext,
 ): string {
+  if (proposal.kind === 'taskItem') {
+    return String(proposal.fields.taskItem?.taskTitle || '')
+  }
   const target = targetSnapshot(proposal, ctx)
   return String(target?.title || '')
 }
@@ -241,6 +305,7 @@ export function calendarProposalChanges(
 ): CalendarProposalChange[] {
   if (proposal.kind === 'clientProfile') return profileProposalChanges(proposal)
   if (proposal.kind === 'note') return noteProposalChanges(proposal)
+  if (proposal.kind === 'taskItem') return taskItemProposalChanges(proposal)
   const fields = proposal.fields || {}
   const target = targetSnapshot(proposal, ctx)
   const changes: CalendarProposalChange[] = []

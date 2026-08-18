@@ -12,6 +12,9 @@ const (
 	maxContextEvents = 100
 	maxContextPlans  = 10
 	maxContextTasks  = 100
+	// Espelha o teto autoritativo de Tasks para que nenhum item persistido fique
+	// impossivel de localizar/alterar pelo Crow apenas por sua posicao no checklist.
+	maxContextTaskItems = 200
 	// maxContextMediaPerEvent mantem o prompt e o snapshot do chat limitados sem esconder
 	// que o evento possui midia; o card mostra as primeiras e sinaliza o restante recebido.
 	maxContextMediaPerEvent = 6
@@ -70,23 +73,34 @@ type AIContextEvent struct {
 // AIContextTask e a projecao segura das tasks do board configurado do calendario. O
 // chat usa estes IDs reais para propor update/delete de task sem inventar targetId.
 type AIContextTask struct {
-	ID            string   `json:"id"`
-	BoardID       string   `json:"boardId"`
-	ColumnID      string   `json:"columnId,omitempty"`
-	Title         string   `json:"title"`
-	Status        string   `json:"status,omitempty"`
-	Priority      string   `json:"priority"`
-	DueDate       string   `json:"dueDate,omitempty"`
-	StartDate     string   `json:"startDate,omitempty"`
-	DueEndDate    string   `json:"dueEndDate,omitempty"`
-	ResponsibleID string   `json:"responsibleId,omitempty"`
-	InvolvedIDs   []string `json:"involvedIds,omitempty"`
-	ClientID      string   `json:"clientId,omitempty"`
-	ClientName    string   `json:"clientName,omitempty"`
-	Type          string   `json:"type,omitempty"`
-	Description   string   `json:"description,omitempty"`
-	Archived      bool     `json:"archived,omitempty"`
-	Version       int      `json:"version,omitempty"`
+	ID            string              `json:"id"`
+	BoardID       string              `json:"boardId"`
+	ColumnID      string              `json:"columnId,omitempty"`
+	Title         string              `json:"title"`
+	Status        string              `json:"status,omitempty"`
+	Priority      string              `json:"priority"`
+	DueDate       string              `json:"dueDate,omitempty"`
+	StartDate     string              `json:"startDate,omitempty"`
+	DueEndDate    string              `json:"dueEndDate,omitempty"`
+	ResponsibleID string              `json:"responsibleId,omitempty"`
+	InvolvedIDs   []string            `json:"involvedIds,omitempty"`
+	ClientID      string              `json:"clientId,omitempty"`
+	ClientName    string              `json:"clientName,omitempty"`
+	Type          string              `json:"type,omitempty"`
+	Description   string              `json:"description,omitempty"`
+	Archived      bool                `json:"archived,omitempty"`
+	Version       int                 `json:"version,omitempty"`
+	Items         []AIContextTaskItem `json:"items,omitempty"`
+}
+
+// AIContextTaskItem e a projecao defensiva de ui_metadata.checklist usada pelo Crow.
+type AIContextTaskItem struct {
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Completed     bool   `json:"completed"`
+	Status        string `json:"status,omitempty"`
+	StatusDate    string `json:"statusDate,omitempty"`
+	CompletedDate string `json:"completedDate,omitempty"`
 }
 
 // AIContextPlan e a projecao lean de um plano de IA (contrato C9/C7): sem o
@@ -228,7 +242,8 @@ type AIContextAll struct {
 	Tasks      []AIContextTask  `json:"tasks,omitempty"`
 	// People (WAVE 12): pessoas da equipe (id+nome) para a IA resolver responsavel/
 	// envolvidos por NOME (mesma fonte do GET /responsibles), sem exigir ID do usuario.
-	People []Member `json:"people,omitempty"`
+	People            []Member `json:"people,omitempty"`
+	ContentOperations any      `json:"contentOperations,omitempty"`
 }
 
 // BuildAIContextAll monta o agregado LEAN multi-cliente (contrato D4) para o chat em

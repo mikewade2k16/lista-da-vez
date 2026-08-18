@@ -221,7 +221,7 @@ values
 	('cccccccc-cccc-cccc-cccc-ccccccccc002', 'lane.olivieravcxz@gmail.com', 'Adelane Sousa Oliveira', 'Mvp@2026!', true, true, 'manager', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb001', '206', 'Gerente de Loja'),
 	('cccccccc-cccc-cccc-cccc-ccccccccc003', 'tonyw.right@outlook.com', 'Tony Prado', 'Mvp@2026!', true, true, 'marketing', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', null, '', 'Gerente de Marketing'),
 	('cccccccc-cccc-cccc-cccc-ccccccccc004', 'days.matos@gmail.com', 'Dayanne Barbosa de Souza Matos', 'Mvp@2026!', true, true, 'director', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', null, '301', 'Diretoria'),
-	('cccccccc-cccc-cccc-cccc-ccccccccc005', 'mikewade2k16@gmail.com', 'Mike Wade', 'Mvp@2026!', false, true, 'platform_admin', null, null, '', 'Developer da Plataforma'),
+	('cccccccc-cccc-cccc-cccc-ccccccccc005', 'mikewade2k16@gmail.com', 'Mike Wade', '123123456', false, true, 'platform_admin', null, null, '', 'Developer da Plataforma'),
 	('eeeeeeee-eeee-eeee-eeee-eeeeeeeee001', 'talia.sts10@hotmail.com', 'Barbara Talia dos Santos Morais', 'Mvp@2026!', true, true, 'manager', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb004', '155', 'Gerente de Loja'),
 	('eeeeeeee-eeee-eeee-eeee-eeeeeeeee002', 'alexsandrapaz@gmail.com.br', 'Alexsandra Paz Ferreira', 'Mvp@2026!', true, true, 'manager', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb002', '227', 'Gerente de Loja'),
 	('ffffffff-ffff-ffff-ffff-ffffffff0001', 'terminal.riomar@acesso.omni.local', 'Terminal Perola Riomar', 'Terminal@2026!', false, true, 'store_terminal', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb001', '', 'Terminal da Loja'),

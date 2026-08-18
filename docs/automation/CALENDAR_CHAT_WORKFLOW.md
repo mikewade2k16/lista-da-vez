@@ -5,8 +5,9 @@
 > [../CALENDARIO_SPECS2.md](../CALENDARIO_SPECS2.md). Contrato C7 (payload) + C6 (config `ai`).
 > JSON importavel: [`../../automation/export/workflow-calendar-chat.json`](../../automation/export/workflow-calendar-chat.json).
 >
-> **Status:** a versão anterior foi importada em produção em 2026-07-07. O JSON local agora está na
-> revisao `calendarcht07` (campos completos de proposta + `context.tasks` do board configurado) e precisa ser reimportado apos o deploy desta mudanca.
+> **Status:** a versao anterior foi importada em producao em 2026-07-07. A revisao com propostas
+> `taskItem` e checklist no contexto foi importada e ativada no n8n local em 2026-08-13; a definicao
+> do runtime foi conferida contra este JSON. Producao ainda precisa ser reimportada apos o deploy.
 
 ---
 
@@ -42,9 +43,9 @@ somente as últimas mensagens no campo `history`. Propostas e cards continuam no
 | No | Tipo | O que faz |
 |---|---|---|
 | **Webhook** | `n8n-nodes-base.webhook` v2.1 | POST path `calendar-chat`, `responseMode=responseNode` (responde pelo no Respond). Recebe o payload C7 no `body`. |
-| **Montar contexto** | `code` v2 | Monta `system + context + history`; serializa eventos reais com ID, `taskId`, horario, cliente, status, prioridade, descricao e midia, e tambem `context.tasks` do board configurado; exige JSON com `answer/proposals/eventIds`. Quando `eventIds` tiver itens, o `answer` deve ser so uma sintese curta; a lista completa aparece nos cards do Go. |
+| **Montar contexto** | `code` v2 | Monta `system + context + history`; serializa eventos e `context.tasks` com `items[]`; informa hoje/ontem em `America/Sao_Paulo`; exige JSON com `answer/proposals/eventIds` e confirmacao obrigatoria por card. |
 | **Chamar LLM** | `httpRequest` v4.2 | Chama o endpoint OpenAI-compatible configurado usando a key enviada server-to-server pelo Go. |
-| **Extrair resposta** | `code` v2 | Normaliza `answer`, `proposals[]` e `eventIds`; preserva campos de create/update/delete (`priority`, `description`, `responsibleId`, `involvedIds`, datas de task etc.); erros do provedor viram mensagem acionável com `aiError=true`. Erros 502/504 antes desse nó indicam n8n/webhook indisponível ou timeout, não uma resposta ruim do modelo. |
+| **Extrair resposta** | `code` v2 | Normaliza `answer`, `proposals[]` e `eventIds`; inclui `taskItem`, preserva `completed:false`, valida enum/datas e rejeita create com data orfa. Erros do provedor viram mensagem acionavel com `aiError=true`. |
 | **Respond to Webhook** | `respondToWebhook` v1.1 | Responde `{answer, proposals, eventIds, aiError}`. |
 
 O `sessionKey` continua identificando a conversa no payload, mas a memória autoritativa é o
@@ -81,7 +82,7 @@ O payload C7 que o back manda ao webhook:
     "holidays": [{ "date": "", "name": "", "set": "" }],
     "monthNotes": "<html, pode ser vazio>",
     "events": [{ "id": "", "taskId": "", "date": "", "time": "", "type": "", "title": "", "status": "", "priority": "", "responsibleId": "", "involvedIds": [], "clientId": "", "clientName": "", "description": "", "media": [] }], // max 100
-    "tasks": [{ "id": "", "boardId": "", "columnId": "", "title": "", "status": "", "priority": "", "dueDate": "", "dueEndDate": "", "responsibleId": "", "involvedIds": [], "clientId": "", "clientName": "", "type": "", "description": "" }], // max 100, board configurado
+    "tasks": [{ "id": "", "boardId": "", "columnId": "", "title": "", "status": "", "priority": "", "dueDate": "", "dueEndDate": "", "responsibleId": "", "involvedIds": [], "clientId": "", "clientName": "", "type": "", "description": "", "items": [{ "id": "", "title": "", "completed": false, "status": "editing", "statusDate": "YYYY-MM-DD", "completedDate": "YYYY-MM-DD" }] }], // max 100 tasks; max 200 items/task
     "plans": [{ "id": "", "month": "", "status": "", "provider": "", "model": "" }]    // lean, max 10
   }
 }
@@ -93,6 +94,33 @@ C2/C6): **`gemini https://generativelanguage.googleapis.com/v1beta/openai`**,
 `kimi https://api.moonshot.cn/v1`, `glm https://api.z.ai/api/paas/v4`, `openai https://api.openai.com/v1`.
 
 > O nó HTTP chama `{baseURL}/chat/completions`; a key vem em `body.ai.apiKey` somente no tráfego interno.
+
+### Proposta `taskItem`
+
+```jsonc
+{
+  "action": "create|update|delete",
+  "kind": "taskItem",
+  "fields": {
+    "targetId": "<id real ou titulo unico da task-pai>",
+    "taskItem": {
+      "id": "<item real; vazio no create>",
+      "title": "<titulo novo/criacao>",
+      "itemTitle": "<titulo atual do item>",
+      "taskTitle": "<titulo autoritativo da task>",
+      "status": "captured|editing|approval|approved|scheduled|posted",
+      "statusDate": "YYYY-MM-DD",
+      "completed": false,
+      "completedDate": "YYYY-MM-DD"
+    }
+  }
+}
+```
+
+O Go resolve task/item novamente no contexto autorizado e substitui os titulos de snapshot antes de
+persistir o card. ID inventado, titulo ambiguo e datas sem estado correspondente sao descartados com
+aviso deterministico. Mudanca sem data usa hoje em Sao Paulo como fallback; `completed=false` limpa a
+data de conclusao. O n8n nunca aplica a mudanca: o usuario precisa confirmar o card.
 
 ---
 
@@ -159,6 +187,10 @@ conversationId, clientId?, month? }` (RequireAuth + accountScope). O back monta 
 ---
 
 ## 7. Limitações / dívidas
+
+- **Resumo operacional somente leitura:** o Go inclui no contexto um resumo calculado pelo módulo
+  Operação de conteúdo a partir de Tasks + Calendário, já filtrado pelos clientes visíveis. O Crow
+  pode responder perguntas sobre esse resumo, mas não dispara nem controla os alertas.
 
 - **Sem teste de prompt real no deploy.** Importado/publicado no n8n de prod e comparado com o
   JSON local; a chamada ao provider ficou manual para nao consumir tokens involuntariamente.

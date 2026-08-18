@@ -80,10 +80,78 @@ func aiContextTaskFromDTO(task tasks.TaskDTO) AIContextTask {
 	item.DueEndDate = taskContextMetadataString(task.UIMetadata, "dueEndDate")
 	item.ClientName = taskContextMetadataString(task.UIMetadata, "clientName")
 	item.InvolvedIDs = taskContextMetadataStrings(task.UIMetadata, "involved")
+	item.Items = taskContextChecklistItems(task.UIMetadata)
 	if item.ClientID == "" {
 		item.ClientID = normalizeUUID(taskContextMetadataString(task.UIMetadata, "clientId"))
 	}
 	return item
+}
+
+// taskContextChecklistItems extrai somente itens validos do checklist. O metadata
+// vem de JSON dinamico e pode conter shapes antigos/forjados, por isso cada campo e
+// validado sem type assertions inseguras e o volume e limitado por task.
+func taskContextChecklistItems(metadata map[string]any) []AIContextTaskItem {
+	if metadata == nil {
+		return nil
+	}
+	raw, ok := metadata["checklist"]
+	if !ok {
+		return nil
+	}
+	var items []any
+	switch typed := raw.(type) {
+	case []any:
+		items = typed
+	case []map[string]any:
+		items = make([]any, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, item)
+		}
+	default:
+		return nil
+	}
+	out := make([]AIContextTaskItem, 0, min(len(items), maxContextTaskItems))
+	seen := map[string]bool{}
+	for _, value := range items {
+		if len(out) >= maxContextTaskItems {
+			break
+		}
+		item, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, idOK := item["id"].(string)
+		title, titleOK := item["title"].(string)
+		id = strings.TrimSpace(id)
+		title = strings.TrimSpace(title)
+		if !idOK || !titleOK || id == "" || title == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		contextItem := AIContextTaskItem{ID: id, Title: title}
+		if completed, ok := item["completed"].(bool); ok {
+			contextItem.Completed = completed
+		}
+		if status, ok := item["status"].(string); ok && validTaskItemStatus(strings.TrimSpace(status)) {
+			contextItem.Status = strings.TrimSpace(status)
+		}
+		if contextItem.Status != "" {
+			contextItem.StatusDate = normalizeTaskItemDate(taskContextAnyString(item["statusDate"]))
+		}
+		if contextItem.Completed {
+			contextItem.CompletedDate = normalizeTaskItemDate(taskContextAnyString(item["completedDate"]))
+		}
+		out = append(out, contextItem)
+	}
+	return out
+}
+
+func taskContextAnyString(value any) string {
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }
 
 func contextClientSet(ids []string) map[string]bool {

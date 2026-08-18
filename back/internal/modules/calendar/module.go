@@ -1,6 +1,7 @@
 package calendar
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"strings"
@@ -25,7 +26,16 @@ type Module struct {
 	// publisher e o transporte realtime do calendario (contrato C11). Injetado via
 	// WithPublisher no app.go (o realtimeService); nil = canal realtime desligado.
 	// Ver publisher.go.
-	publisher Publisher
+	publisher                 Publisher
+	contentOperationsProvider ContentOperationsBriefProvider
+}
+
+// ContentOperationsBriefProvider e uma leitura opcional, permission-scoped, do modulo
+// proativo. `any` evita acoplamento/ciclo entre Calendar e o owner dos alertas.
+type ContentOperationsBriefProvider func(ctx context.Context, accountID string, principal auth.Principal, clientIDs []string) (any, error)
+
+func WithContentOperationsBrief(provider ContentOperationsBriefProvider) Option {
+	return func(module *Module) { module.contentOperationsProvider = provider }
 }
 
 // Option configura o Module no construtor (padrao functional options).
@@ -113,6 +123,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		WithTasks(m.tasksProvider).
 		WithPublisher(m.publisher).
 		WithClientScope(clientScope)
+	svc.contentOperationsProvider = m.contentOperationsProvider
 	m.handle = &handle{
 		service:        svc,
 		authMiddleware: deps.AuthMiddleware,

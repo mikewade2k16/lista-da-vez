@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { TaskChecklistItem } from '../types/tasks'
-import { normalizeTaskChecklist, taskChecklistProgress } from '../utils/task-checklist'
+import {
+  createTaskChecklistItemId,
+  normalizeTaskChecklist,
+  taskChecklistProgress,
+  withTaskChecklistCompleted,
+} from '../utils/task-checklist'
 import { normalizeText } from '../utils/text'
+import TaskChecklistItemMeta from './TaskChecklistItemMeta.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -29,19 +35,13 @@ watch(
   },
 )
 
-function createItemId() {
-  return (
-    globalThis.crypto?.randomUUID?.() || `item-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  )
-}
-
 function addItem() {
   if (props.disabled || props.items.length >= 200) return
   const title = normalizeText(newTitle.value, 220)
   if (!title) return
   emit('update:items', [
     ...normalizeTaskChecklist(props.items),
-    { id: createItemId(), title, completed: false },
+    { id: createTaskChecklistItemId(), title, completed: false },
   ])
   newTitle.value = ''
 }
@@ -56,7 +56,7 @@ function toggleItem(itemId: string, completed: boolean) {
   emit(
     'update:items',
     normalizeTaskChecklist(props.items).map((item) =>
-      item.id === itemId ? { ...item, completed } : item,
+      item.id === itemId ? withTaskChecklistCompleted(item, completed) : item,
     ),
   )
 }
@@ -86,6 +86,14 @@ function removeItem(itemId: string) {
   emit(
     'update:items',
     normalizeTaskChecklist(props.items).filter((item) => item.id !== itemId),
+  )
+}
+
+function replaceItem(nextItem: TaskChecklistItem) {
+  if (props.disabled) return
+  emit(
+    'update:items',
+    normalizeTaskChecklist(props.items).map((item) => (item.id === nextItem.id ? nextItem : item)),
   )
 }
 </script>
@@ -158,6 +166,7 @@ function removeItem(itemId: string) {
               :aria-label="`Titulo do item ${item.title}`"
               @change="onRenameItem($event, item.id)"
             />
+            <TaskChecklistItemMeta :item="item" :disabled="disabled" @update:item="replaceItem" />
             <UButton
               icon="i-lucide-x"
               color="neutral"
@@ -318,6 +327,15 @@ function removeItem(itemId: string) {
 }
 
 @media (max-width: 560px) {
+  .task-checklist__item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .task-checklist__title {
+    flex-basis: calc(100% - 4.5rem);
+  }
+
   .task-checklist__add {
     align-items: stretch;
     flex-direction: column;

@@ -111,6 +111,10 @@ O fluxo local sem Docker continua existindo apenas como fallback:
 
 ## Regras gerais
 
+- **Credenciais sao dados do usuario:** nunca alterar senha, hash, `must_change_password`, estado da
+  conta ou sessao para destravar login/teste sem autorizacao explicita do usuario para aquela conta.
+  Se a senha nao estiver disponivel ou falhar, perguntar antes de qualquer reset. Credencial escrita
+  em README, migration ou seed nao autoriza sobrescrever o dado vivo.
 - Skills pessoais Codex deste projeto:
   - `$principios-engenharia`: usar antes de qualquer implementação, refactor, migration,
     deploy ou revisão de código;
@@ -155,6 +159,7 @@ Configurado a partir de 2026-05-18. Toda vez que voce roda `git commit`, o Husky
 - `scripts/dev/lint-web-staged.sh` -> `eslint --fix` nos `.vue`/`.ts`/`.js`/`.mjs` staged
 - `scripts/dev/format-web-staged.sh` -> `prettier --write` nos arquivos web staged
 - `scripts/dev/lint-go-staged.sh` -> `gofmt -w` + `golangci-lint run --new-from-rev=HEAD` em **escopo de pacote** (nao arquivo isolado)
+- `scripts/dev/lint-migrations-staged.sh` -> valida schema qualificado somente em DDL novo no diff staged; DDL legado fora da alteracao atual nao bloqueia o commit
 
 ### Decisao tecnica importante
 

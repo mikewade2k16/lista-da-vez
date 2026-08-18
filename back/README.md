@@ -138,10 +138,10 @@ Todos os usuarios abaixo usam a senha `dev123456`:
 Para o seed MVP atual do root de desenvolvimento da plataforma:
 
 - `mikewade2k16@gmail.com`
-- senha: `Mvp@2026!`
+- senha de teste local: `123123456`
 
-No fluxo Docker local, a migration `0033_seed_dev_platform_admin_password.sql` regrava essa senha para o `platform_admin` seedado.
-Ela entra apenas em ambientes nao-producao.
+Credenciais existentes nunca devem ser alteradas para viabilizar testes. Se a senha local nao estiver
+disponivel ou nao funcionar, interrompa o teste e pergunte ao responsavel antes de qualquer reset.
 
 ## Onboarding por convite
 

@@ -167,14 +167,15 @@ type chatPayloadAI struct {
 // People (WAVE 12) = pessoas da equipe (id+nome, mesmos dados do GET /responsibles):
 // a IA resolve "responsavel vai ser a Iasmin" por NOME sem exigir ID do usuario.
 type calendarChatContext struct {
-	Client     *planClient      `json:"client"`
-	Month      string           `json:"month"`
-	Holidays   []Holiday        `json:"holidays"`
-	MonthNotes string           `json:"monthNotes"`
-	Events     []AIContextEvent `json:"events"`
-	Tasks      []AIContextTask  `json:"tasks,omitempty"`
-	People     []Member         `json:"people,omitempty"`
-	Plans      []AIContextPlan  `json:"plans"`
+	Client            *planClient      `json:"client"`
+	Month             string           `json:"month"`
+	Holidays          []Holiday        `json:"holidays"`
+	MonthNotes        string           `json:"monthNotes"`
+	Events            []AIContextEvent `json:"events"`
+	Tasks             []AIContextTask  `json:"tasks,omitempty"`
+	People            []Member         `json:"people,omitempty"`
+	Plans             []AIContextPlan  `json:"plans"`
+	ContentOperations any              `json:"contentOperations,omitempty"`
 }
 
 // chatAnswer e a resposta do webhook calendar-chat. Proposal (WAVE 5, E7) e opcional: quando
@@ -196,8 +197,8 @@ type chatAnswer struct {
 	AIError bool `json:"aiError"`
 }
 
-// ChatProposal e a proposta de criacao devolvida pela IA (WAVE 5, E7). A IA NAO cria nada; e'
-// passthrough validado (shape fechado) para o front confirmar. Kind = "event" | "task".
+// ChatProposal e a proposta devolvida pela IA. A IA NAO cria nem altera nada; e'
+// passthrough validado (shape fechado) para o front confirmar.
 type ChatProposal struct {
 	// Action (WAVE 5.1, preparado p/ CRUD futuro): create|update|delete. HOJE o front so
 	// executa 'create'; update/delete ficam RESERVADOS (o schema ja carrega o campo para
@@ -234,6 +235,9 @@ type ChatProposalFields struct {
 	Note *ChatProposalNote `json:"note,omitempty"`
 	// Profile (WAVE 7, kind=clientProfile): sub-objeto da proposta de perfil do cliente.
 	Profile *ChatProposalProfile `json:"profile,omitempty"`
+	// TaskItem (kind=taskItem): item do checklist de uma task. A task-pai fica em TargetID;
+	// ids/titulos de alvo sao resolvidos novamente no contexto autoritativo antes de persistir.
+	TaskItem *ChatProposalTaskItem `json:"taskItem,omitempty"`
 }
 
 // sanitizeProposal descarta propostas malformadas e normaliza (action/kind/fields). Despacha a
@@ -252,6 +256,7 @@ func sanitizeProposal(p *ChatProposal) *ChatProposal {
 	if action != "create" && action != "update" && action != "delete" {
 		action = "create"
 	}
+	taskItemFieldsValid := validRawTaskItemField(p.Fields.TaskItem)
 	normalizeProposalFields(&p.Fields)
 	ok := false
 	switch kind {
@@ -261,6 +266,8 @@ func sanitizeProposal(p *ChatProposal) *ChatProposal {
 		ok = sanitizeNoteProposal(action, p.Fields.Note)
 	case "clientProfile":
 		ok = sanitizeProfileProposal(action, p.Fields.Profile)
+	case "taskItem":
+		ok = taskItemFieldsValid && sanitizeTaskItemProposal(action, p.Fields)
 	}
 	if !ok {
 		return nil
@@ -293,6 +300,7 @@ func normalizeProposalFields(f *ChatProposalFields) {
 	// WAVE 7: normaliza os sub-objetos de anotacao/perfil (chat_proposals_crud.go).
 	normalizeNoteField(f.Note)
 	normalizeProfileField(f.Profile)
+	normalizeTaskItemField(f.TaskItem)
 	if len(f.InvolvedIDs) == 0 {
 		return
 	}
@@ -640,6 +648,11 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 			noteMonth = contextMonth
 		}
 		snapNoteMonths(proposals, noteMonth, question)
+		// Itens de task usam somente o contexto de Tasks como fonte autoritativa. Esta
+		// resolucao vem antes da guarda do Calendar: taskItem nao herda prioridade por
+		// dia/evento nem aceita ids inventados pelo modelo.
+		var droppedTaskItems int
+		proposals, droppedTaskItems = resolveTaskItemProposals(proposals, tks, time.Now())
 		crit := extractTargetCriteria(question, contextMonth, ctxClients)
 		kept, notice, resolvedTitle := guardProposalTargets(question, proposals, crit, ctxClients, evs, tks)
 		proposals = kept
@@ -650,6 +663,14 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 		proposals, droppedTargetless = dropTargetlessEditable(proposals)
 		if droppedTargetless && notice == "" {
 			notice = "Nao consegui identificar qual item voce quer alterar. Me diga o titulo (ou o dia) do item do calendario."
+		}
+		if droppedTaskItems > 0 {
+			taskItemNotice := taskItemResolutionNotice(droppedTaskItems, len(proposals) > 0)
+			if notice == "" {
+				notice = taskItemNotice
+			} else {
+				notice += " " + taskItemNotice
+			}
 		}
 		if notice != "" {
 			// Barrado (varios/so-tasks/sem-match): o aviso da guarda SUBSTITUI o texto da IA (que
@@ -863,6 +884,38 @@ func describeStoredProposal(p StoredProposal) string {
 		if name := strings.TrimSpace(f.ClientName); name != "" {
 			seg = append(seg, "de "+name)
 		}
+	case "taskItem":
+		if f.TaskItem != nil {
+			item := f.TaskItem
+			title := strings.TrimSpace(item.ItemTitle)
+			if p.Action == "create" || title == "" {
+				title = strings.TrimSpace(item.Title)
+			}
+			if title != "" {
+				seg = append(seg, `"`+truncateRunes(title, 80)+`"`)
+			}
+			if taskTitle := strings.TrimSpace(item.TaskTitle); taskTitle != "" {
+				seg = append(seg, "na tarefa "+taskTitle)
+			}
+			if status := strings.TrimSpace(item.Status); status != "" {
+				part := "status " + status
+				if item.StatusDate != "" {
+					part += " em " + item.StatusDate
+				}
+				seg = append(seg, part)
+			}
+			if item.Completed != nil {
+				if *item.Completed {
+					part := "concluido"
+					if item.CompletedDate != "" {
+						part += " em " + item.CompletedDate
+					}
+					seg = append(seg, part)
+				} else {
+					seg = append(seg, "nao concluido")
+				}
+			}
+		}
 	default: // event/task
 		if strings.TrimSpace(f.Title) != "" {
 			seg = append(seg, `"`+truncateRunes(f.Title, 80)+`"`)
@@ -904,6 +957,8 @@ func proposalKindLabel(kind string) string {
 		return "evento"
 	case "task":
 		return "tarefa"
+	case "taskItem":
+		return "item da tarefa"
 	case "note":
 		return "anotacao"
 	case "clientProfile":

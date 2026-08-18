@@ -29,6 +29,80 @@ func TestNormalizeTaskUIMetadataChecklist(t *testing.T) {
 	if checklist[1]["completed"] != false {
 		t.Fatalf("completed aceita somente booleano true; got %+v", checklist[1])
 	}
+	for _, key := range []string{"status", "statusDate", "completedDate"} {
+		if _, exists := checklist[0][key]; exists {
+			t.Fatalf("item legado nao deve ganhar %s sem valor valido: %+v", key, checklist[0])
+		}
+	}
+}
+
+func TestNormalizeTaskChecklistMetadataKeepsOptionalWorkflowFields(t *testing.T) {
+	statuses := []string{"captured", "editing", "approval", "approved", "scheduled", "posted"}
+	rawItems := make([]any, 0, len(statuses))
+	for index, status := range statuses {
+		rawItems = append(rawItems, map[string]any{
+			"id":            status,
+			"title":         "Conteudo " + status,
+			"completed":     index == len(statuses)-1,
+			"status":        "  " + status + "  ",
+			"statusDate":    " 2026-08-13 ",
+			"completedDate": "2024-02-29",
+		})
+	}
+
+	items := normalizeTaskChecklistMetadata(rawItems)
+	if len(items) != len(statuses) {
+		t.Fatalf("todos os status validos deveriam ser preservados; got %d itens", len(items))
+	}
+	for index, status := range statuses {
+		if items[index]["status"] != status {
+			t.Errorf("status %q nao foi preservado: %+v", status, items[index])
+		}
+		if items[index]["statusDate"] != "2026-08-13" {
+			t.Errorf("statusDate deveria ser date-only normalizada: %+v", items[index])
+		}
+		if index == len(statuses)-1 && items[index]["completedDate"] != "2024-02-29" {
+			t.Errorf("completedDate bissexta valida deveria ser preservada no item concluido: %+v", items[index])
+		}
+		if index != len(statuses)-1 {
+			if _, exists := items[index]["completedDate"]; exists {
+				t.Errorf("completedDate nao deve sobreviver quando completed=false: %+v", items[index])
+			}
+		}
+	}
+}
+
+func TestNormalizeTaskChecklistMetadataOmitsInvalidOptionalWorkflowFields(t *testing.T) {
+	items := normalizeTaskChecklistMetadata([]any{
+		map[string]any{
+			"id":            "item-invalid",
+			"title":         "Item ainda valido",
+			"completed":     false,
+			"status":        "done",
+			"statusDate":    "2026-02-30",
+			"completedDate": "2026-08-13T10:00:00Z",
+			"unknown":       "discarded",
+		},
+		map[string]any{
+			"id":            "item-empty",
+			"title":         "Campos vazios",
+			"completed":     true,
+			"status":        "   ",
+			"statusDate":    " ",
+			"completedDate": 20260813,
+		},
+	})
+
+	if len(items) != 2 {
+		t.Fatalf("campos opcionais invalidos nao devem remover o item legado; got %d itens", len(items))
+	}
+	for _, item := range items {
+		for _, key := range []string{"status", "statusDate", "completedDate", "unknown"} {
+			if _, exists := item[key]; exists {
+				t.Errorf("campo %s invalido/desconhecido deveria ser omitido: %+v", key, item)
+			}
+		}
+	}
 }
 
 func TestNormalizeTaskVideoMetadataKeepsChecklistAssociation(t *testing.T) {

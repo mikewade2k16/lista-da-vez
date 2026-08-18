@@ -39,8 +39,32 @@ export type CalendarChatProposalStatus = 'none' | 'pending' | 'accepted' | 'reje
 // action reservado p/ CRUD futuro (create|update|delete); hoje o front so executa 'create'.
 export type CalendarChatProposalAction = 'create' | 'update' | 'delete'
 
-// Kinds de proposta: evento/task (WAVE 5.1) + anotacao/perfil do cliente (WAVE 7).
-export type CalendarChatProposalKind = 'event' | 'task' | 'note' | 'clientProfile'
+// Kinds de proposta: evento/task (WAVE 5.1), anotacao/perfil do cliente (WAVE 7)
+// e item do checklist de uma task. `taskItem` continua sujeito ao mesmo cartao de
+// confirmacao: a IA nunca altera a task diretamente.
+export type CalendarChatProposalKind = 'event' | 'task' | 'taskItem' | 'note' | 'clientProfile'
+
+export type CalendarChatTaskItemStatus =
+  | 'captured'
+  | 'editing'
+  | 'approval'
+  | 'approved'
+  | 'scheduled'
+  | 'posted'
+
+/** Sub-objeto da proposta de item do checklist (kind=taskItem). */
+export interface CalendarChatProposalTaskItem {
+  id?: string
+  title?: string
+  /** Snapshot autoritativo usado no cartao em update/delete. */
+  itemTitle?: string
+  /** Titulo autoritativo da task pai, resolvido pelo backend. */
+  taskTitle?: string
+  status?: CalendarChatTaskItemStatus
+  statusDate?: string
+  completed?: boolean
+  completedDate?: string
+}
 
 /** Sub-objeto da proposta de anotacao do mes (kind=note, WAVE 7). */
 export interface CalendarChatProposalNote {
@@ -95,7 +119,8 @@ export interface CalendarChatProposalFields {
   clientName?: string
   archived?: boolean
   targetId?: string
-  // note/profile (WAVE 7): sub-objetos dos kinds note e clientProfile.
+  // taskItem/note/profile: sub-objetos fechados por kind.
+  taskItem?: CalendarChatProposalTaskItem
   note?: CalendarChatProposalNote
   profile?: CalendarChatProposalProfile
 }
@@ -191,7 +216,7 @@ function normalizeProposal(raw: unknown, index: number): CalendarChatStoredPropo
     ? (asString(o.status) as CalendarChatProposalStatus)
     : 'pending'
   const kind: CalendarChatProposalKind = (
-    ['event', 'task', 'note', 'clientProfile'] as string[]
+    ['event', 'task', 'taskItem', 'note', 'clientProfile'] as string[]
   ).includes(asString(o.kind))
     ? (asString(o.kind) as CalendarChatProposalKind)
     : 'event'

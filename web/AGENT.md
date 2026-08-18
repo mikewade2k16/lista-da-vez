@@ -100,7 +100,7 @@ Toda implementacao nova em `web/` deve:
 - `web/app/stores/users.ts` ja trabalha com onboarding por convite e link de aceite.
 - `web/app/stores/users.ts` ja expõe o papel `store_terminal` para o acesso fixo da unidade.
 - `web/app/stores/access-control.ts` consome a matriz de acessos por perfil e os overrides individuais de usuario via `/v1/access/*`.
-- `web/app/stores/feedback.ts` gerencia o fluxo de feedback dos usuarios: envio por qualquer usuario autenticado e gestao (listar, filtrar, atualizar) por administradores via `/v1/feedback`. Feedback e feature do modulo `queue` (gating em `module-enabled.global.ts`); o `FeedbackNotificationsDropdown` so busca e so mostra o sino quando `enabledModules.includes('queue')` — conta sem o modulo (cardapio/bio-only) nao dispara `/v1/feedback/*` (evita 403).
+- `web/app/stores/feedback.ts` gerencia o fluxo de feedback dos usuarios: envio por qualquer usuario autenticado e gestao (listar, filtrar, atualizar) por administradores via `/v1/feedback`. Feedback e feature do modulo `queue` (gating em `module-enabled.global.ts`); o sino global em `stores/system-notifications.ts` so consulta esta fonte quando `enabledModules.includes('queue')`, evitando `/v1/feedback/*` em contas sem o modulo.
 - O feedback de desempenho vive dentro de `/consultor`: o card abre
   `PerformanceFeedbackModal`, que usa `/v1/performance-feedback`, snapshots de KPI e
   blocos livres de `OmniEditor`. `/feedback-desempenho` apenas redireciona por

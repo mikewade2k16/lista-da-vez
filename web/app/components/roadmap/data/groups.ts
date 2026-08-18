@@ -80,5 +80,10 @@ export const ROADMAP_GROUPS: RoadmapGroup[] = [
     id: "social-publishing",
     label: "Agendamento de Postagens",
     description: "Módulo isolado, semelhante ao Buffer, para conectar Instagram profissional, agendar/publicar conteúdo e acompanhar analytics. O Calendário e o Crow Assistant só serão integrados após a homologação e um novo comando. Plano: docs/social-publishing/PLANO_MODULO_AGENDAMENTO_POSTAGENS.md."
+  },
+  {
+    id: "content-operations",
+    label: "Operação de Conteúdo",
+    description: "Assistente operacional de leitura que cruza Tasks e Calendário para sinalizar captação, edição, aprovação, postagem e clientes sem conteúdo. Está pausado e incompleto; os alertas aparecem na central global do sistema."
   }
 ];

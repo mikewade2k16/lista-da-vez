@@ -316,7 +316,7 @@ o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, tem
 - **Webhook** POST path `calendar-chat`, `responseMode: responseNode` (responde pelo no Respond).
 - **Montar contexto** (Code) — system = `ai.systemPrompt` OU DEFAULT pt-BR ("assistente de
   calendario de conteudo") + serializa o `context` (perfil do cliente, feriados, eventos ricos com
-  ID/horario/cliente/midias, notas, tasks reais do board configurado,
+  ID/horario/cliente/midias, notas, tasks reais do board configurado (incluindo `items[]` do checklist),
   planos) no system; resolve `provider`/`model`/`baseUrl`/`temperature` (mapa `DEFAULT_BASE` com
   **gemini** OpenAI-compatible `https://generativelanguage.googleapis.com/v1beta/openai` e **glm**
   z.ai; clamp 0..1) + guard modelo x provider (cai no default do provider se o modelo salvo nao
@@ -338,6 +338,11 @@ o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, tem
   `answer` deve ser resumo curto (sem repetir a lista item a item); o Go ainda compacta
   defensivamente respostas longas antes de persistir. Item de erro do HTTP node vira mensagem
   acionavel pt-BR.
+- **`taskItem`** - o prompt recebe hoje/ontem explicitamente em `America/Sao_Paulo` e exige card de
+  confirmacao para todo create/update/delete. `fields.targetId` e a task-pai; o subobjeto
+  `fields.taskItem` preserva inclusive `completed:false`, valida status no enum
+  `captured|editing|approval|approved|scheduled|posted` e datas `YYYY-MM-DD`. O extrator nao aceita
+  create com data orfa; o Go revalida task/item no contexto autoritativo antes de persistir o card.
 - **Respond to Webhook** - `{ "answer": ..., "eventIds": [...], "proposals": [...] }`.
 
 **Sem credential/`$env` no n8n para a IA do chat** — a key trafega no payload server-to-server (Go
@@ -347,9 +352,10 @@ switch e "sem key" sao tratados no Go ANTES de disparar (contrato PAY: `ai_disab
 409 acionaveis). **Memoria de conversa (SPEC-W5, 2026-07-04):** o workflow recebe o `history` no
 payload (persistido no banco pelo Go, ultimas N mensagens) e o inclui na array `messages` entre o
 system e a pergunta — o n8n segue stateless (sem memoria propria). **Limitacoes:** tools desligadas
-(o assistente responde so com o `context` autoritativo do system + o historico). Como o `versionId` mudou
-(`...calendarcht07`), **reimportar** para pegar a versao com campos completos de proposta e `context.tasks` do board configurado. Import + teste manual:
-**pendente** (autorado, validado fora do n8n: parse + ordem da array messages).
+(o assistente responde so com o `context` autoritativo do system + o historico). A revisao com
+`taskItem` e itens autoritativos do checklist foi importada e ativada no n8n local em 2026-08-13;
+a definicao do runtime foi conferida contra o JSON e o n8n voltou healthy. Producao ainda precisa
+ser reimportada apos o deploy; o teste real de prompt continua manual para nao consumir cota.
 Runbook com curl de teste:
 [docs/automation/CALENDAR_CHAT_WORKFLOW.md](../docs/automation/CALENDAR_CHAT_WORKFLOW.md).
 

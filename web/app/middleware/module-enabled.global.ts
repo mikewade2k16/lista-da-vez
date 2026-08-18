@@ -24,6 +24,7 @@ export interface ModulePathGuard {
 export const MODULE_PATH_GUARDS: ModulePathGuard[] = [
   { prefix: '/tasks', moduleId: 'tasks' },
   { prefix: '/calendario', moduleId: 'calendar' },
+  { prefix: '/operacao-conteudo', moduleId: 'content_operations' },
   // omnichannel — inbox de atendimento. DEPENDE do modulo 'omnichannel' existir
   // no Go: o SyncCatalog do boot e quem cria a linha em core.modules e habilita
   // nas contas is_agency. Enquanto o shell Go nao existir, NENHUMA conta tem o

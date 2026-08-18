@@ -10,10 +10,21 @@ export interface TaskVideoItem {
   uploadedAt: string
 }
 
+export type TaskChecklistItemStatus =
+  | 'captured'
+  | 'editing'
+  | 'approval'
+  | 'approved'
+  | 'scheduled'
+  | 'posted'
+
 export interface TaskChecklistItem {
   id: string
   title: string
   completed: boolean
+  status?: TaskChecklistItemStatus
+  statusDate?: string
+  completedDate?: string
 }
 
 // TaskCalendarMediaItem = midia ESPELHADA do evento vinculado no calendario (WAVE 6 cruzamento A,

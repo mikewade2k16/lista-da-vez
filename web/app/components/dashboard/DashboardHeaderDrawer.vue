@@ -4,7 +4,7 @@ import { X } from 'lucide-vue-next'
 import DashboardSidebarNav from '~/components/dashboard/DashboardSidebarNav.vue'
 import DashboardThemeSwitcher from '~/components/dashboard/DashboardThemeSwitcher.vue'
 import DashboardHeaderAvatar from '~/components/dashboard/DashboardHeaderAvatar.vue'
-import FeedbackNotificationsDropdown from '~/components/feedback/FeedbackNotificationsDropdown.vue'
+import SystemNotificationsDropdown from '~/components/notifications/SystemNotificationsDropdown.vue'
 import { useDropdownDismiss } from '~/composables/useDropdownDismiss'
 import { useHeaderProfile } from '~/composables/useHeaderProfile'
 import { useAuthStore } from '~/stores/auth'
@@ -66,7 +66,7 @@ useDropdownDismiss(() => props.open, close)
             <ClientOnly>
               <div class="dashboard-header__sidebar-actions">
                 <DashboardThemeSwitcher />
-                <FeedbackNotificationsDropdown v-if="isAuthenticated" />
+                <SystemNotificationsDropdown v-if="isAuthenticated" />
                 <NuxtLink
                   v-if="isAuthenticated"
                   class="dashboard-header__sidebar-profile"

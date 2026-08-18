@@ -219,10 +219,21 @@ espelhados no contexto via `v-model` (`taskEditorMode`/`taskEditorWidth`); o boa
 `setTaskEditorMode` segue exposto (o `RoadmapModulesBoard` abre a task em modo `center`). Ajustes do
 comportamento do modal sao feitos no `OmniEntityDrawer` (um lugar so). Ver `docs/frontend/MODAL_TEMPLATE.md`.
 
-### Itens genericos e progresso da task (2026-07-28)
+### Itens genericos, status opcionais e progresso da task (2026-08-13)
 
-- `TaskItem.checklist` e a lista server-backed de itens `{ id, title, completed }` armazenada em
-  `tasks.tasks.ui_metadata.checklist`; o front normaliza no util `utils/task-checklist.ts`.
+- `TaskItem.checklist` e a lista server-backed de itens armazenada em
+  `tasks.tasks.ui_metadata.checklist`; o front normaliza no util `utils/task-checklist.ts`. O
+  contrato base `{ id, title, completed }` continua valido e pode carregar opcionalmente
+  `status`, `statusDate` e `completedDate`. As datas usam `YYYY-MM-DD` no calendario local.
+- Os status opcionais dos itens sao `captured`, `editing`, `approval`, `approved`, `scheduled` e
+  `posted`. A ausencia de status e valida: adicionar item continua exigindo somente o titulo.
+- O checkbox permanece independente do status. Marcar adiciona `completedDate` automaticamente;
+  desmarcar remove a data, sem transformar o item em `posted` nem alterar seu status.
+- Selecionar ou trocar status grava `statusDate` automaticamente como hoje. A UI oferece atalhos
+  Hoje/Ontem, data manual e limpeza do status, sem confirmacao ou campo obrigatorio adicional.
+- `utils/task-checklist.ts` e o contrato reutilizavel para UI e futura integracao do Crow:
+  `createTaskChecklistItemId`, `normalizeTaskChecklist`, `isTaskChecklistItemStatus`,
+  `withTaskChecklistCompleted` e `withTaskChecklistStatus`.
 - O modal permite adicionar, renomear, concluir e remover itens, com autosave/presence pelo field key
   `checklist`. O percentual e sempre derivado de `completed / total`, nunca persistido separadamente.
 - A secao fica recolhida por padrao. Sem itens, renderiza somente o gatilho minimalista `Adicionar itens`;

@@ -78,7 +78,10 @@ npm run dev -- --port 3001
 Root local da plataforma no seed MVP:
 
 - `mikewade2k16@gmail.com`
-- senha: `Mvp@2026!`
+- senha de teste local: `123123456`
+
+Nunca altere senha, hash ou estado de uma conta para destravar testes. Se a credencial documentada
+nao funcionar, pare e confirme com o responsavel antes de qualquer reset.
 
 ## 5. Convites locais
 

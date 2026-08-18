@@ -125,7 +125,10 @@ type Service struct {
 	// reusando a lista permission-scoped de /v1/tenants. Injetado via WithClientScope no
 	// Build; nil = sem clientes visiveis (o select do chat fica fechado). Ver chat_access.go.
 	clientScope clientScopeLister
-	logger      *slog.Logger
+	// contentOperationsProvider fornece ao Crow apenas um Brief pronto e somente leitura.
+	// O modulo de alertas roda independentemente; o chat nunca dispara nem recalcula regras.
+	contentOperationsProvider ContentOperationsBriefProvider
+	logger                    *slog.Logger
 }
 
 // NewService cria o Service. storage pode ser nil quando o modulo roda sem upload.

@@ -75,6 +75,15 @@ export default {
           beta: true,
         },
         {
+          id: 'operacao-conteudo',
+          label: 'Operação de conteúdo',
+          icon: 'alert',
+          path: '/operacao-conteudo',
+          workspaceId: 'calendar',
+          moduleId: 'content_operations',
+          beta: true,
+        },
+        {
           id: 'tracking',
           label: 'Tracking',
           icon: 'tracking',

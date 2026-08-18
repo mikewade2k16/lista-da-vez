@@ -7,7 +7,7 @@ import type {
 // propos (nao adiciona campos novos). Helpers PUROS; o estado (quais propostas estao em edicao + o
 // rascunho editavel) vive no CalendarChatMessage.
 
-export type EditFieldKind = 'text' | 'textarea' | 'mode'
+export type EditFieldKind = 'text' | 'textarea' | 'mode' | 'date' | 'taskStatus' | 'boolean'
 export interface EditField {
   key: string
   label: string
@@ -117,6 +117,27 @@ export function editableFields(proposal: CalendarChatStoredProposal): EditField[
     }
     return out
   }
+  if (proposal.kind === 'taskItem') {
+    const item = (f.taskItem || {}) as Record<string, unknown>
+    const fields: { key: string; label: string; kind: EditFieldKind }[] = [
+      { key: 'title', label: 'Item', kind: 'text' },
+      { key: 'status', label: 'Status', kind: 'taskStatus' },
+      { key: 'statusDate', label: 'Data do status', kind: 'date' },
+      { key: 'completed', label: 'Finalizado', kind: 'boolean' },
+      { key: 'completedDate', label: 'Data de finalização', kind: 'date' },
+    ]
+    for (const field of fields) {
+      if (has(item, field.key)) {
+        out.push({
+          key: `taskItem.${field.key}`,
+          label: field.label,
+          kind: field.kind,
+          path: `taskItem.${field.key}`,
+        })
+      }
+    }
+    return out
+  }
   for (const def of EVENT_FIELDS) {
     if (has(f, def.key)) {
       out.push({
@@ -146,7 +167,7 @@ export function getFieldByPath(
 export function setFieldByPath(
   fields: CalendarChatProposalFields | undefined,
   path: string,
-  value: string,
+  value: unknown,
 ): void {
   if (!fields) return
   const segs = path.split('.')

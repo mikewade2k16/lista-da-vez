@@ -6,7 +6,7 @@ import DashboardThemeSwitcher from '~/components/dashboard/DashboardThemeSwitche
 import DashboardHeaderNav from '~/components/dashboard/DashboardHeaderNav.vue'
 import DashboardHeaderProfileMenu from '~/components/dashboard/DashboardHeaderProfileMenu.vue'
 import DashboardHeaderDrawer from '~/components/dashboard/DashboardHeaderDrawer.vue'
-import FeedbackNotificationsDropdown from '~/components/feedback/FeedbackNotificationsDropdown.vue'
+import SystemNotificationsDropdown from '~/components/notifications/SystemNotificationsDropdown.vue'
 import CoreAccountSwitcher from '../../../layers/core/components/CoreAccountSwitcher.vue'
 import { useCoreAccountStore } from '../../../layers/core/stores/account'
 import { useAuthStore } from '~/stores/auth'
@@ -104,7 +104,7 @@ function handleProfileChange(value) {
               @update:model-value="handleProfileChange"
             />
             <DashboardThemeSwitcher />
-            <FeedbackNotificationsDropdown v-if="isAuthenticated" />
+            <SystemNotificationsDropdown v-if="isAuthenticated" />
             <CoreAccountSwitcher
               v-if="isAuthenticated && hasMultipleAccounts && role === 'platform_admin'"
             />
@@ -242,7 +242,7 @@ function handleProfileChange(value) {
     width: min(17rem, calc(100vw - 1.25rem));
   }
 
-  .dashboard-header__client-actions :deep(.feedback-notifications__trigger),
+  .dashboard-header__client-actions :deep(.system-notifications__trigger),
   .dashboard-header__client-actions :deep(.dashboard-header__profile-trigger) {
     width: 2.35rem;
     height: 2.35rem;
@@ -291,7 +291,7 @@ function handleProfileChange(value) {
     font-size: 0.74rem;
   }
 
-  .dashboard-header__client-actions :deep(.feedback-notifications__trigger),
+  .dashboard-header__client-actions :deep(.system-notifications__trigger),
   .dashboard-header__client-actions :deep(.dashboard-header__profile-trigger) {
     width: 2.2rem;
     height: 2.2rem;

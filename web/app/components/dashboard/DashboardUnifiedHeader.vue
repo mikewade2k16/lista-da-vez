@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import DashboardSidebarNav from '~/components/dashboard/DashboardSidebarNav.vue'
 import DashboardThemeSwitcher from '~/components/dashboard/DashboardThemeSwitcher.vue'
-import FeedbackNotificationsDropdown from '~/components/feedback/FeedbackNotificationsDropdown.vue'
+import SystemNotificationsDropdown from '~/components/notifications/SystemNotificationsDropdown.vue'
 import { getRoleLabel } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
 import { useNavStore } from '~/stores/nav'
@@ -306,7 +306,7 @@ onBeforeUnmount(() => {
           @click="toggleFullscreen"
         />
         <DashboardThemeSwitcher />
-        <FeedbackNotificationsDropdown v-if="isAuthenticated" />
+        <SystemNotificationsDropdown v-if="isAuthenticated" />
 
         <div
           v-if="isAuthenticated"

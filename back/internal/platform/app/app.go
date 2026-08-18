@@ -16,6 +16,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bio"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/calendar"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/cardapio"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/contentoperations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm/catalog"
@@ -471,12 +472,55 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// createTask/vincular/desvincular + taskId no EventView). WithPublisher injeta o
 		// realtimeService como transporte do canal calendar:account:{id} (contrato C11:
 		// o Service publica create/update/delete evento, notas, day media, config e plano).
+		var contentOperationsModule *contentoperations.Module
 		calendarModule := calendar.New(
 			calendarMediaStorage,
 			calendar.WithTasksService(func() *tasks.Service { return tasksModule.Service() }),
 			calendar.WithPublisher(realtimeService),
+			calendar.WithContentOperationsBrief(func(ctx context.Context, accountID string, principal auth.Principal, clientIDs []string) (any, error) {
+				if contentOperationsModule == nil || contentOperationsModule.Service() == nil {
+					return nil, contentoperations.ErrNotReady
+				}
+				brief, err := contentOperationsModule.Service().Brief(ctx, principal, accountID)
+				if err != nil {
+					return nil, err
+				}
+				return contentoperations.PrepareCrowBrief(contentoperations.FilterBrief(brief, clientIDs)), nil
+			}),
 		)
 		registry.MustRegister(calendarModule)
+		// Operacao de conteudo calcula alertas diretamente de Tasks + Calendario.
+		// O Crow apenas recebe o Brief pronto em modo leitura; ele nao participa dos disparos.
+		contentOperationsModule = contentoperations.New(
+			func(ctx context.Context, accountID string) (contentoperations.Scope, error) {
+				service := calendarModule.Service()
+				if service == nil {
+					return contentoperations.Scope{}, contentoperations.ErrNotReady
+				}
+				scope, err := service.GetCalendarScope(ctx, accountID)
+				if err != nil {
+					return contentoperations.Scope{}, err
+				}
+				clients := make([]contentoperations.ScopeClient, 0, len(scope.Clients))
+				for _, client := range scope.Clients {
+					clients = append(clients, contentoperations.ScopeClient{ID: client.ID, Name: client.Name})
+				}
+				return contentoperations.Scope{StorageAccountID: scope.StorageAccountID, LockedClientID: scope.LockedClientID, Clients: clients}, nil
+			},
+			func(ctx context.Context, principal auth.Principal, accountID string) (contentoperations.Access, error) {
+				service := tasksModule.Service()
+				if service == nil {
+					return contentoperations.Access{}, contentoperations.ErrNotReady
+				}
+				access, err := service.ResolveAccessContext(ctx, principal, accountID)
+				if err != nil {
+					return contentoperations.Access{}, err
+				}
+				ownerBypass := principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner
+				return contentoperations.Access{Allowed: ownerBypass || (access.Has(tasks.PermTasksView) && access.Has(contentoperations.PermissionCalendarView))}, nil
+			},
+		)
+		registry.MustRegister(contentOperationsModule)
 		// WAVE 5 (E2/E3): handler de sync INVERTIDO — quando uma task muda, o calendar mantem
 		// o evento-espelho. Provider LAZY (resolve o Service so no 1o uso, imune a ordem de
 		// Build). Registrado agora que o calendarModule existe.
@@ -739,6 +783,7 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		// calendar (agenda de conteudo). platform_admin tem bypass; contas sem o
 		// modulo habilitado levam 403 module_disabled.
 		{Prefix: "/v1/calendar", ModuleID: "calendar"},
+		{Prefix: "/v1/content-operations", ModuleID: "content_operations"},
 		// cardapio (cardapio online). Rotas publicas /v1/public/* ficam fora.
 		{Prefix: "/v1/cardapio", ModuleID: "cardapio"},
 		// finance (planilhas financeiras). platform_admin tem bypass; contas sem o

@@ -28,9 +28,10 @@ chamados existentes.
 
 ## Polling / nao-lidos / preview
 
-- `FeedbackNotificationsDropdown.vue` fica montado no header de TODO o painel.
-- **Sino e lista NAO baixam mensagens.** O contador de nao-lidos (`getUnreadCount` / badge `has-unread`) e o preview (`getFeedbackPreview`) vem direto do list: `GET /v1/feedback(/me)` devolve `unread_count` + `last_message_body` + `last_message_at` por feedback (ver AGENT.md do backend). O sino so renderiza feedbacks com `unread_count > 0` e `status != 'closed'`. So o chamado ABERTO baixa a thread real (`loadSelectedMessages` -> `fetchMessages`).
+- Chamados nao possuem sino proprio. `stores/system-notifications.ts` entrega esta fonte ao unico
+  `SystemNotificationsDropdown` global e identifica cada item como `Chamados`.
+- **Sino e lista NAO baixam mensagens.** O contador de nao-lidos (`getUnreadCount` / badge `has-unread`) e o preview (`getFeedbackPreview`) vem direto do list: `GET /v1/feedback(/me)` devolve `unread_count` + `last_message_body` + `last_message_at` por feedback (ver AGENT.md do backend). O agregador so inclui feedbacks com `unread_count > 0` e `status != 'closed'`. So o chamado ABERTO baixa a thread real (`loadSelectedMessages` -> `fetchMessages`).
 - Ao marcar como lido, `feedbackStore.applyLocalReadState` zera o `unread_count` local na hora (sem esperar o proximo list). O `upsertIntoCollection` (store) preserva `unread_count`/`last_message_*` quando a resposta nao os traz (mutacoes), entao um PATCH/POST nao apaga o badge que veio do list.
-- Intervalos: sino 60s; lista do workspace 30s; mensagens do chamado aberto 15s. Todos os loads tem guard de `document.visibilityState` (nao requisitam com a aba oculta).
+- Intervalos: agregador global 60s; lista do workspace 30s; mensagens do chamado aberto 15s. Todos os loads tem guard de `document.visibilityState` (nao requisitam com a aba oculta).
 - O ritmo de polling, `getUnreadCount`, `getFeedbackPreview` e a leitura/scroll agora moram em `useFeedbackChat.js` (fonte unica para admin e usuario) — mudar la vale para os dois. A unica peca de nao-lido que diverge e a perspectiva (`isReadFromOwnerPerspective`), injetada por cada lado.
 - **Evolucao futura mapeada:** trocar o polling por WebSocket (modulo `realtime`), publicando feedback novo / resposta nova. Roadmap: fase-7, task `feedback-realtime`.

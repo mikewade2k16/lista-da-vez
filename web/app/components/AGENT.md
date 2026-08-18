@@ -696,6 +696,13 @@ pela permissao (`resolveChatAccess`, nunca do body); conversa/cliente fora do vi
     esconde o seletor de cliente no delete e o botao vira "Aplicar N" quando ha edicao/exclusao. O painel teleporta o chat para `.app-surface` (dentro do
     shell, mesmo stacking context do header) - nao mais `body`, senao cobre o header do painel.
 
+  **ITENS DE TASK PELO CROW (2026-08-13):** `kind:'taskItem'` usa `fields.targetId` como task pai e
+  `fields.taskItem` como mutacao fechada do checklist (`id/title/completed/status` + datas opcionais).
+  O card mostra o item, a task pai, status/data e nunca pede cliente; criar/editar/excluir so chama
+  `tasksStore.updateTask(..., { checklist })` depois da confirmacao. Creates usam ID estavel derivado de
+  mensagem+proposta para retry nao duplicar. O merge puro vive em `utils/calendar-chat-task-items.ts` e
+  preserva a independencia entre checkbox finalizado e status de producao/postagem.
+
 (client|all) vem do `GET /chat/scope`: cliente-side (canSelect=false) trava no `lockedClientId`, agencia
 escolhe. **WAVE 4 — SELECT DE ESCOPO (SPEC-F11)**: barra abaixo do header via
 [CalendarChatScope.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarChatScope.vue)
@@ -818,6 +825,13 @@ com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMess
     ganhou `createTask?` (omitindo `id`/`taskId`/`version`) em `utils/calendar.ts`.
 
 ## Diretrizes rapidas
+
+- `notifications/SystemNotificationsDropdown.vue` é o único sino global do shell. Ele agrega
+  notificações in-app, respostas de chamados, alertas operacionais e lembretes de conteúdo em um
+  contrato visual comum, sempre identificando o módulo de origem. Fontes opcionais degradam de
+  forma independente; nenhuma fonte pode criar um segundo sino no header. O polling e a mutação
+  por origem vivem em `stores/system-notifications.ts`, e o merge puro em
+  `domain/system-notifications/system-notifications.ts`.
 
 - [AdminStorageWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/admin/storage/AdminStorageWorkspace.vue)
   usa o `OmniEntityDrawer` canonico para configurar o R2. A aba `Limites` edita a fonte

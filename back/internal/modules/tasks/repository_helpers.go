@@ -160,13 +160,52 @@ func normalizeTaskChecklistMetadata(value any) []map[string]any {
 		}
 		seen[id] = struct{}{}
 		completed, _ := raw["completed"].(bool)
-		normalized = append(normalized, map[string]any{
+		normalizedItem := map[string]any{
 			"id":        id,
 			"title":     title,
 			"completed": completed,
-		})
+		}
+		if status := normalizeTaskChecklistStatus(raw["status"]); status != "" {
+			normalizedItem["status"] = status
+			if statusDate := normalizeTaskChecklistDate(raw["statusDate"]); statusDate != "" {
+				normalizedItem["statusDate"] = statusDate
+			}
+		}
+		if completed {
+			if completedDate := normalizeTaskChecklistDate(raw["completedDate"]); completedDate != "" {
+				normalizedItem["completedDate"] = completedDate
+			}
+		}
+		normalized = append(normalized, normalizedItem)
 	}
 	return normalized
+}
+
+func normalizeTaskChecklistStatus(value any) string {
+	status, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	status = strings.TrimSpace(status)
+	switch status {
+	case "captured", "editing", "approval", "approved", "scheduled", "posted":
+		return status
+	default:
+		return ""
+	}
+}
+
+func normalizeTaskChecklistDate(value any) string {
+	raw, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	date := strings.TrimSpace(raw)
+	parsed, err := time.Parse(time.DateOnly, date)
+	if err != nil || parsed.Format(time.DateOnly) != date {
+		return ""
+	}
+	return date
 }
 
 func truncateMetadataText(value any, maxRunes int) string {

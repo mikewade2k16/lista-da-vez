@@ -141,6 +141,9 @@ Ele nao deve cuidar de:
 
 ## Invariantes
 
+- senha, hash, `must_change_password`, estado da conta e sessoes existentes nunca podem ser alterados
+  para viabilizar smoke test sem autorizacao explicita do usuario para aquela conta; se a credencial
+  nao estiver disponivel ou falhar, o teste deve parar e pedir confirmacao antes de qualquer reset
 - email deve ser tratado normalizado em lowercase
 - usuario inativo nao pode autenticar
 - usuario sem `password_hash` deve receber `onboarding_required` no login

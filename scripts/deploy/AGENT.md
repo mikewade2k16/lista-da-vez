@@ -88,7 +88,8 @@ Fluxo registry via CI (opcao completa/rastreavel):
   `deploy-pull.ps1` e o workflow manual; impede recriar a API sem o wiring critico da Evolution.
 - `assert-compose-service-parity.ps1` — compara todos os servicos/profiles local x prod e falha
   para container esquecido. Excecoes atuais: `crow-nuxt` (preview local) e
-  `meta-ads-assistant` (ainda sem runtime OAuth prod-safe).
+  `meta-ads-assistant` (runner legado/read-only de compatibilidade interna,
+  deliberadamente fora do produto e da produção).
 - `deploy-pull.ps1` — nucleo: `-Environment staging|prod`, `-Tag <sha>`, faz preflight remoto,
   envia/valida o compose, grava `IMAGE_TAG`, pull + `up --no-build`, smoke. Switches: `-BackupDatabase`,
   `-ForceRecreate`, `-SkipSmokeTests`, `-DeployAutomation`, `-DeployOmnichannel`,

@@ -1,6 +1,8 @@
+import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { useAuthStore } from './auth'
 import { useCalendarStore } from './calendar'
 
@@ -100,5 +102,20 @@ describe('useCalendarStore client scope', () => {
     )
     expect(postCall).toBeTruthy()
     expect(JSON.parse(postCall?.[1]?.body as string).clientId).toBe('client-lucas')
+  })
+
+  it('marks Calendar config ready only for the active account', async () => {
+    const account = useCoreAccountStore()
+    account.activeAccountId = 'account-a'
+    getFetchMock().mockResolvedValue({})
+    const store = useCalendarStore()
+
+    expect(store.isConfigLoaded).toBe(false)
+    await store.fetchConfig()
+    expect(store.isConfigLoaded).toBe(true)
+
+    account.activeAccountId = 'account-b'
+    await nextTick()
+    expect(store.isConfigLoaded).toBe(false)
   })
 })

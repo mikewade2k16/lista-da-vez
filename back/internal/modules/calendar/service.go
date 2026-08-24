@@ -128,7 +128,27 @@ type Service struct {
 	// contentOperationsProvider fornece ao Crow apenas um Brief pronto e somente leitura.
 	// O modulo de alertas roda independentemente; o chat nunca dispara nem recalcula regras.
 	contentOperationsProvider ContentOperationsBriefProvider
-	logger                    *slog.Logger
+	// assistantRuntimeProvider resolve a configuracao/credencial canonica do
+	// Omni Chat somente quando uma request compartilhada informa surface.
+	assistantRuntimeProvider AssistantRuntimeProvider
+	// assistantExecutionCapabilityProvider repete a leitura da matriz canonica na
+	// mesma transacao que confirma cards locais, fechando revogacoes entre /ask e PATCH.
+	assistantExecutionCapabilityProvider AssistantExecutionCapabilityProvider
+	// metaAssistantContextProvider injeta contexto Meta Ads somente leitura sem
+	// dependencia direta entre os modulos.
+	metaAssistantContextProvider MetaAssistantContextProvider
+	// metaAssistantActionProvider cria a proposta duravel antes de o card ser
+	// persistido; o status provider revalida succeeded antes do PATCH accepted.
+	metaAssistantActionProvider             MetaAssistantActionProvider
+	metaAssistantActionStatusProvider       MetaAssistantActionStatusProvider
+	metaAssistantActionBindProvider         MetaAssistantActionBindProvider
+	metaAssistantActionConfirmProvider      MetaAssistantActionConfirmProvider
+	metaAssistantActionCancelProvider       MetaAssistantActionCancelProvider
+	metaAssistantConversationCancelProvider MetaAssistantConversationCancelProvider
+	// assistantModuleAvailability repete o gate de core.account_modules para
+	// cada capability, inclusive no bypass de RBAC de owner/platform_admin.
+	assistantModuleAvailability AssistantModuleAvailabilityProvider
+	logger                      *slog.Logger
 }
 
 // NewService cria o Service. storage pode ser nil quando o modulo roda sem upload.

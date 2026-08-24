@@ -11,26 +11,83 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
 
-// maxBodyBytes limita o corpo dos POST (o unico body relevante e o token).
+// maxBodyBytes limita os corpos pequenos de mutacao do modulo.
 const maxBodyBytes = 1 << 16
 
 // RegisterRoutes monta os endpoints do painel de Meta Ads (/v1/meta-ads*). O
 // gating por modulo (account_modules) e aplicado globalmente via path no Chain;
-// aqui so exigimos autenticacao. accountID vem do principal/header (X-Account-Id),
-// NUNCA do body.
+// aqui validamos membership e a permissao efetiva da account. accountID vem do
+// Principal hidratado por RequireAuthWithAccount, NUNCA diretamente do header/body.
 func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
-	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+	wrap := func(permission string, h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(requireMetaAdsPermission(permission, h))
 	}
 
-	mux.Handle("GET /v1/meta-ads/overview", wrap(handleOverview(svc)))
-	mux.Handle("POST /v1/meta-ads/connection", wrap(handleConnectionCreate(svc)))
-	mux.Handle("DELETE /v1/meta-ads/connection", wrap(handleConnectionDelete(svc)))
-	mux.Handle("GET /v1/meta-ads/ad-accounts", wrap(handleAdAccountsList(svc)))
-	mux.Handle("POST /v1/meta-ads/sync", wrap(handleSync(svc)))
-	mux.Handle("GET /v1/meta-ads/campaigns", wrap(handleCampaignsList(svc)))
-	mux.Handle("GET /v1/meta-ads/insights", wrap(handleInsights(svc)))
-	registerAssistantRoutes(mux, svc, wrap)
+	mux.Handle("GET /v1/meta-ads/overview", wrap("meta_ads.view", handleOverview(svc)))
+	mux.Handle("POST /v1/meta-ads/connection", wrap("meta_ads.connect", handleConnectionCreate(svc)))
+	mux.Handle("DELETE /v1/meta-ads/connection", wrap("meta_ads.connect", handleConnectionDelete(svc)))
+	mux.Handle("GET /v1/meta-ads/ad-accounts", wrap("meta_ads.view", handleAdAccountsList(svc)))
+	mux.Handle("PATCH /v1/meta-ads/ad-accounts/{id}/client", wrap("meta_ads.manage", handleAdAccountClientUpdate(svc)))
+	mux.Handle("POST /v1/meta-ads/sync", wrap("meta_ads.manage", handleSync(svc)))
+	mux.Handle("GET /v1/meta-ads/campaigns", wrap("meta_ads.view", handleCampaignsList(svc)))
+	mux.Handle("GET /v1/meta-ads/insights", wrap("meta_ads.view", handleInsights(svc)))
+	registerInstagramIdentityRoutes(mux, svc, wrap)
+	registerActionRoutes(mux, svc, wrap)
+}
+
+func handleAdAccountClientUpdate(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, ok := accountIDFromContext(r)
+		if !ok {
+			writeNoAccount(w, r)
+			return
+		}
+		var body struct {
+			ClientAccountID string `json:"clientAccountId"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes)).Decode(&body); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.SetAdAccountClient(r.Context(), accountID, r.PathValue("id"), body.ClientAccountID)
+		if errors.Is(err, ErrInvalidClientAccount) {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_client_account", "Conta de anuncio ou cliente invalido.")
+			return
+		}
+		if err != nil {
+			writeServiceError(w, r, err, "Falha ao vincular a conta de anuncio ao cliente.")
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+// requireMetaAdsPermission consome a RBAC efetiva que RequireAuthWithAccount
+// resolveu para a account ativa. Lista resolvida e vazia e fail-closed. Os papeis
+// administrativos preservam o bypass global ja usado pelos demais modulos.
+func requireMetaAdsPermission(permission string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok || strings.TrimSpace(principal.AccountID) == "" {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		if principal.Role != auth.RolePlatformAdmin && principal.Role != auth.RoleOwner &&
+			(!principal.PermissionsResolved || !containsMetaAdsPermission(principal.Permissions, permission)) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para esta acao no Meta Ads.")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func containsMetaAdsPermission(permissions []string, wanted string) bool {
+	for _, permission := range permissions {
+		if strings.TrimSpace(permission) == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func handleOverview(svc *Service) http.HandlerFunc {
@@ -120,6 +177,8 @@ func handleAdAccountsList(svc *Service) http.HandlerFunc {
 // writeServiceError mapeia erros de service para HTTP:
 //   - ErrNotConnected      -> 404 not_connected
 //   - pgx.ErrNoRows        -> 404 not_found (recurso de outra account/inexistente)
+//   - ErrConnectionChanged -> 409 connection_changed (snapshot deve ser refeito)
+//   - ErrOAuthPermissions  -> 422 missing_permissions (sem detalhes do grant)
 //   - falhas da Graph      -> 502 meta_error
 //   - resto                -> 500 internal_error
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error, internalMsg string) {
@@ -128,6 +187,11 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error, intern
 		httpapi.WriteError(w, r, http.StatusNotFound, "not_connected", "Conecte uma conta Meta primeiro.")
 	case errors.Is(err, pgx.ErrNoRows):
 		httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Recurso nao encontrado.")
+	case errors.Is(err, ErrConnectionChanged):
+		httpapi.WriteError(w, r, http.StatusConflict, "connection_changed", "A conexao Meta mudou durante a operacao. Tente novamente.")
+	case errors.Is(err, ErrOAuthPermissions):
+		httpapi.WriteError(w, r, http.StatusUnprocessableEntity, "missing_permissions",
+			"O token nao concedeu todas as permissoes obrigatorias do Meta Ads.")
 	case isGraphError(err):
 		httpapi.WriteError(w, r, http.StatusBadGateway, "meta_error", "A Meta recusou a requisicao. Verifique o token e as permissoes.")
 	default:
@@ -144,15 +208,14 @@ func writeNoAccount(w http.ResponseWriter, r *http.Request) {
 	httpapi.WriteError(w, r, http.StatusForbidden, "no_account", "Account context required.")
 }
 
-// accountIDFromContext resolve o accountID do header X-Account-Id ou, na ausencia,
-// do TenantID do principal. NUNCA do body.
+// accountIDFromContext devolve somente a account que RequireAuthWithAccount ja
+// validou e gravou no Principal. Nao rele o X-Account-Id cru: isso impediria que
+// um handler futuro, por engano, voltasse a confiar num header nao validado.
 func accountIDFromContext(r *http.Request) (string, bool) {
-	if accountID := strings.TrimSpace(r.Header.Get("X-Account-Id")); accountID != "" {
-		return accountID, true
-	}
 	principal, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {
 		return "", false
 	}
-	return principal.TenantID, principal.TenantID != ""
+	accountID := strings.TrimSpace(principal.AccountID)
+	return accountID, accountID != ""
 }

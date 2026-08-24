@@ -41,7 +41,7 @@ $prodServices = @(Get-ComposeServices -ComposePath $ProdComposePath)
 # fora desta lista bloqueia o deploy ate ganhar definicao prod ou uma decisao explicita.
 $allowedDevOnly = [ordered]@{
   "crow-nuxt" = "preview local do editor de bio; o front publico tera deploy proprio"
-  "meta-ads-assistant" = "runner ainda sem compose/env/volume OAuth prod-safe"
+  "meta-ads-assistant" = "runner legado/read-only de compatibilidade interna; fora do produto e da producao por decisao arquitetural"
 }
 
 $unexpectedDevOnly = @($devServices | Where-Object {

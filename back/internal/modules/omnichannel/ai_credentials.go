@@ -3,12 +3,15 @@ package omnichannel
 import "time"
 
 type AICredentialView struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Provider  string    `json:"provider"`
-	Last4     string    `json:"last4"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Provider       string    `json:"provider"`
+	Last4          string    `json:"last4"`
+	OwnedByAccount bool      `json:"ownedByAccount"`
+	OwnerName      string    `json:"ownerName"`
+	ReadOnly       bool      `json:"readOnly"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type aiCredentialRow struct {

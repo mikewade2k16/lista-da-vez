@@ -478,8 +478,11 @@ export interface OmniAgentVersionInput {
 export interface OmniAICredential {
   id: string
   name: string
-  provider: 'gemini' | 'glm' | 'openai'
+  provider: 'gemini' | 'glm' | 'openai' | 'anthropic'
   last4: string
+  ownedByAccount: boolean
+  ownerName: string
+  readOnly: boolean
   createdAt: string
   updatedAt: string
 }

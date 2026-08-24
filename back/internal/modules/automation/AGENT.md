@@ -797,3 +797,23 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
   WAHA, retorno automatico a `WORKING` sem QR e robo restaurado para `active`. Em tres minutos:
   health verde, GOWS READY/READY, `RestartCount=0`, pico 433139712 bytes e `oom_kill=0`. O script
   de monitoramento atualizado passou quiet; os demais containers/workflows/volumes ficaram intactos.
+
+## Runtime canonico do assistente 360 (2026-08-18)
+
+- `automation.omni_chat_configs.surface_modules` guarda os modos solicitados (`off|read|write`) de
+  `calendar`, `tasks`, `meta_ads` e `users` para cada surface. Isso e configuracao, nao autorizacao.
+- `Service.OmniChatRuntime` e a unica leitura interna de prompt/provider/modelo/temperatura/janela
+  e credencial resolvida. A API key nunca entra em view HTTP nem em contexto do modelo.
+- `GetOmniChatConfig` resolve primeiro o override da conta. Cliente ativo sem linha propria herda
+  a configuracao completa da conta-agencia canonica da organizacao (mais antiga ativa, desempate
+  por id); o GET sinaliza `inherited`/`inheritedFrom` e o primeiro save cria o override do cliente.
+  Nao existe sincronizacao, copia periodica ou segunda fonte.
+- A migration `0284` cria FK `ON DELETE RESTRICT NOT VALID` de `credential_id` para o cofre global:
+  legado inconsistente nao bloqueia rollout, mas novas referencias e a exclusao da chave ficam protegidas.
+- `Module.Service()` existe somente para injecao lazy pela composition root. Consumidores nao
+  acessam `automation.Store` nem duplicam a resolucao de credencial.
+- Calendar calcula o modo efetivo cruzando essa configuracao com contratacao e RBAC; Automation
+  nao deve tentar conceder permissions nem interpretar escopo de cliente.
+- A migration `0292` aceita `anthropic` em `automation.omni_chat_configs.provider`. O workflow
+  Calendar Chat usa a API Messages nativa; outros providers seguem pelo contrato OpenAI-compatible.
+  Não persistir chave no workflow: `OmniChatRuntime` injeta o segredo somente server-to-server.

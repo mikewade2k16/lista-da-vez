@@ -53,6 +53,14 @@ func (s *Service) AssistantSend(ctx context.Context, accountID, message, adAccou
 		return AssistantSendResult{}, ErrAssistantMessageTooLong
 	}
 	adAccountID = strings.TrimSpace(adAccountID)
+	runnerAdAccount := ""
+	if adAccountID != "" {
+		ad, err := s.requireAdAccount(ctx, accountID, adAccountID)
+		if err != nil {
+			return AssistantSendResult{}, err
+		}
+		runnerAdAccount = strings.TrimPrefix(strings.TrimSpace(ad.MetaAdAccountID), "act_")
+	}
 
 	userMsg, err := s.store.InsertAssistantMessage(ctx, accountID, assistantRoleUser, message, nil)
 	if err != nil {
@@ -64,9 +72,6 @@ func (s *Service) AssistantSend(ctx context.Context, accountID, message, adAccou
 		return AssistantSendResult{}, err
 	}
 
-	// O runner/MCP precisam do ID da conta NA META (act_<numero>), nao do nosso
-	// ID interno. Traduz aqui; o adAccountID interno continua valendo para o sync.
-	runnerAdAccount := metaAdAccountForRunner(ctx, s, accountID, adAccountID)
 	result, err := s.runner.Run(ctx, message, history, runnerAdAccount, accountID, s.assistantRunnerOpts(ctx, accountID))
 	if err != nil {
 		return AssistantSendResult{}, err
@@ -109,8 +114,8 @@ func (s *Service) AssistantClear(ctx context.Context, accountID string) error {
 // AssistantHealth consulta o estado do runner para o card de conexoes. Nunca
 // propaga erro: runner nao configurado/fora do ar viram OK=false com Detail
 // explicativo (o handler devolve 200 sempre).
-func (s *Service) AssistantHealth(ctx context.Context) (AssistantHealthView, error) {
-	view, err := s.runner.Health(ctx)
+func (s *Service) AssistantHealth(ctx context.Context, accountID string) (AssistantHealthView, error) {
+	view, err := s.runner.Health(ctx, accountID)
 	switch {
 	case errors.Is(err, ErrRunnerNotConfigured):
 		return AssistantHealthView{OK: false, Detail: "runner_not_configured"}, nil
@@ -124,7 +129,7 @@ func (s *Service) AssistantHealth(ctx context.Context) (AssistantHealthView, err
 // AssistantAuthStart inicia o login do MCP oficial da Meta no runner e devolve a
 // URL de autorizacao do Facebook para o painel exibir.
 func (s *Service) AssistantAuthStart(ctx context.Context, accountID string) (string, error) {
-	out, err := s.runner.AuthStart(ctx, s.assistantRunnerOpts(ctx, accountID))
+	out, err := s.runner.AuthStart(ctx, accountID, s.assistantRunnerOpts(ctx, accountID))
 	if err != nil {
 		return "", err
 	}
@@ -136,7 +141,7 @@ func (s *Service) AssistantAuthStart(ctx context.Context, accountID string) (str
 func (s *Service) AssistantAuthComplete(ctx context.Context, accountID, callbackURL string) (bool, string, error) {
 	// callbackURL pode ser vazio: com a sessao persistente, o login pode ja ter
 	// sido concluido sozinho (redirect localhost capturado com a conexao viva).
-	out, err := s.runner.AuthComplete(ctx, strings.TrimSpace(callbackURL), s.assistantRunnerOpts(ctx, accountID))
+	out, err := s.runner.AuthComplete(ctx, accountID, strings.TrimSpace(callbackURL), s.assistantRunnerOpts(ctx, accountID))
 	if err != nil {
 		return false, "", err
 	}
@@ -169,22 +174,6 @@ func (s *Service) assistantRunnerOpts(ctx context.Context, accountID string) Run
 		return RunnerOpts{}
 	}
 	return RunnerOpts{Model: model, SystemPrompt: systemPrompt}
-}
-
-// metaAdAccountForRunner traduz o ID interno da conta de anuncio para o ID dela
-// na Meta (act_<numero>), que e o que o runner/MCP usam. Vazio se nao resolver
-// (o assistente cai na conta default da Meta).
-func metaAdAccountForRunner(ctx context.Context, s *Service, accountID, adAccountID string) string {
-	if adAccountID == "" {
-		return ""
-	}
-	ad, err := s.requireAdAccount(ctx, accountID, adAccountID)
-	if err != nil {
-		return ""
-	}
-	// A MCP da Meta usa o id NUMERICO da conta (ex.: 1547966673703703), nao o
-	// formato act_<id>. Remove o prefixo act_ se houver.
-	return strings.TrimPrefix(strings.TrimSpace(ad.MetaAdAccountID), "act_")
 }
 
 // assistantContext monta o historico enviado ao runner: as ultimas mensagens da

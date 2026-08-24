@@ -85,6 +85,11 @@ func handleOmniChatPersonaGet(svc *Service) http.HandlerFunc {
 			writeNoAccount(w, r)
 			return
 		}
+		principal, hasPrincipal := auth.PrincipalFromContext(r.Context())
+		if !hasPrincipal || !auth.CanConfigureAssistant(principal) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para consultar a configuracao do Assistente Omni.")
+			return
+		}
 		view, err := svc.OmniChatConfig(r.Context(), accountID)
 		if err != nil {
 			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Falha ao carregar a persona do Omni Chat.")
@@ -105,17 +110,18 @@ func handleOmniChatPersonaPut(svc *Service) http.HandlerFunc {
 			return
 		}
 		principal, hasPrincipal := auth.PrincipalFromContext(r.Context())
-		if !hasPrincipal || principal.Role != auth.RolePlatformAdmin {
-			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Somente o administrador pode configurar o Omni Chat.")
+		if !hasPrincipal || !auth.CanManageAssistantConfiguration(principal) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para configurar o Assistente Omni.")
 			return
 		}
 		var body struct {
-			Enabled       *bool    `json:"enabled"`
-			SystemPrompt  string   `json:"systemPrompt"`
-			CredentialID  string   `json:"credentialId"`
-			Model         string   `json:"model"`
-			Temperature   *float64 `json:"temperature"`
-			HistoryWindow int      `json:"historyWindow"`
+			Enabled        *bool                        `json:"enabled"`
+			SystemPrompt   string                       `json:"systemPrompt"`
+			CredentialID   string                       `json:"credentialId"`
+			Model          string                       `json:"model"`
+			Temperature    *float64                     `json:"temperature"`
+			HistoryWindow  int                          `json:"historyWindow"`
+			SurfaceModules map[string]map[string]string `json:"surfaceModules"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
@@ -147,10 +153,15 @@ func handleOmniChatPersonaPut(svc *Service) http.HandlerFunc {
 		if model == "" {
 			model = current.Model
 		}
+		surfaceModules := body.SurfaceModules
+		if surfaceModules == nil {
+			surfaceModules = current.SurfaceModules
+		}
 		saved, err := svc.SetOmniChatConfig(r.Context(), accountID, OmniChatConfigInput{
 			Enabled: enabled, SystemPrompt: trimmed, CredentialID: credentialID,
 			Model: model, Temperature: temperature, HistoryWindow: body.HistoryWindow,
-			UpdatedBy: principal.UserID,
+			SurfaceModules: surfaceModules,
+			UpdatedBy:      principal.UserID,
 		})
 		if err != nil {
 			if errors.Is(err, ErrOmniChatCredentialUnavailable) {

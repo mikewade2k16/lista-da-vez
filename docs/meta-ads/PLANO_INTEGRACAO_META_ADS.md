@@ -1,10 +1,14 @@
-# Plano de Integração — Meta Ads no Omni
+# ARQUIVO HISTÓRICO — Plano de Integração Meta Ads no Omni
 
-> Documento canônico do módulo `meta_ads`. Fonte de verdade do desenho.
-> Regras herdadas: [AGENT_RULES.md](../../AGENT_RULES.md) + [ENGINEERING_PRINCIPLES.md](../ENGINEERING_PRINCIPLES.md).
-> Espelhado em `web/app/components/roadmap/roadmap-data.ts` (fase `meta-ads`).
-
-> **ESTADO (2026-06-11): MVP CODADA E VALIDADA LOCAL (back + front verdes).** Falta só **rodar de verdade**: aplicar a migration, rebuild da api e teste end-to-end com um System User token real. Build/lint/type-check passam; `npm install` feito. Nada commitado/deployado. Detalhe em [§ 11. Estado atual e handoff](#11-estado-atual-e-handoff-onde-paramos).
+> **NÃO USAR ESTE ARQUIVO PARA IMPLEMENTAÇÃO, MIGRATION, DEPLOY OU STATUS ATUAL.**
+> Ele preserva o snapshot de junho de 2026 apenas para explicar a evolução do
+> módulo. Decisões, comandos, endpoints e fases abaixo podem ter sido revogados.
+>
+> A fonte canônica vigente é
+> [Assistente 360 + Meta Ads — estado real e roadmap](./ASSISTENTE_360_STATUS_E_ROADMAP.md).
+> As regras de engenharia continuam em [AGENT_RULES.md](../../AGENT_RULES.md) e
+> [ENGINEERING_PRINCIPLES.md](../ENGINEERING_PRINCIPLES.md); o roadmap espelhado
+> está em `web/app/components/roadmap/data/phases-part5.ts`.
 
 ---
 
@@ -20,8 +24,12 @@ A agência (Crow Visuals) gerencia tráfego pago de Meta (Facebook/Instagram) **
 
 ## 2. Princípios
 
-- Multi-tenant desde o dia 1: `account_id NOT NULL` em toda tabela; `accountID` vem **sempre** do Principal/header, nunca do body. Recurso fora de escopo → `404`.
-- **Não travar na agência:** `organization_id`/`client_account_id` entram **nullable/reservados**; backfill quando o modelo agência→cliente subir (P5). Ver [AGENCY_TENANT_ARCHITECTURE.md](../AGENCY_TENANT_ARCHITECTURE.md).
+- Multi-tenant desde o dia 1: `account_id NOT NULL` em toda tabela; `accountID` vem **sempre** do `Principal` hidratado por `RequireAuthWithAccount`, nunca do body nem de um header relido pelo handler. Recurso fora de escopo → `404`.
+- **Agência→cliente fail-closed:** `organization_id` continua nullable no legado;
+  `ad_accounts.client_account_id` já é o vínculo autoritativo usado para compartilhar
+  a conexão central. Pages/Instagram usam o vínculo separado da migration 0288 e
+  exigem interseção com a identidade atual da Graph. Recurso sem vínculo não aparece. Ver
+  [AGENCY_TENANT_ARCHITECTURE.md](../AGENCY_TENANT_ARCHITECTURE.md).
 - **Backend Go é a fonte de verdade** (integra a Marketing API direto; o dashboard lê do nosso cache). A IA (P6) usa **nossos** endpoints como ferramentas — nunca uma fonte de dados paralela.
 - Cache-and-sync: a Graph API é consultada na sincronização, **não** a cada carregamento de tela (performance / resposta imediata).
 - Token (System User) é segredo: cifrado at-rest (pgcrypto), nunca logado, nunca devolvido ao front.
@@ -39,28 +47,59 @@ Painel /meta-ads (Vue)  ──HTTP /v1/meta-ads/* (JWT + X-Account-Id)──>  M
                                    (sync sob demanda)             / campaigns / insights_daily
 ```
 
-## 4. Modelo de dados (`meta_ads.*`) — migration `0149_meta_ads_schema.sql`
+## 4. Modelo de dados do snapshot (`meta_ads.*`) — referência histórica
+
+> Esta tabela não é checklist de migrations. O desenho atual inclui a cadeia
+> 0282–0294 e deve ser conferido no documento canônico e no diretório de migrations.
 
 | Tabela | Campos principais | Nota |
 |---|---|---|
 | `connections` | `account_id` (único), `organization_id` (null/reservado), `meta_business_id`, `name`, `encrypted_token bytea`, `token_expires_at`, `status` | 1 conexão por account. Token cifrado via `pgp_sym_encrypt(token, $key)`. |
-| `ad_accounts` | `account_id`, `connection_id`, `meta_ad_account_id` ('act_…'), `client_account_id` (null/reservado), `name`, `currency`, `status` | UNIQUE(account_id, meta_ad_account_id). |
+| `ad_accounts` | `account_id`, `connection_id`, `meta_ad_account_id` ('act_…'), `client_account_id` (nullable), `name`, `currency`, `status` | UNIQUE(account_id, meta_ad_account_id). `client_account_id` é o vínculo explícito agência→cliente; NULL permanece visível só ao dono da conexão. |
 | `campaigns` | `account_id`, `ad_account_id`, `meta_campaign_id`, `name`, `objective`, `status`, `daily_budget`, `lifetime_budget`, `synced_at` | Cache. UNIQUE(ad_account_id, meta_campaign_id). |
 | `insights_daily` | `account_id`, `ad_account_id`, `meta_campaign_id` (''=agregado), `date`, `impressions/clicks/spend/reach/ctr/cpc/cpm/conversions`, `synced_at` | Cache p/ gráficos. UNIQUE(ad_account_id, meta_campaign_id, date). |
+| `oauth_states` (migration 0285) | `account_id`, `created_by_user_id`, `state_hash bytea`, `redirect_uri`, `expires_at`, `consumed_at` | State SHA-256, TTL 10 min e consumo atomico single-use. Nunca guarda code/token. |
+| `instagram_identity_client_mappings` (migration 0288) | `account_id`, `connection_id`, `client_account_id`, `ig_user_id`, `page_id` | Vínculo Page/Instagram→cliente. FK composta ancora a conexão da agência; IDs são revalidados na Graph. |
 
-## 5. Endpoints (módulo Go `meta_ads`, admin — JWT + `X-Account-Id` + permissão)
+## 5. Endpoints montados na revisão de 2026-08-18 — referência histórica
+
+> Esta tabela serve apenas para distinguir rotas reais das ideias do snapshot; não
+> substitui os registradores HTTP nem o documento canônico.
 
 | Verbo | Path | Permissão | Ação |
 |---|---|---|---|
 | GET | `/v1/meta-ads/overview` | `meta_ads.view` | status da conexão + KPIs agregados |
-| POST | `/v1/meta-ads/connection` | `meta_ads.connect` | salva System User token (cifra) + valida na Graph |
+| POST | `/v1/meta-ads/connection` | `meta_ads.connect` | fallback manual: exige os mesmos seis grants do OAuth, valida ad accounts e só então cifra/persiste o snapshot; grant ausente/negado retorna 422 sem gravação |
+| POST | `/v1/meta-ads/oauth/start` | `meta_ads.connect` | inicia Facebook Login account-scoped; devolve apenas authorization URL + expiração |
 | DELETE | `/v1/meta-ads/connection` | `meta_ads.connect` | remove conexão |
 | GET | `/v1/meta-ads/ad-accounts` | `meta_ads.view` | lista contas de anúncio da conexão |
-| POST | `/v1/meta-ads/sync` | `meta_ads.view` | dispara sync (Graph→cache) de campanhas+insights |
+| PATCH | `/v1/meta-ads/ad-accounts/{id}/client` | `meta_ads.manage` | vincula `{clientAccountId}` à ad account; string vazia desvincula; somente conta-agência e cliente ativo da mesma organização |
+| GET | `/v1/meta-ads/instagram-identities` | `meta_ads.view` | lista somente para a agência as Pages/Instagram atuais e seus vínculos persistidos |
+| PATCH | `/v1/meta-ads/instagram-identities/{igUserId}/client` | `meta_ads.manage` | body estrito `{clientAccountId}`; revalida Page/IG na Graph, mesma organização e cliente ativo; vazio desvincula |
+| POST | `/v1/meta-ads/sync` | `meta_ads.manage` | dispara sync (Graph→cache) de campanhas+insights |
 | GET | `/v1/meta-ads/campaigns?adAccountId=` | `meta_ads.view` | lista campanhas do cache (lean) |
 | GET | `/v1/meta-ads/insights?adAccountId=&range=&level=` | `meta_ads.view` | métricas p/ gráficos (do cache) |
-| POST | `/v1/meta-ads/campaigns` *(Plataforma)* | `meta_ads.manage` | cria campanha na Marketing API |
-| PATCH | `/v1/meta-ads/campaigns/{id}` *(Plataforma)* | `meta_ads.manage` | edita/pausa/retoma |
+| GET/POST | `/v1/meta-ads/action-proposals` | `meta_ads.view` / `meta_ads.manage` | lista ou cria proposal durável |
+| GET | `/v1/meta-ads/action-proposals/{id}` | `meta_ads.view` | consulta proposal escopada |
+| POST | `/v1/meta-ads/action-proposals/{id}/{confirm,cancel,reconcile}` | `meta_ads.manage` | confirma, cancela ou reconcilia pelo backend |
+| GET/PUT | `/v1/meta-ads/ad-accounts/{id}/action-policy` | `meta_ads.view` / `meta_ads.manage` | consulta ou atualiza policy/caps server-side |
+
+As rotas diretas `POST /v1/meta-ads/campaigns` e
+`PATCH /v1/meta-ads/campaigns/{id}` eram propostas deste plano e **não estão
+montadas**. A escrita confirmada atual usa proposals duráveis e o executor
+first-party descrito no documento canônico.
+
+Callback público (sem JWT e fora do module gate):
+`GET /v1/public/meta-ads/oauth/callback`. A account vem exclusivamente do state
+persistido/hasheado; state expirado ou consumido falha fechado. O backend troca o code
+por token em POST server-side, converte para longa duração, consulta `/me/permissions`
+com `Authorization: Bearer` e exige que todos os scopes solicitados estejam `granted`.
+O discovery Page/Instagram inclui `pages_read_engagement`; sem ele o callback termina
+em 403 e não salva conexão parcial.
+Somente depois valida via `GetAdAccounts` e usa o snapshot cifrado canônico. Scope
+ausente/negado não cria conexão; nenhum token/code/state aparece na URL ou resposta HTML.
+O fallback de System User token executa a mesma leitura sanitizada de `/me/permissions`
+e a mesma allowlist antes de `GetAdAccounts`; erro do provider não reflete o corpo livre.
 
 Shapes: ver `back/internal/modules/meta_ads/model.go` (`ConnectionView`, `AdAccountView`, `CampaignView`, `InsightPoint`, `OverviewView`, `SyncResult`).
 
@@ -69,42 +108,71 @@ Shapes: ver `back/internal/modules/meta_ads/model.go` (`ConnectionView`, `AdAcco
 - Rota `/meta-ads`, `workspaceId: 'meta_ads'`, `moduleId: 'meta_ads'`. Página em `web/app/pages/meta-ads.vue` (layout dashboard, wrapper `.page-workspace`).
 - Store `web/app/stores/meta-ads.ts` (Pinia + `createApiRequest`), composables `useMetaAdsConnection/Reports/Campaigns`.
 - Componentes em `web/app/components/meta-ads/`: `MetaAdsWorkspace` (orquestra) + cards `Connection`/`AccountPicker`/`Overview`/`ReportChart`/`CampaignTable`.
+- `MetaAdsClientMappingCard` administra ad account→cliente e Page/Instagram→cliente.
+  O store cancela e limpa os dois conjuntos ao trocar account; o feed central fica
+  `scope_unavailable` quando o client scope não possui uma identidade Graph mapeada.
 - Gráficos: `vue3-apexcharts` em `<ClientOnly>` + import dinâmico.
 - **Wiring em 4 lugares:** `workspaces.ts`, `permissions.ts` (WORKSPACE_ACCESS_DEFINITIONS + ROLE_WORKSPACES), `nav.config.ts` (`hidden:true` até validar), `module-enabled.global.ts` (`{prefix:'/meta-ads', moduleId:'meta_ads'}`).
 
-## 7. Local + VPS
+## 7. Premissas locais do snapshot
 
-- **Sem container novo** (o Go fala HTTPS direto com a Graph API). Sem profile docker novo.
-- Testar via `platform_admin` (isento do gating). Para a conta da agência, inserir `meta_ads` em `core.account_modules`.
+- O MVP originalmente não previa container novo porque o Go falava HTTPS direto
+  com a Graph API.
+- A habilitação por `core.account_modules` e o teste como `platform_admin` eram
+  notas do handoff, não um runbook atual.
 
-## 8. Fases / subagentes
+## 8. Fases / subagentes do snapshot
 
 **MVP (5 subagentes):** A1 fundação Go · A2 cliente+sync · A3 HTTP · A4 front infra · A5 front UI. Contrato congelado (este doc + `model.go` + `module.go`) → paralelos; build de integração no fim.
 
 **Plataforma (até 10 subagentes):** P1 write ops · P2 sync worker · P3 agregações · P4 OAuth · P5 atribuição cliente · P6 IA · P7 editor UI · P8 dashboards ricos · P9 IA UI · P10 hardening+docs.
 
-## 9. Notas de Deploy
+## 9. Apêndice arquivado — notas de deploy de junho/2026
 
-- Migration `0149_meta_ads_schema.sql` (idempotente; cria extensão `pgcrypto`). Rodar no banco certo (`:5433`/container).
+> **NÃO EXECUTAR.** Este bloco registra o handoff antigo e está incompleto para a
+> cadeia 0282–0294, o Assistente 360 e o deploy atual. Use exclusivamente o
+> checklist do documento canônico e os runbooks de deploy vigentes.
+
+<details>
+<summary>Mostrar notas antigas para fins de rastreabilidade</summary>
+
+- Migrations `0149_meta_ads_schema.sql` e `0288_meta_ads_instagram_identity_client_mappings.sql`
+  são idempotentes. Rodar no banco certo (`:5433`/container); esta entrega não as aplica.
 - Vars novas em `.env.docker.example`, `.env.production.example` **e** `docker-compose.prod.yml` (`environment`):
-  - `META_ADS_GRAPH_BASE` (default `https://graph.facebook.com/v21.0`)
+  - `META_ADS_GRAPH_BASE` (default `https://graph.facebook.com/v24.0`)
   - `META_ADS_CRYPTO_KEY` (chave simétrica pgcrypto p/ cifrar o token — obrigatória p/ conectar)
+  - `META_ADS_APP_ID`, `META_ADS_APP_SECRET` e `META_ADS_OAUTH_REDIRECT_URL` para o
+    Facebook Login padrão. A redirect deve terminar em
+    `/v1/public/meta-ads/oauth/callback`, ser cadastrada exatamente no app Meta e usar HTTPS
+    fora de localhost/loopback.
 - Dependência web nova: `vue3-apexcharts` → `install` no deploy do web.
 - **Rebuild obrigatório** após mudança Go: `docker compose up -d --build api`.
 - **Assistente (onda MA):** migration `0150_meta_ads_assistant.sql`; vars novas `META_ADS_ASSISTANT_RUNNER_URL` + `META_ADS_ASSISTANT_TOKEN` (api) e `META_ADS_ASSISTANT_PORT`/`_TIMEOUT_MS` (runner) — em prod: `.env.production` + `docker-compose.prod.yml` (environment). Na VPS o runner exige `claude setup-token` (CLAUDE_CODE_OAUTH_TOKEN) + OAuth do MCP da Meta repetido 1x; subir com profile `meta-ads-assistant` OU como processo no host. `extra_hosts: host.docker.internal:host-gateway` já no compose (necessário em Linux).
 - **Settings do assistente (2026-06-12):** migration `0151_meta_ads_assistant_settings.sql` (tabela `meta_ads.assistant_settings`).
 - **MA6+MA7 (2026-06-12):** var nova `META_ADS_RUNNER_BRIDGE_TOKEN` — precisa do MESMO valor em DOIS lugares: api (`.env.production` + `docker-compose.prod.yml` environment) E no ambiente do runner. Runner ganha também `META_ADS_API_BASE` (default `http://localhost:9091`; na VPS apontar pro api) e `META_ADS_OAUTH_CALLBACK_PORT` (default `8766`). O token OAuth da Meta fica em `meta-ads-assistant/.auth/` (fora do git; perm 0600 em Linux) — na VPS, preservar esse diretório entre restarts (volume/backup). O redirect OAuth é `http://127.0.0.1:8766/oauth/callback`: o navegador da autorização precisa rodar na MESMA máquina do runner OU o usuário cola a URL de callback no painel. Rebuild api obrigatório (mudou Go).
 
-## 10. Decisões fechadas (2026-06-11)
+</details>
+
+## 10. Decisões históricas de 2026-06-11 (parcialmente revogadas)
+
+> Os itens abaixo registram decisões daquele snapshot e não são regras vigentes.
 
 1. Nome `meta-ads` (id `meta_ads`, schema `meta_ads`, pacote Go `metaads`, rota `/meta-ads`).
-2. Conexão MVP por **System User token** (cifrado); OAuth completo na P4.
-3. Multi-tenant desde já; sem depender do modelo de agência (colunas reservadas).
-4. ~~Backend Go é a fonte; IA depois (P6) via Claude API~~ → **SUPERSEDED (mesma data, ver §12):** a camada de IA/escrita vem do **MCP oficial da Meta** (`https://mcp.facebook.com/ads`) executado por um **Claude headless autenticado pela assinatura** (sem crédito de API, sem OpenAI). O backend Go **continua sendo a fonte dos RELATÓRIOS** (cache/sync) — o MCP é o braço de AÇÃO, não fonte de dados paralela.
+2. Conexão padrão por **Facebook Login OAuth** (migration 0285), com login/2FA/consentimento
+   humano inevitáveis; System User token manual permanece apenas como compatibilidade.
+3. Multi-tenant desde já. O vínculo `ad_accounts.client_account_id` está ativo no painel e nas leituras; `organization_id` permanece legado/nullable e não define o escopo atual.
+4. **Revogada em 2026-08-18:** a proposta de usar MCP/Claude headless como braço
+   de ação foi substituída pelo Assistente 360 compartilhado e pelo executor
+   first-party em Go. O runner permaneceu apenas como compatibilidade interna read-only.
 5. Lib de gráficos (`vue3-apexcharts`).
-6. **(novo)** O painel `/meta-ads` é o centro de TUDO: conexões (token de dados + status do assistente) e o chat de comandos ("cria campanha X") vivem nessa página.
+6. **Revogada em 2026-08-18:** o chat deixou de pertencer à página `/meta-ads` e
+   passou a ser um host 360 compartilhado no shell, com surface/capabilities próprias.
 
-## 11. Estado atual e handoff (onde paramos — 2026-06-11)
+## 11. Snapshot histórico e handoff de 2026-06-11
+
+> O conteúdo desta seção é um snapshot histórico. Para o estado executável de
+> 2026-08-18, use o aviso do topo e o documento do Assistente 360; em especial,
+> não interprete os cards/guardrails descritos abaixo como writes seguros prontos.
 
 Sequência: aprovado o plano → fundação à mão → 3 subagentes geraram o resto → **validação local (build/lint/type-check) feita e verde**. Falta só rodar de verdade (migration + rebuild + teste e2e com token real). Nada commitado/deployado.
 
@@ -147,12 +215,21 @@ Rodado só **validação local** (build/lint/type-check) + `npm install`. **Nada
 
 ---
 
-## 12. Assistente MCP no painel (texto → cria/edita campanhas) — PLANO CANÔNICO da próxima onda
+## 12. Assistente MCP no painel — desenho histórico descartado
 
-> Decidido 2026-06-11. Substitui P6 (IA via Claude API) e P9 (assistente UI); rebaixa P1 (write ops via nosso Go) para opcional/futuro — a ESCRITA agora entra pelo MCP oficial da Meta.
+> Esta seção registra a implementação de junho e **não deve orientar código novo**.
+> As rotas públicas `/v1/meta-ads/assistant/*` e os componentes `MetaAdsAssistant*`
+> foram desmontados; MCP/runner não é executor de writes. O alvo atual é o chat
+> compartilhado, proposals no PostgreSQL e Graph first-party conforme
+> [Assistente 360 — estado e roadmap](./ASSISTENTE_360_STATUS_E_ROADMAP.md).
+
+> **Snapshot de 2026-06-11, revogado pelo desenho acima.** Naquele momento P6/P9
+> foram substituídos por MCP e a escrita foi atribuída ao runner; essa decisão não
+> vale para a arquitetura atual.
 >
-> **STATUS (2026-06-11): MA1+MA2+MA3 + login-no-painel ENTREGUES e integrados.** Back/front/compose validados (lint 0 issues), migration 0150 aplicada, api rebuildada, runner no host com as rotas de auth.
-> **O login do Facebook agora é PELO PAINEL** (não mais via `/mcp` do Claude Code): card "Conectar o assistente a Meta" em `/meta-ads` → botão gera o link da Meta (tool `authenticate`) → usuário autoriza → cola a URL de callback (`localhost/callback?code=...`) → conclui (tool `complete_authentication`). Endpoints: `POST /v1/meta-ads/assistant/auth/start` e `/auth/complete` (runner: `POST /auth/start` + `/auth/complete`, via `meta-ads-assistant/src/auth.mjs`).
+> **STATUS HISTÓRICO (2026-06-11): MA1+MA2+MA3 + login-no-painel foram registrados como entregues naquele snapshot.** Back/front/compose haviam sido validados, a migration 0150 aplicada, a API rebuildada e o runner expunha as rotas de auth. Isso não declara prontos os cards Meta, as propostas duráveis ou as escritas com confirmação do Assistente 360 atual; para o estado vigente, consulte o documento de roadmap acima.
+> **Snapshot legado:** o login do runner era feito pelo painel via
+> `/v1/meta-ads/assistant/auth/*`; essas rotas não fazem parte do produto atual.
 > **Login resolvido com SESSÃO PERSISTENTE (2026-06-11):** a 1ª versão (2 chamadas separadas) dava "sessão expirou" (PKCE/state perdido entre `authenticate` e `complete_authentication`). Corrigido: `meta-ads-assistant/src/auth.mjs` mantém UMA `query()` viva em streaming entre os dois passos (mesma conexão MCP → state intacto); o "colar URL de callback" virou OPCIONAL (com a conexão viva o redirect `localhost/callback` pode ser capturado sozinho); 409 `auth_session_gone` se passar de 10min. **Pendente:** o teste e2e (conectar pelo painel → mandar comando). MA4 parcial (guardrails no prompt + auditoria feitos; budget cap/streaming = polish). Runner no HOST: `npm --prefix meta-ads-assistant start`.
 
 ### 12.1 Objetivo
@@ -184,6 +261,11 @@ Go dispara POST /v1/meta-ads/sync → cache atualiza → KPIs/tabela refletem na
 1. **Card Conexões** (evolução do atual): token System User (dados/relatórios — já funciona) + **status do Assistente** (Claude autenticado? MCP logado no Facebook?) com instruções de setup.
 2. **Card Assistente (chat)**: input de texto + histórico da conversa (persistido por account em `meta_ads.assistant_messages`); streaming da resposta; **toda ação de escrita exige confirmação explícita no chat** antes de executar; lista do que foi feito (auditável).
 3. KPIs/gráfico/tabela (já existem) — atualizam após cada ação via sync.
+
+> **Correção do estado em 2026-08-18:** cards Meta de recursos/propostas, lifecycle
+> durável e executor confirmado de `pause_campaign`/`update_campaign` já existem
+> localmente. Criar, duplicar, retomar e montar campanha → ad set → creative → ad
+> continuam no roadmap. Todo o restante desta seção permanece legado e revogado.
 
 ### 12.4 Fases (MA = Meta Assistant) — espelhadas no roadmap
 | Fase | Entrega | Notas |

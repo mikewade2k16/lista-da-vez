@@ -167,6 +167,10 @@ C5 faz o mesmo para CRM:
 - O endpoint de audio e autenticado. Ao consolidar uma gravacao, o backend
   solicita automaticamente o job duravel do Whisper local; o endpoint
   `POST .../{id}/transcribe` permanece idempotente para retry manual.
+- `queue.attendance_analysis_configs.credential_id` referencia o cofre global por
+  `(account_id, credential_id)` e a migration `0284` aplica FK `ON DELETE RESTRICT NOT VALID`.
+  Assim uma chave em uso nao pode ser excluida e legado inconsistente continua nomeado para
+  reconciliacao posterior; nunca usar cascade para apagar configuracao de analise.
 
 ## Comunicados da operacao
 

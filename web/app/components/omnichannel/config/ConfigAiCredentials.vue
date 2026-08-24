@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
@@ -13,7 +13,12 @@ import {
 } from '~/domain/omnichannel/config-api'
 import type { OmniAICredential } from '~/domain/omnichannel/config-types'
 
-defineProps<{ disabled?: boolean }>()
+const props = defineProps<{
+  disabled?: boolean
+  accountId?: string
+  credentialBasePath?: string
+  allowedProviders?: OmniAICredential['provider'][]
+}>()
 const emit = defineEmits<{ changed: [] }>()
 const auth = useAuthStore()
 const ui = useUiStore()
@@ -26,84 +31,146 @@ const busy = ref(false)
 const name = ref('')
 const provider = ref<OmniAICredential['provider']>('openai')
 const apiKey = ref('')
+const providerOptions = computed(() => {
+  const allowed: OmniAICredential['provider'][] = props.allowedProviders || [
+    'openai',
+    'gemini',
+    'glm',
+  ]
+  const labels: Record<OmniAICredential['provider'], string> = {
+    openai: 'OpenAI',
+    anthropic: 'Claude (Anthropic)',
+    gemini: 'Gemini',
+    glm: 'GLM',
+  }
+  return allowed.map((value) => ({ value, label: labels[value] }))
+})
 const nameDrafts = ref<Record<string, string>>({})
 const rotateDrafts = ref<Record<string, string>>({})
+const contextController = new AbortController()
+let disposed = false
 
-async function load(): Promise<void> {
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error as { name?: string } | null)?.name === 'AbortError'
+  )
+}
+
+function accountRequestOptions(): {
+  basePath?: string
+  headers?: Record<string, string>
+  signal: AbortSignal
+} {
+  const accountId = String(props.accountId || '').trim()
+  const basePath = String(props.credentialBasePath || '').trim()
+  return {
+    ...(basePath ? { basePath } : {}),
+    ...(accountId ? { headers: { 'X-Account-Id': accountId } } : {}),
+    signal: contextController.signal,
+  }
+}
+
+async function load(options = accountRequestOptions()): Promise<void> {
   loading.value = true
   try {
-    credentials.value = await fetchAICredentials(api)
+    const loaded = await fetchAICredentials(api, options)
+    if (disposed) return
+    credentials.value = loaded
     nameDrafts.value = Object.fromEntries(credentials.value.map((item) => [item.id, item.name]))
   } catch (error) {
+    if (disposed || isAbortError(error)) return
     ui.error(getApiErrorMessage(error, 'Não foi possível carregar as credenciais de IA.'))
   } finally {
-    loading.value = false
+    if (!disposed) loading.value = false
   }
 }
 
 async function rename(item: OmniAICredential): Promise<void> {
   const value = (nameDrafts.value[item.id] || '').trim()
-  if (!value || value === item.name || busy.value) return
+  if (item.readOnly || !value || value === item.name || busy.value || props.disabled) return
+  const options = accountRequestOptions()
   busy.value = true
   try {
-    await updateAICredential(api, item.id, { name: value })
+    await updateAICredential(api, item.id, { name: value }, options)
+    if (disposed) return
     ui.success('Nome da credencial atualizado.')
-    await load()
+    await load(options)
     emit('changed')
   } catch (error) {
+    if (disposed || isAbortError(error)) return
     ui.error(getApiErrorMessage(error, 'Não foi possível renomear a credencial.'))
   } finally {
-    busy.value = false
+    if (!disposed) busy.value = false
   }
 }
 
 async function create(): Promise<void> {
-  if (!name.value.trim() || !apiKey.value.trim() || busy.value) return
+  if (!name.value.trim() || !apiKey.value.trim() || busy.value || props.disabled) return
+  const options = accountRequestOptions()
   busy.value = true
   try {
-    await createAICredential(api, {
-      name: name.value.trim(),
-      provider: provider.value,
-      apiKey: apiKey.value.trim(),
-    })
+    await createAICredential(
+      api,
+      {
+        name: name.value.trim(),
+        provider: provider.value,
+        apiKey: apiKey.value.trim(),
+      },
+      options,
+    )
+    if (disposed) return
     name.value = ''
     apiKey.value = ''
     ui.success('Credencial salva no cofre da conta.')
-    await load()
+    await load(options)
     emit('changed')
   } catch (error) {
+    if (disposed || isAbortError(error)) return
     ui.error(getApiErrorMessage(error, 'Não foi possível salvar a credencial.'))
   } finally {
-    busy.value = false
+    if (!disposed) busy.value = false
   }
 }
 
 async function rotate(item: OmniAICredential): Promise<void> {
   const value = (rotateDrafts.value[item.id] || '').trim()
-  if (!value || busy.value) return
+  if (item.readOnly || !value || busy.value || props.disabled) return
+  const options = accountRequestOptions()
   busy.value = true
   try {
-    await updateAICredential(api, item.id, { apiKey: value })
+    await updateAICredential(api, item.id, { apiKey: value }, options)
+    if (disposed) return
     rotateDrafts.value[item.id] = ''
     ui.success(`Chave “${item.name}” atualizada para todos os agentes vinculados.`)
-    await load()
+    await load(options)
     emit('changed')
   } catch (error) {
+    if (disposed || isAbortError(error)) return
     ui.error(getApiErrorMessage(error, 'Não foi possível atualizar a chave.'))
   } finally {
-    busy.value = false
+    if (!disposed) busy.value = false
   }
 }
 
 async function remove(item: OmniAICredential): Promise<void> {
-  if (busy.value || !window.confirm(`Excluir a credencial “${item.name}”?`)) return
+  if (
+    item.readOnly ||
+    busy.value ||
+    props.disabled ||
+    !window.confirm(`Excluir a credencial “${item.name}”?`)
+  )
+    return
+  const options = accountRequestOptions()
   busy.value = true
   try {
-    await deleteAICredential(api, item.id)
+    await deleteAICredential(api, item.id, options)
+    if (disposed) return
     ui.success('Credencial excluída.')
-    await load()
+    await load(options)
     emit('changed')
   } catch (error) {
+    if (disposed || isAbortError(error)) return
     ui.error(
       getApiErrorMessage(
         error,
@@ -111,30 +178,46 @@ async function remove(item: OmniAICredential): Promise<void> {
       ),
     )
   } finally {
-    busy.value = false
+    if (!disposed) busy.value = false
   }
 }
 
 async function importExisting(): Promise<void> {
-  if (busy.value) return
+  if (busy.value || props.disabled) return
+  const options = accountRequestOptions()
   busy.value = true
   try {
-    const result = await importLegacyAICredentials(api)
+    const result = await importLegacyAICredentials(api, options)
+    if (disposed) return
     ui.success(
       result.imported > 0
         ? `${result.imported} chave(s) existente(s) importada(s) para o cofre.`
         : 'As chaves existentes já estavam no cofre.',
     )
-    await load()
+    await load(options)
     emit('changed')
   } catch (error) {
+    if (disposed || isAbortError(error)) return
     ui.error(getApiErrorMessage(error, 'Não foi possível importar as chaves existentes.'))
   } finally {
-    busy.value = false
+    if (!disposed) busy.value = false
   }
 }
 
 onMounted(() => void load())
+watch(
+  providerOptions,
+  (options) => {
+    if (!options.some((option) => option.value === provider.value) && options[0]) {
+      provider.value = options[0].value
+    }
+  },
+  { immediate: true },
+)
+onScopeDispose(() => {
+  disposed = true
+  contextController.abort()
+})
 </script>
 
 <template>
@@ -143,8 +226,9 @@ onMounted(() => void load())
       <div>
         <h3>Chaves de API da conta</h3>
         <p class="calendar-config__hint">
-          Dê um nome para cada chave e reutilize-a em vários agentes. O navegador só recebe o
-          provedor e os quatro últimos caracteres.
+          Cadastre quantas chaves quiser — por exemplo “OpenAI principal” e “OpenAI reserva” — e
+          alterne a credencial ativa no Assistente. O navegador só recebe o provedor e os quatro
+          últimos caracteres.
         </p>
       </div>
       <AppPanelButton variant="secondary" :disabled="disabled || busy" @click="importExisting">
@@ -152,7 +236,7 @@ onMounted(() => void load())
       </AppPanelButton>
     </div>
 
-    <details class="settings-collapse" open>
+    <details class="settings-collapse">
       <summary class="settings-collapse__summary">
         <strong class="settings-collapse__title">Nova credencial</strong>
         <span class="material-icons-round settings-collapse__icon">expand_more</span>
@@ -163,16 +247,16 @@ onMounted(() => void load())
           <input
             v-model="name"
             class="calendar-config__input"
-            placeholder="openai_mk"
+            placeholder="Ex.: OpenAI principal"
             :disabled="disabled || busy"
           />
         </label>
         <label class="calendar-config__field">
           <span class="calendar-config__field-label">Provedor</span>
           <select v-model="provider" class="calendar-config__input" :disabled="disabled || busy">
-            <option value="openai">OpenAI</option>
-            <option value="gemini">Gemini</option>
-            <option value="glm">GLM</option>
+            <option v-for="option in providerOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
           </select>
         </label>
         <label class="calendar-config__field cfg-credentials__key">
@@ -200,47 +284,74 @@ onMounted(() => void load())
       Nenhuma credencial cadastrada.
     </p>
     <template v-else>
-      <article v-for="item in credentials" :key="item.id" class="cfg-credentials__item">
-        <div class="cfg-credentials__identity">
-          <input
-            v-model="nameDrafts[item.id]"
-            class="calendar-config__input"
-            aria-label="Nome da credencial"
-            :disabled="disabled || busy"
-          />
-          <p class="calendar-config__hint">{{ item.provider }} ····{{ item.last4 }}</p>
+      <details v-for="item in credentials" :key="item.id" class="settings-collapse">
+        <summary class="settings-collapse__summary">
+          <span class="cfg-credentials__summary-copy">
+            <strong class="settings-collapse__title">{{ item.name }}</strong>
+            <span class="calendar-config__hint">{{ item.provider }} ····{{ item.last4 }}</span>
+          </span>
+          <span class="material-icons-round settings-collapse__icon">expand_more</span>
+        </summary>
+
+        <div class="settings-collapse__body cfg-credentials__item">
+          <span v-if="item.readOnly" class="cfg-credentials__shared-badge">
+            Compartilhada por {{ item.ownerName || 'agência' }}
+          </span>
+
+          <template v-if="!item.readOnly">
+            <label class="calendar-config__field">
+              <span class="calendar-config__field-label">Apelido</span>
+              <input
+                v-model="nameDrafts[item.id]"
+                class="calendar-config__input"
+                aria-label="Nome da credencial"
+                :disabled="disabled || busy"
+              />
+            </label>
+            <AppPanelButton
+              variant="secondary"
+              :disabled="
+                disabled ||
+                busy ||
+                !nameDrafts[item.id]?.trim() ||
+                nameDrafts[item.id]?.trim() === item.name
+              "
+              @click="rename(item)"
+            >
+              Salvar apelido
+            </AppPanelButton>
+
+            <label class="calendar-config__field">
+              <span class="calendar-config__field-label">Nova chave</span>
+              <input
+                v-model="rotateDrafts[item.id]"
+                type="password"
+                autocomplete="off"
+                class="calendar-config__input"
+                placeholder="Cole somente para rotacionar"
+                :disabled="disabled || busy"
+              />
+            </label>
+            <div class="cfg-credentials__actions">
+              <AppPanelButton
+                variant="secondary"
+                :disabled="disabled || busy || !rotateDrafts[item.id]?.trim()"
+                @click="rotate(item)"
+              >
+                Atualizar chave
+              </AppPanelButton>
+              <AppPanelButton variant="ghost" :disabled="disabled || busy" @click="remove(item)">
+                Excluir
+              </AppPanelButton>
+            </div>
+          </template>
+
+          <p v-else class="cfg-credentials__shared-note">
+            Disponível para seleção nesta conta; o segredo só pode ser alterado na agência de
+            origem.
+          </p>
         </div>
-        <AppPanelButton
-          variant="secondary"
-          :disabled="
-            disabled ||
-            busy ||
-            !nameDrafts[item.id]?.trim() ||
-            nameDrafts[item.id]?.trim() === item.name
-          "
-          @click="rename(item)"
-        >
-          Salvar nome
-        </AppPanelButton>
-        <input
-          v-model="rotateDrafts[item.id]"
-          type="password"
-          autocomplete="off"
-          class="calendar-config__input"
-          placeholder="Nova chave para rotacionar"
-          :disabled="disabled || busy"
-        />
-        <AppPanelButton
-          variant="secondary"
-          :disabled="disabled || busy || !rotateDrafts[item.id]?.trim()"
-          @click="rotate(item)"
-        >
-          Atualizar chave
-        </AppPanelButton>
-        <AppPanelButton variant="ghost" :disabled="disabled || busy" @click="remove(item)">
-          Excluir
-        </AppPanelButton>
-      </article>
+      </details>
     </template>
   </div>
 </template>
@@ -249,49 +360,71 @@ onMounted(() => void load())
 .cfg-credentials {
   display: grid;
   gap: 0.8rem;
+  min-width: 0;
+  max-width: 100%;
 }
-.cfg-credentials__intro,
-.cfg-credentials__item {
+.cfg-credentials__intro {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.7rem;
   justify-content: space-between;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .cfg-credentials__intro h3,
 .cfg-credentials__intro p,
 .cfg-credentials__item p {
   margin: 0;
 }
-.cfg-credentials__identity {
+.cfg-credentials__summary-copy {
   display: grid;
-  gap: 0.25rem;
-  min-width: 12rem;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.cfg-credentials__shared-badge {
+  width: fit-content;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid rgb(var(--primary) / 0.4);
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary));
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.cfg-credentials__shared-note {
+  max-width: 22rem;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
 }
 .cfg-credentials__form {
   display: grid;
-  grid-template-columns: 1fr 0.8fr 1.5fr auto;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.7rem;
+  min-width: 0;
 }
 .cfg-credentials__item {
-  padding: 0.75rem;
-  border: 1px solid rgb(var(--border) / 0.65);
-  border-radius: var(--radius-md);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.65rem;
+  min-width: 0;
+  max-width: 100%;
 }
 .cfg-credentials__item .calendar-config__input {
-  max-width: 20rem;
+  width: 100%;
+  max-width: 100%;
+}
+.cfg-credentials__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 @media (max-width: 800px) {
-  .cfg-credentials__intro,
-  .cfg-credentials__item {
-    align-items: stretch;
-    flex-direction: column;
+  .cfg-credentials__intro {
+    display: grid;
   }
-  .cfg-credentials__form {
-    grid-template-columns: 1fr;
-  }
-  .cfg-credentials__item .calendar-config__input {
-    max-width: none;
+  .cfg-credentials__intro :deep(button) {
+    width: 100%;
   }
 }
 </style>

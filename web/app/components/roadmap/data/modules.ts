@@ -9,12 +9,12 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
     priority: "P0",
     category: "operacao-comercial",
     description:
-      "Gestão e relatórios de tráfego pago de Meta (Facebook/Instagram) no painel. Prioridade atual. MVP: conectar + puxar dados + dashboard básico. Plataforma: CRUD de campanha, relatórios ricos, IA e OAuth. Backend Go é a fonte (Marketing API → cache meta_ads.*).",
+      "Gestão e relatórios de tráfego pago de Meta (Facebook/Instagram) no painel, com Assistente 360 compartilhado. Go/PostgreSQL é a fonte autoritativa, resolve conta/cliente/RBAC e mantém writes desligados por padrão até a homologação do executor durável.",
     scope: [
-      "MVP: conectar (System User token) + sync de contas/campanhas/insights + dashboard com gráfico",
-      "Criar/editar/pausar campanhas (manual e por IA)",
-      "Relatórios e dashboards por cliente para decisão",
-      "OAuth Facebook Login + atribuição agência→cliente"
+      "Local: Facebook Login seguro, token cifrado, paginação/snapshots e dashboard de 90 dias",
+      "Local: chat compartilhado com voz, memória, KPIs e cards escopados por surface/RBAC",
+      "Local: vínculos ad account e Page/Instagram→cliente com UI e filtros fail-closed",
+      "Parcial: proposta durável e pause/update; create/duplicate/resume, ad sets/ads/criativos e E2E Graph permanecem pendentes"
     ],
     dependsOn: []
   },

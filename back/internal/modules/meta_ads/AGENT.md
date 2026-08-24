@@ -1,280 +1,251 @@
-# AGENT — Modulo Go `meta_ads`
+# AGENTS — back/internal/modules/meta_ads
 
-Modulo plugavel (Module Registry) de integracao com **Meta/Facebook Ads** dentro do Omni.
-Tenant-aware (schema `meta_ads.*`, `account_id` FK `core.accounts`). Puxa dados da
-Marketing API para o nosso cache (fonte de verdade dos relatorios) e, em fase seguinte,
-cria/edita campanhas. Espelha o modulo `automation` (modulo Go + cliente HTTP externo).
+## Escopo e fonte de verdade
 
-> Regras herdadas (obrigatorias): @AGENT_RULES.md + @docs/ENGINEERING_PRINCIPLES.md.
-> Plano canonico do desenho: docs/meta-ads/PLANO_INTEGRACAO_META_ADS.md.
-> Modelo agencia->cliente (reservado p/ P5): docs/AGENCY_TENANT_ARCHITECTURE.md.
+Estas instruções valem para o módulo Go `meta_ads`. Regras herdadas:
+`AGENT_RULES.md`, `docs/ENGINEERING_PRINCIPLES.md` e
+`docs/meta-ads/ASSISTENTE_360_STATUS_E_ROADMAP.md`.
 
-## Estado: MVP (A1 fundacao + A2 cliente/sync + A3 HTTP) + Assistente MCP (MA2) — 2026-06-11
+Go/PostgreSQL são autoritativos para conexão, inventário, cache de relatórios,
+escopo agência→cliente, policies, propostas e execução. A Graph é uma fonte externa;
+o modelo/LLM nunca fornece IDs, métricas ou autorização por conta própria.
 
-- **MVP:** conectar (System User token cifrado), listar contas de anuncio, sincronizar
-  campanhas + insights diarios (Graph -> cache) e ler KPIs/series/campanhas pelo painel
-  `/meta-ads`. Acesso V0: **so platform_admin** (gating por modulo + bypass do admin).
-- **"Conectou, puxou, apareceu"** = fim do MVP. Write ops (criar/editar/pausar campanha),
-  agregacoes ricas, sync em background, IA e OAuth Facebook Login vem na fase Plataforma
-  (P1-P10, em docs/meta-ads/PLANO_INTEGRACAO_META_ADS.md).
-- **MA2 (assistente MCP):** chat persistido por account (`meta_ads.assistant_messages`) +
-  proxy para o **agent-runner** (sidecar Node, fase MA1) que roda o Claude headless com o
-  MCP oficial da Meta. Pos-acao dispara sync best-effort para o cache refletir na hora.
-  Plano canonico: PLANO_INTEGRACAO_META_ADS.md secao 12 (fases MA1-MA4).
+O produto possui um único chat em `/v1/assistant/chat/*`, implementado no módulo
+Calendar com adapters injetados no composition root. Meta Ads fornece contexto
+read-only, resources/cards e um executor de propostas. Não criar outro histórico,
+prompt, OAuth ou UI de chat neste módulo.
 
-## Estrutura
+## Isolamento e autorização
 
-```
-back/internal/modules/meta_ads/
-  model.go            <- Connection, AdAccount, Campaign, InsightDaily + *View + mappers (FROZEN)
-  model_assistant.go  <- AssistantMessage + AssistantAction/MessageView/SendResult/HealthView (FROZEN)
-  meta_client.go      <- cliente HTTP da Graph/Marketing API (GetAdAccounts/ListCampaigns/GetInsights)
-  meta_client_instagram.go <- cliente Graph p/ Instagram Business (ListPagesWithInstagram/ListInstagramMedia)
-  runner_client.go    <- cliente HTTP do agent-runner (POST /run, GET /healthz, Bearer interno)
-  store_postgres.go   <- persistencia de connections (cifra/decifra token via pgcrypto) + scan helpers
-  store_cache.go      <- persistencia de ad_accounts/campaigns/insights_daily (upserts ON CONFLICT)
-  store_assistant.go  <- persistencia de assistant_messages (List ultimas N reordenadas asc + Insert)
-  service.go          <- conexao + overview + read paths (ad-accounts/campaigns/insights) + KPIs + SetBridgeToken
-  service_sync.go     <- orquestracao do sync Graph -> cache (campanhas + insights nos 2 niveis)
-  service_assistant.go<- historico + send (persiste, roda runner, sync pos-acao) + health
-  service_instagram.go<- bridge do runner: InstagramAccounts/InstagramMedia (token decifrado -> Graph)
-  http.go             <- RegisterRoutes + handlers (overview/connection/ad-accounts) + erro + accountIDFromContext
-  http_reports.go     <- handlers de sync/campaigns/insights
-  http_assistant.go   <- handlers do assistente (messages GET/POST + health) + writeAssistantError
-  http_instagram.go   <- BRIDGE INTERNO do runner (/internal/meta-ads/*, bearer de servico, SEM JWT)
-  module.go           <- adaptador Module Registry (ID/Metadata/Permissions/Build) (FROZEN)
-  AGENT.md            <- este arquivo
-```
+- `accountID` vem de `auth.Principal` hidratado por `RequireAuthWithAccount`; não reler
+  `X-Account-Id` nem aceitar account no body.
+- Toda tabela operacional possui owner `account_id`. Recurso fora de owner/scope
+  retorna `404`.
+- Leituras exigem `meta_ads.view`, sync/mapping/policy/action exigem
+  `meta_ads.manage`, conexão/OAuth exigem `meta_ads.connect`.
+- Conta-cliente pode usar a conexão central da agência canônica somente para ad
+  accounts e identidades Page/Instagram explicitamente vinculadas àquele cliente.
+- O store e o service repetem filtros de organização, conexão ativa, token válido,
+  `is_current` e mapping. Não confiar em filtro do frontend ou do prompt.
+- Permission set não resolvido é fail-closed; owner/platform continuam sujeitos aos
+  guardrails financeiros e ao kill switch.
 
-`model.go`, `model_assistant.go` e `module.go` sao o **contrato congelado** (assinaturas de
-construtor e shapes de View — o front MA3 codifica contra eles). O resto e implementacao
-contra esse contrato. `NewService(store, client, runner)` recebe o RunnerClient desde MA2.
+## Arquitetura atual
 
-## Tabelas (migrations `0149_meta_ads_schema.sql` + `0150_meta_ads_assistant.sql`, idempotentes)
+Arquivos principais:
 
-Convencao multitenant: toda tabela tem `account_id NOT NULL` FK `core.accounts`.
-`organization_id`/`client_account_id` entram **nullable e reservados** (backfill em P5 quando
-o modelo agencia->cliente subir); o MVP **nao** depende deles.
+- `meta_client.go`: Graph read client, paginação por cursor e insights.
+- `meta_client_instagram.go`: Pages/Instagram Business e mídia recente.
+- `meta_client_actions.go`: GET/preflight e POST de ações first-party.
+- `oauth_*.go`: Facebook Login first-party, state hash/TTL/single-use e grants.
+- `store_snapshots.go`: token + ad accounts e reporting snapshots por revision.
+- `store_assistant_context.go` / `assistant_context.go`: projeção bounded para o chat.
+- `store_instagram_mapping.go` / `service_instagram_mapping.go`: Page/IG→cliente.
+- `store_actions.go`, `action_guard.go`, `service_actions.go`: proposal, policy,
+  lifecycle, claim, auditoria e reconcile.
+- `action_connection_lease.go`: token-at-revision sob advisory lock.
+- `action_executor_graph.go` / `action_executor_instagram.go`: executor first-party
+  de campanhas e da árvore de anúncio baseada em post real.
+- `action_steps.go`: recibos at-most-once por campaign/ad set/creative/ad.
+- `http*.go`: handlers finos; validação e autorização permanecem no service/store.
 
-- `meta_ads.connections` — 1 conexao Meta por account. `encrypted_token bytea` cifrado via
-  `pgp_sym_encrypt(token, $key)`; `status` active|revoked. UNIQUE `(account_id)`. O token **nunca**
-  vive na struct `Connection` nem e devolvido ao front — e decifrado sob demanda
-  (`GetDecryptedToken`) so para chamar a Graph.
-- `meta_ads.ad_accounts` — contas de anuncio (`act_...`) descobertas na conexao. UNIQUE
-  `(account_id, meta_ad_account_id)`.
-- `meta_ads.campaigns` — cache de campanhas (sync da Marketing API). `daily_budget`/`lifetime_budget`
-  em `numeric(15,2)` (unidade da moeda, **nao** centavos). UNIQUE `(ad_account_id, meta_campaign_id)`.
-- `meta_ads.insights_daily` — cache de metricas diarias (alimenta graficos). `meta_campaign_id = ''`
-  (string vazia, **nao** NULL) e a linha **agregada da conta** no dia; `<> ''` e por campanha.
-  UNIQUE `(ad_account_id, meta_campaign_id, date)`. Indices `(account_id, date desc)` e
-  `(ad_account_id, date desc)`.
-- `meta_ads.assistant_messages` (0150) — historico do chat do assistente, por account.
-  `role` check `user|assistant`; `actions jsonb` = `[]AssistantAction` (`{tool, summary,
-  status}`) executadas pelo runner, NULL quando a resposta nao executou acao. Indice
-  `(account_id, created_at desc)`. E tambem a **auditoria** do que a IA fez.
+`service_assistant.go`, `store_assistant.go`, `runner_client.go` e o sidecar
+`meta-ads-assistant` são legado/compatibilidade interna. As rotas públicas
+`/v1/meta-ads/assistant/*` não são registradas e têm teste de ausência. O runner
+permanece account-isolated, autenticado e read-only; não é executor de produto.
 
-## Endpoints (`/v1/meta-ads`, JWT + X-Account-Id)
+## Migrations e dados
 
-`accountID` vem do `Principal` (X-Account-Id ou `principal.TenantID`), **nunca** do body.
+- `0149`: `connections`, `ad_accounts`, `campaigns`, `insights_daily`.
+- `0150`/`0151`: histórico/config do assistente legado; não são fonte do chat 360.
+- `0282`: capabilities por surface e `entry_surface` imutável do Assistente 360.
+- `0283`: resources das mensagens e módulos de contexto persistidos.
+- `0284`: referências tenant-scoped às credenciais do cofre compartilhado.
+- `0285`: OAuth states SHA-256, TTL 10 minutos e consumo atômico.
+- `0286`: action policies, proposals e eventos append-only.
+- `0287`: recibos idempotentes de `/ask` e execução atômica dos cards locais do
+  Calendário; embora pertença ao módulo Calendar, integra o contrato compartilhado
+  do Assistente 360.
+- `0288`: vínculo `(ig_user_id,page_id) -> client_account_id`.
+- `0289`: binding ao card, cancelamento e expiração da proposal.
+- `0290`: snapshots/hashes de connection/mapping/policy/campaign e claim guardado.
+- `0291`: connection revision e `is_current` fail-closed para caches.
+- `0292`: credenciais Anthropic no Assistente 360 compartilhado.
+- `0293`: guard BRL também para criação de campanha com budget.
+- `0294`: action `promote_instagram_post` e recibos por etapa da árvore de anúncio.
 
-| Verbo | Path | Permissao | Acao |
-|---|---|---|---|
-| GET | `/v1/meta-ads/overview?adAccountId=` | `meta_ads.view` | status da conexao + KPIs (do cache). Sem conexao: 200 com `connection.connected=false` (NAO e erro) |
-| POST | `/v1/meta-ads/connection` | `meta_ads.connect` | body `{ token }`: valida na Graph, cifra e persiste; descobre/cacheia ad accounts. 201 `ConnectionView` |
-| DELETE | `/v1/meta-ads/connection` | `meta_ads.connect` | remove a conexao (cascade no cache). 204 |
-| GET | `/v1/meta-ads/ad-accounts` | `meta_ads.view` | `[]AdAccountView` do cache (busca ao vivo + popula se vazio) |
-| POST | `/v1/meta-ads/sync` | `meta_ads.view` | body `{ adAccountId }` (ou `?adAccountId=`): sync Graph->cache de campanhas + insights (30d). `SyncResult` |
-| GET | `/v1/meta-ads/campaigns?adAccountId=` | `meta_ads.view` | `[]CampaignView` do cache |
-| GET | `/v1/meta-ads/insights?adAccountId=&range=&level=` | `meta_ads.view` | `[]InsightPoint` do cache. `range` = last_7d/14d/30d/90d (default 30d); `level` = account (default)/campaign |
-| GET | `/v1/meta-ads/assistant/messages?limit=` | `meta_ads.view` | historico do chat: array puro de `AssistantMessageView` em ordem cronologica (ultimas N; default/teto 50) |
-| POST | `/v1/meta-ads/assistant/messages` | `meta_ads.manage` (gating V0: platform_admin) | body `{ message, adAccountId }` (max 64KB; mensagem max 4000 chars): persiste a msg do usuario, roda o runner, persiste a resposta+acoes. 200 `AssistantSendResult` `{ messages: [userView, assistantView], syncTriggered }` |
-| GET | `/v1/meta-ads/assistant/health` | `meta_ads.view` | status do runner: `AssistantHealthView` `{ ok, claudeAuth, detail }`. **200 sempre** (down = `ok:false` + detail `runner_not_configured`/`runner_unreachable`) |
+As migrations 0282–0294 formam a cadeia local do Assistente 360/Meta e devem ser
+validadas na ordem; ausência de um número intermediário não pode ser ignorada.
+Não editar migration aplicada. Mudança posterior usa novo número e backfill seguro.
+Caches legados não comprovados permanecem não atuais até refresh/sync.
 
-**Mapeamento de erro (`writeServiceError`):**
-- nao conectado (sync/campaigns/insights) -> `404 not_connected` "Conecte uma conta Meta primeiro." (`ErrNotConnected`)
-- recurso de outra account / inexistente (`pgx.ErrNoRows`) -> `404 not_found`
-- chave de cifra ausente no connect -> `503 crypto_not_configured` (`ErrCryptoKeyMissing`)
-- falha da Graph (prefixo `meta graph:`) -> `502 meta_error`
-- body invalido / faltando token ou adAccountId -> `400`
-- resto -> `500 internal_error`
+Checkpoint 2026-08-24: staging estava em `0158`; para não pular dependências, a
+sequência pendente `0159–0294` foi aplicada transacionalmente após backup. O banco
+terminou com todos os 13 registros `0282–0294` e voltou ao estado desligado, sem
+deploy da API/web. A integração PostgreSQL
+`TestAgencyTwoClientScopePostgresIntegration` é o gate local de escopo: agência,
+dois clientes e organização externa devem provar mappings, `all`/cliente, contexto
+Instagram e bloqueio cross-org. Ela também protege o cast explícito do owner UUID
+em `ListAssistantAdAccounts`; remover o cast volta a quebrar o primeiro contexto
+Meta conectado com `operator does not exist: uuid = text`.
 
-**Mapeamento de erro do assistente (`writeAssistantError`, http_assistant.go):**
-- mensagem vazia -> `400 missing_message`; acima de 4000 chars -> `400 message_too_long`
-- runner nao configurado (env vazia) -> `503 assistant_not_configured` (`ErrRunnerNotConfigured`)
-- runner falhou (rede/HTTP nao-2xx/JSON invalido) -> `502 assistant_error`
-  "O assistente nao conseguiu responder. Verifique o runner." (`errRunnerFailed`)
-- resto (store) -> `writeServiceError`
+Tokens ficam cifrados com pgcrypto, nunca são devolvidos ou logados. Toda reconexão
+gera nova `connections.revision`; token/expiry e snapshot de ad accounts são gravados
+na mesma transação.
 
-**Shapes do assistente (contrato CONGELADO com o front MA3):**
-- `AssistantMessageView` = `{ id, role: "user"|"assistant", content, actions: AssistantAction[], createdAt }` —
-  `actions` NUNCA e null (sem acoes = `[]`); `createdAt` RFC3339 UTC.
-- `AssistantAction` = `{ tool, summary, status: "ok"|"error" }`.
-- `AssistantSendResult` = `{ messages: AssistantMessageView[2], syncTriggered: bool }`.
-- `AssistantHealthView` = `{ ok, claudeAuth, detail }`.
+## Facebook Login e token manual
 
-## Bridge interno do runner (`/internal/meta-ads/runner/*`, SEM JWT)
+`POST /v1/meta-ads/oauth/start` cria state aleatório, persiste somente o hash e devolve
+a authorization URL. `GET /v1/public/meta-ads/oauth/callback` resolve account/user
+exclusivamente pelo state consumido; nunca por query/body fornecido pelo navegador.
 
-O assistente (runner Node em `meta-ads-assistant/`, processo no **HOST**) precisa das
-postagens recentes do Instagram Business para criar campanhas a partir delas. O MCP
-oficial da Meta **nao tem** ferramenta de feed; o Go ja tem o System User token, entao
-expoe um **bridge interno** que o runner consome.
+O callback troca code→short-lived→long-lived token server-side e exige `granted` em:
 
-> **Gotcha de seguranca:** as rotas `/internal/*` **NAO passam pelo middleware JWT** nem
-> pelo gating de modulo (ficam fora do prefixo `/v1/meta-ads`). A seguranca e: **bearer de
-> servico** (`META_ADS_RUNNER_BRIDGE_TOKEN`, comparado em tempo constante via
-> `bridgeBearerEquals`) **+ rede interna**. O `accountId` vem da query e e confiavel APENAS
-> por estar atras do bearer; ainda assim validamos formato (nao-vazio) e a existencia da
-> conexao Meta (404). Shape de erro **FLAT** `{ "error", "message" }` — distinto do envelope
-> `{ error: { code, message } }` do painel (`httpapi.WriteError`); por isso os handlers do
-> bridge montam o JSON direto com `httpapi.WriteJSON`.
+- `ads_management`;
+- `ads_read`;
+- `business_management`;
+- `pages_show_list`;
+- `pages_read_engagement`;
+- `instagram_basic`.
 
-| Verbo | Path | Resposta 200 |
-|---|---|---|
-| GET | `/internal/meta-ads/runner/instagram/accounts?accountId=<uuid>` | `{ "accounts": [{ igUserId, username, pageId, pageName }] }` |
-| GET | `/internal/meta-ads/runner/instagram/media?accountId=<uuid>&igUserId=<opcional>&limit=<1..20, default 5>` | `{ "media": [{ id, caption, mediaType: IMAGE\|VIDEO\|CAROUSEL_ALBUM, mediaUrl, thumbnailUrl, permalink, timestamp }] }` |
+O fallback manual exige os mesmos grants antes de consultar/salvar ad accounts.
+Missing/declined/provider error não persiste conexão e não reflete token ou corpo livre
+da Meta. Login, 2FA, consentimento, criação do Meta App e app review são etapas humanas.
+Refresh/revogação automática ainda é roadmap.
 
-- `igUserId` vazio = usa a **primeira** conta IG disponivel da conexao. Campos ausentes na
-  Graph viram string vazia (ex.: `thumbnailUrl` so existe para VIDEO). `limit` fora de
-  1..20 -> clamp (`clampMediaLimit`).
-- **Erros do bridge** (`writeBridgeError`/`writeBridgeErrorCode`, shape FLAT):
-  - env `META_ADS_RUNNER_BRIDGE_TOKEN` vazia -> `503 { "error": "bridge_not_configured" }`
-  - token errado / sem Bearer -> `401 { "error": "unauthorized" }`
-  - `accountId` ausente -> `400 { "error": "missing_account_id" }`
-  - account sem conexao Meta ativa -> `404 { "error": "not_connected" }` (`ErrNotConnected`)
-  - falha da Graph -> `502 { "error": "graph_error", "message": "<mensagem da Graph SEM token>" }`
-  - resto -> `500 { "error": "internal_error" }`
-- **Token nunca vaza:** `service_instagram.go` decifra o token sob demanda (`connectionToken`
-  -> `GetConnection` + `GetDecryptedToken`, mesmo caminho do sync) e o passa ao `MetaClient`.
-  A `message` do `graph_error` vem de `graphError` (meta_client.go), que so ecoa a mensagem +
-  status da Graph — a URL com `access_token` **nunca** entra na string de erro.
-- **Cliente Graph (`meta_client_instagram.go`):** `ListPagesWithInstagram` ->
-  `/me/accounts?fields=id,name,instagram_business_account{id,username}&limit=50` (so paginas
-  COM IG Business entram; pagina pelo cursor `paging.cursors.after`, **max 3 paginas**).
-  `ListInstagramMedia` -> `/{ig-user-id}/media?fields=id,caption,media_type,media_url,
-  thumbnail_url,permalink,timestamp&limit={limit}`. Reusa `getJSON` (host de config, timeout
-  15s, contexto, token via query oculto do erro).
-- **Payload do runner (`POST /run`):** ganhou o campo `accountId` (`runner_client.go`
-  `Run(ctx, prompt, history, adAccountID, accountID, opts)`). O runner devolve esse
-  `accountId` ao bridge para buscar o Instagram da conta certa. `AssistantSend` ja tinha o
-  `accountID` em maos. Nenhum outro campo do shape mudou.
+## Snapshot e relatórios
 
-## Cliente Meta (`meta_client.go`)
+O sync:
 
-- Base = `META_ADS_GRAPH_BASE` (default `https://graph.facebook.com/v21.0`). `http.Client` 15s,
-  contexto em toda chamada (`http.NewRequestWithContext`). Auth por `access_token` em query param.
-- `GetAdAccounts` -> `/me/adaccounts?fields=account_id,name,currency,account_status` (tambem **valida**
-  o token no connect).
-- `ListCampaigns` -> `/act_{id}/campaigns?fields=id,name,objective,status,daily_budget,lifetime_budget`
-  (prefixo `act_` garantido por `actPrefixed`).
-- `GetInsights` -> `/act_{id}/insights?level=&date_preset=&time_increment=1&fields=...,actions`.
-- **Paginacao:** MVP le **uma pagina** (campos `data`/`paging.next` mapeados; seguir `next` fica
-  para P3). Limites altos (200 campanhas / 500 insights) cobrem o MVP.
+1. captura owner, ad account e connection revision;
+2. busca todas as páginas de campanhas e os dois níveis de insights `last_90d`,
+   `time_increment=1`, antes de abrir a transação;
+3. se qualquer página/consulta falhar, não altera o banco;
+4. sob lock/revision check, marca ausentes como não atuais e substitui somente o recorte
+   coberto;
+5. token rotacionado durante a busca retorna `connection_changed` e descarta o snapshot.
 
-## Cliente do agent-runner (`runner_client.go`) — contrato CONGELADO com MA1
+List/Get/overview/action/context filtram conexão ativa, token não expirado e recursos
+`is_current`. Snapshot vazio é um zero real, não preserva item antigo.
 
-- Sidecar Node **interno** (rede do compose, profile `meta-ads-assistant`) que roda o Claude
-  headless (assinatura, sem credito de API) com o MCP oficial da Meta. **Nunca exposto ao
-  cliente** — o painel so fala com o Go, que persiste o historico e faz o proxy por account.
-- Config: `META_ADS_ASSISTANT_RUNNER_URL` + `META_ADS_ASSISTANT_TOKEN` (lidas no `Build` do
-  module.go, `strings.TrimSpace`, **sem default no Go** — o compose fornece). Qualquer uma
-  vazia => `ErrRunnerNotConfigured` (503) sem tentar rede.
-- `http.Client` com timeout **150s** (runs sao lentos: Claude + tools MCP), contexto em toda
-  chamada (`http.NewRequestWithContext`), corpo de resposta limitado a 4MB.
-- `Run(ctx, prompt, history, adAccountID, accountID)` -> `POST {base}/run` com `Authorization:
-  Bearer {token}`, body `{"prompt", "history":[{"role","content"}...], "adAccountId",
-  "accountId"}`; resposta `{"reply", "actions":[{"tool","summary","status"}]}`. O `accountId`
-  (nosso ID interno) volta ao **bridge interno** do Go para o runner buscar o feed do Instagram.
-- `Health(ctx)` -> `GET {base}/healthz` -> `{ok, claudeAuth, detail?}`. Resposta fora do
-  contrato vira `ok:false` (sem erro).
+Conversões continuam sendo soma heurística de actions reconhecidas. Não inventar ROAS,
+CPA ou receita até existir fonte/atribuição autoritativa.
 
-## Fluxo do AssistantSend (service_assistant.go)
+## Contexto do Assistente 360
 
-1. Trim + valida a mensagem (vazia -> 400; > 4000 chars -> 400).
-2. **Persiste a msg do usuario primeiro** — se o runner falhar, o que foi digitado nao se perde.
-3. Carrega as ultimas **12** mensagens como historico (excluindo a recem-inserida — ela vai
-   como `prompt`, nao como turno repetido) e chama `runner.Run`.
-4. Persiste a resposta (`reply` + `actions` serializadas em jsonb; sem acoes = NULL).
-5. Se houve acoes **e** veio `adAccountId`: `s.Sync(ctx, accountID, adAccountID)` best-effort
-   (`syncTriggered:true`; falha do sync = so `slog.Warn`, **nao** falha a requisicao).
-6. Devolve as duas Views novas (`messages[0]`=user, `messages[1]`=assistant).
+`AssistantContextBundleForScope` devolve somente dados read-only e não confiáveis para
+o prompt:
 
-## Decisoes de mapeamento (conferir na integracao)
+- conexão;
+- até 12 ad accounts autorizadas;
+- até 100 campanhas atuais;
+- performance por ad account: 30d, 7d, 7d anteriores e série diária;
+- spend, impressions, clicks, reachDailySum, CTR, CPC e conversions;
+- até 12 contas/90 dias/360 pontos, com freshness `fresh|stale|empty`;
+- identidades e até 12 posts reais do Instagram, com autoria Page/IG/cliente.
 
-- **Orcamento (budget):** a Graph devolve `daily_budget`/`lifetime_budget` como **string em centavos**
-  da moeda da conta. `budgetCentsToUnits` divide por 100 -> unidade da moeda (reais/dolares), `*float64`
-  (string vazia -> `nil` = sem aquele tipo de orcamento). A coluna e `numeric(15,2)`.
-- **Conversoes:** derivadas do array `actions` do insight (`conversionsFromActions`), somando os
-  `action_type` de compra/lead/registro (purchase / *_purchase / lead / complete_registration). Sem
-  acao reconhecida -> 0. MVP simples; afinar a lista por objetivo na fase de relatorios (P3).
-- **KPIs do overview:** somatorio dos insights **agregados da conta** (`meta_campaign_id = ''`) na
-  janela de 30d; `CTR = clicks/impressions*100` e `CPC = spend/clicks` recalculados do total (nao media
-  de medias). Zerados (sem erro) quando nao ha `adAccountId` ou nao ha insights.
-- **Sync:** puxa `last_30d` com `time_increment=1` nos **dois niveis** (campanha + agregado da conta) e
-  campanhas; faz upsert (ON CONFLICT) — re-sync e idempotente.
+Flags `adAccountsTruncated`, `campaignsTruncated`, `performanceTruncated` e
+`dailyTruncated` dizem ao modelo que o recorte não é a lista completa. Nunca incluir
+token, segredo, encrypted fields ou payload Graph bruto.
 
-## Gating / permissoes
+No client scope, Instagram exige interseção exata entre identidade atual da Graph e
+mapping 0288. Sem mapping, `scope_unavailable`; não fazer fallback para `accounts[0]`.
 
-- Registrado no Registry em `app.go` (`registry.MustRegister(metaads.New())`) — seeda `core.modules`
-  + permissoes `meta_ads.view` / `meta_ads.manage` / `meta_ads.connect` e o RoleTemplate
-  `meta_ads.manager`. (Registro feito pela fundacao A1.)
-- Rotas gateadas por path (`/v1/meta-ads` -> `meta_ads`) via `RequireModuleByPath` no Chain;
-  o handler so exige `RequireAuth` (sem checagem de permissao por handler, espelhando o automation).
-  **platform_admin tem bypass** -> admins entram; contas sem o modulo habilitado levam
-  `403 module_disabled`. Front: workspace `meta_ads` so em `ROLE_WORKSPACES.platform_admin`
-  (permissions.ts), nav `hidden:true` ate validar o MVP.
+## Propostas e escrita segura
 
-## Seguranca do token (obrigatorio)
+Actions declaradas: `create_campaign`, `duplicate_campaign`, `update_campaign`,
+`pause_campaign`, `resume_campaign`, `promote_instagram_post`. Toda action deve
+continuar fail-closed quando executor, policy, source, mapping ou kill switch não
+permitirem a execução.
 
-- O **System User token** da longa duracao tem acesso total a conta de anuncios -> tratado como
-  segredo. Cifrado at-rest via pgcrypto (`pgp_sym_encrypt`/`pgp_sym_decrypt`, chave
-  `META_ADS_CRYPTO_KEY`). **Nunca** logado (slog so com campos explicitos; nunca o valor do token),
-  **nunca** devolvido ao front (sem campo de token em nenhuma View), so existe em claro dentro do
-  processo Go no instante da chamada a Graph.
-- Sem `META_ADS_CRYPTO_KEY` o connect **falha rapido** com `ErrCryptoKeyMissing` ->
-  `503 crypto_not_configured` (nao grava token em claro).
+Lifecycle:
 
-## Notas de Deploy
+1. intenção fechada é validada e persistida unbound;
+2. somente após a mensagem/card existir, o backend faz source binding;
+3. proposal expira em 30 minutos; rejeição/exclusão cancela durablemente;
+4. confirmação visual ou textual exata revalida principal, scope, capability write,
+   mapping, policy, campaign e snapshots;
+5. claim atômico persiste connection/revision e attempt único antes da Graph;
+6. resposta ambígua vira `unknown`, nunca retry cego; reconcile apenas observa.
 
-- Migrations `0149_meta_ads_schema.sql` (extensao `pgcrypto` + schema `meta_ads`) e
-  `0150_meta_ads_assistant.sql` (`meta_ads.assistant_messages`) — idempotentes, rodam no boot
-  da api. **Rebuild obrigatorio:** `docker compose up -d --build api`.
-- Vars (em `.env.docker.example`, `.env.production.example` **e** `docker-compose.prod.yml`
-  na secao `environment`):
-  - `META_ADS_GRAPH_BASE` (default `https://graph.facebook.com/v21.0`).
-  - `META_ADS_CRYPTO_KEY` (chave simetrica pgcrypto p/ cifrar o token — **obrigatoria p/ conectar**).
-  - `META_ADS_ASSISTANT_RUNNER_URL` (MA2; ex. `http://meta-ads-assistant:8787` — rede interna do
-    compose, **sem default no Go**; vazia = assistente desligado com 503).
-  - `META_ADS_ASSISTANT_TOKEN` (MA2; Bearer interno Go -> runner; vazia = assistente desligado).
-  - `META_ADS_RUNNER_BRIDGE_TOKEN` (bridge `/internal/meta-ads/*`; Bearer de servico runner ->
-    Go; vazia = bridge desligado, `503 bridge_not_configured`). Adicionada em
-    `.env.docker.example` e na secao `environment` do servico `api` em `docker-compose.yml`.
-- O **agent-runner** (container do profile `meta-ads-assistant`, fase MA1) e dependencia do
-  assistente, nao da api: sem ele a api sobe normal e os endpoints `/assistant/*` respondem
-  503/`ok:false`. Relatorios continuam sem container novo (Go -> Graph direto).
-- Ativar o modulo para a conta da agencia: inserir `meta_ads` em `core.account_modules` da conta
-  Crow (ou testar via platform_admin, isento do gating).
+Confirmação textual aceita somente o comando exibido no card:
+`CONFIRMAR META <prefixo>` ou `CONFIRMAR GASTO META <prefixo>`. “Sim” ou
+“confirmar” genérico não executa.
 
-## Gotchas
+Executor concreto atual:
 
-- `meta_campaign_id = ''` (string vazia, nao NULL) e o agregado da conta no `insights_daily` — o
-  UNIQUE deduplica (NULLs seriam distintos). `ListInsights` filtra por `level` usando isso.
-- O cache e a fonte do dashboard: `campaigns`/`insights`/`overview` **leem do cache**, nunca batem na
-  Graph. So `POST /sync` (e o `connect`/ad-accounts-vazio) vao a Graph (principio de performance).
-- `accountStatusLabel` traduz o `account_status` numerico da Graph (1=active, 2=disabled, ...) em
-  rotulo curto guardado em `ad_accounts.status`.
-- 1 conexao por account no MVP (UNIQUE em `account_id`); reconectar com novo token faz upsert
-  (sobrescreve o token cifrado, reativa).
-- `ListAssistantMessages` aplica o limit nas **mais recentes** (subselect `desc limit N`) e
-  reordena `asc` — o front recebe cronologico sem perder as ultimas mensagens.
-- `actions` no JSON do front **nunca** e null: jsonb NULL/invalido vira `[]` no mapper
-  (`toAssistantMessageView`). O `[]AssistantAction` so e gravado quando `len(actions) > 0`.
+- `create_campaign`, sempre `PAUSED`;
+- `duplicate_campaign`, deep copy `PAUSED`;
+- `pause_campaign`;
+- `update_campaign` de nome;
+- `update_campaign` de budget somente em BRL, sob cap e confirmação reforçada;
+- `resume_campaign` somente para budget CBO vivo em BRL dentro do cap;
+- `promote_instagram_post`: revalida mapping + Page/IG + post vivo e cria campaign,
+  ad set, creative e ad; campaign/ad set/ad são `PAUSED` e cada POST tem recibo.
 
-## Guardrails do assistente (MA2/MA4)
+Indisponíveis/fail-closed:
 
-- **Toda acao de escrita exige confirmacao explicita no chat** antes de executar — politica do
-  prompt do runner (MA1/MA4); o Go persiste o dialogo inteiro como trilha de auditoria.
-- **Campanha criada por IA nasce PAUSADA** (regra nativa do MCP oficial da Meta) — ativacao e
-  manual, por humano. E guardrail, nao bug; o painel lembra isso ao usuario.
-- O runner consome a **franquia da assinatura Claude** (mesma cota do Claude Code) — uso interno
-  da agencia; se escalar para clientes, troca-se o driver do runner por API sem mudar este modulo.
-- O token do runner e infra interna (compose) — nunca devolvido ao front nem logado.
+- criação/edição manual genérica de ad sets, ads e creatives fora do fluxo de post;
+- audiences/interesses/exclusões, placements adicionais, bids e schedules livres;
+- qualquer moeda de budget diferente de BRL;
+- retry automático de uma criação externa com resposta incerta.
+
+`META_ADS_WRITES_ENABLED=false` é o default em todos os ambientes. Não ligar antes de
+migrations, Meta App/grants e E2E staging cobrirem timeout, 429, duplo clique, rotação,
+expiry, delete, mapping/policy drift, unknown e reconcile.
+
+O lease de ação mantém um advisory session lock na mesma conexão pgx usada para ler o
+token da revision e durante GET/POST Graph. Reconnect/delete usam o mesmo namespace de
+advisory xact lock e aguardam. Nunca segurar transação PostgreSQL durante chamada Graph.
+
+## Endpoints atuais
+
+Leitura/conexão:
+
+- `GET /v1/meta-ads/overview`
+- `POST|DELETE /v1/meta-ads/connection`
+- `POST /v1/meta-ads/oauth/start`
+- `GET /v1/public/meta-ads/oauth/callback`
+- `GET /v1/meta-ads/ad-accounts`
+- `GET /v1/meta-ads/campaigns`
+- `GET /v1/meta-ads/insights`
+- `POST /v1/meta-ads/sync`
+
+Escopo/policy/actions:
+
+- `PATCH /v1/meta-ads/ad-accounts/{id}/client`
+- `GET|PATCH /v1/meta-ads/instagram-identities[/...]`
+- `GET|PUT /v1/meta-ads/ad-accounts/{id}/action-policy`
+- `GET|POST /v1/meta-ads/action-proposals`
+- `GET /v1/meta-ads/action-proposals/{id}`
+- `POST /v1/meta-ads/action-proposals/{id}/confirm`
+- `POST /v1/meta-ads/action-proposals/{id}/cancel`
+- `POST /v1/meta-ads/action-proposals/{id}/reconcile`
+
+Mutações idempotentes exigem `Idempotency-Key`. Body usa decoder estrito e tamanho
+limitado. Mapear drift/stale/concurrency sem vazar existência de recurso cross-tenant.
+
+## Variáveis
+
+- `META_ADS_GRAPH_BASE`
+- `META_ADS_CRYPTO_KEY`
+- `META_ADS_APP_ID`
+- `META_ADS_APP_SECRET`
+- `META_ADS_OAUTH_REDIRECT_URL`
+- `META_ADS_WRITES_ENABLED` (default obrigatório `false`)
+
+Variáveis `META_ADS_ASSISTANT_*` pertencem ao runner legado e não habilitam o chat 360
+nem writes do executor first-party.
+
+## Validação mínima
+
+- `gofmt` e `go test ./internal/modules/meta_ads ./internal/platform/database`;
+- migration suite completa em PostgreSQL limpo;
+- testes Store reais para snapshot/revision, claim/stale e lease rotate/delete/expiry;
+- `golangci-lint` focado;
+- testes frontend do store, conexão, policy, cards e Assistente 360;
+- `docker compose config` dev/prod;
+- staging E2E antes de alterar o kill switch.
+
+Não executar migrate, deploy, OAuth real, commit ou chamada Graph de write sem a
+autorização correspondente.

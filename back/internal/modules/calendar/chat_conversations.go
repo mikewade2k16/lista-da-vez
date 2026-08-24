@@ -3,9 +3,11 @@ package calendar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
@@ -20,6 +22,8 @@ type ChatAskResult struct {
 	Answer         string
 	ConversationID string
 	Title          string
+	Surface        string
+	Capabilities   []AssistantCapability
 	// Message carrega as propostas (multi-tarefa, WAVE 5.1) no campo Proposals: o front le
 	// dali. A IA propoe; o usuario confirma cada uma e cria pela API autenticada.
 	Message ChatMessageView
@@ -34,6 +38,7 @@ type ChatAskResult struct {
 type ChatConversationSummary struct {
 	ID              string    `json:"id"`
 	Title           string    `json:"title"`
+	Surface         string    `json:"surface"`
 	ScopeMode       string    `json:"scopeMode"`
 	ScopeClientID   string    `json:"scopeClientId"`
 	CreatedByUserID string    `json:"createdByUserId"`
@@ -45,14 +50,15 @@ type ChatConversationSummary struct {
 // Proposals (WAVE 5.1) e a lista autoritativa (multi-tarefa); proposal/proposalStatus
 // (singular) ficam so p/ retrocompat de front antigo.
 type ChatMessageView struct {
-	ID             string           `json:"id"`
-	Role           string           `json:"role"`
-	Content        string           `json:"content"`
-	Proposal       *ChatProposal    `json:"proposal,omitempty"`
-	ProposalStatus string           `json:"proposalStatus"`
-	Proposals      []StoredProposal `json:"proposals"`
-	CalendarItems  []AIContextEvent `json:"calendarItems"`
-	CreatedAt      time.Time        `json:"createdAt"`
+	ID             string              `json:"id"`
+	Role           string              `json:"role"`
+	Content        string              `json:"content"`
+	Proposal       *ChatProposal       `json:"proposal,omitempty"`
+	ProposalStatus string              `json:"proposalStatus"`
+	Proposals      []StoredProposal    `json:"proposals"`
+	CalendarItems  []AIContextEvent    `json:"calendarItems"`
+	Resources      []AssistantResource `json:"resources"`
+	CreatedAt      time.Time           `json:"createdAt"`
 }
 
 type UpdateChatProposalRequest struct {
@@ -63,6 +69,7 @@ type UpdateChatProposalRequest struct {
 type ChatConversationDetail struct {
 	ID            string            `json:"id"`
 	Title         string            `json:"title"`
+	Surface       string            `json:"surface"`
 	ScopeMode     string            `json:"scopeMode"`
 	ScopeClientID string            `json:"scopeClientId"`
 	Messages      []ChatMessageView `json:"messages"`
@@ -86,6 +93,7 @@ type ChatScopeView struct {
 // CreateChatConversationRequest e o body do POST /chat/conversations (contrato D3). O
 // escopo e normalizado server-side (validateScope) — o body nunca decide sozinho.
 type CreateChatConversationRequest struct {
+	Surface       string `json:"surface"`
 	ScopeMode     string `json:"scopeMode"`
 	ScopeClientID string `json:"scopeClientId"`
 	Title         string `json:"title"`
@@ -97,6 +105,7 @@ type chatTarget struct {
 	conv     ChatConversation
 	mode     string
 	clientID string
+	surface  string
 	existing bool
 }
 
@@ -118,14 +127,25 @@ func (s *Service) resolveChatTarget(ctx context.Context, access ChatAccess, acco
 		if !access.canAccessSavedScope(conv.ScopeMode, ptrToStr(conv.ScopeClientID)) {
 			return chatTarget{}, ErrNotFound
 		}
-		return chatTarget{conv: conv, mode: conv.ScopeMode, clientID: normalizeUUID(ptrToStr(conv.ScopeClientID)), existing: true}, nil
+		surface, err := immutableAssistantConversationSurface(conv.EntrySurface, req.Surface)
+		if err != nil {
+			return chatTarget{}, err
+		}
+		return chatTarget{conv: conv, mode: conv.ScopeMode, clientID: normalizeUUID(ptrToStr(conv.ScopeClientID)), surface: surface, existing: true}, nil
 	}
 	scopeClient := firstNonEmpty(strings.TrimSpace(req.ScopeClientID), strings.TrimSpace(req.ClientID))
 	mode, clientID, err := access.validateScope(req.ScopeMode, scopeClient)
 	if err != nil {
 		return chatTarget{}, err
 	}
-	return chatTarget{mode: mode, clientID: clientID, existing: false}, nil
+	surface := AssistantSurfaceCalendar
+	if strings.TrimSpace(req.Surface) != "" {
+		surface, err = normalizeAssistantSurface(req.Surface)
+		if err != nil {
+			return chatTarget{}, err
+		}
+	}
+	return chatTarget{mode: mode, clientID: clientID, surface: surface, existing: false}, nil
 }
 
 // buildChatContext monta o bloco context do payload conforme o escopo (contrato D4): em
@@ -133,38 +153,74 @@ func (s *Service) resolveChatTarget(ctx context.Context, access ChatAccess, acco
 // usa BuildAIContextAll (resumo lean de cada cliente visivel + eventos/nota do mes). O
 // chat tambem recebe as tasks reais do board configurado para poder propor CRUD por ID.
 // O retorno e `any` porque as duas formas tem shapes diferentes no payload.
-func (s *Service) buildChatContext(ctx context.Context, accountID string, principal auth.Principal, access ChatAccess, mode, clientID, month string) (any, error) {
+func (s *Service) buildChatContext(ctx context.Context, accountID string, principal auth.Principal, access ChatAccess, mode, clientID, month string, policy assistantContextPolicy) (any, error) {
 	names := access.clientNameByID()
+	calendarAccountID := access.calendarAccountID(accountID)
 	if mode == chatScopeAll {
-		block, err := s.BuildAIContextAll(ctx, accountID, access.VisibleClientIDs, month)
-		if err != nil {
-			return nil, err
+		block := AIContextAll{
+			Scope:    chatScopeAll,
+			Month:    month,
+			Clients:  make([]AIContextClientLean, 0, len(access.VisibleClientIDs)),
+			Holidays: []Holiday{},
+			Events:   []AIContextEvent{},
+		}
+		if policy.calendar {
+			var err error
+			block, err = s.BuildAIContextAll(ctx, calendarAccountID, access.VisibleClientIDs, month)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			for _, visibleClientID := range capClientIDs(access.VisibleClientIDs, maxContextClients) {
+				block.Clients = append(block.Clients, AIContextClientLean{ID: visibleClientID, Name: names[visibleClientID]})
+			}
 		}
 		// Nomeia todo cliente VISIVEL (nao so os com evento/perfil): loadAccountNames deixa o
 		// resto sem nome e a IA nao conseguia cita-lo ("faltou Duby/Bari"). Fonte = select de
 		// escopo (permission-scoped); nenhum nome novo vaza.
 		fillLeanClientNames(block.Clients, names)
-		block.Tasks = s.chatTasksContext(ctx, accountID, principal, "", access.VisibleClientIDs)
-		block.People = s.chatPeopleContext(ctx, accountID)
-		block.ContentOperations = s.readContentOperations(ctx, accountID, principal, access.VisibleClientIDs)
-		block.MonthNotes = appendContentOperationsReadOnly(block.MonthNotes, block.ContentOperations)
+		if policy.tasks {
+			block.Tasks = s.chatTasksContext(ctx, accountID, principal, "", access.VisibleClientIDs)
+		}
+		if policy.users {
+			block.People = s.chatPeopleContext(ctx, accountID)
+		}
+		if policy.calendar && policy.tasks {
+			block.ContentOperations = s.readContentOperations(ctx, accountID, principal, access.VisibleClientIDs)
+			block.MonthNotes = appendContentOperationsReadOnly(block.MonthNotes, block.ContentOperations)
+		}
 		return block, nil
 	}
-	aic, err := s.BuildAIContext(ctx, accountID, clientID, month)
-	if err != nil {
-		return nil, err
+	block := calendarChatContext{
+		Client:   &planClient{ID: clientID, Name: names[clientID]},
+		Month:    month,
+		Holidays: []Holiday{},
+		Events:   []AIContextEvent{},
+		Plans:    []AIContextPlan{},
 	}
-	block := chatContextFrom(aic)
+	if policy.calendar {
+		aic, err := s.BuildAIContext(ctx, calendarAccountID, clientID, month)
+		if err != nil {
+			return nil, err
+		}
+		block = chatContextFrom(aic)
+	}
 	// Cliente unico em foco: se veio sem nome (sem evento/perfil), usa o nome do select.
 	if block.Client != nil && strings.TrimSpace(block.Client.Name) == "" {
 		if name := strings.TrimSpace(names[block.Client.ID]); name != "" {
 			block.Client.Name = name
 		}
 	}
-	block.Tasks = s.chatTasksContext(ctx, accountID, principal, clientID, []string{clientID})
-	block.People = s.chatPeopleContext(ctx, accountID)
-	block.ContentOperations = s.readContentOperations(ctx, accountID, principal, []string{clientID})
-	block.MonthNotes = appendContentOperationsReadOnly(block.MonthNotes, block.ContentOperations)
+	if policy.tasks {
+		block.Tasks = s.chatTasksContext(ctx, accountID, principal, clientID, []string{clientID})
+	}
+	if policy.users {
+		block.People = s.chatPeopleContext(ctx, accountID)
+	}
+	if policy.calendar && policy.tasks {
+		block.ContentOperations = s.readContentOperations(ctx, accountID, principal, []string{clientID})
+		block.MonthNotes = appendContentOperationsReadOnly(block.MonthNotes, block.ContentOperations)
+	}
 	// Planos sao metadata da conta INTEIRA (todos os clientes); so a agencia ve. Cliente-side
 	// (ou usuario subset) NAO recebe metadata (mes/status/provider) de planos de clientes que
 	// nao pode ver — WAVE 4, achado da revisao.
@@ -222,16 +278,32 @@ func ptrToStr(p *string) string {
 // (nao dos clientes visiveis), entao resolve direto no store (lean).
 func (s *Service) ListChatConversations(ctx context.Context, accountID string, principal auth.Principal) ([]ChatConversationSummary, error) {
 	account := strings.TrimSpace(accountID)
-	isAgency, err := s.store.IsAgencyOfAccount(ctx, account, principal.UserID)
+	access, err := s.resolveChatAccess(ctx, principal, account)
 	if err != nil {
 		return nil, err
 	}
-	convs, err := s.store.ListConversations(ctx, account, principal.UserID, isAgency)
+	convs, err := s.store.ListConversations(ctx, account, principal.UserID, access.IsAgency)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]ChatConversationSummary, 0, len(convs))
+	surfaceAccess := make(map[string]error, 3)
 	for _, c := range convs {
+		if !access.canAccessSavedScope(c.ScopeMode, ptrToStr(c.ScopeClientID)) {
+			continue
+		}
+		surface := strings.TrimSpace(c.EntrySurface)
+		accessErr, checked := surfaceAccess[surface]
+		if !checked {
+			_, accessErr = s.resolveConversationCapabilities(ctx, account, surface, principal)
+			surfaceAccess[surface] = accessErr
+		}
+		if accessErr != nil {
+			if isAssistantConversationAccessDenied(accessErr) {
+				continue
+			}
+			return nil, accessErr
+		}
 		out = append(out, summaryFrom(c, c.CreatedByName))
 	}
 	return out, nil
@@ -255,13 +327,26 @@ func (s *Service) GetChatConversation(ctx context.Context, accountID, id string,
 	if !access.canAccessSavedScope(conv.ScopeMode, ptrToStr(conv.ScopeClientID)) {
 		return ChatConversationDetail{}, ErrNotFound
 	}
+	capabilities, err := s.resolveConversationCapabilities(ctx, account, conv.EntrySurface, principal)
+	if err != nil {
+		if isAssistantConversationAccessDenied(err) {
+			return ChatConversationDetail{}, ErrNotFound
+		}
+		return ChatConversationDetail{}, err
+	}
 	msgs, err := s.store.ListMessages(ctx, account, conv.ID)
+	if err != nil {
+		return ChatConversationDetail{}, err
+	}
+	msgs = filterChatMessagesForCapabilities(msgs, capabilities)
+	msgs, err = hydrateMetaActionProposals(ctx, account, msgs, s.metaAssistantActionStatusProvider)
 	if err != nil {
 		return ChatConversationDetail{}, err
 	}
 	return ChatConversationDetail{
 		ID:            conv.ID,
 		Title:         conv.Title,
+		Surface:       conv.EntrySurface,
 		ScopeMode:     conv.ScopeMode,
 		ScopeClientID: ptrToStr(conv.ScopeClientID),
 		Messages:      toMessageViews(msgs),
@@ -281,8 +366,19 @@ func (s *Service) CreateChatConversation(ctx context.Context, accountID string, 
 	if err != nil {
 		return ChatConversationSummary{}, err
 	}
+	surface := AssistantSurfaceCalendar
+	if strings.TrimSpace(req.Surface) != "" {
+		surface, err = normalizeAssistantSurface(req.Surface)
+		if err != nil {
+			return ChatConversationSummary{}, err
+		}
+	}
+	if _, err = s.resolveConversationCapabilities(ctx, account, surface, principal); err != nil {
+		return ChatConversationSummary{}, err
+	}
 	conv, err := s.store.CreateConversation(ctx, account, principal.UserID, ChatConversationInput{
 		Title:         strings.TrimSpace(req.Title),
+		EntrySurface:  surface,
 		ScopeMode:     mode,
 		ScopeClientID: clientID,
 	})
@@ -296,12 +392,36 @@ func (s *Service) CreateChatConversation(ctx context.Context, accountID string, 
 // fora disso => ErrNotFound/404 (nao vaza existencia).
 func (s *Service) DeleteChatConversation(ctx context.Context, accountID, id string, principal auth.Principal) error {
 	account := strings.TrimSpace(accountID)
-	isAgency, err := s.store.IsAgencyOfAccount(ctx, account, principal.UserID)
+	access, err := s.resolveChatAccess(ctx, principal, account)
 	if err != nil {
 		return err
 	}
-	if _, err := s.authorizeConversation(ctx, ChatAccess{IsAgency: isAgency}, account, id, principal.UserID); err != nil {
+	conv, err := s.authorizeConversation(ctx, access, account, id, principal.UserID)
+	if err != nil {
 		return err
+	}
+	if !access.canAccessSavedScope(conv.ScopeMode, ptrToStr(conv.ScopeClientID)) {
+		return ErrNotFound
+	}
+	if _, err = s.resolveConversationCapabilities(ctx, account, conv.EntrySurface, principal); err != nil {
+		if isAssistantConversationAccessDenied(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	messages, err := s.store.ListMessages(ctx, account, conv.ID)
+	if err != nil {
+		return err
+	}
+	if conversationHasPendingMetaActions(messages) {
+		if s.metaAssistantConversationCancelProvider == nil {
+			return ErrMetaActionNotSucceeded
+		}
+		if err := s.metaAssistantConversationCancelProvider(
+			ctx, account, principal.UserID, conv.ID,
+		); err != nil {
+			return err
+		}
 	}
 	return mapNotFound(s.store.SoftDeleteConversation(ctx, strings.TrimSpace(id), account))
 }
@@ -324,12 +444,118 @@ func (s *Service) UpdateChatProposal(ctx context.Context, accountID, conversatio
 	if err != nil || !access.canAccessSavedScope(conv.ScopeMode, ptrToStr(conv.ScopeClientID)) {
 		return ChatMessageView{}, ErrNotFound
 	}
-	message, err := s.store.SetProposalStatus(ctx, account, conv.ID,
-		strings.TrimSpace(messageID), strings.TrimSpace(proposalID), status)
+	capabilities, err := s.resolveConversationCapabilities(ctx, account, conv.EntrySurface, principal)
 	if err != nil {
-		return ChatMessageView{}, mapNotFound(err)
+		if isAssistantConversationAccessDenied(err) {
+			return ChatMessageView{}, ErrNotFound
+		}
+		return ChatMessageView{}, err
+	}
+	messageID = strings.TrimSpace(messageID)
+	proposalID = strings.TrimSpace(proposalID)
+	current, getErr := s.store.GetMessage(ctx, account, conv.ID, messageID)
+	if getErr != nil {
+		return ChatMessageView{}, mapNotFound(getErr)
+	}
+	proposal, isMetaAction := metaActionProposalFromMessage(current, proposalID)
+	if proposal == nil {
+		return ChatMessageView{}, ErrNotFound
+	}
+	// Compatibilidade segura: o PATCH apenas registra rejeicao de cards locais.
+	// Aceite local sem efeito autoritativo era o contrato legado que permitia ao
+	// front mutar primeiro e apenas "pintar" o card depois. Meta conserva este
+	// caminho porque o seu receipt duravel e validado logo abaixo.
+	if status == "accepted" && !isMetaAction {
+		return ChatMessageView{}, ErrProposalExecutionUnavailable
+	}
+	if isMetaAction {
+		meta := proposal.Fields.MetaAction
+		if meta == nil || !uuidRe.MatchString(strings.TrimSpace(meta.ActionProposalID)) {
+			return ChatMessageView{}, ErrMetaActionNotSucceeded
+		}
+		switch status {
+		case "accepted":
+			if assistantCapabilityMode(capabilities, "meta_ads") != assistantModeWrite ||
+				!canManageMetaActions(principal) {
+				return ChatMessageView{}, ErrForbidden
+			}
+			if s.metaAssistantActionStatusProvider == nil {
+				return ChatMessageView{}, ErrMetaActionNotSucceeded
+			}
+			result, statusErr := s.metaAssistantActionStatusProvider(
+				ctx, account, strings.TrimSpace(meta.ActionProposalID),
+			)
+			if statusErr != nil {
+				return ChatMessageView{}, statusErr
+			}
+			if normalizeMetaActionStatus(result.Status) != "succeeded" {
+				return ChatMessageView{}, ErrMetaActionNotSucceeded
+			}
+		case "rejected":
+			if proposal.Status == "rejected" {
+				if s.metaAssistantActionStatusProvider == nil {
+					return ChatMessageView{}, ErrMetaActionNotSucceeded
+				}
+				result, statusErr := s.metaAssistantActionStatusProvider(
+					ctx, account, strings.TrimSpace(meta.ActionProposalID),
+				)
+				if statusErr != nil {
+					return ChatMessageView{}, statusErr
+				}
+				if normalizeMetaActionStatus(result.Status) != "cancelled" {
+					return ChatMessageView{}, ErrMetaActionNotSucceeded
+				}
+				return messageViewFrom(current), nil
+			}
+			if proposal.Status != "pending" || s.metaAssistantActionCancelProvider == nil {
+				return ChatMessageView{}, ErrMetaActionNotSucceeded
+			}
+			result, cancelErr := s.metaAssistantActionCancelProvider(ctx, MetaAssistantActionLifecycleRequest{
+				AccountID: account, ActorUserID: principal.UserID,
+				ConversationID: conv.ID, MessageID: messageID,
+				ActionProposalID: strings.TrimSpace(meta.ActionProposalID),
+				IdempotencyKey:   "assistant-cancel:" + messageID + ":" + strings.TrimSpace(meta.ActionProposalID),
+			})
+			if cancelErr != nil {
+				return ChatMessageView{}, cancelErr
+			}
+			if normalizeMetaActionStatus(result.Status) != "cancelled" {
+				return ChatMessageView{}, ErrMetaActionNotSucceeded
+			}
+		}
+	}
+	message, err := s.store.SetProposalStatus(ctx, account, conv.ID,
+		messageID, proposalID, status)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) && !errors.Is(err, pgx.ErrNoRows) {
+			return ChatMessageView{}, err
+		}
+		// Replay idempotente: se a primeira resposta PATCH se perdeu, devolve a
+		// mensagem ja resolvida em vez de induzir o front a repetir a mutacao.
+		current, getErr := s.store.GetMessage(ctx, account, conv.ID, messageID)
+		if getErr != nil {
+			return ChatMessageView{}, mapNotFound(getErr)
+		}
+		proposal, _ := metaActionProposalFromMessage(current, proposalID)
+		if proposal == nil || proposal.Status != status {
+			return ChatMessageView{}, ErrNotFound
+		}
+		return messageViewFrom(current), nil
 	}
 	return messageViewFrom(message), nil
+}
+
+func conversationHasPendingMetaActions(messages []ChatMessage) bool {
+	for _, message := range messages {
+		for _, proposal := range message.Proposals {
+			if proposal.Status == "pending" && proposal.Kind == "metaAction" &&
+				proposal.Fields.MetaAction != nil &&
+				uuidRe.MatchString(strings.TrimSpace(proposal.Fields.MetaAction.ActionProposalID)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ChatScope alimenta o SELECT de escopo do front (contrato D3): canSelect + lockedClientId
@@ -353,6 +579,7 @@ func summaryFrom(c ChatConversation, name string) ChatConversationSummary {
 	return ChatConversationSummary{
 		ID:              c.ID,
 		Title:           c.Title,
+		Surface:         c.EntrySurface,
 		ScopeMode:       c.ScopeMode,
 		ScopeClientID:   ptrToStr(c.ScopeClientID),
 		CreatedByUserID: c.CreatedByUserID,
@@ -379,8 +606,11 @@ func messageViewFrom(m ChatMessage) ChatMessageView {
 	if proposals == nil {
 		proposals = []StoredProposal{}
 	}
+	proposals = proposalExecutionViews(proposals, items)
+	resources := sanitizeAssistantResources(m.Resources)
 	return ChatMessageView{ID: m.ID, Role: m.Role, Content: m.Content, Proposal: m.Proposal,
-		ProposalStatus: m.ProposalStatus, Proposals: proposals, CalendarItems: items, CreatedAt: m.CreatedAt}
+		ProposalStatus: m.ProposalStatus, Proposals: proposals, CalendarItems: items,
+		Resources: resources, CreatedAt: m.CreatedAt}
 }
 
 // principalDisplayName resolve um rotulo do autor a partir do Principal (nome > email >

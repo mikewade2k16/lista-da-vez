@@ -7,6 +7,9 @@
   flex-direction: column;
   gap: 0.9rem;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* Nav de abas (pills horizontais; rola em tela estreita). */
@@ -58,6 +61,9 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* Link acionavel dentro de avisos (ex.: "crie um board na pagina de Tasks"). */
@@ -86,6 +92,8 @@
   backdrop-filter: blur(18px) saturate(1.5);
   -webkit-backdrop-filter: blur(18px) saturate(1.5);
   box-shadow: var(--shadow-card);
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Secao larga (perfil do cliente): ocupa a linha inteira do grid da pagina. */
@@ -122,6 +130,8 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
   overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .calendar-config__collapse-head {
@@ -161,6 +171,8 @@
   flex-direction: column;
   gap: 0.6rem;
   padding: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Escopo por cliente (SPEC-F3): empilha os blocos (modo + geral/individual). */
@@ -325,6 +337,9 @@
 }
 
 .calendar-config__input {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: 2.2rem;
   padding: 0 0.6rem;
   border: 1px solid var(--line-soft);

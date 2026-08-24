@@ -107,6 +107,37 @@
   border-bottom: 1px solid var(--line-soft);
 }
 
+.calendar-chat__surface-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.85rem;
+  border-bottom: 1px solid rgb(var(--primary) / 0.22);
+  background: rgb(var(--primary) / 0.08);
+  color: var(--text-main);
+  font-size: 0.72rem;
+}
+
+.calendar-chat__surface-notice > span {
+  flex: 1;
+}
+
+.calendar-chat__surface-switch {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: rgb(var(--primary));
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.calendar-chat__surface-switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .calendar-chat__title {
   display: inline-flex;
   align-items: center;
@@ -369,6 +400,186 @@
   white-space: nowrap;
 }
 
+/* ----- Recursos read-only do Assistente 360 ----------------------------- */
+.calendar-chat__resources {
+  overflow: hidden;
+  border: 1px solid rgb(var(--ring) / 0.28);
+  border-radius: 0.8rem;
+  background: var(--bg-panel);
+}
+
+.calendar-chat__resources-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.calendar-chat__resources-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgb(var(--primary));
+  font-weight: 800;
+}
+
+.calendar-chat__resources-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+}
+
+.calendar-chat__resource {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 34%) 1fr;
+  min-width: 0;
+  min-height: 8.5rem;
+  background: var(--bg-panel);
+}
+
+.calendar-chat__resource:not(:has(.calendar-chat__resource-media)) {
+  grid-template-columns: 1fr;
+}
+
+.calendar-chat__resource-media {
+  display: block;
+  min-height: 8.5rem;
+  overflow: hidden;
+  background: var(--bg-muted);
+}
+
+.calendar-chat__resource-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 8.5rem;
+  object-fit: cover;
+}
+
+.calendar-chat__resource-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.65rem;
+}
+
+.calendar-chat__resource-kicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+
+.calendar-chat__resource-kicker > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  color: rgb(var(--primary));
+  font-weight: 800;
+}
+
+.calendar-chat__resource-status {
+  overflow: hidden;
+  padding: 0.08rem 0.35rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-chat__resource-body > strong {
+  color: var(--text-main);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.calendar-chat__resource-body > p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.calendar-chat__resource-meta {
+  display: grid;
+  gap: 0.12rem;
+  margin: 0;
+  font-size: 0.68rem;
+}
+
+.calendar-chat__resource-meta > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.35rem;
+}
+
+.calendar-chat__resource-meta dt {
+  color: var(--text-muted);
+}
+
+.calendar-chat__resource-meta dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-main);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-chat__resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.calendar-chat__resource-actions a,
+.calendar-chat__resource-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-height: 1.85rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.calendar-chat__resource-actions a {
+  color: var(--text-muted);
+}
+
+.calendar-chat__resource-actions button {
+  border: 1px solid rgb(var(--ring) / 0.42);
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+  cursor: pointer;
+}
+
+.calendar-chat__resource-actions a:hover,
+.calendar-chat__resource-actions button:hover {
+  filter: brightness(1.08);
+}
+
 .calendar-chat__msg--user {
   align-self: flex-end;
   color: rgb(var(--primary));
@@ -615,6 +826,98 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.calendar-chat__proposal-item.is-meta-action {
+  border: 1px solid rgb(var(--primary) / 0.22);
+  background: rgb(var(--primary) / 0.06);
+}
+
+.calendar-chat__meta-summary,
+.calendar-chat__meta-command,
+.calendar-chat__meta-error,
+.calendar-chat__meta-unavailable {
+  margin: 0.22rem 0 0;
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+.calendar-chat__meta-summary {
+  color: var(--text-main);
+}
+
+.calendar-chat__meta-command {
+  display: grid;
+  gap: 0.2rem;
+  color: var(--text-muted);
+}
+
+.calendar-chat__meta-command code {
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid rgb(var(--ring) / 0.3);
+  border-radius: 0.3rem;
+  background: rgb(var(--primary) / 0.08);
+  color: rgb(var(--primary));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.calendar-chat__meta-error,
+.calendar-chat__meta-unavailable {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
+.calendar-chat__meta-error {
+  color: rgb(var(--danger));
+}
+
+.calendar-chat__meta-unavailable {
+  color: var(--text-muted);
+}
+
+.calendar-chat__meta-spend-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  padding: 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 35%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-warning);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.calendar-chat__meta-spend-ack input {
+  margin-top: 0.12rem;
+  accent-color: rgb(var(--primary));
+}
+
+.calendar-chat__meta-reconcile {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: fit-content;
+  margin-top: 0.35rem;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid rgb(var(--ring) / 0.35);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--primary) / 0.08);
+  color: rgb(var(--primary));
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calendar-chat__meta-reconcile:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .calendar-chat__proposal-item-meta {

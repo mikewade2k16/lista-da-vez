@@ -10,6 +10,10 @@ RUN npm ci --omit=dev --no-fund --no-audit
 
 COPY src ./src
 
+# O OAuth e tenant-scoped em /app/.auth/accounts/<accountId>. O diretorio
+# precisa existir com ownership do usuario nao-root antes de receber o volume.
+RUN mkdir -p /app/.auth && chown -R node:node /app/.auth
+
 ENV META_ADS_ASSISTANT_PORT=8765
 EXPOSE 8765
 

@@ -84,6 +84,9 @@ var (
 	ErrTranscribeNotConfigured = errors.New("calendar: transcribe webhook nao configurado")
 	ErrInvalidQuestion         = errors.New("calendar: pergunta invalida")
 	ErrInvalidProposalStatus   = errors.New("calendar: status de proposta invalido")
+	ErrIdempotencyKeyRequired  = errors.New("calendar: idempotency key obrigatoria")
+	ErrIdempotencyConflict     = errors.New("calendar: idempotency conflict")
+	ErrIdempotencyInProgress   = errors.New("calendar: idempotency request em andamento ou incerta")
 	errChatUpstream            = errors.New("calendar: chat upstream falhou")
 )
 
@@ -118,10 +121,16 @@ type chatConfig struct {
 type ChatAskRequest struct {
 	Question       string `json:"question"`
 	ConversationID string `json:"conversationId"`
+	Surface        string `json:"surface"`
 	ClientID       string `json:"clientId"`
 	Month          string `json:"month"`
 	ScopeMode      string `json:"scopeMode"`
 	ScopeClientID  string `json:"scopeClientId"`
+	// AssistantRuntime e marcado apenas pelo alias /v1/assistant/chat. Nao vem do JSON.
+	// Requests legadas continuam usando a configuracao historica do Calendar.
+	AssistantRuntime bool `json:"-"`
+	// IdempotencyKey vem exclusivamente do header Idempotency-Key. Nunca do JSON.
+	IdempotencyKey string `json:"-"`
 	// ViaVoice (WAVE 15): a mensagem veio de TRANSCRICAO DE AUDIO (Whisper/ditado). O prompt
 	// trata erros foneticos como provaveis ("rios" ~ "reels") antes de dizer que nao entendeu.
 	ViaVoice bool `json:"viaVoice"`
@@ -136,6 +145,7 @@ type ChatAskRequest struct {
 type chatWebhookPayload struct {
 	Question   string               `json:"question"`
 	SessionKey string               `json:"sessionKey"`
+	Surface    string               `json:"surface,omitempty"`
 	Language   string               `json:"language"`
 	AI         chatPayloadAI        `json:"ai"`
 	Context    any                  `json:"context"`
@@ -167,15 +177,18 @@ type chatPayloadAI struct {
 // People (WAVE 12) = pessoas da equipe (id+nome, mesmos dados do GET /responsibles):
 // a IA resolve "responsavel vai ser a Iasmin" por NOME sem exigir ID do usuario.
 type calendarChatContext struct {
-	Client            *planClient      `json:"client"`
-	Month             string           `json:"month"`
-	Holidays          []Holiday        `json:"holidays"`
-	MonthNotes        string           `json:"monthNotes"`
-	Events            []AIContextEvent `json:"events"`
-	Tasks             []AIContextTask  `json:"tasks,omitempty"`
-	People            []Member         `json:"people,omitempty"`
-	Plans             []AIContextPlan  `json:"plans"`
-	ContentOperations any              `json:"contentOperations,omitempty"`
+	Client            *planClient           `json:"client"`
+	Month             string                `json:"month"`
+	Holidays          []Holiday             `json:"holidays"`
+	MonthNotes        string                `json:"monthNotes"`
+	Events            []AIContextEvent      `json:"events"`
+	Tasks             []AIContextTask       `json:"tasks,omitempty"`
+	People            []Member              `json:"people,omitempty"`
+	Plans             []AIContextPlan       `json:"plans"`
+	ContentOperations any                   `json:"contentOperations,omitempty"`
+	Capabilities      []AssistantCapability `json:"capabilities,omitempty"`
+	MetaAds           any                   `json:"metaAds,omitempty"`
+	Resources         []AssistantResource   `json:"resources,omitempty"`
 }
 
 // chatAnswer e a resposta do webhook calendar-chat. Proposal (WAVE 5, E7) e opcional: quando
@@ -191,6 +204,9 @@ type chatAnswer struct {
 	// EventIDs contem somente IDs do context.events que a resposta utilizou. O backend
 	// cruza a lista com o contexto autoritativo antes de persistir/exibir qualquer card.
 	EventIDs []string `json:"eventIds"`
+	// ResourceIDs contem somente IDs prefixados do context.resources. O backend ignora
+	// todos os demais campos do modelo e cruza estes IDs com o registry autoritativo.
+	ResourceIDs []string `json:"resourceIds"`
 	// AIError (WAVE 5) = o n8n nao conseguiu falar com o LLM (503/cota/chave/vazio). O
 	// answer traz a mensagem amigavel; o front mostra isso como estado "IA off" (visual
 	// distinto) e o back NAO persiste como mensagem (nao suja a memoria da conversa).
@@ -225,6 +241,7 @@ type ChatProposalFields struct {
 	StartDate     string   `json:"startDate,omitempty"`
 	DueEndDate    string   `json:"dueEndDate,omitempty"`
 	ColumnID      string   `json:"columnId,omitempty"`
+	BoardID       string   `json:"boardId,omitempty"`
 	ClientID      string   `json:"clientId,omitempty"`
 	ClientName    string   `json:"clientName,omitempty"`
 	Archived      *bool    `json:"archived,omitempty"`
@@ -238,6 +255,10 @@ type ChatProposalFields struct {
 	// TaskItem (kind=taskItem): item do checklist de uma task. A task-pai fica em TargetID;
 	// ids/titulos de alvo sao resolvidos novamente no contexto autoritativo antes de persistir.
 	TaskItem *ChatProposalTaskItem `json:"taskItem,omitempty"`
+	// MetaAction e uma intencao fechada. O modelo escolhe apenas IDs presentes no
+	// contexto; o backend deriva a ad account da campanha, cria a proposta duravel
+	// no modulo Meta e persiste aqui somente o snapshot seguro para confirmacao.
+	MetaAction *ChatProposalMetaAction `json:"metaAction,omitempty"`
 }
 
 // sanitizeProposal descarta propostas malformadas e normaliza (action/kind/fields). Despacha a
@@ -268,6 +289,8 @@ func sanitizeProposal(p *ChatProposal) *ChatProposal {
 		ok = sanitizeProfileProposal(action, p.Fields.Profile)
 	case "taskItem":
 		ok = taskItemFieldsValid && sanitizeTaskItemProposal(action, p.Fields)
+	case "metaAction":
+		ok = sanitizeMetaActionIntent(p.Fields.MetaAction)
 	}
 	if !ok {
 		return nil
@@ -294,6 +317,7 @@ func normalizeProposalFields(f *ChatProposalFields) {
 	f.StartDate = strings.TrimSpace(f.StartDate)
 	f.DueEndDate = strings.TrimSpace(f.DueEndDate)
 	f.ColumnID = strings.TrimSpace(f.ColumnID)
+	f.BoardID = strings.TrimSpace(f.BoardID)
 	f.ClientID = strings.TrimSpace(f.ClientID)
 	f.ClientName = strings.TrimSpace(f.ClientName)
 	f.TargetID = strings.TrimSpace(f.TargetID)
@@ -341,11 +365,12 @@ func proposalHasEditableField(f ChatProposalFields) bool {
 // proposta + um id estavel (indice dentro da mensagem) + o status proprio. O front
 // aprova/recusa cada uma pelo id; o status so muda por acao explicita do usuario.
 type StoredProposal struct {
-	ID     string             `json:"id"`
-	Action string             `json:"action"`
-	Kind   string             `json:"kind"`
-	Fields ChatProposalFields `json:"fields"`
-	Status string             `json:"status"`
+	ID        string                     `json:"id"`
+	Action    string                     `json:"action"`
+	Kind      string                     `json:"kind"`
+	Fields    ChatProposalFields         `json:"fields"`
+	Status    string                     `json:"status"`
+	Execution *ChatProposalExecutionView `json:"execution,omitempty"`
 }
 
 // sanitizeProposalList unifica a saida do n8n (lista `proposals` do workflow novo OU o
@@ -457,6 +482,63 @@ func (s *Service) ChatStatus(ctx context.Context, accountID string, principal au
 	return s.pingChatUpstream(ctx)
 }
 
+// AssistantChatStatus faz o mesmo preflight do endpoint legado, mas resolve a
+// configuracao canonica do Omni Chat e devolve a matriz efetiva de capacidades.
+// Durante a transicao, apenas a surface calendar pode reutilizar a chave/config
+// historica quando ainda nao existe credentialId no Automation.
+func (s *Service) AssistantChatStatus(
+	ctx context.Context,
+	accountID string,
+	principal auth.Principal,
+	surface, scopeMode, scopeClientID string,
+) (AssistantStatusView, error) {
+	if !s.chatConfigured() {
+		return AssistantStatusView{}, ErrChatNotConfigured
+	}
+	account := strings.TrimSpace(accountID)
+	surface, err := normalizeAssistantSurface(surface)
+	if err != nil {
+		return AssistantStatusView{}, err
+	}
+	access, err := s.resolveChatAccess(ctx, principal, account)
+	if err != nil {
+		return AssistantStatusView{}, err
+	}
+	mode, clientID, err := access.validateScope(scopeMode, scopeClientID)
+	if err != nil {
+		return AssistantStatusView{}, err
+	}
+	if mode != chatScopeClient {
+		clientID = ""
+	}
+	_, capabilities, runtimeErr := s.resolveAssistantRuntime(ctx, account, surface, principal)
+	if runtimeErr != nil && assistantCalendarFallbackAllowed(runtimeErr, surface) {
+		capabilities, err = s.resolveAssistantCapabilities(ctx, account, surface, principal, legacyCalendarSurfaceModules())
+		if err != nil {
+			return AssistantStatusView{}, err
+		}
+		if !hasEffectiveAssistantCapability(capabilities) {
+			return AssistantStatusView{}, ErrAssistantNoCapability
+		}
+		effAI, configErr := s.EffectiveAIConfig(ctx, account, clientID)
+		if configErr != nil {
+			return AssistantStatusView{}, configErr
+		}
+		if _, configErr = s.resolveDispatchKey(ctx, account, effAI.Enabled, effAI.Provider); configErr != nil {
+			return AssistantStatusView{}, configErr
+		}
+	} else if runtimeErr != nil {
+		return AssistantStatusView{}, runtimeErr
+	}
+	if !assistantSurfaceCapabilityAllowed(surface, capabilities) {
+		return AssistantStatusView{}, ErrAssistantNoCapability
+	}
+	if err := s.pingChatUpstream(ctx); err != nil {
+		return AssistantStatusView{}, err
+	}
+	return AssistantStatusView{Available: true, Surface: surface, Capabilities: capabilities}, nil
+}
+
 // chatHealthEndpoint aponta o webhook para o /healthz da mesma instancia n8n.
 func chatHealthEndpoint(askURL string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(askURL))
@@ -547,6 +629,14 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if question == "" || len([]rune(question)) > maxChatQuestion {
 		return ChatAskResult{}, ErrInvalidQuestion
 	}
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if !validChatIdempotencyKey(idempotencyKey) {
+		return ChatAskResult{}, ErrIdempotencyKeyRequired
+	}
+	idempotencyStore, ok := s.store.(chatAskIdempotencyStore)
+	if !ok {
+		return ChatAskResult{}, ErrIdempotencyInProgress
+	}
 	account := strings.TrimSpace(accountID)
 	access, err := s.resolveChatAccess(ctx, principal, account)
 	if err != nil {
@@ -556,6 +646,7 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if err != nil {
 		return ChatAskResult{}, err
 	}
+	useAssistantRuntime := shouldUseAssistantRuntime(req, target.surface)
 	// Bloco ai EFETIVO + KEY CRUA (server-side) ANTES de materializar/gravar: em 'client'
 	// considera override/kill por cliente (WAVE 3.1); em 'all' usa a config base da conta
 	// (sem cliente unico). Barrar aqui evita conversa orfa quando a IA esta desligada.
@@ -563,17 +654,72 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if target.mode == chatScopeClient {
 		aiClientID = target.clientID
 	}
-	effAI, err := s.EffectiveAIConfig(ctx, account, aiClientID)
+	var (
+		effAI        AIConfig
+		apiKey       string
+		capabilities []AssistantCapability
+		policy       = legacyAssistantPolicy()
+		historyLimit = chatHistoryLimit
+	)
+	if useAssistantRuntime {
+		runtime, resolvedCapabilities, runtimeErr := s.resolveAssistantRuntime(ctx, account, target.surface, principal)
+		switch {
+		case runtimeErr == nil:
+			effAI = assistantAIConfig(runtime)
+			apiKey = runtime.APIKey
+			capabilities = resolvedCapabilities
+			policy = assistantPolicyFrom(capabilities)
+			historyLimit = assistantHistoryLimit(runtime.HistoryWindow)
+		case assistantCalendarFallbackAllowed(runtimeErr, target.surface):
+			capabilities, err = s.resolveAssistantCapabilities(ctx, account, target.surface, principal, legacyCalendarSurfaceModules())
+			if err != nil {
+				return ChatAskResult{}, err
+			}
+			if !hasEffectiveAssistantCapability(capabilities) {
+				return ChatAskResult{}, ErrAssistantNoCapability
+			}
+			effAI, err = s.EffectiveAIConfig(ctx, account, aiClientID)
+			if err != nil {
+				return ChatAskResult{}, err
+			}
+			apiKey, err = s.resolveDispatchKey(ctx, account, effAI.Enabled, effAI.Provider)
+			if err != nil {
+				return ChatAskResult{}, err
+			}
+			policy = assistantPolicyFrom(capabilities)
+		default:
+			return ChatAskResult{}, runtimeErr
+		}
+	} else {
+		effAI, err = s.EffectiveAIConfig(ctx, account, aiClientID)
+		if err != nil {
+			return ChatAskResult{}, err
+		}
+		apiKey, err = s.resolveDispatchKey(ctx, account, effAI.Enabled, effAI.Provider)
+		if err != nil {
+			return ChatAskResult{}, err
+		}
+	}
+	if useAssistantRuntime && !assistantSurfaceCapabilityAllowed(target.surface, capabilities) {
+		return ChatAskResult{}, ErrAssistantNoCapability
+	}
+	requestHash, err := chatAskRequestHash(account, principal.UserID, question, req, target)
 	if err != nil {
 		return ChatAskResult{}, err
 	}
-	apiKey, err := s.resolveDispatchKey(ctx, account, effAI.Enabled, effAI.Provider)
+	claim, err := idempotencyStore.ClaimChatAsk(
+		ctx, account, principal.UserID, idempotencyKey, requestHash, target,
+	)
 	if err != nil {
 		return ChatAskResult{}, err
+	}
+	if !claim.Created {
+		return claim.Response, nil
 	}
 	conv := target.conv
 	if !target.existing {
 		conv, err = s.store.CreateConversation(ctx, account, principal.UserID, ChatConversationInput{
+			EntrySurface:  target.surface,
 			ScopeMode:     target.mode,
 			ScopeClientID: target.clientID,
 		})
@@ -581,36 +727,84 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 			return ChatAskResult{}, err
 		}
 	}
+	if err := idempotencyStore.BindChatAskConversation(
+		ctx, account, principal.UserID, idempotencyKey, conv.ID,
+	); err != nil {
+		return ChatAskResult{}, err
+	}
+	if command, ok := parseMetaTextConfirmationCommand(question); ok {
+		result, commandErr := s.handleMetaTextConfirmation(
+			ctx, account, principal, conv, capabilities, question, command,
+		)
+		if commandErr != nil {
+			return ChatAskResult{}, commandErr
+		}
+		if err := idempotencyStore.CompleteChatAsk(
+			ctx, account, principal.UserID, idempotencyKey, requestHash, result,
+		); err != nil {
+			return ChatAskResult{}, err
+		}
+		return result, nil
+	}
 	// history = ultimas N JA existentes (ANTES de gravar a pergunta atual): a pergunta vai
 	// no campo question, nao no history (o n8n concatena system+history+question, D5).
-	prior, err := s.store.ListLastMessages(ctx, account, conv.ID, chatHistoryLimit)
+	prior, err := s.store.ListLastMessages(ctx, account, conv.ID, historyLimit)
 	if err != nil {
 		return ChatAskResult{}, err
+	}
+	if useAssistantRuntime {
+		prior = filterChatMessagesForCapabilities(prior, capabilities)
 	}
 	if _, err := s.store.AppendMessage(ctx, account, conv.ID, ChatMessageInput{Role: chatRoleUser, Content: question}); err != nil {
 		return ChatAskResult{}, err
 	}
 	contextMonth := inferChatMonth(question, req.Month, time.Now())
-	contextBlock, err := s.buildChatContext(ctx, account, principal, access, target.mode, target.clientID, contextMonth)
+	contextBlock, err := s.buildChatContext(ctx, account, principal, access, target.mode, target.clientID, contextMonth, policy)
 	if err != nil {
 		return ChatAskResult{}, err
 	}
+	var (
+		metaResult       MetaAssistantContextResult
+		resourceRegistry []AssistantResource
+	)
+	if useAssistantRuntime && assistantCapabilityMode(capabilities, "meta_ads") != assistantModeOff && s.metaAssistantContextProvider != nil {
+		resolvedMeta, providerErr := s.metaAssistantContextProvider(ctx, MetaAssistantContextRequest{
+			AccountID:        account,
+			ClientAccountID:  target.clientID,
+			VisibleClientIDs: append([]string(nil), access.VisibleClientIDs...),
+			IsAgency:         access.IsAgency,
+		})
+		if providerErr != nil {
+			return ChatAskResult{}, providerErr
+		}
+		metaResult = resolvedMeta
+		resourceRegistry = sanitizeAssistantResources(resolvedMeta.Resources)
+	}
+	if useAssistantRuntime {
+		contextBlock = attachAssistantContext(contextBlock, capabilities, metaResult.Context, resourceRegistry)
+		effAI.SystemPrompt = assistantSystemPrompt(effAI.SystemPrompt, capabilities, metaResult.Context, resourceRegistry)
+	}
 	// WAVE 14: mes alvo primeiro; titulo citado que NAO esta no mes em foco (tela em outro
 	// mes/ano) e buscado em janela ampla e anexado ao contexto ANTES do LLM.
-	contextBlock = s.appendWideTitleMatches(ctx, account, access, target.mode, target.clientID, contextMonth, question, contextBlock)
+	if policy.calendar {
+		contextBlock = s.appendWideTitleMatches(ctx, access.calendarAccountID(account), access, target.mode, target.clientID, contextMonth, question, contextBlock)
+	}
 	// WAVE 16: no escopo 'all' os clientes vao enxutos; se a pergunta cita UM cliente, hidrata o
 	// perfil COMPLETO dele (ctx.client) para a IA conseguir LER os dados do cliente citado.
-	contextBlock = s.appendNamedClientProfile(ctx, account, question, contextBlock)
+	if policy.calendar {
+		contextBlock = s.appendNamedClientProfile(ctx, access.calendarAccountID(account), question, contextBlock)
+	}
 	payload := chatWebhookPayload{
 		Question:   question,
 		SessionKey: calendarChatSessionKey(account, principal.UserID, conv.ID),
+		Surface:    target.surface,
 		Language:   chatLanguage,
 		AI:         chatPayloadAI{AIConfig: effAI, APIKey: apiKey},
 		Context:    contextBlock,
 		History:    toHistory(prior),
 		ViaVoice:   req.ViaVoice,
 	}
-	answer, proposals, eventIDs, aiError, err := s.postChatAsk(ctx, payload)
+	answer, proposals, eventIDs, resourceIDs, aiError, err := s.postChatAsk(ctx, payload)
 	if err != nil {
 		return ChatAskResult{}, err
 	}
@@ -623,7 +817,12 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	// A conversa ainda e titulada/bumpada (a pergunta do usuario ja foi gravada).
 	var assistant ChatMessage
 	if !aiError {
+		droppedUnauthorizedProposals := 0
+		if useAssistantRuntime {
+			proposals, droppedUnauthorizedProposals = filterAssistantProposals(proposals, capabilities, principal)
+		}
 		items := selectContextEvents(contextEvents(contextBlock), eventIDs)
+		resources := selectAuthorizedAssistantResources(resourceRegistry, resourceIDs)
 		answer = compactCalendarCardAnswer(answer, len(items))
 		evs := contextEvents(contextBlock)
 		tks := contextTasks(contextBlock)
@@ -656,6 +855,9 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 		crit := extractTargetCriteria(question, contextMonth, ctxClients)
 		kept, notice, resolvedTitle := guardProposalTargets(question, proposals, crit, ctxClients, evs, tks)
 		proposals = kept
+		if taskConfigErr := s.prepareTaskProposalExecutionFields(ctx, account, proposals); taskConfigErr != nil {
+			return ChatAskResult{}, taskConfigErr
+		}
 		// WAVE 15: update/delete que sobrou SEM targetId (modelo nao mandou e a guarda nao
 		// resolveu pelo titulo/dia) sai aqui — um PATCH sem alvo nao aplica. Aviso deterministico
 		// no lugar do answer do modelo (que costuma mentir "preparei a proposta").
@@ -672,23 +874,49 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 				notice += " " + taskItemNotice
 			}
 		}
-		if notice != "" {
+		switch {
+		case notice != "":
 			// Barrado (varios/so-tasks/sem-match): o aviso da guarda SUBSTITUI o texto da IA (que
 			// pode estar errado/confuso). O card com a lista de escolha basta.
 			answer = notice
-		} else if resolvedTitle != "" {
+		case resolvedTitle != "":
 			// Resolvido (1 alvo): frase curta e determinista SUBSTITUI o texto da IA (evita a
 			// duplicacao "Vou alterar X" + "encontrei a tarefa X, vou atualizar").
 			answer = "Vou alterar: " + resolvedTitle + ". Revise e confirme no cartao."
+		case droppedUnauthorizedProposals > 0 && len(proposals) == 0:
+			answer = "Posso consultar esses dados, mas nao posso preparar essa alteracao com as permissoes atuais."
+		}
+		messageID, idErr := newAssistantMessageID()
+		if idErr != nil {
+			return ChatAskResult{}, idErr
+		}
+		var droppedMetaActions int
+		proposals, droppedMetaActions, err = prepareMetaActionProposals(
+			ctx, account, principal, conv.ID, messageID, proposals, metaResult,
+			s.metaAssistantActionProvider,
+		)
+		if err != nil {
+			return ChatAskResult{}, err
+		}
+		if droppedMetaActions > 0 && len(proposals) == 0 {
+			answer = "Nao consegui vincular a acao a uma conta ou campanha Meta autorizada. Atualize os dados e tente novamente."
 		}
 		// WAVE 12: resolve os alvos (targetId ja corrigido pela guarda) e anexa o snapshot de cada
 		// alvo aos calendarItems, para o card SEMPRE mostrar o titulo/"antes" do item que sera alterado.
 		targets := resolveProposalTargets(proposals, evs, tks)
 		items = mergeCalendarItems(items, targets)
 		assistant, err = s.store.AppendMessage(ctx, account, conv.ID, ChatMessageInput{
-			Role: chatRoleAssistant, Content: answer,
-			Proposals: storedProposalsFrom(proposals), CalendarItems: items,
+			ID: messageID, Role: chatRoleAssistant, Content: answer,
+			Proposals: storedProposalsFrom(proposals), CalendarItems: items, Resources: resources,
+			ContextModules: assistantContextModules(capabilities),
 		})
+		if err != nil {
+			return ChatAskResult{}, err
+		}
+		assistant.Proposals, err = bindPersistedMetaActionProposals(
+			ctx, account, principal, conv.ID, assistant.ID, assistant.Proposals,
+			s.metaAssistantActionBindProvider, s.metaAssistantActionCancelProvider,
+		)
 		if err != nil {
 			return ChatAskResult{}, err
 		}
@@ -696,8 +924,58 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if err := s.store.TouchConversation(ctx, account, conv.ID, title); err != nil {
 		return ChatAskResult{}, err
 	}
-	return ChatAskResult{Answer: answer, ConversationID: conv.ID, Title: title,
-		Message: messageViewFrom(assistant), AIError: aiError}, nil
+	result := ChatAskResult{Answer: answer, ConversationID: conv.ID, Title: title,
+		Surface: target.surface, Capabilities: capabilities,
+		Message: messageViewFrom(assistant), AIError: aiError}
+	if err := idempotencyStore.CompleteChatAsk(
+		ctx, account, principal.UserID, idempotencyKey, requestHash, result,
+	); err != nil {
+		return ChatAskResult{}, err
+	}
+	return result, nil
+}
+
+func validChatIdempotencyKey(key string) bool {
+	if len(key) < 8 || len(key) > 200 {
+		return false
+	}
+	for _, char := range key {
+		if char < 0x21 || char > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+func chatAskRequestHash(
+	accountID, actorUserID, question string,
+	req ChatAskRequest,
+	target chatTarget,
+) ([]byte, error) {
+	return hashJSON(struct {
+		AccountID               string `json:"accountId"`
+		ActorUserID             string `json:"actorUserId"`
+		Question                string `json:"question"`
+		RequestedConversationID string `json:"requestedConversationId"`
+		Surface                 string `json:"surface"`
+		ScopeMode               string `json:"scopeMode"`
+		ScopeClientID           string `json:"scopeClientId"`
+		Month                   string `json:"month"`
+		ViaVoice                bool   `json:"viaVoice"`
+	}{
+		AccountID: accountID, ActorUserID: actorUserID, Question: question,
+		RequestedConversationID: strings.TrimSpace(req.ConversationID),
+		Surface:                 target.surface, ScopeMode: target.mode, ScopeClientID: target.clientID,
+		Month: strings.TrimSpace(req.Month), ViaVoice: req.ViaVoice,
+	})
+}
+
+// shouldUseAssistantRuntime fecha o bypass do alias legado: uma conversa que
+// nasceu em meta_ads/global nunca pode cair na policy/chave historica do Calendar
+// apenas porque o cliente omitiu surface ao continuar a conversa.
+func shouldUseAssistantRuntime(req ChatAskRequest, targetSurface string) bool {
+	return req.AssistantRuntime || strings.TrimSpace(req.Surface) != "" ||
+		targetSurface != AssistantSurfaceCalendar
 }
 
 // inferChatMonth reconhece formatos comuns em pt-BR para que uma pergunta sobre outro mês
@@ -835,10 +1113,41 @@ func toHistory(msgs []ChatMessage) []chatHistoryMessage {
 				}
 				content += summary
 			}
+			if summary := summarizeAssistantResources(m.Resources); summary != "" {
+				if strings.TrimSpace(content) != "" {
+					content += "\n"
+				}
+				content += summary
+			}
 		}
 		out = append(out, chatHistoryMessage{Role: m.Role, Content: content})
 	}
 	return out
+}
+
+// summarizeAssistantResources devolve memoria textual limitada dos cards
+// read-only. URLs e metadata nao entram no history; o proximo turno recebe apenas
+// tipo, titulo e status suficientes para manter a referencia conversacional.
+func summarizeAssistantResources(resources []AssistantResource) string {
+	if len(resources) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, min(len(resources), maxAssistantResources))
+	for _, resource := range resources {
+		if len(parts) >= maxAssistantResources {
+			break
+		}
+		line := assistantResourceKindLabel(resource.Kind) + ` "` +
+			assistantResourceText(resource.Title, 80) + `"`
+		if status := assistantResourceText(resource.Status, 40); status != "" {
+			line += " (" + status + ")"
+		}
+		parts = append(parts, strconv.Itoa(len(parts)+1)+") "+line)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "[Cards de recursos somente leitura mostrados nesta resposta: " + strings.Join(parts, "; ") + "]"
 }
 
 // summarizeStoredProposals monta o resumo COMPACTO dos cards de uma resposta para virar
@@ -916,6 +1225,22 @@ func describeStoredProposal(p StoredProposal) string {
 				}
 			}
 		}
+	case "metaAction":
+		if f.MetaAction != nil {
+			meta := f.MetaAction
+			seg = []string{metaActionHistoryLabel(meta.Action)}
+			if meta.CampaignName != "" {
+				seg = append(seg, `"`+truncateRunes(meta.CampaignName, 80)+`"`)
+			} else if meta.Name != "" {
+				seg = append(seg, `"`+truncateRunes(meta.Name, 80)+`"`)
+			}
+			if meta.AdAccountName != "" {
+				seg = append(seg, "na conta "+truncateRunes(meta.AdAccountName, 80))
+			}
+			if meta.ActionStatus != "" {
+				seg = append(seg, "execucao "+meta.ActionStatus)
+			}
+		}
 	default: // event/task
 		if strings.TrimSpace(f.Title) != "" {
 			seg = append(seg, `"`+truncateRunes(f.Title, 80)+`"`)
@@ -963,8 +1288,27 @@ func proposalKindLabel(kind string) string {
 		return "anotacao"
 	case "clientProfile":
 		return "perfil do cliente"
+	case "metaAction":
+		return "acao Meta Ads"
 	default:
 		return kind
+	}
+}
+
+func metaActionHistoryLabel(action string) string {
+	switch action {
+	case "create_campaign":
+		return "criar campanha Meta"
+	case "duplicate_campaign":
+		return "duplicar campanha Meta"
+	case "update_campaign":
+		return "editar campanha Meta"
+	case "pause_campaign":
+		return "pausar campanha Meta"
+	case "resume_campaign":
+		return "retomar campanha Meta"
+	default:
+		return "acao Meta Ads"
 	}
 }
 
@@ -1009,29 +1353,32 @@ func calendarChatSessionKey(accountID, userID, conversationID string) string {
 // postChatAsk envia o payload C7 ao webhook calendar-chat e devolve o answer. Erros:
 // errChatUpstream (rede/HTTP nao-2xx/JSON invalido), context.DeadlineExceeded
 // (timeout, puro para o handler mapear em 504).
-func (s *Service) postChatAsk(ctx context.Context, payload chatWebhookPayload) (string, []ChatProposal, []string, bool, error) {
+func (s *Service) postChatAsk(
+	ctx context.Context,
+	payload chatWebhookPayload,
+) (string, []ChatProposal, []string, []string, bool, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", nil, nil, false, fmt.Errorf("%w: %v", errChatUpstream, err)
+		return "", nil, nil, nil, false, fmt.Errorf("%w: %v", errChatUpstream, err)
 	}
 	callCtx, cancel := context.WithTimeout(ctx, chatAskTimeout)
 	defer cancel()
 	raw, status, err := s.doChatRequest(callCtx, s.chat.askURL, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return "", nil, nil, false, err
+		return "", nil, nil, nil, false, err
 	}
 	if status < 200 || status >= 300 {
-		return "", nil, nil, false, fmt.Errorf("%w: http %d", errChatUpstream, status)
+		return "", nil, nil, nil, false, fmt.Errorf("%w: http %d", errChatUpstream, status)
 	}
 	var out chatAnswer
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", nil, nil, false, fmt.Errorf("%w: resposta invalida: %v", errChatUpstream, err)
+		return "", nil, nil, nil, false, fmt.Errorf("%w: resposta invalida: %v", errChatUpstream, err)
 	}
 	// aiError = o LLM falhou (n8n devolveu o aviso amigavel); sem proposta nesse caso.
 	if out.AIError {
-		return out.Answer, nil, nil, true, nil
+		return out.Answer, nil, nil, nil, true, nil
 	}
-	return out.Answer, sanitizeProposalList(out.Proposal, out.Proposals), out.EventIDs, false, nil
+	return out.Answer, sanitizeProposalList(out.Proposal, out.Proposals), out.EventIDs, out.ResourceIDs, false, nil
 }
 
 // ChatTranscribe repassa o audio ao webhook calendar-transcribe (multipart file +
@@ -1066,7 +1413,69 @@ func (s *Service) ChatTranscribe(ctx context.Context, accountID, fileName, conte
 			return "", err
 		}
 	}
-	body, boundary, err := buildTranscribeBody(provider, apiKey, cfg.AI.TranscribeModel, fileName, contentType, content)
+	return s.postTranscription(ctx, provider, apiKey, cfg.AI.TranscribeModel, fileName, contentType, content)
+}
+
+// AssistantChatTranscribe e o caminho canonico do Assistente 360. Diferente do
+// alias Calendar, ele nunca consulta calendar.config/secrets: resolve a matriz e
+// a credencial account-scoped do runtime compartilhado e exige a capability
+// primaria da surface antes de enviar qualquer audio ao workflow.
+func (s *Service) AssistantChatTranscribe(
+	ctx context.Context,
+	accountID string,
+	principal auth.Principal,
+	surface, fileName, contentType string,
+	content []byte,
+) (string, error) {
+	if !s.transcribeConfigured() {
+		return "", ErrTranscribeNotConfigured
+	}
+	provider, apiKey, model, err := s.resolveAssistantTranscription(
+		ctx, strings.TrimSpace(accountID), surface, principal,
+	)
+	if err != nil {
+		return "", err
+	}
+	return s.postTranscription(ctx, provider, apiKey, model, fileName, contentType, content)
+}
+
+func (s *Service) resolveAssistantTranscription(
+	ctx context.Context,
+	accountID, surface string,
+	principal auth.Principal,
+) (string, string, string, error) {
+	surface, err := normalizeAssistantSurface(surface)
+	if err != nil {
+		return "", "", "", err
+	}
+	runtime, capabilities, err := s.resolveAssistantRuntime(ctx, accountID, surface, principal)
+	if err != nil {
+		return "", "", "", err
+	}
+	if !assistantSurfaceCapabilityAllowed(surface, capabilities) {
+		return "", "", "", ErrAssistantNoCapability
+	}
+	provider := strings.ToLower(strings.TrimSpace(runtime.Provider))
+	model := strings.TrimSpace(runtime.Model)
+	switch provider {
+	case "openai":
+		model = "whisper-1"
+	case "gemini":
+		if model == "" {
+			return "", "", "", ErrAssistantRuntimeUnavailable
+		}
+	default:
+		return "", "", "", ErrAssistantRuntimeUnavailable
+	}
+	return provider, runtime.APIKey, model, nil
+}
+
+func (s *Service) postTranscription(
+	ctx context.Context,
+	provider, apiKey, model, fileName, contentType string,
+	content []byte,
+) (string, error) {
+	body, boundary, err := buildTranscribeBody(provider, apiKey, model, fileName, contentType, content)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", errChatUpstream, err)
 	}

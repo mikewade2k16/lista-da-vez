@@ -130,14 +130,27 @@ Este diretório cuida da renderização visual da operação, incluindo:
   exclui logicamente os registros, e o editor usa `OmniEntityDrawer`.
 - Leitura usa `workspace.operacao.view`; acoes administrativas usam
   `queue.communications.manage`.
-- **Configurar o Omni Chat (so platform_admin):** o botao `tune` abre
-  `OperationOmniChatConfigDrawer.vue` no mesmo padrao lateral do Calendario. O
-  drawer controla status, prompt soberano, credencial global da conta,
-  provider/modelo, temperatura e memoria. A persistencia usa
+- **Configurar o Assistente Omni (so platform_admin):** o botao `tune` navega para o editor visual
+  unico em `/calendario?config=ia`. A aba IA do `CalendarConfigDrawer` incorpora
+  `OmniAssistantConfigPanel` e controla status, prompt soberano, credencial global da conta,
+  provider/modelo, temperatura, memoria e a matriz `surfaceModules` (`calendar`,
+  `meta_ads`, `global` x `calendar`, `tasks`, `meta_ads`, `users`, nos modos
+  `off|read|write`). O seletor Calendário/Meta Ads/Geral escolhe qual linha editar. O servidor
+  sempre intersecta os modos solicitados com contrato e RBAC. A persistencia usa
   `GET/PUT /v1/omni-chat/config`; uma unica configuracao vale para todas as lojas
-  e usuarios da account ativa. `ConfigAiCredentials` e o mesmo cofre global
-  reutilizado pelo Omnichannel e pelas transcricoes; nenhuma chave crua entra no
-  componente. O antigo editor inline nao e mais renderizado.
+  e usuarios da account ativa. O painel acessa o mesmo cofre global pela rota neutra
+  `/v1/assistant/ai-credentials` (lista/CRUD/import/modelos), sem depender de o cliente
+  contratar o modulo Omnichannel; `ConfigAiCredentials` e reutilizado com esse base path
+  e nenhuma chave crua entra no
+  componente. Conta cliente sem override recebe config e credencial da agencia canonica da
+  mesma organizacao; o painel mostra a origem herdada e avisa que salvar cria um override
+  explicito. Credenciais herdadas continuam selecionaveis e aptas a listar modelos, mas aparecem
+  read-only e sem acoes de segredo. Trocar `accountId` com a configuração aberta limpa prompt/credenciais no
+  mesmo tick, aborta GET/PUT em voo e so aplica respostas cuja geracao e account
+  ainda coincidam; salvar exige que a configuracao autoritativa da account atual
+  tenha sido carregada. O antigo editor inline nao e mais renderizado. Enquanto o executor
+  idempotente de Meta Ads nao estiver liberado, a matriz exibe aviso explicito de que
+  `write` registra apenas intencao e o backend reduz o modulo a leitura.
 - Em visao de agencia, a account ativa do topo pode ser diferente da dona das
   lojas. `OperationOverviewStore.accountId` e `StoreView.tenantId` resolvem a
   account operacional e ela e enviada explicitamente no `X-Account-Id` do
@@ -350,3 +363,21 @@ Alertas com `displayKind === 'toast'` são controlados por `useContextRealtime.t
 4. Criar regra com `displayKind = fullscreen` → tela inteira
 5. Responder a alerta → desaparece imediatamente
 6. Aplicar regra via "Salvar e aplicar agora" → alertas em andamento são notificados
+
+## Assistente 360 na configuração geral do Calendário
+
+- `OmniAssistantConfigPanel`, incorporado à aba IA do `CalendarConfigDrawer`, usa a rota neutra
+  `/v1/assistant/ai-credentials`; permite várias
+  chaves com apelidos e seleção da ativa por conta/surface.
+- Providers do painel compartilhado: OpenAI, Anthropic, Gemini e GLM. Anthropic sugere
+  `claude-sonnet-4-6`, mas a lista autoritativa vem do endpoint de modelos da credencial.
+- `ConfigAiCredentials` recebe `allowedProviders`; consumidores nativos do Omnichannel mantêm o
+  default antigo e não ganham Anthropic por efeito colateral.
+- Todos os blocos do painel compartilhado iniciam fechados, inclusive `Contas e chaves de IA
+(adicione várias)` e `Nova credencial`, preservando o padrão minimalista dos drawers. Cada
+  credencial existente também é um collapse fechado; formulários e ações usam uma coluna fluida,
+  sem largura mínima que crie scroll lateral. A seleção da ativa fica em `Provedor e modelo` e só
+  entra em vigor ao salvar a configuração.
+- Existe uma única interface visual: o modal original `Configurações do calendário`, aba IA.
+  Engrenagens do chat ou da Operação navegam para `/calendario?config=ia`; não montar drawers de
+  configuração dentro de chats ou módulos.

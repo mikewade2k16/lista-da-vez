@@ -55,6 +55,7 @@ type AIContextAccount struct {
 // montar os cards ricos, portanto uma URL inventada pelo modelo nunca chega ao front.
 type AIContextEvent struct {
 	ID            string      `json:"id"`
+	Version       int         `json:"version,omitempty"`
 	Date          string      `json:"date"`
 	Time          string      `json:"time"`
 	Type          string      `json:"type"`
@@ -242,8 +243,11 @@ type AIContextAll struct {
 	Tasks      []AIContextTask  `json:"tasks,omitempty"`
 	// People (WAVE 12): pessoas da equipe (id+nome) para a IA resolver responsavel/
 	// envolvidos por NOME (mesma fonte do GET /responsibles), sem exigir ID do usuario.
-	People            []Member `json:"people,omitempty"`
-	ContentOperations any      `json:"contentOperations,omitempty"`
+	People            []Member              `json:"people,omitempty"`
+	ContentOperations any                   `json:"contentOperations,omitempty"`
+	Capabilities      []AssistantCapability `json:"capabilities,omitempty"`
+	MetaAds           any                   `json:"metaAds,omitempty"`
+	Resources         []AssistantResource   `json:"resources,omitempty"`
 }
 
 // BuildAIContextAll monta o agregado LEAN multi-cliente (contrato D4) para o chat em

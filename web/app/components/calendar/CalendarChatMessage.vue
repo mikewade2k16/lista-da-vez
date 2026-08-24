@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import CalendarMediaViewer from '~/components/calendar/CalendarMediaViewer.vue'
+import CalendarChatResources from '~/components/calendar/CalendarChatResources.vue'
 import type { CalendarChatMessage } from '~/composables/useCalendarChat'
 import type {
   CalendarChatProposalFields,
   CalendarChatStoredProposal,
   CalendarChatScopeClient,
+  AssistantResource,
 } from '~/domain/calendar/calendar-chat-api'
 import { getApiBase } from '~/utils/api-client'
 import { resolveMediaUrl } from '~/utils/media'
@@ -33,9 +35,16 @@ const props = defineProps<{
 const emit = defineEmits<{
   'accept-selected': [
     messageId: string,
-    items: { id: string; clientId: string; fields?: CalendarChatProposalFields }[],
+    items: {
+      id: string
+      clientId: string
+      fields?: CalendarChatProposalFields
+      acknowledgeSpend?: boolean
+    }[],
   ]
   'reject-selected': [messageId: string, proposalIds: string[]]
+  'reconcile-meta': [messageId: string, proposalId: string]
+  'use-resource': [resource: AssistantResource]
 }>()
 
 const apiBase = getApiBase(useRuntimeConfig())
@@ -55,6 +64,7 @@ const pickId = ref('')
 // Aplicar usamos o rascunho). Alcance = ajustar os campos QUE a IA propos (nao adiciona campos novos).
 const editingIds = ref<Set<string>>(new Set())
 const edits = ref<Map<string, CalendarChatProposalFields>>(new Map())
+const spendAcknowledgements = ref<Map<string, boolean>>(new Map())
 const calendarStore = useCalendarStore()
 const taskItemStatusOptions = [
   { value: 'captured', label: 'Gravado' },
@@ -82,7 +92,26 @@ const falseClaim = computed(
     !props.message.calendarItems.length &&
     FALSE_CLAIM_RE.test(props.message.text || ''),
 )
-const selectedPending = computed(() => pending.value.filter((p) => !excluded.value.has(p.id)))
+function canSelectProposal(p: CalendarChatStoredProposal): boolean {
+  if (p.kind !== 'metaAction') return p.execution?.canConfirm !== false
+  const meta = p.fields.metaAction
+  if (!meta?.actionProposalId) return false
+  if (meta.actionStatus === 'succeeded') return true
+  return meta.actionStatus === 'pending' && meta.executionAvailable && meta.canConfirm
+}
+function canRejectProposal(p: CalendarChatStoredProposal): boolean {
+  if (p.status !== 'pending') return false
+  if (p.kind !== 'metaAction') return true
+  const status = p.fields.metaAction?.actionStatus
+  return (
+    Boolean(p.fields.metaAction?.actionProposalId) &&
+    (status === 'pending' || status === 'cancelled')
+  )
+}
+const rejectablePending = computed(() => pending.value.filter(canRejectProposal))
+const selectedPending = computed(() =>
+  pending.value.filter((p) => canSelectProposal(p) && !excluded.value.has(p.id)),
+)
 const selectedIds = computed(() => selectedPending.value.map((p) => p.id))
 const proposalTargetIds = computed(
   () =>
@@ -114,6 +143,10 @@ function targetTitle(p: CalendarChatStoredProposal): string {
   return calendarProposalTargetTitle(p, previewContext.value)
 }
 function proposalTitle(p: CalendarChatStoredProposal): string {
+  if (p.kind === 'metaAction') {
+    const meta = p.fields.metaAction
+    return meta?.instagramPostTitle || meta?.campaignName || meta?.name || 'Campanha Meta'
+  }
   if (p.kind === 'clientProfile') {
     const cid = resolvedClientId(p)
     return cid ? `Perfil · ${clientName(cid)}` : 'Perfil do cliente'
@@ -137,6 +170,7 @@ function proposalTaskTitle(p: CalendarChatStoredProposal): string {
   return p.kind === 'taskItem' ? String(p.fields.taskItem?.taskTitle || '').trim() : ''
 }
 function proposalChanges(p: CalendarChatStoredProposal) {
+  if (p.kind === 'metaAction') return metaProposalChanges(p)
   return calendarProposalChanges(p, previewContext.value)
 }
 // normName normaliza nome (minusculo, sem acento) para casar cliente por nome.
@@ -175,13 +209,21 @@ function resolvedClientId(p: CalendarChatStoredProposal): string {
 const selectedItems = computed(() =>
   selectedIds.value.map((id) => {
     const p = pending.value.find((x) => x.id === id)!
-    return { id, clientId: resolvedClientId(p), fields: edits.value.get(id) }
+    return {
+      id,
+      clientId: resolvedClientId(p),
+      fields: edits.value.get(id),
+      acknowledgeSpend:
+        p.kind === 'metaAction' && p.fields.metaAction?.requiresSpendAcknowledgement === true
+          ? spendAcknowledgements.value.get(id) === true
+          : undefined,
+    }
   }),
 )
 // needsClient: propostas que EXIGEM um cliente resolvido. Evento/task so no create; perfil do
 // cliente em qualquer acao (WAVE 7); anotacao nunca (e por mes, nao por cliente).
 function needsClient(p: CalendarChatStoredProposal): boolean {
-  if (p.kind === 'note' || p.kind === 'taskItem') return false
+  if (p.kind === 'note' || p.kind === 'taskItem' || p.kind === 'metaAction') return false
   if (p.kind === 'clientProfile') return true
   return p.action === 'create'
 }
@@ -196,6 +238,8 @@ function requestPicker(id: string): void {
 }
 function showClientPicker(p: CalendarChatStoredProposal): boolean {
   if (!isAll.value || p.status !== 'pending' || !props.clients.length) return false
+  if (!canSelectProposal(p)) return false
+  if (p.kind === 'metaAction') return false
   if (p.kind === 'clientProfile') return !resolvedClientId(p)
   if (p.action !== 'create') return false
   return !resolvedClientId(p) || pickerRequested.value.has(p.id)
@@ -204,6 +248,7 @@ function showClientPicker(p: CalendarChatStoredProposal): boolean {
 // como rotulo com a opcao de trocar, em vez de abrir o select sem necessidade.
 function showClientLabel(p: CalendarChatStoredProposal): boolean {
   if (!isAll.value || p.status !== 'pending' || !props.clients.length) return false
+  if (!canSelectProposal(p)) return false
   if (p.kind !== 'event' && p.kind !== 'task') return false
   if (p.action !== 'create') return false
   return Boolean(resolvedClientId(p)) && !pickerRequested.value.has(p.id)
@@ -247,26 +292,39 @@ const missingCount = computed(
 )
 
 function isSelected(id: string): boolean {
-  return !excluded.value.has(id)
+  const proposal = pending.value.find((item) => item.id === id)
+  return Boolean(proposal && canSelectProposal(proposal) && !excluded.value.has(id))
 }
 function toggle(id: string): void {
+  const proposal = pending.value.find((item) => item.id === id)
+  if (!proposal || !canSelectProposal(proposal)) return
   const next = new Set(excluded.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
   excluded.value = next
 }
+function setSpendAcknowledgement(id: string, value: boolean): void {
+  spendAcknowledgements.value = new Map(spendAcknowledgements.value).set(id, value)
+}
 function setItemClient(id: string, clientId: string): void {
   clientOverride.value = new Map(clientOverride.value).set(id, clientId)
 }
 
-function emitCreate(items: { id: string; clientId: string }[]): void {
+function emitCreate(
+  items: {
+    id: string
+    clientId: string
+    fields?: CalendarChatProposalFields
+    acknowledgeSpend?: boolean
+  }[],
+): void {
   askClient.value = false
   picking.value = false
   emit('accept-selected', props.message.id, items)
 }
 // Escopo "todos" com cliente faltando em algum selecionado => abre o popup; senao cria direto.
 function acceptSelected(): void {
-  if (!selectedItems.value.length) return
+  if (!selectedItems.value.length || missingAcknowledgements.value > 0) return
   if (isAll.value && props.clients.length && missingCount.value > 0) {
     askClient.value = true
     picking.value = false
@@ -291,6 +349,11 @@ function applyClientToAll(): void {
       id,
       clientId: resolvedClientId(pending.value.find((x) => x.id === id)!),
       fields: edits.value.get(id),
+      acknowledgeSpend:
+        pending.value.find((x) => x.id === id)?.fields.metaAction?.requiresSpendAcknowledgement ===
+        true
+          ? spendAcknowledgements.value.get(id) === true
+          : undefined,
     })),
   )
 }
@@ -299,14 +362,19 @@ function rejectAll(): void {
   emit(
     'reject-selected',
     props.message.id,
-    pending.value.map((p) => p.id),
+    rejectablePending.value.map((p) => p.id),
   )
 }
 function rejectOne(id: string): void {
   emit('reject-selected', props.message.id, [id])
 }
 
+function reconcileMeta(id: string): void {
+  emit('reconcile-meta', props.message.id, id)
+}
+
 function kindLabel(p: CalendarChatStoredProposal): string {
+  if (p.kind === 'metaAction') return 'Meta Ads'
   if (p.kind === 'task') return 'Tarefa'
   if (p.kind === 'taskItem') return 'Item da tarefa'
   if (p.kind === 'note') return 'Anotação'
@@ -315,6 +383,7 @@ function kindLabel(p: CalendarChatStoredProposal): string {
 }
 // Icone por kind da proposta.
 function kindIcon(p: CalendarChatStoredProposal): string {
+  if (p.kind === 'metaAction') return 'i-lucide-megaphone'
   if (p.kind === 'task') return 'i-lucide-square-check-big'
   if (p.kind === 'taskItem') return 'i-lucide-list-checks'
   if (p.kind === 'note') return 'i-lucide-notebook-pen'
@@ -328,6 +397,7 @@ function showBefore(p: CalendarChatStoredProposal): boolean {
 }
 // Rotulo da acao (CRUD): create=Criar, update=Editar, delete=Excluir.
 function actionLabel(p: CalendarChatStoredProposal): string {
+  if (p.kind === 'metaAction') return metaActionLabel(p)
   if (p.action === 'update') return 'Editar'
   if (p.action === 'delete') return 'Excluir'
   return 'Criar'
@@ -336,16 +406,152 @@ function actionLabel(p: CalendarChatStoredProposal): string {
 // de anotacao/perfil no lote (WAVE 7).
 const anyNonCreate = computed(() =>
   pending.value.some(
-    (p) => p.action !== 'create' || p.kind === 'note' || p.kind === 'clientProfile',
+    (p) =>
+      p.action !== 'create' ||
+      p.kind === 'note' ||
+      p.kind === 'clientProfile' ||
+      p.kind === 'metaAction',
   ),
 )
-const confirmLabel = computed(() => (anyNonCreate.value ? 'Aplicar' : 'Criar'))
+const confirmLabel = computed(() =>
+  selectedPending.value.some((p) => p.kind === 'metaAction')
+    ? 'Confirmar'
+    : anyNonCreate.value
+      ? 'Aplicar'
+      : 'Criar',
+)
 function resolvedStatusLabel(p: CalendarChatStoredProposal): string {
+  if (p.status === 'pending' && p.execution?.canConfirm === false) return 'Indisponível'
   if (p.status === 'rejected') return 'Recusado'
+  if (p.kind === 'metaAction') return 'Executada'
   if (p.action === 'delete') return 'Excluído'
   if (p.action === 'update') return 'Aplicado'
   return 'Criado'
 }
+
+function metaActionLabel(p: CalendarChatStoredProposal): string {
+  switch (p.fields.metaAction?.action) {
+    case 'create_campaign':
+      return 'Criar campanha'
+    case 'duplicate_campaign':
+      return 'Duplicar campanha'
+    case 'update_campaign':
+      return 'Atualizar campanha'
+    case 'pause_campaign':
+      return 'Pausar campanha'
+    case 'resume_campaign':
+      return 'Ativar campanha'
+    case 'promote_instagram_post':
+      return 'Promover post do Instagram'
+    default:
+      return 'Ação Meta'
+  }
+}
+
+function metaStatusLabel(p: CalendarChatStoredProposal): string {
+  if (p.status === 'accepted') return 'Executada'
+  if (p.status === 'rejected') return 'Recusada'
+  switch (p.fields.metaAction?.actionStatus) {
+    case 'executing':
+      return 'Em execução'
+    case 'succeeded':
+      return 'Executada no Meta'
+    case 'failed':
+      return 'Falhou'
+    case 'unknown':
+      return 'Resultado incerto'
+    case 'cancelled':
+      return 'Cancelada no Meta'
+    case 'expired':
+      return 'Expirada'
+    default:
+      return p.fields.metaAction?.canConfirm ? 'Aguardando confirmação' : 'Indisponível'
+  }
+}
+
+function metaTextCommand(p: CalendarChatStoredProposal): string {
+  const meta = p.fields.metaAction
+  const id = meta?.actionProposalId || ''
+  if (p.status !== 'pending' || !id) return ''
+  if (meta.actionStatus !== 'succeeded' && (meta.actionStatus !== 'pending' || !meta.canConfirm)) {
+    return ''
+  }
+  const prefix = id.slice(0, 8).toLowerCase()
+  return `${meta.requiresSpendAcknowledgement ? 'CONFIRMAR GASTO META' : 'CONFIRMAR META'} ${prefix}`
+}
+
+function metaNeedsReconcile(p: CalendarChatStoredProposal): boolean {
+  const status = p.fields.metaAction?.actionStatus
+  return (
+    p.status === 'pending' &&
+    Boolean(p.fields.metaAction?.actionProposalId) &&
+    (status === 'unknown' || status === 'executing')
+  )
+}
+
+function formatMetaBudget(p: CalendarChatStoredProposal): string {
+  const meta = p.fields.metaAction
+  const budget = meta?.budget
+  if (!budget) return ''
+  const currency = /^[A-Z]{3}$/.test(meta.currency) ? meta.currency : 'BRL'
+  const amount = new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(
+    budget.amount,
+  )
+  return `${amount} ${budget.type === 'daily' ? 'por dia' : 'total'}`
+}
+
+function metaProposalChanges(p: CalendarChatStoredProposal) {
+  const meta = p.fields.metaAction
+  if (!meta) return []
+  const changes: { key: string; label: string; before: string; after: string }[] = []
+  if (meta.adAccountName) {
+    changes.push({ key: 'account', label: 'Conta', before: '', after: meta.adAccountName })
+  }
+  if (meta.campaignName) {
+    changes.push({ key: 'campaign', label: 'Campanha', before: '', after: meta.campaignName })
+  }
+  if (meta.name) changes.push({ key: 'name', label: 'Novo nome', before: '', after: meta.name })
+  if (meta.instagramPostTitle || meta.instagramPostId) {
+    changes.push({
+      key: 'instagram-post',
+      label: 'Post do Instagram',
+      before: '',
+      after: meta.instagramPostTitle || meta.instagramPostId,
+    })
+  }
+  if (meta.adSetName) {
+    changes.push({ key: 'ad-set', label: 'Conjunto', before: '', after: meta.adSetName })
+  }
+  if (meta.adName) {
+    changes.push({ key: 'ad', label: 'Anúncio', before: '', after: meta.adName })
+  }
+  if (meta.countries.length || meta.ageMin || meta.ageMax) {
+    const countries = meta.countries.length ? meta.countries.join(', ') : 'não informado'
+    const age = meta.ageMin && meta.ageMax ? `${meta.ageMin}–${meta.ageMax} anos` : 'idade padrão'
+    changes.push({
+      key: 'targeting',
+      label: 'Segmentação',
+      before: '',
+      after: `${countries} · ${age} · somente Instagram`,
+    })
+  }
+  const budget = formatMetaBudget(p)
+  if (budget) changes.push({ key: 'budget', label: 'Orçamento', before: '', after: budget })
+  if (meta.objective) {
+    changes.push({ key: 'objective', label: 'Objetivo', before: '', after: meta.objective })
+  }
+  return changes
+}
+
+const missingAcknowledgements = computed(
+  () =>
+    selectedPending.value.filter(
+      (p) =>
+        p.kind === 'metaAction' &&
+        p.fields.metaAction?.requiresSpendAcknowledgement === true &&
+        spendAcknowledgements.value.get(p.id) !== true,
+    ).length,
+)
 function proposalDate(p: CalendarChatStoredProposal): string {
   const f = p.fields || {}
   if (p.kind === 'taskItem') {
@@ -379,6 +585,12 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
     <div class="calendar-chat__msg" :class="`calendar-chat__msg--${message.role}`">
       {{ message.text }}
     </div>
+
+    <CalendarChatResources
+      v-if="message.role === 'assistant'"
+      :resources="message.resources"
+      @use="emit('use-resource', $event)"
+    />
 
     <p v-if="falseClaim" class="calendar-chat__false-claim" role="note">
       <UIcon name="i-lucide-shield-alert" aria-hidden="true" />
@@ -480,10 +692,14 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
             v-for="p in message.proposals"
             :key="p.id"
             class="calendar-chat__proposal-item"
-            :class="{ 'is-resolved': p.status !== 'pending', 'is-delete': p.action === 'delete' }"
+            :class="{
+              'is-resolved': p.status !== 'pending',
+              'is-delete': p.action === 'delete',
+              'is-meta-action': p.kind === 'metaAction',
+            }"
           >
             <label
-              v-if="p.status === 'pending'"
+              v-if="p.status === 'pending' && canSelectProposal(p)"
               class="calendar-chat__proposal-check"
               :title="isSelected(p.id) ? 'Não aplicar esta' : 'Aplicar esta'"
             >
@@ -494,15 +710,23 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
                 @change="toggle(p.id)"
               />
             </label>
-            <span v-else class="calendar-chat__proposal-state" :class="`is-${p.status}`">
-              {{ resolvedStatusLabel(p) }}
+            <span
+              v-else
+              class="calendar-chat__proposal-state"
+              :class="
+                p.kind === 'metaAction'
+                  ? `is-${p.fields.metaAction?.actionStatus || p.status}`
+                  : `is-${p.execution?.status || p.status}`
+              "
+            >
+              {{ p.kind === 'metaAction' ? metaStatusLabel(p) : resolvedStatusLabel(p) }}
             </span>
 
             <div class="calendar-chat__proposal-item-body">
               <strong>{{ proposalTitle(p) }}</strong>
               <span class="calendar-chat__proposal-item-meta">
                 <span
-                  v-if="p.action !== 'create'"
+                  v-if="p.action !== 'create' || p.kind === 'metaAction'"
                   class="calendar-chat__proposal-action"
                   :class="`is-${p.action}`"
                 >
@@ -513,6 +737,19 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
                 <template v-if="proposalTaskTitle(p)">· {{ proposalTaskTitle(p) }}</template>
                 <template v-if="proposalDate(p)">· {{ proposalDate(p) }}</template>
               </span>
+              <p
+                v-if="p.kind === 'metaAction' && p.fields.metaAction?.summary"
+                class="calendar-chat__meta-summary"
+              >
+                {{ p.fields.metaAction.summary }}
+              </p>
+              <p
+                v-if="p.kind === 'metaAction' && metaTextCommand(p)"
+                class="calendar-chat__meta-command"
+              >
+                Confirme pelo cartao ou envie exatamente:
+                <code>{{ metaTextCommand(p) }}</code>
+              </p>
               <dl
                 v-if="!isEditing(p.id) && proposalChanges(p).length"
                 class="calendar-chat__proposal-diff"
@@ -528,6 +765,67 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
                   </dd>
                 </div>
               </dl>
+              <p
+                v-if="p.kind === 'metaAction' && p.fields.metaAction?.errorMessage"
+                class="calendar-chat__meta-error"
+                role="alert"
+              >
+                <UIcon name="i-lucide-triangle-alert" aria-hidden="true" />
+                <span>{{ p.fields.metaAction.errorMessage }}</span>
+              </p>
+              <p
+                v-else-if="
+                  p.kind === 'metaAction' &&
+                  p.status === 'pending' &&
+                  !p.fields.metaAction?.executionAvailable
+                "
+                class="calendar-chat__meta-unavailable"
+              >
+                Esta ação fica registrada para revisão, mas ainda não pode ser executada.
+              </p>
+              <p
+                v-else-if="
+                  p.kind !== 'metaAction' &&
+                  p.status === 'pending' &&
+                  p.execution?.canConfirm === false
+                "
+                class="calendar-chat__meta-unavailable"
+              >
+                {{ p.execution?.message || 'Este card não possui um executor seguro no backend.' }}
+              </p>
+
+              <label
+                v-if="
+                  p.kind === 'metaAction' &&
+                  p.status === 'pending' &&
+                  canSelectProposal(p) &&
+                  p.fields.metaAction?.requiresSpendAcknowledgement
+                "
+                class="calendar-chat__meta-spend-ack"
+              >
+                <input
+                  type="checkbox"
+                  :checked="spendAcknowledgements.get(p.id) === true"
+                  :disabled="busy"
+                  @change="
+                    setSpendAcknowledgement(p.id, ($event.target as HTMLInputElement).checked)
+                  "
+                />
+                <span>
+                  Estou ciente de que esta alteração pode ativar ou modificar gastos no Meta Ads.
+                </span>
+              </label>
+
+              <button
+                v-if="metaNeedsReconcile(p)"
+                type="button"
+                class="calendar-chat__meta-reconcile"
+                :disabled="busy"
+                @click="reconcileMeta(p.id)"
+              >
+                <UIcon name="i-lucide-refresh-cw" aria-hidden="true" />
+                Reconciliar resultado no Meta
+              </button>
               <p
                 v-else-if="!isEditing(p.id) && showBefore(p)"
                 class="calendar-chat__proposal-nochange"
@@ -619,7 +917,7 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
 
               <!-- Editar inline: abre/fecha os inputs dos campos propostos (WAVE 9). -->
               <button
-                v-if="p.status === 'pending'"
+                v-if="p.status === 'pending' && p.kind !== 'metaAction' && canSelectProposal(p)"
                 type="button"
                 class="calendar-chat__proposal-edit-toggle"
                 :disabled="busy"
@@ -634,7 +932,7 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
             </div>
 
             <button
-              v-if="p.status === 'pending'"
+              v-if="canRejectProposal(p)"
               type="button"
               class="calendar-chat__proposal-remove"
               :disabled="busy"
@@ -688,6 +986,7 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
 
         <div v-else-if="pending.length" class="calendar-chat__proposal-actions">
           <button
+            v-if="rejectablePending.length"
             type="button"
             class="calendar-chat__proposal-dismiss"
             :disabled="busy"
@@ -698,7 +997,7 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
           <button
             type="button"
             class="calendar-chat__proposal-confirm"
-            :disabled="busy || !selectedIds.length"
+            :disabled="busy || !selectedIds.length || missingAcknowledgements > 0"
             @click="acceptSelected"
           >
             <UIcon
@@ -712,6 +1011,9 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
               selectedIds.length === 1 ? '' : 's'
             }}
           </button>
+          <span v-if="missingAcknowledgements > 0" class="calendar-chat__meta-ack-hint">
+            Confirme a ciência de gasto para continuar.
+          </span>
         </div>
       </template>
     </section>

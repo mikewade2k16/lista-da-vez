@@ -1,14 +1,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useCoreAccountStore } from '../../layers/core/stores/account'
+import type { AssistantChatSurface } from '~/domain/calendar/calendar-chat-api'
 import { useCalendarStore } from '~/stores/calendar'
 import type { CalendarChatConfig, CalendarChatPosition } from '~/utils/calendar'
 
-// Layout + persistencia da janela de chat do Calendario (SPEC-F2, contrato CHATUI).
-// Extraido do CalendarChatPanel.vue para manter o componente < 450 linhas. Calcula a
-// caixa (px) da janela a partir da area interna do calendario (.calendar-page) e de
-// config.chat (center = largura da area; left = ~painel esquerdo; right = ~modal
-// direito), redimensiona por arrasto (molde do OmniEntityDrawer) e persiste em
-// config.chat via store.saveConfig (debounced). O banco e' a fonte unica; o rascunho
-// local so vence enquanto ha save pendente (principio 1).
+// Layout da janela compartilhada do assistente. Na surface Calendar preserva o contrato
+// historico e persiste em calendar.config.chat SOMENTE depois de a configuracao da account
+// estar hidratada. Meta/global usam memoria isolada por account+surface: nunca fazem o PUT
+// full-replace do Calendar a partir de defaults.
 
 // Margens/limites da janela (px).
 const AREA_MARGIN = 12
@@ -24,6 +23,7 @@ const CENTER_W_MIN = 520
 // Piso do topo: garante que a janela NUNCA cubra a barra de menu do painel, mesmo se a
 // medicao da area do calendario falhar (header do dashboard ~3rem + folga).
 const HEADER_SAFE = 64
+const DEFAULT_CHAT_LAYOUT: CalendarChatConfig = { position: 'center', width: 0, height: 0 }
 
 interface AreaRect {
   left: number
@@ -32,21 +32,59 @@ interface AreaRect {
   height: number
 }
 
-export function useCalendarChatWindow() {
+export function shouldPersistAssistantWindowLayout(
+  surface: AssistantChatSurface,
+  calendarConfigLoaded: boolean,
+): boolean {
+  return surface === 'calendar' && calendarConfigLoaded
+}
+
+export function useCalendarChatWindow(
+  anchorSelector: () => string = () => '.calendar-page',
+  surface: () => AssistantChatSurface = () => 'calendar',
+) {
   const store = useCalendarStore()
+  const accountStore = useCoreAccountStore()
 
   // Retangulo da area interna do calendario (.calendar-page), base do posicionamento.
   const areaRect = ref<AreaRect>({ left: 0, top: 0, width: 0, height: 0 })
   const resizing = ref(false)
 
-  // Rascunho local do layout: dirige o estilo na hora e agenda o PUT debounced.
-  const localChat = ref<CalendarChatConfig>({ ...store.config.chat })
+  // Layouts nao-Calendar sao efemeros e escopados. Nao usam localStorage nem o banco do
+  // Calendar; ao trocar account nunca reaproveitam medidas da account anterior.
+  const transientLayouts = useState<Record<string, CalendarChatConfig>>(
+    'assistant-chat:window-layouts',
+    () => ({}),
+  )
+  const localChat = ref<CalendarChatConfig>({ ...DEFAULT_CHAT_LAYOUT })
   let savePending = false
   let saveTimer = 0
+  let contextGeneration = 0
+
+  function activeAccountId(): string {
+    return String(accountStore.activeAccountId || '').trim()
+  }
+
+  function transientLayoutKey(): string {
+    return `${activeAccountId() || 'no-account'}:${surface()}`
+  }
+
+  function layoutForCurrentContext(): CalendarChatConfig {
+    if (shouldPersistAssistantWindowLayout(surface(), store.isConfigLoaded)) {
+      return { ...store.config.chat }
+    }
+    if (surface() === 'calendar') return { ...DEFAULT_CHAT_LAYOUT }
+    return { ...(transientLayouts.value[transientLayoutKey()] ?? DEFAULT_CHAT_LAYOUT) }
+  }
+
+  function clearSaveTimer(): void {
+    if (typeof window !== 'undefined' && saveTimer) window.clearTimeout(saveTimer)
+    saveTimer = 0
+  }
 
   function measureArea(): void {
     if (typeof document === 'undefined') return
-    const el = document.querySelector('.calendar-page') as HTMLElement | null
+    const el = document.querySelector(anchorSelector()) as HTMLElement | null
     const rect = el?.getBoundingClientRect()
     if (rect && rect.width > 0) {
       // top NUNCA acima do header (evita cobrir o menu quando o calendario encosta no topo).
@@ -68,24 +106,62 @@ export function useCalendarChatWindow() {
     }
   }
 
-  // Re-hidrata de store.config.chat quando muda por fora, EXCETO com save pendente.
+  // Trocar surface/account cancela qualquer debounce e troca imediatamente para o layout
+  // daquele contexto. Calendar sem GET concluido usa somente o default visual, sem PUT.
+  watch(
+    [surface, () => accountStore.activeAccountId, () => store.isConfigLoaded],
+    () => {
+      contextGeneration += 1
+      clearSaveTimer()
+      savePending = false
+      localChat.value = layoutForCurrentContext()
+      measureArea()
+    },
+    { immediate: true },
+  )
+
+  // Re-hidrata do banco apenas na surface Calendar e somente para a account carregada,
+  // EXCETO enquanto o proprio save deste layout esta pendente.
   watch(
     () => store.config.chat,
     (value) => {
-      if (!savePending && value) localChat.value = { ...value }
+      if (surface() === 'calendar' && store.isConfigLoaded && !savePending && value) {
+        localChat.value = { ...value }
+      }
     },
     { deep: true },
   )
 
   function applyChat(next: CalendarChatConfig): void {
     localChat.value = next
+    if (surface() !== 'calendar') {
+      transientLayouts.value = {
+        ...transientLayouts.value,
+        [transientLayoutKey()]: { ...next },
+      }
+      return
+    }
+    // Nunca salva o objeto default antes de fetchConfig concluir para a account ativa.
+    if (!shouldPersistAssistantWindowLayout(surface(), store.isConfigLoaded)) return
+
     savePending = true
-    if (saveTimer) window.clearTimeout(saveTimer)
+    clearSaveTimer()
+    const generation = contextGeneration
+    const accountId = activeAccountId()
     saveTimer = window.setTimeout(() => {
       saveTimer = 0
+      if (
+        generation !== contextGeneration ||
+        surface() !== 'calendar' ||
+        activeAccountId() !== accountId ||
+        !shouldPersistAssistantWindowLayout(surface(), store.isConfigLoaded)
+      ) {
+        savePending = false
+        return
+      }
       // saveConfig faz full-replace do config; mantem as demais secoes e troca so chat.
       void store.saveConfig({ ...store.config, chat: { ...localChat.value } }).finally(() => {
-        savePending = false
+        if (generation === contextGeneration) savePending = false
       })
     }, 600)
   }
@@ -178,7 +254,7 @@ export function useCalendarChatWindow() {
   onBeforeUnmount(() => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', measureArea)
-      if (saveTimer) window.clearTimeout(saveTimer)
+      clearSaveTimer()
     }
   })
 

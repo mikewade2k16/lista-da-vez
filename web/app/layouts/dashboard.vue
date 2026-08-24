@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import DashboardHeader from '~/components/dashboard/DashboardHeader.vue'
 import DashboardWorkspaceNav from '~/components/dashboard/DashboardWorkspaceNav.vue'
 import FeedbackFormModal from '~/components/feedback/FeedbackFormModal.vue'
+import OmniAssistantHost from '~/components/assistant/OmniAssistantHost.vue'
 import { useContextRealtime } from '~/composables/useContextRealtime'
 import { useDashboardShell } from '~/composables/useDashboardShell'
 import { useAuthStore } from '~/stores/auth'
@@ -87,6 +88,7 @@ function handleProfileChange(profileId) {
         />
         <slot></slot>
       </div>
+      <OmniAssistantHost />
     </section>
 
     <button

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import { fetchAICredentialModels } from '~/domain/omnichannel/config-api'
@@ -9,6 +9,8 @@ const props = defineProps<{
   capability: 'response' | 'audio' | 'image' | 'video' | 'document'
   modelValue: string
   disabled?: boolean
+  accountId?: string
+  credentialBasePath?: string
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const auth = useAuthStore()
@@ -18,28 +20,55 @@ const models = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
 let generation = 0
+let controller: AbortController | null = null
 
 const selectedExists = computed(() => models.value.includes(props.modelValue))
 
 async function load(): Promise<void> {
   const current = ++generation
+  controller?.abort()
+  const requestController = new AbortController()
+  controller = requestController
   models.value = []
   error.value = ''
-  if (!props.credentialId) return
+  if (!props.credentialId) {
+    controller = null
+    return
+  }
   loading.value = true
   try {
-    const result = await fetchAICredentialModels(api, props.credentialId, props.capability)
+    const accountId = String(props.accountId || '').trim()
+    const basePath = String(props.credentialBasePath || '').trim()
+    const result = await fetchAICredentialModels(api, props.credentialId, props.capability, {
+      ...(accountId ? { headers: { 'X-Account-Id': accountId } } : {}),
+      ...(basePath ? { basePath } : {}),
+      signal: requestController.signal,
+    })
     if (current !== generation) return
     models.value = result
   } catch (cause) {
     if (current !== generation) return
     error.value = getApiErrorMessage(cause, 'Não foi possível listar os modelos desta chave.')
   } finally {
-    if (current === generation) loading.value = false
+    if (current === generation) {
+      controller = null
+      loading.value = false
+    }
   }
 }
 
-watch([() => props.credentialId, () => props.capability], () => void load(), { immediate: true })
+watch(
+  [
+    () => props.credentialId,
+    () => props.capability,
+    () => props.accountId,
+    () => props.credentialBasePath,
+  ],
+  () => void load(),
+  { immediate: true, flush: 'sync' },
+)
+
+onScopeDispose(() => controller?.abort())
 </script>
 
 <template>

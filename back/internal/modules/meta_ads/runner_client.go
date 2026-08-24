@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -25,6 +26,11 @@ var errRunnerFailed = errors.New("meta_ads: assistant runner falhou")
 // login persistente expirou/sumiu). Mapeado para 409 com pedido de gerar o link
 // de novo, em vez do 502 generico.
 var errAuthSessionGone = errors.New("meta_ads: sessao de login expirou")
+
+// errOAuthCallbackConflict indica que a porta local do callback OAuth ja esta
+// ocupada por outro processo/conta. E um conflito recuperavel, nao falha generica
+// do runner.
+var errOAuthCallbackConflict = errors.New("meta_ads: callback oauth ocupado")
 
 // runnerTimeout e o timeout do HTTP client. Runs sao lentos (Claude headless +
 // tools do MCP da Meta), entao a janela e bem maior que a dos demais clientes.
@@ -116,11 +122,12 @@ func (c *RunnerClient) Run(ctx context.Context, prompt string, history []RunnerT
 
 // Health consulta GET /healthz do runner ({ok, claudeAuth, detail?}). Runner de
 // pe mas com resposta fora do contrato vira OK=false (sem erro).
-func (c *RunnerClient) Health(ctx context.Context) (AssistantHealthView, error) {
+func (c *RunnerClient) Health(ctx context.Context, accountID string) (AssistantHealthView, error) {
 	if !c.configured() {
 		return AssistantHealthView{}, ErrRunnerNotConfigured
 	}
-	raw, status, err := c.do(ctx, http.MethodGet, "/healthz", nil)
+	path := "/healthz?accountId=" + url.QueryEscape(strings.TrimSpace(accountID))
+	raw, status, err := c.do(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return AssistantHealthView{}, fmt.Errorf("%w: %v", errRunnerFailed, err)
 	}
@@ -144,20 +151,24 @@ type RunnerAuthComplete struct {
 
 // AuthStart inicia o OAuth do MCP da Meta no runner (chama a tool authenticate)
 // e devolve a URL de autorizacao para o painel exibir.
-func (c *RunnerClient) AuthStart(ctx context.Context, opts RunnerOpts) (RunnerAuthStart, error) {
+func (c *RunnerClient) AuthStart(ctx context.Context, accountID string, opts RunnerOpts) (RunnerAuthStart, error) {
 	if !c.configured() {
 		return RunnerAuthStart{}, ErrRunnerNotConfigured
 	}
 	payload, err := json.Marshal(struct {
+		AccountID    string `json:"accountId"`
 		Model        string `json:"model"`
 		SystemPrompt string `json:"systemPrompt"`
-	}{Model: opts.Model, SystemPrompt: opts.SystemPrompt})
+	}{AccountID: strings.TrimSpace(accountID), Model: opts.Model, SystemPrompt: opts.SystemPrompt})
 	if err != nil {
 		return RunnerAuthStart{}, fmt.Errorf("%w: %v", errRunnerFailed, err)
 	}
 	raw, status, err := c.do(ctx, http.MethodPost, "/auth/start", bytes.NewReader(payload))
 	if err != nil {
 		return RunnerAuthStart{}, fmt.Errorf("%w: %v", errRunnerFailed, err)
+	}
+	if status == http.StatusConflict && runnerErrorCode(raw) == "oauth_callback_conflict" {
+		return RunnerAuthStart{}, errOAuthCallbackConflict
 	}
 	if status < 200 || status >= 300 {
 		return RunnerAuthStart{}, fmt.Errorf("%w: http %d", errRunnerFailed, status)
@@ -171,15 +182,16 @@ func (c *RunnerClient) AuthStart(ctx context.Context, opts RunnerOpts) (RunnerAu
 
 // AuthComplete conclui o OAuth do MCP da Meta com a URL de callback colada no
 // painel (chama a tool complete_authentication).
-func (c *RunnerClient) AuthComplete(ctx context.Context, callbackURL string, opts RunnerOpts) (RunnerAuthComplete, error) {
+func (c *RunnerClient) AuthComplete(ctx context.Context, accountID, callbackURL string, opts RunnerOpts) (RunnerAuthComplete, error) {
 	if !c.configured() {
 		return RunnerAuthComplete{}, ErrRunnerNotConfigured
 	}
 	payload, err := json.Marshal(struct {
+		AccountID    string `json:"accountId"`
 		CallbackURL  string `json:"callbackUrl"`
 		Model        string `json:"model"`
 		SystemPrompt string `json:"systemPrompt"`
-	}{CallbackURL: callbackURL, Model: opts.Model, SystemPrompt: opts.SystemPrompt})
+	}{AccountID: strings.TrimSpace(accountID), CallbackURL: callbackURL, Model: opts.Model, SystemPrompt: opts.SystemPrompt})
 	if err != nil {
 		return RunnerAuthComplete{}, fmt.Errorf("%w: %v", errRunnerFailed, err)
 	}
@@ -188,6 +200,9 @@ func (c *RunnerClient) AuthComplete(ctx context.Context, callbackURL string, opt
 		return RunnerAuthComplete{}, fmt.Errorf("%w: %v", errRunnerFailed, err)
 	}
 	if status == http.StatusConflict {
+		if runnerErrorCode(raw) == "oauth_callback_conflict" {
+			return RunnerAuthComplete{}, errOAuthCallbackConflict
+		}
 		return RunnerAuthComplete{}, errAuthSessionGone
 	}
 	if status < 200 || status >= 300 {
@@ -198,6 +213,16 @@ func (c *RunnerClient) AuthComplete(ctx context.Context, callbackURL string, opt
 		return RunnerAuthComplete{}, fmt.Errorf("%w: resposta invalida: %v", errRunnerFailed, err)
 	}
 	return out, nil
+}
+
+func runnerErrorCode(raw []byte) string {
+	var envelope struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(raw, &envelope) != nil {
+		return ""
+	}
+	return strings.TrimSpace(envelope.Error)
 }
 
 // do executa a chamada com Bearer token e devolve corpo (limitado) + status.

@@ -49,8 +49,16 @@ func (s *Service) WithClientScope(l clientScopeLister) *Service {
 // conseguia cita-lo).
 type ChatAccess struct {
 	IsAgency         bool
+	StorageAccountID string
 	VisibleClientIDs []string
 	VisibleClients   []ChatScopeClient
+}
+
+func (a ChatAccess) calendarAccountID(activeAccountID string) string {
+	if accountID := strings.TrimSpace(a.StorageAccountID); accountID != "" {
+		return accountID
+	}
+	return strings.TrimSpace(activeAccountID)
 }
 
 // clientNameByID indexa os clientes visiveis por id (nome ja trim). Alimenta o preenchimento
@@ -155,19 +163,52 @@ func (s *Service) resolveChatAccess(ctx context.Context, principal auth.Principa
 // que alimenta o SELECT do front (contrato D3). accountID vem do Principal (nunca do body).
 func (s *Service) resolveChatContext(ctx context.Context, principal auth.Principal, accountID string) (ChatAccess, []ChatScopeClient, error) {
 	account := strings.TrimSpace(accountID)
+	calendarScope, err := s.GetCalendarScope(ctx, account)
+	if err != nil {
+		return ChatAccess{}, nil, err
+	}
 	isAgency, err := s.store.IsAgencyOfAccount(ctx, account, principal.UserID)
 	if err != nil {
 		return ChatAccess{}, nil, err
 	}
-	clients, err := s.visibleClients(ctx, principal)
+	rbacClients, err := s.visibleClients(ctx, principal)
 	if err != nil {
 		return ChatAccess{}, nil, err
 	}
+	clients := intersectChatScopeClients(calendarScope.Clients, rbacClients)
 	ids := make([]string, 0, len(clients))
 	for _, c := range clients {
 		ids = append(ids, c.ID)
 	}
-	return ChatAccess{IsAgency: isAgency, VisibleClientIDs: ids}, clients, nil
+	return ChatAccess{
+		IsAgency:         isAgency && calendarScope.CanSelect,
+		StorageAccountID: strings.TrimSpace(calendarScope.StorageAccountID),
+		VisibleClientIDs: ids,
+	}, clients, nil
+}
+
+// intersectChatScopeClients combina duas fontes autoritativas e independentes:
+// GetCalendarScope limita a organization/storage da account ativa; ListAccessible
+// aplica a RBAC do principal. Nomes e ordenacao sempre vem do escopo do Calendar,
+// portanto uma listagem ampla de tenants nunca injeta cliente de outra organizacao.
+func intersectChatScopeClients(calendarClients []CalendarScopeClient, rbacClients []ChatScopeClient) []ChatScopeClient {
+	allowed := make(map[string]bool, len(rbacClients))
+	for _, client := range rbacClients {
+		if id := normalizeUUID(client.ID); id != "" {
+			allowed[id] = true
+		}
+	}
+	out := make([]ChatScopeClient, 0, len(calendarClients))
+	seen := make(map[string]bool, len(calendarClients))
+	for _, client := range calendarClients {
+		id := normalizeUUID(client.ID)
+		if id == "" || !allowed[id] || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, ChatScopeClient{ID: id, Name: strings.TrimSpace(client.Name)})
+	}
+	return out
 }
 
 // visibleClients reusa a lista permission-scoped de /v1/tenants (MESMA fonte do select) e

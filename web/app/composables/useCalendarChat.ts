@@ -1,14 +1,10 @@
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import { useAuthStore } from '~/stores/auth'
 import { useCalendarStore } from '~/stores/calendar'
-import type { CalendarEventInput } from '~/utils/calendar'
-import { applyClientProfileProposal, applyNoteProposal } from '~/utils/calendar-chat-crud'
-import { applyCalendarChatTaskItem } from '~/utils/calendar-chat-task-items'
-// Store de Tasks vive em outra layer; import cross-layer (precedente: ConfigTasks.vue). So
-// e usado ao CONFIRMAR uma proposta de task (WAVE 5, E7); a Pinia instancia sob demanda.
-import { useTasksStore } from '../../layers/tasks/stores/tasks'
-import type { TaskPriority } from '../../layers/tasks/types/tasks'
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 import {
+  calendarChatProposalConfirmationKey,
+  confirmCalendarChatProposal,
   deleteConversation as apiDeleteConversation,
   fetchChatScope,
   fetchConversations,
@@ -19,12 +15,29 @@ import {
   type CalendarChatProposalFields,
   type CalendarChatStoredProposal,
   type CalendarChatStoredMessage,
+  type AssistantResource,
   type CalendarChatScope,
   type CalendarChatScopeMode,
+  type AssistantChatSurface,
+  normalizeAssistantChatSurface,
+  normalizeAssistantResources,
+  normalizeCalendarChatStoredMessage,
+  assistantResourceInstruction,
 } from '~/domain/calendar/calendar-chat-api'
+import {
+  cancelMetaActionProposal,
+  confirmMetaActionProposal,
+  getMetaActionProposal,
+  metaActionConfirmationKey,
+  metaActionCancellationKey,
+  reconcileMetaActionProposal,
+  type MetaAdsActionProposalView,
+} from '~/domain/meta-ads/meta-ads-actions-api'
 
-// Chat flutuante do Calendario (SPEC-F7/F10, contrato C7/D3/D4). Liga o painel
-// CalendarChatPanel.vue aos endpoints Go de chat do calendario. A partir da wave 4 as
+// Controller transitorio do chat compartilhado (SPEC-F7/F10, contrato C7/D3/D4).
+// Mantem o nome useCalendarChat para preservar os consumidores enquanto o host passa
+// a atender Calendar, Meta Ads e as demais rotas pelos endpoints /v1/assistant/chat.
+// A partir da wave 4 as
 // conversas e mensagens sao PERSISTIDAS no banco (calendar.chat_conversations/
 // chat_messages): a lista de conversas e o historico vem do banco (nao somem no reload)
 // e a IA tem MEMORIA (o back carrega as ultimas N mensagens da conversa). O escopo
@@ -43,16 +56,26 @@ export interface CalendarChatMessage {
   // proposals (multi-tarefa, WAVE 5.1): lista de propostas, cada uma com status proprio.
   proposals: CalendarChatStoredProposal[]
   calendarItems: CalendarChatCalendarItem[]
+  resources: AssistantResource[]
 }
 
 interface CalendarChatAskResponse {
   answer?: string
   conversationId?: string
   title?: string
-  message?: CalendarChatStoredMessage
+  surface?: AssistantChatSurface
+  entrySurface?: AssistantChatSurface
+  message?: unknown
   // aiError (WAVE 5) = a IA nao respondeu (503/cota/chave/vazio). O front mostra o estado
   // "IA fora do ar" (visual distinto), nao um balao normal, e nao persiste a mensagem.
   aiError?: boolean
+}
+
+interface PendingChatAskAttempt {
+  fingerprint: string
+  key: string
+  userMessageId: string
+  viaVoice: boolean
 }
 
 const QUESTION_MAX_LENGTH = 4000
@@ -61,27 +84,67 @@ const QUESTION_MAX_LENGTH = 4000
 // so libera o select quando o back confirma canSelect=true).
 const DEFAULT_SCOPE: CalendarChatScope = { canSelect: false, lockedClientId: '', clients: [] }
 
-// AbortController fica fora do estado reativo (singleton do modulo): cancela a pergunta
-// anterior ainda em voo quando o usuario dispara outra. NAO abortamos no unmount de
-// componente porque o estado e compartilhado por varios (FAB/painel/drawer).
-let inflightController: AbortController | null = null
-let availabilitySequence = 0
+export function createAssistantConversationLoadFence() {
+  let conversationLoadGeneration = 0
+  let controller: AbortController | null = null
+  return {
+    begin() {
+      controller?.abort()
+      controller = new AbortController()
+      const generation = ++conversationLoadGeneration
+      return {
+        signal: controller.signal,
+        isCurrent: () => generation === conversationLoadGeneration,
+      }
+    },
+    invalidate() {
+      conversationLoadGeneration += 1
+      controller?.abort()
+      controller = null
+    },
+  }
+}
+
+export function createAssistantChatRuntime() {
+  return {
+    inflightController: null as AbortController | null,
+    identityAbortController: null as AbortController | null,
+    conversationLoadFence: createAssistantConversationLoadFence(),
+  }
+}
+
+type AssistantChatRuntime = ReturnType<typeof createAssistantChatRuntime>
+const assistantChatRuntimes = new WeakMap<object, AssistantChatRuntime>()
+
+function useAssistantChatRuntime(): AssistantChatRuntime {
+  // Cada Nuxt app/SSR request recebe controladores proprios. O WeakMap preserva o
+  // singleton no browser sem permitir que uma renderizacao aborte outro tenant no servidor.
+  const nuxtApp = useNuxtApp() as object
+  let runtime = assistantChatRuntimes.get(nuxtApp)
+  if (!runtime) {
+    runtime = createAssistantChatRuntime()
+    assistantChatRuntimes.set(nuxtApp, runtime)
+  }
+  return runtime
+}
 
 function newId(): string {
   return crypto.randomUUID()
 }
 
 function localMessage(role: 'user' | 'assistant', text: string): CalendarChatMessage {
-  return { id: newId(), role, text, proposals: [], calendarItems: [] }
+  return { id: newId(), role, text, proposals: [], calendarItems: [], resources: [] }
 }
 
-function storedMessage(message: CalendarChatStoredMessage): CalendarChatMessage {
+function storedMessage(raw: unknown): CalendarChatMessage {
+  const message = normalizeCalendarChatStoredMessage(raw)
   return {
     id: message.id,
     role: message.role,
     text: message.content,
     proposals: message.proposals,
     calendarItems: message.calendarItems,
+    resources: message.resources,
   }
 }
 
@@ -99,52 +162,12 @@ function errorCode(error: unknown): string {
   return String(e?.data?.error?.code || '')
 }
 
-function hasProposalField(
-  fields: CalendarChatProposalFields,
-  key: keyof CalendarChatProposalFields,
-) {
-  return Object.prototype.hasOwnProperty.call(fields, key)
-}
-
-function proposalText(
-  fields: CalendarChatProposalFields,
-  key: keyof CalendarChatProposalFields,
-): string {
-  const value = fields[key]
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function proposalArray(
-  fields: CalendarChatProposalFields,
-  key: keyof CalendarChatProposalFields,
-): string[] {
-  const value = fields[key]
-  return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : []
-}
-
-function proposalBody(fields: CalendarChatProposalFields): string {
-  return proposalText(fields, 'description') || proposalText(fields, 'contentHtml')
-}
-
-function firstProposalText(
-  fields: CalendarChatProposalFields,
-  keys: Array<keyof CalendarChatProposalFields>,
-): string {
-  for (const key of keys) {
-    const value = proposalText(fields, key)
-    if (value) return value
-  }
-  return ''
-}
-
-function taskPriority(value: string): TaskPriority {
-  return value === 'alta' || value === 'baixa' || value === 'media' ? value : 'media'
-}
-
 export function useCalendarChat() {
+  const runtime = useAssistantChatRuntime()
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const store = useCalendarStore()
+  const accountStore = useCoreAccountStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   // Chaves unicas do useState = o singleton. Qualquer componente que chamar
@@ -161,6 +184,14 @@ export function useCalendarChat() {
   // primeiro /ask e devolve o id/titulo reais, que adotamos aqui.
   const conversationId = useState<string>('calendar-chat:conversation', () => '')
   const conversationTitle = useState<string>('calendar-chat:title', () => '')
+  // Surface atual vem da rota; a surface da conversa fica congelada ate o usuario
+  // iniciar outra conversa. Assim navegar Calendar -> Meta nao troca silenciosamente
+  // o contexto de um historico ja aberto.
+  const surface = useState<AssistantChatSurface>('assistant-chat:surface', () => 'global')
+  const conversationSurface = useState<AssistantChatSurface>(
+    'assistant-chat:conversation-surface',
+    () => 'global',
+  )
 
   // draftFromVoice (WAVE 15): o rascunho atual veio de TRANSCRICAO DE AUDIO (Whisper/ditado).
   // Vai como `viaVoice` no /ask — o prompt trata erros foneticos como provaveis. O painel marca
@@ -177,6 +208,12 @@ export function useCalendarChat() {
   const aiOffline = useState<boolean>('calendar-chat:ai-offline', () => false)
   const aiOfflineReason = useState<string>('calendar-chat:ai-offline-reason', () => '')
   const checkingAvailability = useState<boolean>('calendar-chat:ai-checking', () => false)
+  // Mantido apos falha de transporte: repetir a mesma intencao reaproveita a
+  // chave e o backend devolve as mesmas mensagens, sem gerar outro turno.
+  const pendingAskAttempt = useState<PendingChatAskAttempt | null>(
+    'assistant-chat:pending-ask-attempt',
+    () => null,
+  )
 
   // Lista de conversas persistidas (menu "Conversas") + estados de carga.
   const conversations = useState<CalendarChatConversation[]>('calendar-chat:list', () => [])
@@ -193,6 +230,99 @@ export function useCalendarChat() {
   const scopeMode = useState<CalendarChatScopeMode>('calendar-chat:scope-mode', () => 'all')
   const scopeClientId = useState<string>('calendar-chat:scope-client', () => '')
 
+  // Chave e geracoes sao compartilhadas entre todas as chamadas do composable. Isso
+  // evita que painel, config e pagina instalem resets concorrentes e impede respostas
+  // da account anterior de repovoarem o estado depois da troca de contexto.
+  const boundIdentity = useState<string>('assistant-chat:identity', () => '')
+  const identityGeneration = useState<number>('assistant-chat:identity-generation', () => 0)
+  const availabilityGeneration = useState<number>('assistant-chat:availability-generation', () => 0)
+
+  const identityKey = computed(() => {
+    const accountId = String(accountStore.activeAccountId || '').trim()
+    const userId = String(
+      auth.principal?.userId || auth.principal?.userID || auth.user?.id || '',
+    ).trim()
+    return accountId && userId ? `${accountId}:${userId}` : ''
+  })
+
+  function activeSurface(): AssistantChatSurface {
+    return conversationId.value || messages.value.length ? conversationSurface.value : surface.value
+  }
+
+  function identitySignal(): AbortSignal {
+    if (!runtime.identityAbortController || runtime.identityAbortController.signal.aborted) {
+      runtime.identityAbortController = new AbortController()
+    }
+    return runtime.identityAbortController.signal
+  }
+
+  function resetRuntimeState(): void {
+    runtime.inflightController?.abort()
+    runtime.inflightController = null
+    runtime.identityAbortController?.abort()
+    runtime.identityAbortController = new AbortController()
+    runtime.conversationLoadFence.invalidate()
+    identityGeneration.value += 1
+    availabilityGeneration.value += 1
+    messages.value = []
+    draft.value = ''
+    draftFromVoice.value = false
+    sending.value = false
+    errorMessage.value = ''
+    panelOpen.value = false
+    minimized.value = false
+    conversationId.value = ''
+    conversationTitle.value = ''
+    conversationSurface.value = surface.value
+    proposalBusyId.value = ''
+    aiOffline.value = false
+    aiOfflineReason.value = ''
+    checkingAvailability.value = false
+    pendingAskAttempt.value = null
+    conversations.value = []
+    loadingConversations.value = false
+    loadingConversation.value = false
+    pendingTopScroll.value = false
+    chatScope.value = { ...DEFAULT_SCOPE }
+    scopeMode.value = 'all'
+    scopeClientId.value = ''
+  }
+
+  // Fail-closed na troca de account/usuario: apaga o estado visivel antes de qualquer
+  // nova leitura. A geracao faz requests antigos serem descartados mesmo quando o
+  // transporte ja estava avancado demais para o AbortController interromper.
+  watch(
+    identityKey,
+    (nextIdentity) => {
+      if (nextIdentity === boundIdentity.value) return
+      boundIdentity.value = nextIdentity
+      resetRuntimeState()
+    },
+    { immediate: true },
+  )
+
+  function setSurface(nextSurface: AssistantChatSurface): void {
+    const normalized = normalizeAssistantChatSurface(nextSurface)
+    if (surface.value === normalized) return
+    surface.value = normalized
+    if (!conversationId.value && !messages.value.length) {
+      conversationSurface.value = normalized
+    }
+    if (panelOpen.value) void checkAvailability()
+  }
+
+  // Cards read-only nunca executam uma acao. O clique apenas prepara uma nova
+  // instrucao editavel no draft; o usuario ainda precisa revisar e enviar, e uma
+  // eventual escrita continua sujeita ao fluxo separado de proposta/confirmacao.
+  function prepareResourceInstruction(resource: AssistantResource): void {
+    const clean = normalizeAssistantResources([resource])[0]
+    if (!clean) return
+    draft.value = assistantResourceInstruction(clean)
+    draftFromVoice.value = false
+    panelOpen.value = true
+    minimized.value = false
+  }
+
   // Define o escopo default de uma conversa NOVA (nao mexe numa conversa ja aberta, que
   // carrega o proprio escopo salvo). Cliente-side (canSelect=false) trava no unico
   // cliente visivel; agencia usa o cliente filtrado na tela (se visivel) ou "todos".
@@ -203,7 +333,10 @@ export function useCalendarChat() {
       scopeClientId.value = scope.lockedClientId
       return
     }
-    const filtered = store.selectedClientId
+    // O filtro do calendario so e contexto implicito na propria surface. Reusar um
+    // cliente deixado no calendario ao abrir Meta/global misturaria modulos sem o
+    // usuario ter escolhido esse escopo no assistente.
+    const filtered = surface.value === 'calendar' ? store.selectedClientId : ''
     if (filtered && scope.clients.some((c) => c.id === filtered)) {
       scopeMode.value = 'client'
       scopeClientId.value = filtered
@@ -215,25 +348,33 @@ export function useCalendarChat() {
 
   // Troca o escopo escolhido (usado pelo SELECT do painel, SPEC-F11).
   function setScope(mode: CalendarChatScopeMode, clientId: string): void {
+    // O backend congela o escopo no nascimento da conversa. Impede que chamadas
+    // programaticas ou um select tardio deixem a UI apontando para outro cliente
+    // enquanto a conversa continua autoritativamente no escopo salvo.
+    if (sending.value || conversationId.value || messages.value.length) return
     scopeMode.value = mode === 'client' ? 'client' : 'all'
     scopeClientId.value = mode === 'client' ? clientId : ''
     void checkAvailability()
   }
 
   async function loadConversations(): Promise<void> {
+    const generation = identityGeneration.value
     loadingConversations.value = true
     try {
-      conversations.value = await fetchConversations(apiRequest)
+      const loaded = await fetchConversations(apiRequest, identitySignal())
+      if (generation === identityGeneration.value) conversations.value = loaded
     } catch {
       // silencioso: mantem a lista anterior (nao trava o chat)
     } finally {
-      loadingConversations.value = false
+      if (generation === identityGeneration.value) loadingConversations.value = false
     }
   }
 
   async function loadScope(): Promise<void> {
+    const generation = identityGeneration.value
     try {
-      const scope = await fetchChatScope(apiRequest)
+      const scope = await fetchChatScope(apiRequest, identitySignal())
+      if (generation !== identityGeneration.value) return
       chatScope.value = scope
       applyScopeDefault(scope)
     } catch {
@@ -244,30 +385,33 @@ export function useCalendarChat() {
   // Preflight barato: valida config/chave/kill switch e o /healthz do n8n. A rota nao
   // executa prompt, nao cria mensagem e nao consome tokens.
   async function checkAvailability(): Promise<boolean> {
-    const sequence = ++availabilitySequence
+    const sequence = availabilityGeneration.value + 1
+    availabilityGeneration.value = sequence
     checkingAvailability.value = true
     try {
-      await apiRequest('/v1/calendar/chat/status', {
+      await apiRequest('/v1/assistant/chat/status', {
         query: {
+          surface: activeSurface(),
           scopeMode: scopeMode.value,
           scopeClientId: scopeMode.value === 'client' ? scopeClientId.value : '',
         },
         dedupe: false,
         skipLoadingIndicator: true,
+        signal: identitySignal(),
       })
-      if (sequence === availabilitySequence) {
+      if (sequence === availabilityGeneration.value) {
         aiOffline.value = false
         aiOfflineReason.value = ''
       }
-      return true
+      return sequence === availabilityGeneration.value
     } catch (error) {
-      if (sequence === availabilitySequence) {
+      if (sequence === availabilityGeneration.value) {
         aiOffline.value = true
         aiOfflineReason.value = actionableError(error)
       }
       return false
     } finally {
-      if (sequence === availabilitySequence) {
+      if (sequence === availabilityGeneration.value) {
         checkingAvailability.value = false
       }
     }
@@ -312,26 +456,26 @@ export function useCalendarChat() {
     const status = httpStatus(error)
     const code = errorCode(error)
     if (status === 503 || code === 'chat_not_configured') {
-      return 'O chat do calendario ainda nao esta configurado. Defina o env CALENDAR_CHAT_WEBHOOK_URL e importe o workflow "Calendar Chat" no n8n.'
+      return 'O assistente ainda nao esta configurado para esta area. Revise a configuracao da IA e tente novamente.'
     }
     if (code === 'ai_disabled') {
-      return getApiErrorMessage(error, 'A IA do calendario esta desligada na aba IA.')
+      return getApiErrorMessage(error, 'A IA esta desligada na configuracao do assistente.')
     }
     if (code === 'ai_key_missing') {
       return getApiErrorMessage(error, 'A chave do provedor de IA nao esta configurada na aba IA.')
     }
     if (status === 504 || code === 'upstream_timeout') {
-      return 'O n8n demorou para responder ao chat do calendario. Tente novamente; se repetir, confira se o container n8n esta reiniciando ou sem memoria.'
+      return 'O servico de IA demorou para responder. Tente novamente em instantes.'
     }
     if (status === 502 || code === 'upstream_error') {
-      return 'O n8n nao respondeu ao chat do calendario. Confira se o workflow "Calendar Chat" esta ativo e se o container n8n esta healthy.'
+      return 'O servico de IA nao respondeu ao assistente. Tente novamente em instantes.'
     }
     if (status === 400) {
       return getApiErrorMessage(error, 'Pergunta invalida. Revise e tente de novo.')
     }
     return getApiErrorMessage(
       error,
-      'Nao foi possivel falar com a IA do calendario agora. Tente novamente em instantes.',
+      'Nao foi possivel falar com o assistente agora. Tente novamente em instantes.',
     )
   }
 
@@ -371,37 +515,85 @@ export function useCalendarChat() {
       return
     }
 
-    inflightController?.abort()
+    runtime.inflightController?.abort()
     const controller = new AbortController()
-    inflightController = controller
+    runtime.inflightController = controller
+    const generation = identityGeneration.value
 
+    const requestSurface = activeSurface()
+    const month = requestSurface === 'calendar' ? store.focusMonthKey || '' : ''
+    const fingerprint = JSON.stringify({
+      question: trimmed,
+      conversationId: conversationId.value,
+      surface: requestSurface,
+      scopeMode: scopeMode.value,
+      scopeClientId: scopeMode.value === 'client' ? scopeClientId.value : '',
+      month,
+    })
+    const previousAttempt = pendingAskAttempt.value
+    const retryAttempt = previousAttempt?.fingerprint === fingerprint ? previousAttempt : null
+    const viaVoice = retryAttempt ? retryAttempt.viaVoice : draftFromVoice.value
+    const userMessage = retryAttempt
+      ? messages.value.find((message) => message.id === retryAttempt.userMessageId)
+      : undefined
+    const attempt: PendingChatAskAttempt = retryAttempt
+      ? retryAttempt
+      : {
+          fingerprint,
+          key: `assistant-ask:${newId()}`,
+          userMessageId: userMessage?.id || newId(),
+          viaVoice,
+        }
+    pendingAskAttempt.value = attempt
+    draftFromVoice.value = false
     errorMessage.value = ''
     sending.value = true
-    messages.value = [...messages.value, localMessage('user', trimmed)]
+    if (!userMessage) {
+      messages.value = [
+        ...messages.value,
+        {
+          id: attempt.userMessageId,
+          role: 'user',
+          text: trimmed,
+          proposals: [],
+          calendarItems: [],
+          resources: [],
+        },
+      ]
+    }
 
     try {
-      const viaVoice = draftFromVoice.value
-      draftFromVoice.value = false
-      const response = (await apiRequest('/v1/calendar/chat/ask', {
+      const body: Record<string, unknown> = {
+        question: trimmed,
+        conversationId: conversationId.value,
+        surface: requestSurface,
+        // Escopo do contexto (D4): 'client' manda o cliente; 'all' = todos os
+        // visiveis. O back valida contra a permissao (nunca confia no body).
+        scopeMode: scopeMode.value,
+        scopeClientId: scopeMode.value === 'client' ? scopeClientId.value : '',
+        // WAVE 15: veio de transcricao de audio => o prompt considera erros foneticos.
+        viaVoice,
+      }
+      if (month) body.month = month
+
+      const response = (await apiRequest('/v1/assistant/chat/ask', {
         method: 'POST',
-        body: {
-          question: trimmed,
-          conversationId: conversationId.value,
-          // Escopo do contexto (D4): 'client' manda o cliente; 'all' = todos os
-          // visiveis. O back valida contra a permissao (nunca confia no body).
-          scopeMode: scopeMode.value,
-          scopeClientId: scopeMode.value === 'client' ? scopeClientId.value : '',
-          month: store.focusMonthKey || '',
-          // WAVE 15: veio de transcricao de audio => o prompt considera erros foneticos.
-          viaVoice,
-        },
+        body,
+        headers: { 'Idempotency-Key': attempt.key },
         signal: controller.signal,
       })) as CalendarChatAskResponse
+      if (generation !== identityGeneration.value) return
+      pendingAskAttempt.value = null
 
       const newConvId = String(response?.conversationId || '').trim()
       const newTitle = String(response?.title || '').trim()
       if (newConvId) conversationId.value = newConvId
       if (newTitle) conversationTitle.value = newTitle
+      if (response?.surface || response?.entrySurface) {
+        conversationSurface.value = normalizeAssistantChatSurface(
+          response.surface ?? response.entrySurface,
+        )
+      }
 
       // WAVE 5: a IA falhou (n8n sinalizou aiError). NAO adiciona balao normal — marca o
       // estado "IA fora do ar" (visual distinto) com o motivo. A pergunta do usuario fica.
@@ -424,8 +616,10 @@ export function useCalendarChat() {
               answer || 'A IA nao retornou uma resposta. Tente reformular a pergunta.',
             ),
       ]
+      void hydratePendingMetaActions(generation)
       upsertConversationSummary(conversationId.value, conversationTitle.value)
     } catch (error) {
+      if (generation !== identityGeneration.value) return
       // Pergunta cancelada de proposito (o usuario enviou outra) nao vira erro.
       if (isAbortError(error)) {
         return
@@ -434,10 +628,20 @@ export function useCalendarChat() {
       // do ar" com visual distinto (nao um balao nem so a barra de erro generica).
       aiOffline.value = true
       aiOfflineReason.value = actionableError(error)
+      if (!draft.value.trim()) draft.value = trimmed
+      const status = httpStatus(error)
+      const code = errorCode(error)
+      if (
+        status > 0 &&
+        ![409, 502, 503, 504].includes(status) &&
+        code !== 'idempotency_in_progress'
+      ) {
+        pendingAskAttempt.value = null
+      }
     } finally {
       // So libera o estado se este controller ainda for o vigente.
-      if (inflightController === controller) {
-        inflightController = null
+      if (runtime.inflightController === controller) {
+        runtime.inflightController = null
         sending.value = false
       }
     }
@@ -459,28 +663,38 @@ export function useCalendarChat() {
   // adota o escopo salvo da conversa. Acesso resolvido no back (fora do visivel => 404,
   // tratado como erro acionavel).
   async function openConversation(id: string): Promise<void> {
-    if (!id || loadingConversation.value) return
-    inflightController?.abort()
-    inflightController = null
+    if (!id) return
+    pendingAskAttempt.value = null
+    runtime.inflightController?.abort()
+    runtime.inflightController = null
+    const load = runtime.conversationLoadFence.begin()
+    const generation = identityGeneration.value
     loadingConversation.value = true
     errorMessage.value = ''
     try {
-      const detail = await getConversation(apiRequest, id)
+      const detail = await getConversation(apiRequest, id, load.signal)
+      if (generation !== identityGeneration.value || !load.isCurrent()) return
       conversationId.value = detail.id
       conversationTitle.value = detail.title
+      conversationSurface.value = detail.surface
       scopeMode.value = detail.scopeMode
       scopeClientId.value = detail.scopeClientId
       // Marca ANTES de trocar as mensagens: o painel posiciona no topo (1a msg) em vez de
       // rolar pro fim como faz numa mensagem nova.
       pendingTopScroll.value = true
       messages.value = detail.messages.map(storedMessage)
+      void hydratePendingMetaActions(generation)
       draft.value = ''
       sending.value = false
       void checkAvailability()
     } catch (error) {
-      errorMessage.value = actionableError(error)
+      if (generation === identityGeneration.value && load.isCurrent() && !isAbortError(error)) {
+        errorMessage.value = actionableError(error)
+      }
     } finally {
-      loadingConversation.value = false
+      if (generation === identityGeneration.value && load.isCurrent()) {
+        loadingConversation.value = false
+      }
     }
   }
 
@@ -488,8 +702,9 @@ export function useCalendarChat() {
   // conversa no primeiro /ask). Reaplica o escopo default (cliente-side trava; agencia
   // usa o filtro/todos).
   function newConversation(): void {
-    inflightController?.abort()
-    inflightController = null
+    runtime.inflightController?.abort()
+    runtime.inflightController = null
+    runtime.conversationLoadFence.invalidate()
     messages.value = []
     draft.value = ''
     errorMessage.value = ''
@@ -497,7 +712,9 @@ export function useCalendarChat() {
     loadingConversation.value = false
     conversationId.value = ''
     conversationTitle.value = ''
+    conversationSurface.value = surface.value
     proposalBusyId.value = ''
+    pendingAskAttempt.value = null
     applyScopeDefault(chatScope.value)
     void checkAvailability()
   }
@@ -509,299 +726,65 @@ export function useCalendarChat() {
     )
   }
 
-  function normalizePersonLabel(value: string): string {
-    return String(value || '')
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
+  // O status operacional da acao vive no agregado Meta Ads. O chat guarda apenas o card
+  // e seu aceite/recusa; esta projecao atualiza a copia visual sem transformar o JSONB do
+  // chat em fonte de verdade da execucao.
+  function patchMetaActionView(view: MetaAdsActionProposalView): void {
+    if (!view.id) return
+    messages.value = messages.value.map((message) => ({
+      ...message,
+      proposals: message.proposals.map((proposal) => {
+        const meta = proposal.fields.metaAction
+        if (proposal.kind !== 'metaAction' || meta?.actionProposalId !== view.id) return proposal
+        return {
+          ...proposal,
+          fields: {
+            metaAction: {
+              ...meta,
+              action: view.action,
+              actionProposalId: view.id,
+              adAccountId: view.adAccountId,
+              adAccountName: view.adAccountName,
+              campaignId: view.targetCampaignId || meta.campaignId,
+              currency: view.currency,
+              summary: view.summary || meta.summary,
+              actionStatus: view.status,
+              executionAvailable: view.executionAvailable,
+              canConfirm: view.canConfirm,
+              requiresSpendAcknowledgement: view.requiresSpendAcknowledgement,
+              expiresAt: view.expiresAt,
+              errorCode: view.errorCode,
+              errorMessage: view.errorMessage,
+            },
+          },
+        }
+      }),
+    }))
   }
 
-  function resolveResponsibleId(value: string): string {
-    const raw = String(value || '').trim()
-    if (!raw) return ''
-    const people = store.people || []
-    if (people.some((person) => person.id === raw)) return raw
-    const needle = normalizePersonLabel(raw)
-    const matches = people.filter((person) => {
-      const name = normalizePersonLabel(person.name)
-      return name === needle || name.startsWith(`${needle} `)
-    })
-    return matches.length === 1 ? matches[0]!.id : raw
-  }
-
-  // matchByTitle acha o UNICO item cujo titulo casa com `name` (igual ou contido em qualquer
-  // direcao) — rede de seguranca quando a IA manda o NOME em vez do id. Qualquer modelo escorrega
-  // nisso (visto no gpt-4o-mini); a resolucao robusta e aqui, nao no prompt.
-  function matchByTitle<T extends { title: string }>(items: T[], name: string): T | undefined {
-    const needle = normalizePersonLabel(name)
-    if (!needle) return undefined
-    const cands = items.filter((it) => {
-      const t = normalizePersonLabel(it.title)
-      return t === needle || t.includes(needle) || needle.includes(t)
-    })
-    return cands.length === 1 ? cands[0] : undefined
-  }
-
-  // applyProposal EXECUTA a proposta pela API autenticada do usuario conforme a `action`:
-  // create (item novo), update (edita item existente por targetId, full-replace mesclando os
-  // campos nao-vazios) ou delete (exclui/arquiva). clientId ja vem resolvido pelo componente.
-  // Devolve '' no sucesso ou uma mensagem de erro acionavel.
-  async function applyProposal(
-    proposal: CalendarChatStoredProposal,
-    clientId: string,
-    messageId: string,
-  ): Promise<string> {
-    const f = proposal.fields || {}
-    const action = proposal.action || 'create'
-    // WAVE 7: anotacao do mes e perfil do cliente tem execucao propria (kinds note/clientProfile,
-    // em calendar-chat-crud.ts). Deps: apiRequest + os 3 pontos de nota da store + tradutor de erro.
-    const crudDeps = { apiRequest, store, actionableError }
-    if (proposal.kind === 'note') return applyNoteProposal(crudDeps, action, f.note || {})
-    if (proposal.kind === 'clientProfile') {
-      return applyClientProfileProposal(crudDeps, action, f, clientId)
-    }
-    const targetId = String(f.targetId || '')
-    const proposedResponsibleId = resolveResponsibleId(proposalText(f, 'responsibleId'))
-    // Labels legiveis para a TASK (WAVE 14): a task guarda o NOME no ui (responsible/involved/
-    // clientName) e o UUID nas colunas proprias. Traduz id->nome pela mesma fonte da tela.
-    const personName = (id: string): string =>
-      (store.people || []).find((p) => p.id === id)?.name || id
-    const proposedResponsibleName = proposedResponsibleId ? personName(proposedResponsibleId) : ''
-    const involvedNames = (ids: string[]): string[] => ids.map(personName)
-    const chatClientName = (id: string): string =>
-      chatScope.value.clients.find((c) => c.id === id)?.name || ''
-    // Alguns modelos mandam dueDate como ISO completo ("2026-07-27T16:30:00Z") em vez de
-    // data + time separados. Normaliza para {date, time} (hora de parede, sem fuso): o PATCH
-    // de evento exige data pura e a composicao `${date}T${time}` quebraria com o ISO cru.
-    const splitProposalDate = (
-      raw: string,
-      explicitTime: string,
-    ): { date: string; time: string } => {
-      if (!raw.includes('T')) return { date: raw, time: explicitTime }
-      return { date: raw.slice(0, 10), time: explicitTime || raw.slice(11, 16) }
-    }
-
-    async function loadConfiguredTasksBoard(includeArchived = false): Promise<string> {
-      const boardId = String(store.config.tasks?.boardId || '')
-      const tasksStore = useTasksStore()
-      await tasksStore.initialize({ allowAutoCreate: false }).catch(() => undefined)
-      if (boardId) {
-        await tasksStore
-          .ensureBoardTasksLoaded(boardId, { includeArchived, force: true })
-          .catch(() => undefined)
-      }
-      return boardId
-    }
-
-    async function applyTaskItemTarget(): Promise<string> {
-      const boardId = await loadConfiguredTasksBoard(action !== 'create')
-      if (!boardId) {
-        return 'Configure um board na aba Integrações da config para usar itens pelo Crow.'
-      }
-      const tasksStore = useTasksStore()
-      let task = tasksStore.tasks.find((candidate) => candidate.id === targetId)
-      if (!task) task = matchByTitle(tasksStore.tasks, targetId)
-      if (!task || task.projectId !== boardId) {
-        return 'Não encontrei a task desse item no board configurado. Recarregue o board e tente de novo.'
-      }
-
-      const mutation = applyCalendarChatTaskItem({
-        action,
-        items: task.checklist,
-        item: f.taskItem || {},
-        createId: `crow:${messageId}:${proposal.id}`,
-      })
-      if (mutation.error) return mutation.error
-      if (!mutation.changed) return ''
-
-      const updated = await tasksStore.updateTask(task.id, { checklist: mutation.items })
-      return updated ? '' : 'Não consegui atualizar esse item da task.'
-    }
-
-    async function applyTaskTarget(): Promise<string> {
-      const boardId = await loadConfiguredTasksBoard(action !== 'create')
-      if (!boardId)
-        return 'Configure um board na aba Integrações da config para usar tasks pelo chat.'
-      const tasksStore = useTasksStore()
-      const targetEvent = store.getEventById(targetId)
-      const taskId = targetEvent?.taskId || targetId
-      let existingTask = tasksStore.tasks.find((task) => task.id === taskId)
-      if (!existingTask) {
-        // Rede de seguranca: a IA manda o NOME da task no targetId em vez do UUID, as vezes parcial.
-        // Casa pelo titulo (igual/contido) se UNICO — cobre "Brasil GMS" -> "Brasil GMS Tooop".
-        existingTask = matchByTitle(tasksStore.tasks, taskId)
-      }
-      if (!existingTask && targetEvent?.title) {
-        // targetId era o EVENTO ESPELHO sem taskId no payload da janela: casa a task do board
-        // pelo TITULO do evento (mesmo titulo, espelho 1:1) — senao o delete/patch cairia no
-        // caminho de evento e apagaria/editaria SO o espelho.
-        existingTask = matchByTitle(tasksStore.tasks, targetEvent.title)
-      }
-      if ((action === 'update' || action === 'delete') && !existingTask) {
-        return 'Não encontrei essa task no board configurado. Abra/recarregue o board e tente de novo.'
-      }
-      if (action === 'delete') {
-        const ok = await tasksStore.removeTask(existingTask!.id)
-        return ok ? '' : 'Não consegui excluir a task.'
-      }
-      if (action === 'update') {
-        const patch: Record<string, unknown> = {}
-        const title = proposalText(f, 'title')
-        const body = proposalBody(f)
-        // MULTI-DIA (WAVE 12): "comeca X termina Y" => inicio da barra = startDate (quando
-        // veio junto de dueEndDate); sem intervalo, segue o prazo normal (dueDate/date).
-        const spanStart = proposalText(f, 'dueEndDate') ? proposalText(f, 'startDate') : ''
-        const { date: dueDate, time: dueTime } = splitProposalDate(
-          spanStart || firstProposalText(f, ['dueDate', 'date']),
-          proposalText(f, 'time'),
-        )
-        const involvedIds = proposalArray(f, 'involvedIds')
-        if (title) patch.title = title
-        if (body) patch.description = body
-        if (proposalText(f, 'status')) patch.status = proposalText(f, 'status')
-        if (proposalText(f, 'priority')) patch.priority = proposalText(f, 'priority')
-        // HORARIO (WAVE 11): a task guarda o prazo com hora (datetime). Quando a IA manda time
-        // junto da data, compomos 'YYYY-MM-DDTHH:MM' (hora local; toOptionalDateTime converte).
-        // Time SEM data nova: reusa a data atual da task para so trocar a hora.
-        if (dueDate) patch.dueDate = dueTime ? `${dueDate}T${dueTime}` : dueDate
-        else if (dueTime && existingTask!.dueDate) {
-          patch.dueDate = `${String(existingTask!.dueDate).slice(0, 10)}T${dueTime}`
+  async function hydratePendingMetaActions(generation: number): Promise<void> {
+    const actionIds = Array.from(
+      new Set(
+        messages.value.flatMap((message) =>
+          message.proposals
+            .filter((proposal) => proposal.status === 'pending' && proposal.kind === 'metaAction')
+            .map((proposal) => proposal.fields.metaAction?.actionProposalId || '')
+            .filter(Boolean),
+        ),
+      ),
+    ).slice(-20)
+    await Promise.all(
+      actionIds.map(async (actionId) => {
+        try {
+          const view = await getMetaActionProposal(apiRequest, actionId, identitySignal())
+          if (generation === identityGeneration.value) patchMetaActionView(view)
+        } catch (error) {
+          if (!isAbortError(error)) {
+            // O snapshot persistido continua visivel; uma falha de hidratacao nunca apaga o card.
+          }
         }
-        if (proposalText(f, 'dueEndDate')) patch.dueEndDate = proposalText(f, 'dueEndDate')
-        if (proposalText(f, 'type')) patch.type = proposalText(f, 'type')
-        // WAVE 14: id REAL vai em responsibleUserId (coluna) e o NOME vai no label
-        // 'responsible' (ui_metadata) — antes o UUID ia pro label e a coluna ficava vazia.
-        if (proposedResponsibleId) {
-          patch.responsibleUserId = proposedResponsibleId
-          patch.responsible = proposedResponsibleName
-        }
-        if (involvedIds.length) patch.involved = involvedNames(involvedIds)
-        const patchClientId = clientId || proposalText(f, 'clientId')
-        if (patchClientId) {
-          patch.clientId = patchClientId
-          patch.clientName = proposalText(f, 'clientName') || chatClientName(patchClientId)
-        } else if (proposalText(f, 'clientName')) {
-          patch.clientName = proposalText(f, 'clientName')
-        }
-        if (hasProposalField(f, 'archived')) patch.archived = Boolean(f.archived)
-        if (!Object.keys(patch).length) return 'Não encontrei campos para alterar nessa task.'
-        const updated = await tasksStore.updateTask(existingTask!.id, patch)
-        return updated ? '' : 'Não consegui editar a task.'
-      }
-      // MULTI-DIA (WAVE 12): idem update — startDate vira o inicio quando ha dueEndDate.
-      const createSpanStart = proposalText(f, 'dueEndDate') ? proposalText(f, 'startDate') : ''
-      const { date: createDate, time: createTime } = splitProposalDate(
-        createSpanStart || firstProposalText(f, ['dueDate', 'date']),
-        proposalText(f, 'time'),
-      )
-      const createClientId = clientId || proposalText(f, 'clientId')
-      const created = await tasksStore.createTask({
-        projectId: boardId,
-        title: proposalText(f, 'title'),
-        description: proposalBody(f),
-        status: proposalText(f, 'status'),
-        priority: taskPriority(proposalText(f, 'priority')),
-        // HORARIO (WAVE 11): data+hora viram datetime local (toOptionalDateTime converte).
-        dueDate: createDate && createTime ? `${createDate}T${createTime}` : createDate,
-        dueEndDate: proposalText(f, 'dueEndDate'),
-        // WAVE 14: id na coluna, NOME no label (ver update acima).
-        responsibleUserId: proposedResponsibleId,
-        responsible: proposedResponsibleName,
-        involved: involvedNames(proposalArray(f, 'involvedIds')),
-        clientId: createClientId,
-        clientName: proposalText(f, 'clientName') || chatClientName(createClientId),
-        type: proposalText(f, 'type'),
-      })
-      return created ? '' : 'Não consegui criar a task.'
-    }
-
-    if (proposal.kind === 'taskItem') return applyTaskItemTarget()
-
-    if (action === 'update' || action === 'delete') {
-      // Roteia primeiro pelo targetId real: a IA as vezes rotula um evento do calendario como
-      // kind:'task'. Se o id e um evento carregado, edita/exclui o evento; se nao, task usa o
-      // board configurado (context.tasks/taskId).
-      let existing = store.getEventById(targetId)
-      if (!existing && proposal.kind !== 'task') {
-        // kind=event mas targetId pode ser um NOME (a IA escorrega). Casa o evento pelo titulo (a
-        // store expoe eventsByDate: Record<data, eventos[]>, entao achatamos).
-        const allEvents = Object.values(store.eventsByDate || {}).flat()
-        existing = matchByTitle(allEvents, targetId) ?? null
-      }
-      // kind:'task' cujo alvo e o EVENTO ESPELHO (a guarda do back reescreve o targetId para o
-      // id do evento) segue pelo caminho de TASK: patch PARCIAL na task e o mirror sincroniza o
-      // evento. Pelo caminho de evento seria full-replace — defaults (priority 'media') vazavam
-      // pra task e delete apagava so o espelho. Se a task nao existir no board (evento PURO
-      // rotulado como task), applyTaskTarget avisa e o usuario reformula — nunca mexe no espelho.
-      if (proposal.kind === 'task' && existing) {
-        return applyTaskTarget()
-      }
-      if (!existing) {
-        return proposal.kind === 'task'
-          ? applyTaskTarget()
-          : 'Não encontrei esse item no calendário (abra o mês dele e tente de novo).'
-      }
-      if (action === 'delete') {
-        const ok = await store.deleteEvent(existing.id)
-        return ok ? '' : 'Não consegui excluir o item.'
-      }
-      // update = full-replace: campos NAO-VAZIOS da proposta vencem; o resto mantem o existente.
-      const { date: proposedDate, time: proposedTime } = splitProposalDate(
-        firstProposalText(f, ['date', 'dueDate']),
-        proposalText(f, 'time'),
-      )
-      const proposedBody = proposalBody(f)
-      const proposedInvolved = proposalArray(f, 'involvedIds')
-      const buildPatch = (base: NonNullable<ReturnType<typeof store.getEventById>>) =>
-        ({
-          date: proposedDate || base.date || '',
-          time: proposedTime || base.time || '',
-          clientId: clientId || proposalText(f, 'clientId') || base.clientId || '',
-          type: proposalText(f, 'type') || base.type || 'post',
-          title: proposalText(f, 'title') || base.title || '',
-          status: proposalText(f, 'status') || base.status || 'planejado',
-          priority: proposalText(f, 'priority') || base.priority || 'media',
-          responsibleId: proposedResponsibleId || base.responsibleId || '',
-          involvedIds: proposedInvolved.length ? proposedInvolved : base.involvedIds || [],
-          media: base.media || [],
-          description: proposedBody || String(base.description || ''),
-        }) as unknown as CalendarEventInput
-      let outcome = await store.updateEvent(existing.id, buildPatch(existing), existing.version)
-      if (outcome === 'conflict') {
-        // Versao defasada (ex.: o evento mudou por sync de task no back). Refetch + tenta 1x com a
-        // versao fresca — evita pedir "recarregue" quando o proprio sistema ja atualizou o item.
-        await store.refetchWindow()
-        const fresh = store.getEventById(existing.id)
-        if (fresh) outcome = await store.updateEvent(fresh.id, buildPatch(fresh), fresh.version)
-      }
-      if (outcome === 'conflict') {
-        return 'Esse item mudou enquanto isso. Recarregue o calendário e tente de novo.'
-      }
-      return outcome === 'ok' ? '' : 'Não consegui editar o item.'
-    }
-
-    // CREATE. Evento -> calendar store; task -> tasks store.
-    if (proposal.kind === 'task') {
-      return applyTaskTarget()
-    }
-    // createEvent tipa os enums (type/status/priority); a proposta vem validada e o back
-    // re-valida, entao usamos um cast controlado no payload.
-    const ok = await store.createEvent({
-      date: firstProposalText(f, ['date', 'dueDate']),
-      time: proposalText(f, 'time'),
-      clientId: clientId || proposalText(f, 'clientId'),
-      type: proposalText(f, 'type') || 'post',
-      title: proposalText(f, 'title'),
-      status: proposalText(f, 'status') || 'planejado',
-      priority: proposalText(f, 'priority') || 'media',
-      responsibleId: proposedResponsibleId,
-      involvedIds: proposalArray(f, 'involvedIds'),
-      media: [],
-      description: proposalBody(f),
-      createTask: Boolean(store.config.tasks?.boardId),
-    } as unknown as CalendarEventInput)
-    return ok ? '' : 'Não consegui criar o evento (confira a data proposta).'
+      }),
+    )
   }
 
   // pendingTargets resolve as propostas AINDA pendentes de uma mensagem para os ids pedidos
@@ -812,13 +795,84 @@ export function useCalendarChat() {
     return message.proposals.filter((p) => proposalIds.includes(p.id) && p.status === 'pending')
   }
 
-  // confirmSelectedProposals cria em LOTE as propostas selecionadas (multi-tarefa). `items`
-  // traz, por proposta, o clientId JA resolvido pelo componente ({id, clientId}). Para cada uma
-  // cria o item e, no sucesso, marca 'accepted' no back (replaceMessage atualiza o card item a
-  // item). Falha parcial NAO aborta o lote — conta as que falharam e avisa no fim.
+  function metaActionOutcomeMessage(view: MetaAdsActionProposalView): string {
+    if (view.errorMessage) return view.errorMessage
+    if (view.status === 'unknown') {
+      return 'O Meta pode ter aplicado esta acao. Use Reconciliar antes de qualquer nova tentativa.'
+    }
+    if (view.status === 'executing') {
+      return 'A acao ainda esta em processamento. Aguarde e use Reconciliar.'
+    }
+    if (view.status === 'failed') {
+      return 'A acao falhou sem uma nova tentativa automatica. Revise o card ou recuse e reformule.'
+    }
+    if (view.status === 'cancelled')
+      return 'A proposta Meta foi cancelada e nao pode mais ser executada.'
+    if (view.status === 'expired')
+      return 'A proposta Meta expirou. Prepare uma nova acao pelo chat.'
+    return 'A acao Meta ainda nao foi concluida.'
+  }
+
+  async function confirmDurableMetaAction(
+    proposal: CalendarChatStoredProposal,
+    messageId: string,
+    acknowledgeSpend: boolean,
+    generation: number,
+    activeConversationId: string,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const meta = proposal.fields.metaAction
+    if (!meta?.actionProposalId) {
+      return meta?.errorMessage || 'Esta proposta Meta nao esta disponivel para confirmacao.'
+    }
+    if (meta.requiresSpendAcknowledgement && !acknowledgeSpend) {
+      return 'Marque a confirmacao reforcada de gasto antes de continuar.'
+    }
+    if (
+      meta.actionStatus !== 'succeeded' &&
+      (!meta.executionAvailable || !meta.canConfirm || meta.actionStatus !== 'pending')
+    ) {
+      return meta.errorMessage || 'Esta acao Meta nao pode ser executada neste estado.'
+    }
+
+    const view = await confirmMetaActionProposal(
+      apiRequest,
+      meta.actionProposalId,
+      metaActionConfirmationKey(messageId, meta.actionProposalId),
+      meta.requiresSpendAcknowledgement && acknowledgeSpend,
+      signal,
+    )
+    if (generation !== identityGeneration.value) return ''
+    patchMetaActionView(view)
+    if (view.status !== 'succeeded') return metaActionOutcomeMessage(view)
+
+    // Somente o sucesso duravel autoriza espelhar accepted no JSONB do chat. Se este
+    // PATCH falhar, o retry usa a mesma chave e o executor devolve o mesmo resultado.
+    const updated = await updateProposalStatus(
+      apiRequest,
+      activeConversationId,
+      messageId,
+      proposal.id,
+      'accepted',
+      signal,
+    )
+    if (generation !== identityGeneration.value) return ''
+    replaceMessage(updated)
+    patchMetaActionView(view)
+    return ''
+  }
+
+  // Confirma em lote, mas cada efeito local e executado exclusivamente pelo endpoint
+  // transacional. O front apenas envia os campos editaveis e substitui a mensagem
+  // autoritativa devolvida; nao chama stores de Calendar/Tasks.
   async function confirmSelectedProposals(
     messageId: string,
-    items: { id: string; clientId: string; fields?: CalendarChatProposalFields }[],
+    items: {
+      id: string
+      clientId: string
+      fields?: CalendarChatProposalFields
+      acknowledgeSpend?: boolean
+    }[],
   ): Promise<void> {
     if (proposalBusyId.value) return
     const targets = pendingTargets(
@@ -827,40 +881,62 @@ export function useCalendarChat() {
     )
     if (!targets.length) return
     const clientById = new Map(items.map((i) => [i.id, i.clientId]))
+    const itemById = new Map(items.map((item) => [item.id, item]))
     // Edit inline (WAVE 9): campos ajustados pelo dono no cartao antes de aprovar; senao usa os da IA.
     const fieldsById = new Map(items.filter((i) => i.fields).map((i) => [i.id, i.fields!]))
+    const generation = identityGeneration.value
+    const activeConversationId = conversationId.value
+    const signal = identitySignal()
     proposalBusyId.value = messageId
     errorMessage.value = ''
     let failed = 0
     let lastError = ''
     try {
       for (const proposal of targets) {
+        if (generation !== identityGeneration.value) return
         try {
-          const edited = fieldsById.get(proposal.id)
-          const err = await applyProposal(
-            edited ? { ...proposal, fields: edited } : proposal,
-            clientById.get(proposal.id) || '',
-            messageId,
-          )
-          if (err) {
-            failed++
-            lastError = err
+          if (proposal.kind === 'metaAction') {
+            const item = itemById.get(proposal.id)
+            const err = await confirmDurableMetaAction(
+              proposal,
+              messageId,
+              item?.acknowledgeSpend === true,
+              generation,
+              activeConversationId,
+              signal,
+            )
+            if (generation !== identityGeneration.value) return
+            if (err) {
+              failed++
+              lastError = err
+            }
             continue
           }
-          const updated = await updateProposalStatus(
+          if (proposal.execution?.canConfirm === false) {
+            failed++
+            lastError =
+              proposal.execution.message || 'Este card nao possui um executor seguro no backend.'
+            continue
+          }
+          const updated = await confirmCalendarChatProposal(
             apiRequest,
-            conversationId.value,
+            activeConversationId,
             messageId,
             proposal.id,
-            'accepted',
+            calendarChatProposalConfirmationKey(messageId, proposal.id),
+            fieldsById.get(proposal.id),
+            clientById.get(proposal.id) || '',
+            signal,
           )
+          if (generation !== identityGeneration.value) return
           replaceMessage(updated)
         } catch (error) {
+          if (generation !== identityGeneration.value || isAbortError(error)) return
           failed++
           lastError = actionableError(error)
         }
       }
-      if (failed > 0) {
+      if (generation === identityGeneration.value && failed > 0) {
         const okCount = targets.length - failed
         const reason = lastError ? ` Motivo: ${lastError}` : ''
         errorMessage.value =
@@ -869,7 +945,44 @@ export function useCalendarChat() {
             : `Não consegui aplicar.${reason}`
       }
     } finally {
-      proposalBusyId.value = ''
+      if (generation === identityGeneration.value) proposalBusyId.value = ''
+    }
+  }
+
+  async function reconcileMetaAction(messageId: string, proposalId: string): Promise<void> {
+    if (proposalBusyId.value) return
+    const proposal = pendingTargets(messageId, [proposalId])[0]
+    const actionId = proposal?.fields.metaAction?.actionProposalId || ''
+    if (proposal?.kind !== 'metaAction' || !actionId) return
+    const generation = identityGeneration.value
+    const activeConversationId = conversationId.value
+    const signal = identitySignal()
+    proposalBusyId.value = messageId
+    errorMessage.value = ''
+    try {
+      const view = await reconcileMetaActionProposal(apiRequest, actionId, signal)
+      if (generation !== identityGeneration.value) return
+      patchMetaActionView(view)
+      if (view.status !== 'succeeded') {
+        errorMessage.value = metaActionOutcomeMessage(view)
+        return
+      }
+      const updated = await updateProposalStatus(
+        apiRequest,
+        activeConversationId,
+        messageId,
+        proposal.id,
+        'accepted',
+        signal,
+      )
+      if (generation !== identityGeneration.value) return
+      replaceMessage(updated)
+      patchMetaActionView(view)
+    } catch (error) {
+      if (generation !== identityGeneration.value || isAbortError(error)) return
+      errorMessage.value = actionableError(error)
+    } finally {
+      if (generation === identityGeneration.value) proposalBusyId.value = ''
     }
   }
 
@@ -879,36 +992,71 @@ export function useCalendarChat() {
     if (proposalBusyId.value) return
     const targets = pendingTargets(messageId, proposalIds)
     if (!targets.length) return
+    const generation = identityGeneration.value
+    const activeConversationId = conversationId.value
+    const signal = identitySignal()
     proposalBusyId.value = messageId
     errorMessage.value = ''
     try {
       for (const proposal of targets) {
+        if (generation !== identityGeneration.value) return
         try {
+          if (proposal.kind === 'metaAction') {
+            const meta = proposal.fields.metaAction
+            const actionId = meta?.actionProposalId || ''
+            if (
+              !actionId ||
+              (meta?.actionStatus !== 'pending' && meta?.actionStatus !== 'cancelled')
+            ) {
+              errorMessage.value =
+                'Esta acao Meta ja foi iniciada ou concluida e nao pode ser recusada.'
+              continue
+            }
+            if (meta.actionStatus === 'pending') {
+              const view = await cancelMetaActionProposal(
+                apiRequest,
+                actionId,
+                metaActionCancellationKey(messageId, actionId),
+                signal,
+              )
+              if (generation !== identityGeneration.value) return
+              patchMetaActionView(view)
+              if (view.status !== 'cancelled') {
+                errorMessage.value = metaActionOutcomeMessage(view)
+                continue
+              }
+            }
+          }
           const updated = await updateProposalStatus(
             apiRequest,
-            conversationId.value,
+            activeConversationId,
             messageId,
             proposal.id,
             'rejected',
+            signal,
           )
+          if (generation !== identityGeneration.value) return
           replaceMessage(updated)
         } catch (error) {
+          if (generation !== identityGeneration.value || isAbortError(error)) return
           errorMessage.value = actionableError(error)
         }
       }
     } finally {
-      proposalBusyId.value = ''
+      if (generation === identityGeneration.value) proposalBusyId.value = ''
     }
   }
 
   // Apaga (soft-delete) uma conversa. Se era a ativa, comeca uma nova.
   async function removeConversation(id: string): Promise<void> {
     if (!id) return
+    const generation = identityGeneration.value
     try {
-      await apiDeleteConversation(apiRequest, id)
+      await apiDeleteConversation(apiRequest, id, identitySignal())
     } catch {
       return
     }
+    if (generation !== identityGeneration.value) return
     conversations.value = conversations.value.filter((c) => c.id !== id)
     if (conversationId.value === id) newConversation()
   }
@@ -923,6 +1071,8 @@ export function useCalendarChat() {
     minimized,
     conversationId,
     conversationTitle,
+    surface,
+    conversationSurface,
     conversations,
     loadingConversations,
     loadingConversation,
@@ -933,6 +1083,7 @@ export function useCalendarChat() {
     proposalBusyId,
     confirmSelectedProposals,
     rejectSelectedProposals,
+    reconcileMetaAction,
     aiOffline,
     aiOfflineReason,
     checkingAvailability,
@@ -940,6 +1091,8 @@ export function useCalendarChat() {
     ask,
     send,
     setScope,
+    setSurface,
+    prepareResourceInstruction,
     openConversation,
     newConversation,
     removeConversation,

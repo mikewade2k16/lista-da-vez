@@ -310,10 +310,14 @@ Workflow separado (`export/workflow-calendar-chat.json`, id `calendarchat0001`) 
 **chat de IA** do Calendario. Contrato C7 (payload agora carrega a KEY, contrato PAY da wave 3). O
 back Go (`POST /v1/calendar/chat/ask`) monta o payload (`question` + `ai` + `context`, o `context`
 identico ao agregado C9 via a MESMA funcao `BuildAIContext`) e faz um POST **sincrono** ao webhook,
-esperando `{ "answer": "", "eventIds": [], "proposals": [] }` de volta. O n8n nao fala com o Postgres direto e e um EXECUTOR BURRO:
+esperando `{ "answer": "", "eventIds": [], "resourceIds": [], "proposals": [] }` de volta. O n8n nao fala com o Postgres direto e e um EXECUTOR BURRO:
 o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, temperatura E a key).
 
 - **Webhook** POST path `calendar-chat`, `responseMode: responseNode` (responde pelo no Respond).
+- **Providers do Assistente 360**: `Selecionar provedor` envia `anthropic` para
+  `https://api.anthropic.com/v1/messages` com `x-api-key`/`anthropic-version` e normaliza os blocos
+  `content` antes de `Extrair resposta`. OpenAI/Gemini/GLM permanecem no branch OpenAI-compatible.
+  A chave vem somente de `body.ai.apiKey`, dura uma execução e nunca aparece no export/pinData.
 - **Montar contexto** (Code) — system = `ai.systemPrompt` OU DEFAULT pt-BR ("assistente de
   calendario de conteudo") + serializa o `context` (perfil do cliente, feriados, eventos ricos com
   ID/horario/cliente/midias, notas, tasks reais do board configurado (incluindo `items[]` do checklist),
@@ -332,8 +336,10 @@ o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, tem
   montada no no anterior (`messages: $json.messages` = system + historico + pergunta; antes era
   system+user fixo). **Nao le mais `$env`/credential** (mudanca SPEC-W1, 2026-07-04, revertendo o
   `$env[keyEnv]` da wave anterior). `onError: continueRegularOutput`.
-- **Extrair resposta** (Code) - normaliza `choices[0].message.content` -> `{ answer, eventIds, proposals[] }`; `eventIds` identifica os eventos que o Go monta como cards somente com dados
-  autoritativos. `proposals[].fields` preserva campos de evento/task (`priority`, `description`,
+- **Extrair resposta** (Code) - normaliza `choices[0].message.content` -> `{ answer, eventIds,
+  resourceIds, proposals[] }`; `eventIds` identifica eventos reais e `resourceIds` seleciona no
+  maximo 20 IDs prefixados do registry Meta account/client-scoped. O Go cruza ambos contra dados
+  autoritativos; titulo, URL e metadata nunca vem do modelo. `proposals[].fields` preserva campos de evento/task (`priority`, `description`,
   `responsibleId`, `involvedIds`, `taskId`/`targetId`, datas etc.). Quando houver `eventIds`, o
   `answer` deve ser resumo curto (sem repetir a lista item a item); o Go ainda compacta
   defensivamente respostas longas antes de persistir. Item de erro do HTTP node vira mensagem
@@ -343,7 +349,7 @@ o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, tem
   `fields.taskItem` preserva inclusive `completed:false`, valida status no enum
   `captured|editing|approval|approved|scheduled|posted` e datas `YYYY-MM-DD`. O extrator nao aceita
   create com data orfa; o Go revalida task/item no contexto autoritativo antes de persistir o card.
-- **Respond to Webhook** - `{ "answer": ..., "eventIds": [...], "proposals": [...] }`.
+- **Respond to Webhook** - `{ "answer": ..., "eventIds": [...], "resourceIds": [...], "proposals": [...] }`.
 
 **Sem credential/`$env` no n8n para a IA do chat** — a key trafega no payload server-to-server (Go
 -> n8n, rede docker) e nunca e logada nem persistida. Env do back: `CALENDAR_CHAT_WEBHOOK_URL`

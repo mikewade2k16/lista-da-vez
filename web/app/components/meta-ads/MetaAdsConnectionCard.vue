@@ -1,23 +1,130 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
+import { useMetaAdsConnectionContext } from '~/composables/useMetaAdsConnectionContext'
 import { useMetaAdsStore } from '~/stores/meta-ads'
+import { useCoreAccountStore } from '../../../layers/core/stores/account'
 
 const store = useMetaAdsStore()
+const accountStore = useCoreAccountStore()
+const connectionContext = useMetaAdsConnectionContext(accountStore.activeAccountId)
 
-const token = ref('')
+const { token, oauthPending, oauthError } = connectionContext
 
-const canConnect = computed(() => token.value.trim().length > 0 && !store.connecting)
+watch(
+  () => accountStore.activeAccountId,
+  (accountId) => connectionContext.bindAccount(accountId),
+  { flush: 'sync' },
+)
+
+const canSubmitConnection = computed(
+  () =>
+    store.canConnectMetaAds &&
+    token.value.trim().length > 0 &&
+    !store.connecting &&
+    !oauthPending.value,
+)
 
 async function onConnect() {
-  if (!canConnect.value) return
-  await store.saveConnection(token.value.trim())
+  if (!canSubmitConnection.value) return
+  const snapshot = connectionContext.capture()
+  const submittedToken = token.value.trim()
+  if (!connectionContext.isCurrent(snapshot, accountStore.activeAccountId)) return
+
+  await store.saveConnection(submittedToken)
+  if (!connectionContext.isCurrent(snapshot, accountStore.activeAccountId)) return
   // Nunca ecoar o token de volta: limpa o campo apos a tentativa.
   token.value = ''
 }
 
 async function onDisconnect() {
+  if (!store.canConnectMetaAds) return
   await store.deleteConnection()
 }
+
+function scheduleOAuthPoll(
+  snapshot: ReturnType<typeof connectionContext.capture>,
+  previousRevision: string,
+) {
+  connectionContext.schedulePoll(
+    snapshot,
+    () => void pollOAuthConnection(snapshot, previousRevision),
+  )
+}
+
+async function pollOAuthConnection(
+  snapshot: ReturnType<typeof connectionContext.capture>,
+  previousRevision: string,
+) {
+  if (!oauthPending.value || !connectionContext.isCurrent(snapshot, accountStore.activeAccountId))
+    return
+  const attempt = connectionContext.nextPollAttempt(snapshot)
+  if (attempt === null) return
+  try {
+    await store.loadOverview()
+  } catch {
+    // Falha transitoria de rede nao invalida o state nem encerra o popup.
+  }
+  if (!connectionContext.isCurrent(snapshot, accountStore.activeAccountId)) return
+  if (store.connected && (!previousRevision || store.connection?.revision !== previousRevision)) {
+    await store.init()
+    if (!connectionContext.isCurrent(snapshot, accountStore.activeAccountId)) return
+    connectionContext.stopIfCurrent(snapshot, true)
+    return
+  }
+  if (connectionContext.getPopup()?.closed || attempt >= 400) {
+    connectionContext.stopIfCurrent(snapshot)
+    return
+  }
+  scheduleOAuthPoll(snapshot, previousRevision)
+}
+
+async function onOAuthConnect() {
+  if (!store.canConnectMetaAds || store.connecting || oauthPending.value || !import.meta.client)
+    return
+  const snapshot = connectionContext.capture()
+  const previousRevision = store.connection?.revision || ''
+  if (!connectionContext.isCurrent(snapshot, accountStore.activeAccountId)) return
+  connectionContext.setError(snapshot, '')
+  const popup = window.open('about:blank', 'omni-meta-oauth', 'popup,width=620,height=760')
+  if (!popup) {
+    connectionContext.setError(
+      snapshot,
+      'O navegador bloqueou a janela de login. Libere pop-ups e tente novamente.',
+    )
+    return
+  }
+  if (!connectionContext.setPopup(snapshot, popup)) return
+
+  const result = await store.startConnectionOAuth()
+  if (!connectionContext.isCurrent(snapshot, accountStore.activeAccountId)) {
+    popup.close()
+    return
+  }
+  if (!result) {
+    connectionContext.stopIfCurrent(snapshot, true)
+    connectionContext.setError(snapshot, store.error)
+    return
+  }
+  try {
+    const authorizationURL = new URL(result.authorizationUrl)
+    const trustedHost =
+      authorizationURL.hostname === 'facebook.com' ||
+      authorizationURL.hostname.endsWith('.facebook.com')
+    if (authorizationURL.protocol !== 'https:' || !trustedHost) throw new Error('invalid_oauth_url')
+    popup.location.replace(authorizationURL.toString())
+  } catch {
+    connectionContext.stopIfCurrent(snapshot, true)
+    connectionContext.setError(snapshot, 'O servidor devolveu uma URL de autorizacao invalida.')
+    return
+  }
+  if (!connectionContext.setPending(snapshot, true)) {
+    popup.close()
+    return
+  }
+  scheduleOAuthPoll(snapshot, previousRevision)
+}
+
+onBeforeUnmount(() => connectionContext.dispose())
 
 const expiresLabel = computed(() => {
   const raw = store.connection?.tokenExpiresAt
@@ -27,12 +134,15 @@ const expiresLabel = computed(() => {
   return date.toLocaleDateString('pt-BR')
 })
 
-// Status do assistente MCP (carregado pelo workspace via store.loadAssistant).
-const assistantStatus = computed(() => {
-  const health = store.assistantHealth
-  if (!health) return { label: 'Verificando...', ok: false }
-  if (health.ok) return { label: 'Assistente pronto', ok: true }
-  return { label: health.detail.trim() || 'Assistente indisponivel', ok: false }
+const expiryState = computed<'ok' | 'warning' | 'expired' | ''>(() => {
+  const raw = store.connection?.tokenExpiresAt
+  if (!raw) return ''
+  const expiresAt = new Date(raw).getTime()
+  if (!Number.isFinite(expiresAt)) return ''
+  const remainingDays = (expiresAt - Date.now()) / 86_400_000
+  if (remainingDays <= 0) return 'expired'
+  if (remainingDays <= 14) return 'warning'
+  return 'ok'
 })
 </script>
 
@@ -42,7 +152,7 @@ const assistantStatus = computed(() => {
       <div class="ma-connection__head-text">
         <h2 class="ma-connection__title">Conexao com a Meta</h2>
         <p class="ma-connection__subtitle">
-          System User token do Business Manager para puxar contas, campanhas e metricas.
+          Autorize pelo Facebook Login para puxar contas, campanhas e metricas sem copiar tokens.
         </p>
       </div>
       <span
@@ -70,57 +180,109 @@ const assistantStatus = computed(() => {
           <dt class="ma-connection__fact-label">Token expira em</dt>
           <dd class="ma-connection__fact-value">{{ expiresLabel }}</dd>
         </div>
-        <div class="ma-connection__fact">
-          <dt class="ma-connection__fact-label">Assistente</dt>
-          <dd
-            class="ma-connection__fact-value"
-            :class="
-              assistantStatus.ok
-                ? 'ma-connection__fact-value--ok'
-                : 'ma-connection__fact-value--muted'
-            "
-          >
-            {{ assistantStatus.label }}
-          </dd>
-        </div>
       </dl>
-      <button
-        type="button"
-        class="ma-connection__btn ma-connection__btn--ghost"
-        @click="onDisconnect"
+      <p
+        v-if="expiryState === 'warning'"
+        class="ma-connection__expiry ma-connection__expiry--warning"
       >
-        Desconectar
-      </button>
+        O acesso está próximo de expirar. Renove agora para não interromper o sync.
+      </p>
+      <p
+        v-else-if="expiryState === 'expired'"
+        class="ma-connection__expiry ma-connection__expiry--danger"
+      >
+        O token expirou. Renove o acesso antes de sincronizar ou executar ações.
+      </p>
+      <div class="ma-connection__connected-actions">
+        <button
+          type="button"
+          class="ma-connection__btn ma-connection__btn--primary"
+          :disabled="store.connecting || oauthPending || !store.canConnectMetaAds"
+          @click="onOAuthConnect"
+        >
+          {{ oauthPending ? 'Aguardando autorização…' : 'Renovar acesso' }}
+        </button>
+        <button
+          type="button"
+          class="ma-connection__btn ma-connection__btn--ghost"
+          :disabled="!store.canConnectMetaAds"
+          :title="
+            store.canConnectMetaAds
+              ? 'Remover a conexão com a Meta'
+              : 'Sua função não pode alterar conexões do Meta Ads'
+          "
+          @click="onDisconnect"
+        >
+          Desconectar
+        </button>
+      </div>
     </div>
 
-    <form v-else class="ma-connection__form" @submit.prevent="onConnect">
-      <label class="ma-connection__field">
-        <span class="ma-connection__label">System User token</span>
-        <textarea
-          v-model="token"
-          class="ma-connection__textarea"
-          rows="4"
-          spellcheck="false"
-          autocomplete="off"
-          placeholder="Cole aqui o token de longa duracao do Business Manager"
-          :disabled="store.connecting"
-        ></textarea>
-      </label>
+    <div v-else class="ma-connection__form">
+      <button
+        type="button"
+        class="ma-connection__btn ma-connection__btn--primary"
+        :disabled="store.connecting || oauthPending || !store.canConnectMetaAds"
+        title="Conectar com o Facebook Login"
+        @click="onOAuthConnect"
+      >
+        <span
+          v-if="store.connecting || oauthPending"
+          class="ma-connection__spinner"
+          aria-hidden="true"
+        ></span>
+        {{ oauthPending ? 'Aguardando autorizacao...' : 'Conectar com Facebook' }}
+      </button>
 
       <p class="ma-connection__note">
-        <span class="ma-connection__note-badge">Admin</span>
-        O token e guardado cifrado no banco e nunca e exibido de volta. Trate como segredo.
+        Login, verificacao em duas etapas e consentimento continuam sendo feitos por voce na Meta. O
+        Omni recebe o retorno e guarda o token cifrado automaticamente.
       </p>
 
-      <button
-        type="submit"
-        class="ma-connection__btn ma-connection__btn--primary"
-        :disabled="token.trim().length === 0 || store.connecting"
-      >
-        <span v-if="store.connecting" class="ma-connection__spinner" aria-hidden="true"></span>
-        {{ store.connecting ? 'Conectando...' : 'Conectar' }}
-      </button>
-    </form>
+      <p v-if="oauthError" class="ma-connection__oauth-error" role="alert">{{ oauthError }}</p>
+
+      <p v-if="!store.canConnectMetaAds" class="ma-connection__readonly">
+        Sua função possui acesso somente leitura e não pode conectar ou desconectar contas Meta.
+      </p>
+
+      <details class="ma-connection__manual">
+        <summary class="ma-connection__manual-summary">Conexao manual avancada</summary>
+        <form class="ma-connection__manual-form" @submit.prevent="onConnect">
+          <label class="ma-connection__field">
+            <span class="ma-connection__label">System User token</span>
+            <textarea
+              v-model="token"
+              class="ma-connection__textarea"
+              rows="4"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder="Cole aqui o token de longa duracao do Business Manager"
+              :disabled="store.connecting || !store.canConnectMetaAds"
+            ></textarea>
+          </label>
+
+          <p class="ma-connection__note">
+            <span class="ma-connection__note-badge">Compatibilidade</span>
+            Use somente se o Facebook Login ainda nao estiver configurado. O token e guardado
+            cifrado.
+          </p>
+
+          <button
+            type="submit"
+            class="ma-connection__btn ma-connection__btn--ghost"
+            :disabled="!canSubmitConnection"
+            :title="
+              store.canConnectMetaAds
+                ? 'Salvar a conexão manual com a Meta'
+                : 'Sua função não pode alterar conexões do Meta Ads'
+            "
+          >
+            <span v-if="store.connecting" class="ma-connection__spinner" aria-hidden="true"></span>
+            {{ store.connecting ? 'Conectando...' : 'Salvar token manual' }}
+          </button>
+        </form>
+      </details>
+    </div>
   </article>
 </template>
 
@@ -198,6 +360,31 @@ const assistantStatus = computed(() => {
   justify-content: space-between;
   gap: 1.25rem;
   flex-wrap: wrap;
+}
+
+.ma-connection__connected-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.ma-connection__expiry {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.55rem;
+  font-size: 0.78rem;
+}
+
+.ma-connection__expiry--warning {
+  color: rgb(var(--warning));
+  background: rgb(var(--warning) / 0.1);
+}
+
+.ma-connection__expiry--danger {
+  color: rgb(var(--danger));
+  background: rgb(var(--danger) / 0.1);
 }
 
 .ma-connection__facts {
@@ -288,6 +475,35 @@ const assistantStatus = computed(() => {
   font-size: 0.8rem;
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+.ma-connection__readonly {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.ma-connection__oauth-error {
+  font-size: 0.82rem;
+  color: rgb(var(--danger));
+}
+
+.ma-connection__manual {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 0.85rem;
+}
+
+.ma-connection__manual-summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ma-connection__manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.85rem;
 }
 
 .ma-connection__note-badge {

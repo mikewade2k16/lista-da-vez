@@ -5,7 +5,6 @@ import { useOmniChat } from '~/composables/useOmniChat'
 import { communicationPeriod, type QueueCommunication } from '~/domain/operation/communications'
 import { useAuthStore } from '~/stores/auth'
 import { useCommunicationsStore } from '~/stores/communications'
-import OperationOmniChatConfigDrawer from '~/components/operation/OperationOmniChatConfigDrawer.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -35,18 +34,13 @@ let communicationsPollTimer: number | null = null
 // dito (carregar/salvar) mora em OperationOmniPersonaEditor.vue.
 const auth = useAuthStore()
 const canEditPersona = computed(() => auth.role === 'platform_admin')
-const isOmniConfigOpen = ref(false)
 const activeCommunication = ref<QueueCommunication | null>(null)
 
 function openPersonaEditor() {
   if (!canEditPersona.value) {
     return
   }
-  isOmniConfigOpen.value = true
-}
-
-function closePersonaEditor() {
-  isOmniConfigOpen.value = false
+  void navigateTo({ path: '/calendario', query: { config: 'ia' } })
 }
 
 function openCommunication(item: QueueCommunication) {
@@ -163,11 +157,9 @@ onBeforeUnmount(() => {
             v-if="canEditPersona"
             type="button"
             class="operation-side__persona-toggle"
-            :class="{ 'operation-side__persona-toggle--is-active': isOmniConfigOpen }"
-            :aria-pressed="isOmniConfigOpen"
             aria-label="Configurar Omni Chat"
             title="Configurar Omni Chat"
-            @click="isOmniConfigOpen ? closePersonaEditor() : openPersonaEditor()"
+            @click="openPersonaEditor()"
           >
             <span class="material-icons-round">tune</span>
           </button>
@@ -322,11 +314,4 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
   </Teleport>
-
-  <OperationOmniChatConfigDrawer
-    v-if="canEditPersona"
-    :open="isOmniConfigOpen"
-    :account-id="props.accountId"
-    @update:open="isOmniConfigOpen = $event"
-  />
 </template>

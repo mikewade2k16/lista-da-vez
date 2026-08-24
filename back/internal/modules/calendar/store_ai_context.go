@@ -124,7 +124,7 @@ func (s *Store) loadAccountNames(ctx context.Context, accountID string, clientID
 // (event_date, event_time, created_at). Escopo por account_id (defesa em profundidade).
 // limit <= 0 = sem teto.
 func (s *Store) ListEventsLean(ctx context.Context, accountID, from, to, clientID string, limit int) ([]AIContextEvent, error) {
-	q := `select e.id::text, e.event_date::text, e.event_time, e.type, e.title, e.status, e.priority,
+	q := `select e.id::text, e.version, e.event_date::text, e.event_time, e.type, e.title, e.status, e.priority,
 		e.responsible_id, coalesce(e.involved_ids, '[]'::jsonb), coalesce(e.client_id::text, ''),
 		left(e.description, 500), coalesce(e.media, '[]'::jsonb), coalesce(e.linked_media, '[]'::jsonb)` +
 		eventTaskIDCol + ` from calendar.events e where e.account_id = $1::uuid`
@@ -169,7 +169,7 @@ func (s *Store) ListEventsLean(ctx context.Context, accountID, from, to, clientI
 // da conta, sem cliente, entram). Fecha o vazamento de eventos de cliente fora do escopo do
 // usuario (a agencia recebe todos os seus clientes; um usuario subset recebe so os que ve).
 func (s *Store) ListEventsLeanForClients(ctx context.Context, accountID, from, to string, clientIDs []string, limit int) ([]AIContextEvent, error) {
-	q := `select e.id::text, e.event_date::text, e.event_time, e.type, e.title, e.status, e.priority,
+	q := `select e.id::text, e.version, e.event_date::text, e.event_time, e.type, e.title, e.status, e.priority,
 		e.responsible_id, coalesce(e.involved_ids, '[]'::jsonb), coalesce(e.client_id::text, ''),
 		left(e.description, 500), coalesce(e.media, '[]'::jsonb), coalesce(e.linked_media, '[]'::jsonb)` +
 		eventTaskIDCol + ` from calendar.events e where e.account_id = $1::uuid`
@@ -210,7 +210,7 @@ func scanAIContextEvent(row rowScanner) (AIContextEvent, error) {
 	var event AIContextEvent
 	var involvedRaw, ownMedia, linkedMedia json.RawMessage
 	var taskID *string
-	if err := row.Scan(&event.ID, &event.Date, &event.Time, &event.Type, &event.Title,
+	if err := row.Scan(&event.ID, &event.Version, &event.Date, &event.Time, &event.Type, &event.Title,
 		&event.Status, &event.Priority, &event.ResponsibleID, &involvedRaw, &event.ClientID,
 		&event.Description, &ownMedia, &linkedMedia, &taskID); err != nil {
 		return AIContextEvent{}, err

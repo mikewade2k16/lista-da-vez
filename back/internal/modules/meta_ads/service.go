@@ -3,42 +3,73 @@ package metaads
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // ErrNotConnected indica que a account ainda nao conectou uma conta Meta.
 // Mapeado para 404 not_connected nos handlers que exigem conexao ativa.
-var ErrNotConnected = errors.New("meta_ads: conta Meta nao conectada")
+var (
+	ErrNotConnected         = errors.New("meta_ads: conta Meta nao conectada")
+	ErrInvalidClientAccount = errors.New("meta_ads: client account invalida")
+)
+
+var metaAdsUUIDRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 // Service orquestra a persistencia (meta_ads.*), o cliente da Graph API e o
 // cliente do agent-runner (assistente MCP, service_assistant.go).
 type Service struct {
-	store  *Store
-	client *MetaClient
-	runner *RunnerClient
+	store               *Store
+	connectionSnapshots connectionSnapshotRepository
+	client              *MetaClient
+	runner              *RunnerClient
 
 	// bridgeToken e o bearer de servico do BRIDGE INTERNO (/internal/meta-ads/*)
 	// consumido pelo runner Node no HOST. Vazio = bridge nao configurado (503).
 	// Injetado via SetBridgeToken no Build (env META_ADS_RUNNER_BRIDGE_TOKEN).
-	bridgeToken string
+	bridgeToken                    string
+	assistantActionSourceValidator AssistantActionSourceValidator
+}
+
+// connectionSnapshotRepository mantem o seam de teste do connect restrito ao
+// snapshot atomico. O restante do modulo continua usando o Store concreto.
+type connectionSnapshotRepository interface {
+	HasCryptoKey() bool
+	SaveConnectionSnapshot(
+		ctx context.Context,
+		accountID, metaBusinessID, name, token string,
+		tokenExpiresAt *time.Time,
+		adAccounts []AdAccount,
+	) (Connection, error)
 }
 
 // NewService cria o Service. runner pode estar "nao configurado" (baseURL/token
 // vazios) — os endpoints do assistente respondem 503 nesse caso.
 func NewService(store *Store, client *MetaClient, runner *RunnerClient) *Service {
-	return &Service{store: store, client: client, runner: runner}
+	return &Service{
+		store:               store,
+		connectionSnapshots: store,
+		client:              client,
+		runner:              runner,
+	}
 }
 
 // SetBridgeToken injeta o bearer de servico do bridge interno do runner. Lido do
 // env no Build (META_ADS_RUNNER_BRIDGE_TOKEN); vazio = bridge desligado (503).
 func (s *Service) SetBridgeToken(token string) { s.bridgeToken = strings.TrimSpace(token) }
 
+func (s *Service) SetAssistantActionSourceValidator(validator AssistantActionSourceValidator) {
+	s.assistantActionSourceValidator = validator
+}
+
 // Overview retorna o status da conexao + KPIs agregados da conta de anuncio. Sem
 // conexao NAO e erro: devolve OverviewView com Connection.Connected=false para o
 // front exibir o card de conectar. adAccountID opcional (filtra os KPIs).
 func (s *Service) Overview(ctx context.Context, accountID, adAccountID string) (OverviewView, error) {
-	conn, err := s.store.GetConnection(ctx, accountID)
+	conn, err := s.connectionForViewer(ctx, accountID)
 	if noRows(err) {
 		return OverviewView{Connection: ConnectionView{Connected: false}}, nil
 	}
@@ -50,10 +81,14 @@ func (s *Service) Overview(ctx context.Context, accountID, adAccountID string) (
 	if adAccountID == "" {
 		return view, nil
 	}
+	adAccount, err := s.requireAdAccount(ctx, accountID, adAccountID)
+	if err != nil {
+		return OverviewView{}, err
+	}
 
 	// KPIs zerados quando nao ha insights — sem erro.
 	since, until := rangeWindow("last_30d")
-	insights, err := s.store.ListInsights(ctx, accountID, adAccountID, "account", since, until)
+	insights, err := s.store.ListInsights(ctx, adAccount.AccountID, adAccount.ID, "account", since, until)
 	if err != nil {
 		return OverviewView{}, err
 	}
@@ -66,11 +101,38 @@ func (s *Service) Overview(ctx context.Context, accountID, adAccountID string) (
 // cifra. NUNCA loga o token.
 func (s *Service) SaveConnection(ctx context.Context, accountID, token string) (ConnectionView, error) {
 	token = strings.TrimSpace(token)
-	if token == "" {
-		return ConnectionView{}, errors.New("token vazio")
+	if err := s.validateConnectionPrerequisites(token); err != nil {
+		return ConnectionView{}, err
 	}
-	if !s.store.HasCryptoKey() {
-		return ConnectionView{}, ErrCryptoKeyMissing
+	permissions, err := s.client.ListPermissions(ctx, token)
+	if err != nil {
+		return ConnectionView{}, err
+	}
+	if err := validateOAuthPermissions(permissions); err != nil {
+		return ConnectionView{}, err
+	}
+	return s.saveConnection(ctx, accountID, token, nil)
+}
+
+// SaveOAuthConnection persiste token, expiracao e contas descobertas em um
+// unico snapshot. Nao existe janela em que o token novo aponte para o cache da
+// conexao anterior.
+func (s *Service) SaveOAuthConnection(
+	ctx context.Context,
+	accountID, token string,
+	tokenExpiresAt *time.Time,
+) (ConnectionView, error) {
+	return s.saveConnection(ctx, accountID, token, tokenExpiresAt)
+}
+
+func (s *Service) saveConnection(
+	ctx context.Context,
+	accountID, token string,
+	tokenExpiresAt *time.Time,
+) (ConnectionView, error) {
+	token = strings.TrimSpace(token)
+	if err := s.validateConnectionPrerequisites(token); err != nil {
+		return ConnectionView{}, err
 	}
 
 	// Valida o token chamando a Graph (lista contas acessiveis).
@@ -79,19 +141,32 @@ func (s *Service) SaveConnection(ctx context.Context, accountID, token string) (
 		return ConnectionView{}, err
 	}
 
-	conn, err := s.store.UpsertConnection(ctx, accountID, "", "Meta Ads", token)
+	conn, err := s.connectionSnapshots.SaveConnectionSnapshot(
+		ctx,
+		accountID,
+		"",
+		"Meta Ads",
+		token,
+		tokenExpiresAt,
+		graphAdAccountsSnapshot(adAccounts),
+	)
 	if err != nil {
 		return ConnectionView{}, err
 	}
-
-	// Cacheia as contas descobertas (best-effort dentro da transacao logica).
-	for _, a := range adAccounts {
-		if _, upErr := s.store.UpsertAdAccount(ctx, accountID, conn.ID,
-			a.AccountID, a.Name, a.Currency, accountStatusLabel(a.AccountStatus)); upErr != nil {
-			return ConnectionView{}, upErr
-		}
-	}
 	return toConnectionView(conn), nil
+}
+
+func (s *Service) validateConnectionPrerequisites(token string) error {
+	if strings.TrimSpace(token) == "" {
+		return errors.New("token vazio")
+	}
+	if s == nil || s.connectionSnapshots == nil || !s.connectionSnapshots.HasCryptoKey() {
+		return ErrCryptoKeyMissing
+	}
+	if s.client == nil {
+		return errors.New("meta graph: cliente nao configurado")
+	}
+	return nil
 }
 
 // DeleteConnection remove a conexao da account (cascade no cache).
@@ -102,7 +177,7 @@ func (s *Service) DeleteConnection(ctx context.Context, accountID string) error 
 // ListAdAccounts lista as contas de anuncio do cache. Se o cache estiver vazio
 // mas houver conexao, busca ao vivo na Graph e popula o cache.
 func (s *Service) ListAdAccounts(ctx context.Context, accountID string) ([]AdAccountView, error) {
-	conn, err := s.store.GetConnection(ctx, accountID)
+	conn, err := s.connectionForViewer(ctx, accountID)
 	if noRows(err) {
 		return nil, ErrNotConnected
 	}
@@ -110,15 +185,16 @@ func (s *Service) ListAdAccounts(ctx context.Context, accountID string) ([]AdAcc
 		return nil, err
 	}
 
-	cached, err := s.store.ListAdAccounts(ctx, accountID)
+	cached, err := s.store.ListAdAccounts(ctx, conn.AccountID)
 	if err != nil {
 		return nil, err
 	}
 	if len(cached) == 0 {
-		if cached, err = s.refreshAdAccounts(ctx, accountID, conn.ID); err != nil {
+		if cached, err = s.refreshAdAccounts(ctx, conn); err != nil {
 			return nil, err
 		}
 	}
+	cached = filterAdAccountsForViewer(cached, accountID, conn.AccountID)
 
 	views := make([]AdAccountView, len(cached))
 	for i, a := range cached {
@@ -127,12 +203,52 @@ func (s *Service) ListAdAccounts(ctx context.Context, accountID string) ([]AdAcc
 	return views, nil
 }
 
+// SetAdAccountClient torna explicito o recurso que pertence a cada cliente. A
+// operacao so existe na conexao direta da agencia; um cliente usando a conexao
+// compartilhada nunca pode remapear contas de anuncio.
+func (s *Service) SetAdAccountClient(ctx context.Context, accountID, adAccountID, clientAccountID string) (AdAccountView, error) {
+	accountID = strings.TrimSpace(accountID)
+	adAccountID = strings.TrimSpace(adAccountID)
+	clientAccountID = strings.TrimSpace(clientAccountID)
+	if !metaAdsUUIDRe.MatchString(adAccountID) || (clientAccountID != "" && !metaAdsUUIDRe.MatchString(clientAccountID)) {
+		return AdAccountView{}, ErrInvalidClientAccount
+	}
+	if _, err := s.store.GetConnection(ctx, accountID); err != nil {
+		if noRows(err) {
+			return AdAccountView{}, ErrNotConnected
+		}
+		return AdAccountView{}, err
+	}
+	isAgency, err := s.store.AccountIsAgency(ctx, accountID)
+	if err != nil {
+		return AdAccountView{}, err
+	}
+	if !isAgency {
+		return AdAccountView{}, pgx.ErrNoRows
+	}
+	if clientAccountID != "" {
+		allowed, err := s.store.AgencyCanAssignClient(ctx, accountID, clientAccountID)
+		if err != nil {
+			return AdAccountView{}, err
+		}
+		if !allowed {
+			return AdAccountView{}, pgx.ErrNoRows
+		}
+	}
+	row, err := s.store.SetAdAccountClient(ctx, accountID, adAccountID, clientAccountID)
+	if err != nil {
+		return AdAccountView{}, err
+	}
+	return toAdAccountView(row), nil
+}
+
 // ListCampaigns retorna as campanhas cacheadas de uma conta de anuncio.
 func (s *Service) ListCampaigns(ctx context.Context, accountID, adAccountID string) ([]CampaignView, error) {
-	if _, err := s.requireAdAccount(ctx, accountID, adAccountID); err != nil {
+	adAccount, err := s.requireAdAccount(ctx, accountID, adAccountID)
+	if err != nil {
 		return nil, err
 	}
-	rows, err := s.store.ListCampaigns(ctx, accountID, adAccountID)
+	rows, err := s.store.ListCampaigns(ctx, adAccount.AccountID, adAccount.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,14 +262,15 @@ func (s *Service) ListCampaigns(ctx context.Context, accountID, adAccountID stri
 // Insights retorna a serie temporal cacheada para os graficos. rangeKey ex.:
 // "last_7d"/"last_30d"; level "account" (default) ou "campaign".
 func (s *Service) Insights(ctx context.Context, accountID, adAccountID, rangeKey, level string) ([]InsightPoint, error) {
-	if _, err := s.requireAdAccount(ctx, accountID, adAccountID); err != nil {
+	adAccount, err := s.requireAdAccount(ctx, accountID, adAccountID)
+	if err != nil {
 		return nil, err
 	}
 	if level != "campaign" {
 		level = "account"
 	}
 	since, until := rangeWindow(rangeKey)
-	rows, err := s.store.ListInsights(ctx, accountID, adAccountID, level, since, until)
+	rows, err := s.store.ListInsights(ctx, adAccount.AccountID, adAccount.ID, level, since, until)
 	if err != nil {
 		return nil, err
 	}
@@ -164,22 +281,59 @@ func (s *Service) Insights(ctx context.Context, accountID, adAccountID, rangeKey
 	return points, nil
 }
 
-// requireAdAccount garante que existe conexao e que a conta de anuncio pertence
-// a esta account. Retorna ErrNotConnected (sem conexao) ou pgx.ErrNoRows (conta
-// de outra account / inexistente).
+// connectionForViewer resolve a conexao direta da account. Para uma account de
+// cliente sem conexao propria, pode reutilizar a conexao central da agencia da
+// mesma organizacao; os recursos continuam sujeitos ao vinculo client_account_id.
+func (s *Service) connectionForViewer(ctx context.Context, accountID string) (Connection, error) {
+	conn, err := s.store.GetConnection(ctx, accountID)
+	if noRows(err) {
+		return s.store.FindAgencyConnectionForClient(ctx, accountID)
+	}
+	return conn, err
+}
+
+// requireAdAccount garante que a conta de anuncio esta visivel para a account
+// ativa. Na conexao compartilhada da agencia, somente linhas explicitamente
+// vinculadas ao client_account_id do viewer sao aceitas; sem vinculo = 404.
 func (s *Service) requireAdAccount(ctx context.Context, accountID, adAccountID string) (AdAccount, error) {
-	if _, err := s.store.GetConnection(ctx, accountID); err != nil {
+	conn, err := s.connectionForViewer(ctx, accountID)
+	if err != nil {
 		if noRows(err) {
 			return AdAccount{}, ErrNotConnected
 		}
 		return AdAccount{}, err
 	}
-	return s.store.GetAdAccount(ctx, accountID, adAccountID)
+	adAccount, err := s.store.GetAdAccount(ctx, conn.AccountID, adAccountID)
+	if err != nil {
+		return AdAccount{}, err
+	}
+	if conn.AccountID != accountID && !adAccountBelongsToClient(adAccount, accountID) {
+		return AdAccount{}, pgx.ErrNoRows
+	}
+	return adAccount, nil
+}
+
+func filterAdAccountsForViewer(rows []AdAccount, viewerAccountID, sourceAccountID string) []AdAccount {
+	if strings.TrimSpace(viewerAccountID) == strings.TrimSpace(sourceAccountID) {
+		return rows
+	}
+	out := make([]AdAccount, 0, len(rows))
+	for _, row := range rows {
+		if adAccountBelongsToClient(row, viewerAccountID) {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func adAccountBelongsToClient(adAccount AdAccount, clientAccountID string) bool {
+	return adAccount.ClientAccountID != nil &&
+		strings.TrimSpace(*adAccount.ClientAccountID) == strings.TrimSpace(clientAccountID)
 }
 
 // refreshAdAccounts busca as contas de anuncio ao vivo e popula o cache.
-func (s *Service) refreshAdAccounts(ctx context.Context, accountID, connectionID string) ([]AdAccount, error) {
-	token, err := s.store.GetDecryptedToken(ctx, accountID)
+func (s *Service) refreshAdAccounts(ctx context.Context, connection Connection) ([]AdAccount, error) {
+	token, err := s.store.GetDecryptedTokenAtRevision(ctx, connection.AccountID, connection.Revision)
 	if err != nil {
 		return nil, err
 	}
@@ -187,13 +341,30 @@ func (s *Service) refreshAdAccounts(ctx context.Context, accountID, connectionID
 	if err != nil {
 		return nil, err
 	}
-	for _, a := range remote {
-		if _, upErr := s.store.UpsertAdAccount(ctx, accountID, connectionID,
-			a.AccountID, a.Name, a.Currency, accountStatusLabel(a.AccountStatus)); upErr != nil {
-			return nil, upErr
-		}
+	if err := s.store.ReplaceAdAccountsSnapshotAtRevision(
+		ctx,
+		connection.AccountID,
+		connection.ID,
+		connection.Revision,
+		graphAdAccountsSnapshot(remote),
+	); err != nil {
+		return nil, err
 	}
-	return s.store.ListAdAccounts(ctx, accountID)
+	return s.store.ListAdAccounts(ctx, connection.AccountID)
+}
+
+func graphAdAccountsSnapshot(remote []GraphAdAccount) []AdAccount {
+	rows := make([]AdAccount, 0, len(remote))
+	for _, account := range remote {
+		rows = append(rows, AdAccount{
+			MetaAdAccountID: account.AccountID,
+			Name:            account.Name,
+			Currency:        account.Currency,
+			Status:          accountStatusLabel(account.AccountStatus),
+			IsCurrent:       true,
+		})
+	}
+	return rows
 }
 
 // rangeWindow traduz uma chave de range em [since, until] (datas UTC, inclusivo).

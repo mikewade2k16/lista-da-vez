@@ -71,6 +71,10 @@ export const useCalendarStore = defineStore('calendar', () => {
   const notesByMonth = ref<Record<string, string>>({})
   const notesLoaded = ref<Set<string>>(new Set())
   const initialized = ref(false)
+  // Distingue "init disparado" de config realmente hidratada para a account ativa.
+  // Consumidores que fazem PUT full-replace nao podem usar os defaults enquanto o GET
+  // ainda esta em voo, senao apagam secoes reais da configuracao.
+  const configLoadedAccountId = ref('')
 
   const events = ref<CalendarEvent[]>([])
   const holidays = ref<CalendarHoliday[]>([])
@@ -275,7 +279,11 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   async function fetchConfig(): Promise<void> {
     await withSession(async () => {
-      config.value = await calendarApi.fetchConfig(apiRequest)
+      const accountId = String(accountStore.activeAccountId || '').trim()
+      const next = await calendarApi.fetchConfig(apiRequest)
+      if (!accountId || accountId !== String(accountStore.activeAccountId || '').trim()) return
+      config.value = next
+      configLoadedAccountId.value = accountId
     })
   }
 
@@ -286,8 +294,13 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function saveConfig(next: CalendarConfig): Promise<boolean> {
+    const accountId = String(accountStore.activeAccountId || '').trim()
     try {
-      config.value = await calendarApi.putConfig(apiRequest, next)
+      const saved = await calendarApi.putConfig(apiRequest, next)
+      if (!accountId || accountId !== String(accountStore.activeAccountId || '').trim())
+        return false
+      config.value = saved
+      configLoadedAccountId.value = accountId
       await fetchResponsibles()
       await fetchHolidays()
       return true
@@ -309,6 +322,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   watch(
     () => accountStore.activeAccountId,
     () => {
+      configLoadedAccountId.value = ''
       if (!initialized.value) return
       eventsFetchVersion += 1
       events.value = []
@@ -430,6 +444,11 @@ export const useCalendarStore = defineStore('calendar', () => {
     config,
     members,
     isInitialized: computed(() => initialized.value),
+    isConfigLoaded: computed(
+      () =>
+        Boolean(configLoadedAccountId.value) &&
+        configLoadedAccountId.value === String(accountStore.activeAccountId || '').trim(),
+    ),
     // derivados
     clients,
     clientsById,

@@ -156,6 +156,15 @@ setores/filas/regras e cofre sob `/v1/omnichannel/settings/*`, agente sob `/v1/o
 Credencial de numero e keyed por **`instanceName`** (nao id). A view de gestão inclui `provider`;
 `GET .../instances/{id}/capabilities` existe e a tela degrada para ausente somente se a consulta falhar.
 
+`ConfigAiCredentials` e `ConfigAiRoleModelSelect` aceitam `credentialBasePath` opcional para
+reuso pelo Assistente 360 via a fachada neutra `/v1/assistant/ai-credentials`; sem a prop, as
+telas nativas continuam nas rotas Omnichannel acima. A prop opcional `accountId` existe somente
+para o drawer cross-account da Operacao capturar o cliente operacional ja autorizado; consumidores
+nativos nao a passam e continuam usando o provider global do shell. Em ambos os casos o navegador
+recebe apenas metadados mascarados, nunca o segredo. No catalogo neutro, credenciais da agencia
+canonica chegam com `ownedByAccount=false`, `readOnly=true` e `ownerName`; a tela identifica a
+origem, permite selecionar/consultar modelos e nao oferece renomear, rotacionar ou excluir.
+
 ### E7/E8 — canais Meta no painel
 
 `ConfigInstagram.vue` e `instagram-api.ts` usam somente rotas account-scoped do Go. Tokens são

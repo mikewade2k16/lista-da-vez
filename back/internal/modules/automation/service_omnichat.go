@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -25,24 +27,42 @@ type OmniChatRuntimeCredential struct {
 }
 
 type OmniChatConfigView struct {
-	Enabled       bool    `json:"enabled"`
-	SystemPrompt  string  `json:"systemPrompt"`
-	IsDefault     bool    `json:"isDefault"`
-	CredentialID  string  `json:"credentialId"`
-	Provider      string  `json:"provider"`
-	Model         string  `json:"model"`
-	Temperature   float64 `json:"temperature"`
-	HistoryWindow int     `json:"historyWindow"`
+	Enabled        bool                         `json:"enabled"`
+	SystemPrompt   string                       `json:"systemPrompt"`
+	IsDefault      bool                         `json:"isDefault"`
+	Inherited      bool                         `json:"inherited"`
+	InheritedFrom  string                       `json:"inheritedFrom,omitempty"`
+	CredentialID   string                       `json:"credentialId"`
+	Provider       string                       `json:"provider"`
+	Model          string                       `json:"model"`
+	Temperature    float64                      `json:"temperature"`
+	HistoryWindow  int                          `json:"historyWindow"`
+	SurfaceModules map[string]map[string]string `json:"surfaceModules"`
 }
 
 type OmniChatConfigInput struct {
-	Enabled       bool
-	SystemPrompt  string
-	CredentialID  string
-	Model         string
-	Temperature   float64
-	HistoryWindow int
-	UpdatedBy     string
+	Enabled        bool
+	SystemPrompt   string
+	CredentialID   string
+	Model          string
+	Temperature    float64
+	HistoryWindow  int
+	SurfaceModules map[string]map[string]string
+	UpdatedBy      string
+}
+
+// OmniChatRuntimeConfig e a leitura interna usada pelo motor compartilhado do
+// assistente. A API key nunca e serializada para HTTP; ela cruza apenas a fronteira
+// Go->n8n no momento da execucao.
+type OmniChatRuntimeConfig struct {
+	Enabled        bool
+	SystemPrompt   string
+	Provider       string
+	Model          string
+	APIKey         string
+	Temperature    float64
+	HistoryWindow  int
+	SurfaceModules map[string]map[string]string
 }
 
 // OmniChatResultView e a resposta do Omni Chat para o painel de Operacao.
@@ -57,6 +77,33 @@ const (
 	minHistoryWindow     = 1
 	maxHistoryWindow     = 20
 )
+
+var assistantSurfaceDefaults = map[string]map[string]string{
+	"calendar": {"calendar": "write", "tasks": "write", "meta_ads": "off", "users": "read"},
+	"meta_ads": {"calendar": "off", "tasks": "off", "meta_ads": "write", "users": "off"},
+	"global":   {"calendar": "read", "tasks": "read", "meta_ads": "read", "users": "read"},
+}
+
+func defaultAssistantSurfaceModules() map[string]map[string]string {
+	return normalizeAssistantSurfaceModules(assistantSurfaceDefaults)
+}
+
+func normalizeAssistantSurfaceModules(input map[string]map[string]string) map[string]map[string]string {
+	out := make(map[string]map[string]string, len(assistantSurfaceDefaults))
+	for surface, defaults := range assistantSurfaceDefaults {
+		configured := input[surface]
+		modes := make(map[string]string, len(defaults))
+		for module, fallback := range defaults {
+			mode := strings.ToLower(strings.TrimSpace(configured[module]))
+			if mode != "off" && mode != "read" && mode != "write" {
+				mode = fallback
+			}
+			modes[module] = mode
+		}
+		out[surface] = modes
+	}
+	return out
+}
 
 func (s *Service) OmniChatAsk(
 	ctx context.Context,
@@ -154,6 +201,8 @@ func normalizeOmniChatProvider(value string) string {
 		return "gemini"
 	case "glm":
 		return "glm"
+	case "anthropic":
+		return "anthropic"
 	default:
 		return ""
 	}
@@ -184,21 +233,55 @@ func (s *Service) OmniChatConfig(ctx context.Context, accountID string) (OmniCha
 	if err != nil {
 		return OmniChatConfigView{}, err
 	}
+	return omniChatConfigView(config), nil
+}
+
+// OmniChatSurfaceModuleModeTx devolve o modo efetivo da matriz canonica no
+// snapshot da transacao chamadora. Nao resolve segredo/credencial: confirmacoes
+// precisam revalidar autorizacao, sem depender da disponibilidade do provedor IA.
+func (s *Service) OmniChatSurfaceModuleModeTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	accountID, surface, module string,
+) (string, error) {
+	if s == nil || s.store == nil || tx == nil {
+		return "off", ErrOmniChatInvalidConfig
+	}
+	config, err := s.store.GetOmniChatConfigTx(ctx, tx, strings.TrimSpace(accountID))
+	if err != nil {
+		return "off", err
+	}
+	if !config.Enabled {
+		return "off", nil
+	}
+	surface = strings.ToLower(strings.TrimSpace(surface))
+	module = strings.ToLower(strings.TrimSpace(module))
+	mode := normalizeAssistantSurfaceModules(config.SurfaceModules)[surface][module]
+	if mode != "read" && mode != "write" {
+		return "off", nil
+	}
+	return mode, nil
+}
+
+func omniChatConfigView(config OmniChatConfig) OmniChatConfigView {
 	isDefault := strings.TrimSpace(config.SystemPrompt) == ""
 	prompt := config.SystemPrompt
 	if isDefault {
 		prompt = omniChatPersona
 	}
 	return OmniChatConfigView{
-		Enabled:       config.Enabled,
-		SystemPrompt:  prompt,
-		IsDefault:     isDefault,
-		CredentialID:  config.CredentialID,
-		Provider:      config.Provider,
-		Model:         config.Model,
-		Temperature:   config.Temperature,
-		HistoryWindow: clampHistoryWindow(config.HistoryWindow),
-	}, nil
+		Enabled:        config.Enabled,
+		SystemPrompt:   prompt,
+		IsDefault:      isDefault,
+		Inherited:      config.Inherited,
+		InheritedFrom:  config.SourceAccountName,
+		CredentialID:   config.CredentialID,
+		Provider:       config.Provider,
+		Model:          config.Model,
+		Temperature:    config.Temperature,
+		HistoryWindow:  clampHistoryWindow(config.HistoryWindow),
+		SurfaceModules: normalizeAssistantSurfaceModules(config.SurfaceModules),
+	}
 }
 
 func (s *Service) SetOmniChatConfig(ctx context.Context, accountID string, input OmniChatConfigInput) (OmniChatConfigView, error) {
@@ -233,24 +316,42 @@ func (s *Service) SetOmniChatConfig(ctx context.Context, accountID string, input
 	saved, err := s.store.SaveOmniChatConfig(ctx, OmniChatConfig{
 		AccountID: accountID, Enabled: input.Enabled, SystemPrompt: prompt,
 		CredentialID: credentialID, Provider: provider, Model: model,
-		Temperature:   clampOmniChatTemperature(input.Temperature),
-		HistoryWindow: clampHistoryWindow(input.HistoryWindow),
-		UpdatedBy:     input.UpdatedBy,
+		Temperature:    clampOmniChatTemperature(input.Temperature),
+		HistoryWindow:  clampHistoryWindow(input.HistoryWindow),
+		SurfaceModules: normalizeAssistantSurfaceModules(input.SurfaceModules),
+		UpdatedBy:      input.UpdatedBy,
 	})
 	if err != nil {
 		return OmniChatConfigView{}, err
 	}
-	return OmniChatConfigView{
-		Enabled: saved.Enabled, SystemPrompt: firstOmniChatPrompt(saved.SystemPrompt),
-		IsDefault:    strings.TrimSpace(saved.SystemPrompt) == "",
-		CredentialID: saved.CredentialID, Provider: saved.Provider, Model: saved.Model,
-		Temperature: saved.Temperature, HistoryWindow: saved.HistoryWindow,
-	}, nil
+	return omniChatConfigView(saved), nil
 }
 
-func firstOmniChatPrompt(prompt string) string {
-	if strings.TrimSpace(prompt) == "" {
-		return omniChatPersona
+// OmniChatRuntime resolve configuracao + segredo no cofre para consumidores
+// internos. Mantem uma unica fonte de provider/modelo/prompt para o chat 360.
+func (s *Service) OmniChatRuntime(ctx context.Context, accountID string) (OmniChatRuntimeConfig, error) {
+	config, err := s.OmniChatConfig(ctx, accountID)
+	if err != nil {
+		return OmniChatRuntimeConfig{}, err
 	}
-	return prompt
+	if !config.Enabled {
+		return OmniChatRuntimeConfig{}, ErrOmniChatDisabled
+	}
+	if strings.TrimSpace(config.CredentialID) == "" || s.omniChatCredentials == nil {
+		return OmniChatRuntimeConfig{}, ErrOmniChatCredentialUnavailable
+	}
+	credential, err := s.omniChatCredentials.ResolveCredential(ctx, accountID, config.CredentialID)
+	if err != nil || strings.TrimSpace(credential.APIKey) == "" {
+		return OmniChatRuntimeConfig{}, ErrOmniChatCredentialUnavailable
+	}
+	provider := normalizeOmniChatProvider(credential.Provider)
+	if provider == "" {
+		return OmniChatRuntimeConfig{}, ErrOmniChatInvalidConfig
+	}
+	return OmniChatRuntimeConfig{
+		Enabled: true, SystemPrompt: config.SystemPrompt, Provider: provider,
+		Model: config.Model, APIKey: credential.APIKey, Temperature: config.Temperature,
+		HistoryWindow:  config.HistoryWindow,
+		SurfaceModules: normalizeAssistantSurfaceModules(config.SurfaceModules),
+	}, nil
 }

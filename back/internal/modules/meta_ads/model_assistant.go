@@ -6,7 +6,8 @@ import (
 )
 
 // ============================================================================
-// Modelos de dominio (linhas de meta_ads.assistant_messages)
+// Modelos de compatibilidade do chat/runner legado (meta_ads.assistant_messages).
+// O produto usa o contrato compartilhado /v1/assistant/chat/*.
 // ============================================================================
 
 // Papeis das mensagens do chat (check constraint no banco).
@@ -30,7 +31,7 @@ type AssistantMessage struct {
 // Views (contrato JSON CONGELADO — o front codifica contra este shape)
 // ============================================================================
 
-// AssistantAction e uma acao executada pelo runner (tool do MCP meta-ads).
+// AssistantAction registra a observacao devolvida pelo runner legado read-only.
 // Status: "ok" | "error".
 type AssistantAction struct {
 	Tool    string `json:"tool"`
@@ -48,18 +49,19 @@ type AssistantMessageView struct {
 	CreatedAt string            `json:"createdAt"`
 }
 
-// AssistantSendResult e a resposta de POST /v1/meta-ads/assistant/messages:
-// a mensagem do usuario + a resposta do assistente recem-persistidas.
+// AssistantSendResult preserva o DTO do servico legado, hoje sem rota publica
+// montada. O contrato de produto fica em /v1/assistant/chat/*.
 type AssistantSendResult struct {
 	Messages      []AssistantMessageView `json:"messages"`
 	SyncTriggered bool                   `json:"syncTriggered"`
 }
 
-// AssistantHealthView e o status do agent-runner para o card de conexoes.
+// AssistantHealthView e o status interno do runner legado/read-only.
 type AssistantHealthView struct {
 	OK         bool   `json:"ok"`
 	ClaudeAuth bool   `json:"claudeAuth"`
 	Detail     string `json:"detail"`
+	MetaAuth   string `json:"metaAuth"`
 }
 
 // ============================================================================

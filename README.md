@@ -79,9 +79,12 @@ sao editados no painel e persistidos em `storage.settings`.
 - `npm run dev:ps`
   - lista os servicos e portas
 - `npm run dev:down`
-  - encerra a stack Docker
+  - para a stack Docker preservando containers e volumes
+- `npm run dev:remove-containers -- -Confirmation REMOVE_OMNI_CONTAINERS`
+  - remove deliberadamente os containers locais, preservando os volumes
 - `npm run dev:down:volumes`
-  - encerra a stack e remove volumes do banco
+  - bloqueado por padrao; para apagar containers e dados locais, exige
+    `npm run dev:down:volumes -- -Confirmation DELETE_OMNI_LOCAL_DATA`
 - `npm run build`
   - build do frontend
 

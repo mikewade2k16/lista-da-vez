@@ -279,39 +279,104 @@ export function deleteHandoffPolicy(api: ApiRequest, id: string): Promise<void> 
 
 const AGENTS = `${BASE}/agents`
 const AI_CREDENTIALS = `${BASE}/settings/ai-credentials`
+export const ASSISTANT_AI_CREDENTIALS_PATH = '/v1/assistant/ai-credentials'
+type AIRequestOptions = {
+  basePath?: string
+  headers?: Record<string, string>
+  signal?: AbortSignal
+}
 
-export function fetchAICredentials(api: ApiRequest): Promise<OmniAICredential[]> {
-  return api(AI_CREDENTIALS, { dedupe: false }) as Promise<OmniAICredential[]>
+function aiCredentialRequest(options: AIRequestOptions): {
+  basePath: string
+  requestOptions: Omit<AIRequestOptions, 'basePath'>
+} {
+  const { basePath = AI_CREDENTIALS, ...requestOptions } = options
+  return { basePath: String(basePath).replace(/\/+$/, ''), requestOptions }
+}
+
+export function normalizeAICredentials(value: unknown): OmniAICredential[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+    const raw = candidate as Record<string, unknown>
+    const id = String(raw.id || '').trim()
+    const provider = String(raw.provider || '')
+      .trim()
+      .toLowerCase()
+    if (!id || !['openai', 'anthropic', 'gemini', 'glm'].includes(provider)) return []
+
+    const readOnly = raw.readOnly === true
+    return [
+      {
+        id,
+        name: String(raw.name || '').trim(),
+        provider: provider as OmniAICredential['provider'],
+        last4: String(raw.last4 || '').trim(),
+        ownedByAccount: typeof raw.ownedByAccount === 'boolean' ? raw.ownedByAccount : !readOnly,
+        ownerName: String(raw.ownerName || '').trim(),
+        readOnly,
+        createdAt: String(raw.createdAt || ''),
+        updatedAt: String(raw.updatedAt || ''),
+      },
+    ]
+  })
+}
+
+export async function fetchAICredentials(
+  api: ApiRequest,
+  options: AIRequestOptions = {},
+): Promise<OmniAICredential[]> {
+  const { basePath, requestOptions } = aiCredentialRequest(options)
+  const response = await api(basePath, { ...requestOptions, dedupe: false })
+  return normalizeAICredentials(response)
 }
 
 export function createAICredential(
   api: ApiRequest,
   input: OmniAICredentialInput,
+  options: AIRequestOptions = {},
 ): Promise<OmniAICredential> {
-  return api(AI_CREDENTIALS, { method: 'POST', body: input }) as Promise<OmniAICredential>
+  const { basePath, requestOptions } = aiCredentialRequest(options)
+  return api(basePath, {
+    ...requestOptions,
+    method: 'POST',
+    body: input,
+  }) as Promise<OmniAICredential>
 }
 
 export function updateAICredential(
   api: ApiRequest,
   credentialId: string,
   patch: { name?: string; apiKey?: string },
+  options: AIRequestOptions = {},
 ): Promise<OmniAICredential> {
-  return api(`${AI_CREDENTIALS}/${encodeURIComponent(credentialId)}`, {
+  const { basePath, requestOptions } = aiCredentialRequest(options)
+  return api(`${basePath}/${encodeURIComponent(credentialId)}`, {
+    ...requestOptions,
     method: 'PATCH',
     body: patch,
   }) as Promise<OmniAICredential>
 }
 
-export function deleteAICredential(api: ApiRequest, credentialId: string): Promise<void> {
-  return api(`${AI_CREDENTIALS}/${encodeURIComponent(credentialId)}`, {
+export function deleteAICredential(
+  api: ApiRequest,
+  credentialId: string,
+  options: AIRequestOptions = {},
+): Promise<void> {
+  const { basePath, requestOptions } = aiCredentialRequest(options)
+  return api(`${basePath}/${encodeURIComponent(credentialId)}`, {
+    ...requestOptions,
     method: 'DELETE',
   }) as Promise<void>
 }
 
 export function importLegacyAICredentials(
   api: ApiRequest,
+  options: AIRequestOptions = {},
 ): Promise<{ imported: number; existing: number }> {
-  return api(`${AI_CREDENTIALS}/import-legacy`, { method: 'POST' }) as Promise<{
+  const { basePath, requestOptions } = aiCredentialRequest(options)
+  return api(`${basePath}/import-legacy`, { ...requestOptions, method: 'POST' }) as Promise<{
     imported: number
     existing: number
   }>
@@ -321,10 +386,12 @@ export function fetchAICredentialModels(
   api: ApiRequest,
   credentialId: string,
   capability: 'response' | 'audio' | 'image' | 'video' | 'document',
+  options: AIRequestOptions = {},
 ): Promise<string[]> {
+  const { basePath, requestOptions } = aiCredentialRequest(options)
   return api(
-    `${AI_CREDENTIALS}/${encodeURIComponent(credentialId)}/models?capability=${encodeURIComponent(capability)}`,
-    { dedupe: false },
+    `${basePath}/${encodeURIComponent(credentialId)}/models?capability=${encodeURIComponent(capability)}`,
+    { ...requestOptions, dedupe: false },
   ) as Promise<string[]>
 }
 

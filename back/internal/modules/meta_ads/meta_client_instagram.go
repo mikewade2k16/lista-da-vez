@@ -6,9 +6,10 @@ import (
 	"strconv"
 )
 
-// igPaginationMaxPages limita quantas paginas de /me/accounts o bridge percorre
-// ao descobrir paginas com Instagram Business (evita varredura ilimitada).
-const igPaginationMaxPages = 3
+const (
+	instagramAccountMaxPages = 20
+	instagramAccountMaxItems = 1_000
+)
 
 // GraphInstagramPage e uma pagina do Facebook (em /me/accounts) com a conta de
 // Instagram Business vinculada, quando houver. Paginas sem instagram_business_account
@@ -44,53 +45,31 @@ type rawPageAccount struct {
 	} `json:"instagram_business_account"`
 }
 
-// pagedAccounts e o envelope de /me/accounts com o cursor de paginacao. Pagina
-// pelo cursor "after" (re-request no mesmo path/base) em vez do link absoluto
-// paging.next — esse link ja inclui o prefixo de versao e duplicaria o base.
-type pagedAccounts struct {
-	Data   []rawPageAccount `json:"data"`
-	Paging struct {
-		Cursors struct {
-			After string `json:"after"`
-		} `json:"cursors"`
-	} `json:"paging"`
-}
-
 // ListPagesWithInstagram lista as paginas do Facebook acessiveis pelo token que
-// possuem uma conta de Instagram Business vinculada. Segue o cursor "after" ate
-// igPaginationMaxPages. O token nunca aparece em log/erro (getJSON o passa
-// internamente e graphError so ecoa a mensagem da Graph).
+// possuem uma conta de Instagram Business vinculada. Reusa a paginacao segura:
+// cursor opaco, mesmo host/path, deteccao de repeticao e tetos explicitos.
 func (c *MetaClient) ListPagesWithInstagram(ctx context.Context, token string) ([]GraphInstagramPage, error) {
-	var pages []GraphInstagramPage
-	after := ""
-
-	for page := 0; page < igPaginationMaxPages; page++ {
-		q := url.Values{}
-		q.Set("fields", "id,name,instagram_business_account{id,username}")
-		q.Set("limit", "50")
-		if after != "" {
-			q.Set("after", after)
+	q := url.Values{}
+	q.Set("fields", "id,name,instagram_business_account{id,username}")
+	q.Set("limit", "50")
+	rawPages, err := graphPageData[rawPageAccount](
+		ctx, c, "/me/accounts", token, q,
+		instagramAccountMaxPages, instagramAccountMaxItems,
+	)
+	if err != nil {
+		return nil, err
+	}
+	pages := make([]GraphInstagramPage, 0, len(rawPages))
+	for _, page := range rawPages {
+		if page.InstagramBusinessAccount == nil || page.InstagramBusinessAccount.ID == "" {
+			continue
 		}
-
-		var out pagedAccounts
-		if err := c.getJSON(ctx, "/me/accounts", token, q, &out); err != nil {
-			return nil, err
-		}
-		for _, p := range out.Data {
-			if p.InstagramBusinessAccount == nil || p.InstagramBusinessAccount.ID == "" {
-				continue
-			}
-			pages = append(pages, GraphInstagramPage{
-				PageID:     p.ID,
-				PageName:   p.Name,
-				IGUserID:   p.InstagramBusinessAccount.ID,
-				IGUsername: p.InstagramBusinessAccount.Username,
-			})
-		}
-		after = out.Paging.Cursors.After
-		if after == "" {
-			break
-		}
+		pages = append(pages, GraphInstagramPage{
+			PageID:     page.ID,
+			PageName:   page.Name,
+			IGUserID:   page.InstagramBusinessAccount.ID,
+			IGUsername: page.InstagramBusinessAccount.Username,
+		})
 	}
 	return pages, nil
 }

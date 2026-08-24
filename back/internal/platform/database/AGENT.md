@@ -167,6 +167,39 @@ Dois pools, duas roles (defesa em profundidade + pre-requisito do RLS):
 
 ## Notas recentes de schema
 
+- `0292_assistant_anthropic_credentials.sql` amplia os checks de provider somente em
+  `messaging.ai_credentials` e `automation.omni_chat_configs` para incluir `anthropic`. A migration
+  introspecta/remove os checks anteriores e recria constraints nomeadas; não altera linhas,
+  credenciais selecionadas, keyrings de agentes Omnichannel nem schemas de Intelligence.
+
+- `0290_meta_ads_action_execution_guards.sql` adiciona snapshots/hashes versionados ao comando
+  Meta, connection/revision do claim e constraints fail-closed (legado version 0; budget BRL-only).
+  O Store compara connection, mapping, policy e campanha sob row lock antes de `executing`.
+- `0291_meta_ads_current_snapshots.sql` versiona connections e marca ad accounts/campanhas atuais.
+  O executor combina revision exata com advisory lease; rotacao/delete aguardam o fim da Graph sem
+  manter transacao PostgreSQL durante I/O externo.
+- `0293_meta_ads_create_budget_guard.sql` estende o guard de moeda/policy ao budget de
+  `create_campaign` sem reescrever a 0290 aplicada.
+- `0294_meta_ads_instagram_post_ad_actions.sql` adiciona `promote_instagram_post` e
+  `meta_ads.action_proposal_steps`; cada etapa campaign/ad_set/creative/ad tem hash, estado e
+  receipt único. `executing/unknown` nunca autoriza retry automático.
+
+- `0286_meta_ads_action_proposals.sql` cria policies financeiras por dona da ad account,
+  propostas de mutacao tenant-scoped e eventos append-only. A proposta separa a account viewer
+  da `resource_account_id` dona da conexao, limita a uma tentativa, possui chaves idempotentes de
+  criacao/confirmacao e mantem `unknown` para efeitos externos ambiguos. Campanha e snapshot sem
+  FK para preservar auditoria apos limpeza do cache; o service revalida o alvo antes do write.
+
+- `0285_meta_ads_oauth_states.sql` cria estados efemeros do Facebook Login por account e
+  ator. Persiste somente SHA-256 de 32 bytes, redirect URI, expiracao e consumo; o state
+  bruto, authorization code e access token nunca entram na tabela. O hot path pendente usa
+  indice parcial por `expires_at`, e o consumo single-use acontece por UPDATE condicional.
+
+- `0284_assistant_ai_credential_references.sql` protege os consumidores externos do cofre
+  `messaging.ai_credentials`: Automation usa FK simples porque cliente pode herdar chave da agencia
+  canonica; Queue usa FK composta por conta. Ambas sao `ON DELETE RESTRICT NOT VALID`, idempotentes
+  por `pg_constraint` e nunca fazem cascade ou saneamento silencioso de legado.
+
 - `0236_messaging_contact_intelligence.sql` cria a memória estruturada tenant-safe por contato.
   A tabela guarda somente resumo/fatos/preferências derivados e métricas operacionais; não guarda
   histórico bruto, prompt ou segredo. O upsert deve permanecer condicionado à lease válida da

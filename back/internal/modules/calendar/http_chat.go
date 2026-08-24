@@ -28,47 +28,113 @@ var transcribeMimes = map[string]bool{
 	"audio/wav":  true,
 }
 
-// RegisterChatRoutes monta os endpoints do chat de IA do calendario (contratos
-// C7/C8): pergunta (proxy ao webhook calendar-chat) e transcricao de voz (proxy ao
-// webhook calendar-transcribe). RequireAuth + accountScope, como as demais rotas
-// do painel; ficam sob /v1/calendar (gate de modulo aplicado no Chain).
+// RegisterChatRoutes mantem o contrato legado do Calendar e registra o contrato
+// canonico do assistente. Ambos usam o mesmo service/historico; /v1/assistant fica
+// fora do gate de um modulo especifico para poder operar capacidades autorizadas
+// de Calendar, Tasks, Meta Ads e Core sem exigir que Calendar esteja contratado.
 func RegisterChatRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
-	// RequireAuthWithAccount valida membership na account do header: o chat resolve e USA
-	// a API key da conta (dispatch server->n8n). Sem o gate, a conta A gastaria a key da
-	// conta B via X-Account-Id forjado.
-	wrap := func(h http.HandlerFunc) http.Handler { return middleware.RequireAuthWithAccount(h) }
-	mux.Handle("GET /v1/calendar/chat/status", wrap(handleChatStatus(svc)))
-	mux.Handle("POST /v1/calendar/chat/ask", wrap(handleChatAsk(svc)))
-	mux.Handle("POST /v1/calendar/chat/transcribe", wrap(handleChatTranscribe(svc)))
+	registerChatRoutesAt(mux, svc, middleware, "/v1/calendar/chat", "", false, func(h http.HandlerFunc) http.HandlerFunc {
+		return requireCalendarPermission("calendar.view", h)
+	})
+	registerChatRoutesAt(mux, svc, middleware, "/v1/assistant/chat", AssistantSurfaceGlobal, true, requireAssistantAccess)
+}
+
+func registerChatRoutesAt(
+	mux *http.ServeMux,
+	svc *Service,
+	middleware *auth.Middleware,
+	prefix string,
+	defaultSurface string,
+	assistantRoute bool,
+	authorize func(http.HandlerFunc) http.HandlerFunc,
+) {
+	// RequireAuthWithAccount valida membership e hidrata a RBAC efetiva da account.
+	// Sem esse gate, uma conta poderia consumir credencial/contexto de outra por header forjado.
+	wrap := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(authorize(h))
+	}
+	mux.Handle("GET "+prefix+"/status", wrap(handleChatStatus(svc, defaultSurface)))
+	mux.Handle("POST "+prefix+"/ask", wrap(handleChatAsk(svc, defaultSurface, assistantRoute)))
+	mux.Handle("POST "+prefix+"/transcribe", wrap(handleChatTranscribe(svc, defaultSurface, assistantRoute)))
 	// Conversas persistidas + escopo (WAVE 4, contrato D3). Todas RequireAuthWithAccount
 	// (membership); acesso a cada conversa/cliente resolvido server-side pela permissao.
-	mux.Handle("GET /v1/calendar/chat/conversations", wrap(handleListChatConversations(svc)))
-	mux.Handle("POST /v1/calendar/chat/conversations", wrap(handleCreateChatConversation(svc)))
-	mux.Handle("GET /v1/calendar/chat/conversations/{id}", wrap(handleGetChatConversation(svc)))
-	mux.Handle("DELETE /v1/calendar/chat/conversations/{id}", wrap(handleDeleteChatConversation(svc)))
-	mux.Handle("PATCH /v1/calendar/chat/conversations/{id}/messages/{messageId}/proposals/{proposalId}/status", wrap(handleUpdateChatProposal(svc)))
-	mux.Handle("GET /v1/calendar/chat/scope", wrap(handleChatScope(svc)))
+	mux.Handle("GET "+prefix+"/conversations", wrap(handleListChatConversations(svc)))
+	mux.Handle("POST "+prefix+"/conversations", wrap(handleCreateChatConversation(
+		svc, firstNonEmpty(defaultSurface, AssistantSurfaceCalendar), assistantRoute,
+	)))
+	mux.Handle("GET "+prefix+"/conversations/{id}", wrap(handleGetChatConversation(svc)))
+	mux.Handle("DELETE "+prefix+"/conversations/{id}", wrap(handleDeleteChatConversation(svc)))
+	mux.Handle("POST "+prefix+"/conversations/{id}/messages/{messageId}/proposals/{proposalId}/confirm", wrap(handleConfirmChatProposal(svc)))
+	mux.Handle("PATCH "+prefix+"/conversations/{id}/messages/{messageId}/proposals/{proposalId}/status", wrap(handleUpdateChatProposal(svc)))
+	mux.Handle("GET "+prefix+"/scope", wrap(handleChatScope(svc)))
+}
+
+// requireAssistantAccess e o teto comum do chat 360. Ele nao concede nenhuma
+// capacidade: apenas exige que a RBAC da account contenha ao menos uma permissao
+// de leitura de um dominio suportado. A intersecao fina por modulo/operacao e
+// recalculada pelo service antes de montar contexto ou executar propostas.
+func requireAssistantAccess(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok || strings.TrimSpace(principal.AccountID) == "" {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		if principal.Role != auth.RolePlatformAdmin && principal.Role != auth.RoleOwner {
+			if !principal.PermissionsResolved {
+				httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Permissoes da conta indisponiveis.")
+				return
+			}
+			allowed := []string{
+				"calendar.view", "calendar.manage",
+				"tasks.boards.view", "tasks.tasks.view", "tasks.tasks.create", "tasks.tasks.edit",
+				"meta_ads.view", "meta_ads.manage",
+				"core.users.view", "core.users.manage", "workspace.usuarios.view", "workspace.usuarios.edit",
+			}
+			hasAccess := false
+			for _, permission := range allowed {
+				if containsPermission(principal.Permissions, permission) {
+					hasAccess = true
+					break
+				}
+			}
+			if !hasAccess {
+				httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para usar o assistente nesta conta.")
+				return
+			}
+		}
+		next(w, r)
+	}
 }
 
 // handleChatStatus faz o preflight sem tokens usado ao abrir o painel e antes de cada
 // envio. Nao persiste conversa/mensagem e nao dispara o workflow de IA.
-func handleChatStatus(svc *Service) http.HandlerFunc {
+func handleChatStatus(svc *Service, defaultSurface string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accountID, principal, ok := chatAuth(w, r)
 		if !ok {
 			return
 		}
-		if err := svc.ChatStatus(
-			r.Context(),
-			accountID,
-			principal,
-			r.URL.Query().Get("scopeMode"),
-			r.URL.Query().Get("scopeClientId"),
-		); err != nil {
+		surface := strings.TrimSpace(r.URL.Query().Get("surface"))
+		if surface == "" {
+			surface = defaultSurface
+		}
+		if surface == "" {
+			if err := svc.ChatStatus(r.Context(), accountID, principal,
+				r.URL.Query().Get("scopeMode"), r.URL.Query().Get("scopeClientId")); err != nil {
+				writeChatError(w, r, err)
+				return
+			}
+			httpapi.WriteJSON(w, http.StatusOK, map[string]bool{"available": true})
+			return
+		}
+		status, err := svc.AssistantChatStatus(r.Context(), accountID, principal, surface,
+			r.URL.Query().Get("scopeMode"), r.URL.Query().Get("scopeClientId"))
+		if err != nil {
 			writeChatError(w, r, err)
 			return
 		}
-		httpapi.WriteJSON(w, http.StatusOK, map[string]bool{"available": true})
+		httpapi.WriteJSON(w, http.StatusOK, status)
 	}
 }
 
@@ -91,7 +157,7 @@ func chatAuth(w http.ResponseWriter, r *http.Request) (string, auth.Principal, b
 
 // handleChatAsk recebe a pergunta do painel, persiste na conversa com memoria/escopo
 // (contrato D4) e devolve { answer, conversationId, title }.
-func handleChatAsk(svc *Service) http.HandlerFunc {
+func handleChatAsk(svc *Service, defaultSurface string, assistantRoute bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accountID, principal, ok := chatAuth(w, r)
 		if !ok {
@@ -102,6 +168,11 @@ func handleChatAsk(svc *Service) http.HandlerFunc {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
 		}
+		req.AssistantRuntime = assistantRoute
+		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		if strings.TrimSpace(req.Surface) == "" && strings.TrimSpace(req.ConversationID) == "" {
+			req.Surface = defaultSurface
+		}
 		res, err := svc.ChatAsk(r.Context(), accountID, principal, req)
 		if err != nil {
 			writeChatError(w, r, err)
@@ -111,6 +182,8 @@ func handleChatAsk(svc *Service) http.HandlerFunc {
 			"answer":         res.Answer,
 			"conversationId": res.ConversationID,
 			"title":          res.Title,
+			"surface":        res.Surface,
+			"capabilities":   res.Capabilities,
 			// message carrega as propostas (multi-tarefa, WAVE 5.1) em message.proposals.
 			"message": res.Message,
 			// aiError (WAVE 5): true quando o LLM nao respondeu — o front mostra "IA off".
@@ -136,6 +209,33 @@ func handleUpdateChatProposal(svc *Service) http.HandlerFunc {
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusOK, message)
+	}
+}
+
+// handleConfirmChatProposal e a unica porta de execucao para cards locais do
+// assistente. A chave obrigatoria identifica a tentativa inclusive quando a
+// resposta HTTP se perde; o store persiste o efeito e o receipt na mesma tx.
+func handleConfirmChatProposal(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, principal, ok := chatAuth(w, r)
+		if !ok {
+			return
+		}
+		var req ConfirmChatProposalRequest
+		if err := decodeJSONBody(w, r, &req); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		result, err := svc.ConfirmChatProposal(
+			r.Context(), accountID, r.PathValue("id"), r.PathValue("messageId"),
+			r.PathValue("proposalId"), strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+			principal, req,
+		)
+		if err != nil {
+			writeChatError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, result)
 	}
 }
 
@@ -175,7 +275,7 @@ func handleGetChatConversation(svc *Service) http.HandlerFunc {
 
 // handleCreateChatConversation cria uma conversa vazia (contrato D3). Escopo normalizado
 // server-side; devolve 201 com o resumo da conversa criada.
-func handleCreateChatConversation(svc *Service) http.HandlerFunc {
+func handleCreateChatConversation(svc *Service, defaultSurface string, assistantRoute bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accountID, principal, ok := chatAuth(w, r)
 		if !ok {
@@ -185,6 +285,15 @@ func handleCreateChatConversation(svc *Service) http.HandlerFunc {
 		if err := decodeJSONBody(w, r, &req); err != nil {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
+		}
+		if !assistantRoute && strings.TrimSpace(req.Surface) != "" && strings.TrimSpace(req.Surface) != AssistantSurfaceCalendar {
+			writeChatError(w, r, ErrAssistantSurfaceMismatch)
+			return
+		}
+		if !assistantRoute {
+			req.Surface = AssistantSurfaceCalendar
+		} else if strings.TrimSpace(req.Surface) == "" {
+			req.Surface = defaultSurface
 		}
 		res, err := svc.CreateChatConversation(r.Context(), accountID, principal, req)
 		if err != nil {
@@ -232,11 +341,15 @@ func handleChatScope(svc *Service) http.HandlerFunc {
 // mime (whitelist C8), repassa ao webhook calendar-transcribe e devolve { text }.
 // NADA e gravado em disco: o corpo e limitado por MaxBytesReader e mantido em RAM
 // (maxMemory do parse = teto do audio, sem spill para arquivo temporario).
-func handleChatTranscribe(svc *Service) http.HandlerFunc {
+func handleChatTranscribe(svc *Service, defaultSurface string, assistantRoute bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, ok := accountScope(r)
+		accountID, principal, ok := chatAuth(w, r)
 		if !ok {
-			writeNoAccount(w, r)
+			return
+		}
+		surface, err := resolveTranscribeSurface(defaultSurface, assistantRoute, r.URL.Query().Get("surface"))
+		if err != nil {
+			writeChatError(w, r, err)
 			return
 		}
 		if !svc.transcribeConfigured() {
@@ -276,13 +389,31 @@ func handleChatTranscribe(svc *Service) http.HandlerFunc {
 				"Audio acima do limite de 15 MiB.")
 			return
 		}
-		text, err := svc.ChatTranscribe(r.Context(), accountID, header.Filename, contentType, content)
+		var text string
+		if assistantRoute {
+			text, err = svc.AssistantChatTranscribe(
+				r.Context(), accountID, principal, surface, header.Filename, contentType, content,
+			)
+		} else {
+			text, err = svc.ChatTranscribe(r.Context(), accountID, header.Filename, contentType, content)
+		}
 		if err != nil {
 			writeChatError(w, r, err)
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusOK, map[string]any{"text": text})
 	}
+}
+
+func resolveTranscribeSurface(defaultSurface string, assistantRoute bool, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if !assistantRoute {
+		if requested != "" && requested != AssistantSurfaceCalendar {
+			return "", ErrAssistantSurfaceMismatch
+		}
+		return AssistantSurfaceCalendar, nil
+	}
+	return normalizeAssistantSurface(firstNonEmpty(requested, defaultSurface))
 }
 
 // transcribeMimeAllowed compara o Content-Type do audio com a whitelist C8,
@@ -321,9 +452,51 @@ func writeChatError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, ErrInvalidQuestion):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_question",
 			"Informe uma pergunta (ate 4000 caracteres).")
+	case errors.Is(err, ErrIdempotencyKeyRequired):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "idempotency_key_required",
+			"Envie um Idempotency-Key ASCII de 8 a 200 caracteres.")
+	case errors.Is(err, ErrIdempotencyConflict):
+		httpapi.WriteError(w, r, http.StatusConflict, "idempotency_conflict",
+			"A chave de idempotencia ja foi usada com outro conteudo.")
+	case errors.Is(err, ErrIdempotencyInProgress):
+		httpapi.WriteError(w, r, http.StatusConflict, "idempotency_in_progress",
+			"A solicitacao anterior ainda esta em andamento ou ficou incerta; ela nao sera repetida automaticamente.")
+	case errors.Is(err, ErrProposalExecutionUnavailable):
+		httpapi.WriteError(w, r, http.StatusConflict, "proposal_execution_unavailable",
+			"Este card nao possui um executor transacional seguro e nao pode ser confirmado.")
+	case errors.Is(err, ErrProposalSnapshotMissing):
+		httpapi.WriteError(w, r, http.StatusConflict, "proposal_snapshot_missing",
+			"O estado original deste card nao pode ser comprovado; gere uma nova proposta.")
+	case errors.Is(err, ErrProposalCrossModuleEffect):
+		httpapi.WriteError(w, r, http.StatusConflict, "proposal_cross_module_effect_unavailable",
+			"Este evento esta vinculado a Tasks e nao pode ser alterado sem uma transacao entre os modulos.")
+	case errors.Is(err, ErrProposalExecutionUnknown):
+		httpapi.WriteError(w, r, http.StatusConflict, "proposal_execution_unknown",
+			"O resultado da execucao ficou incerto. Consulte o mesmo card; nao tente executar novamente com outra chave.")
 	case errors.Is(err, ErrInvalidProposalStatus):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_proposal_status",
 			"Status da proposta invalido.")
+	case errors.Is(err, ErrMetaActionNotSucceeded):
+		httpapi.WriteError(w, r, http.StatusConflict, "meta_action_not_succeeded",
+			"A acao Meta Ads precisa terminar com sucesso antes de o cartao ser marcado como aplicado.")
+	case errors.Is(err, ErrInvalidAssistantSurface):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_surface",
+			"Surface invalida; use calendar, meta_ads ou global.")
+	case errors.Is(err, ErrAssistantSurfaceMismatch):
+		httpapi.WriteError(w, r, http.StatusConflict, "surface_mismatch",
+			"A conversa pertence a outra surface.")
+	case errors.Is(err, ErrAssistantNoCapability):
+		httpapi.WriteError(w, r, http.StatusForbidden, "assistant_forbidden",
+			"Nenhum modulo autorizado para esta surface.")
+	case errors.Is(err, ErrAssistantDisabled):
+		httpapi.WriteError(w, r, http.StatusConflict, "assistant_disabled",
+			"O assistente esta desativado nesta conta.")
+	case errors.Is(err, ErrAssistantCredentialUnavailable):
+		httpapi.WriteError(w, r, http.StatusConflict, "assistant_credential_unavailable",
+			"Configure uma credencial valida para o assistente.")
+	case errors.Is(err, ErrAssistantRuntimeUnavailable):
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "assistant_runtime_unavailable",
+			"A configuracao compartilhada do assistente esta indisponivel.")
 	case errors.Is(err, ErrInvalidClient):
 		// Escopo/cliente fora do visivel do usuario (contrato D2): 404, nao 400/403 —
 		// nao vaza QUAIS clientes existem (enumeration). Difere do writeServiceError

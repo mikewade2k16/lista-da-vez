@@ -132,8 +132,14 @@ root. O Omnichannel nao consulta schemas desses consumidores e o segredo nunca
 entra em views HTTP, logs ou configuracoes de workflow.
 Para consumidores server-side da mesma organizacao, uma credencial pertencente a
 account agencia ativa pode atender accounts clientes ativas com a mesma
-`organization_id`. A listagem e o CRUD HTTP continuam estritamente account-scoped;
-somente a fachada de runtime aplica esse compartilhamento e nunca devolve a chave.
+`organization_id`, mas somente quando a owner e a conta-agencia canonica (ativa mais
+antiga, desempate por id). A rota nativa continua account-scoped. A superficie neutra
+`/v1/assistant/ai-credentials` lista credenciais proprias e herdadas mascaradas com
+`ownedByAccount`, `ownerName` e `readOnly`; GET/models aceita gestores das superficies,
+enquanto criar/rotacionar/importar/excluir exige administracao transversal e muta apenas
+a conta ativa. A fachada de runtime aplica o mesmo escopo canonico e nunca devolve a chave.
+As FKs RESTRICT da migration `0284` impedem excluir credencial ainda referenciada por
+Automation ou pela analise de atendimentos, sem o Omnichannel consultar schemas consumidores.
 
 ### Canais e CRM
 
@@ -845,3 +851,13 @@ e depois `up -d api`. Portas são fixas (api=9091) — não alterar.
   pela bridge do composition root; IA desligada não desativa essa ingestão.
 - Binding `unresolved|quarantined`, grupo, eco `fromMe` e canal não suportado não alimentam
   Customer Data, mas continuam sendo persistidos e exibidos pelo chat humano.
+
+## Cofre compartilhado do Assistente 360 — Anthropic (0292)
+
+- `messaging.ai_credentials` aceita credenciais nomeadas `openai|anthropic|gemini|glm` para o
+  Assistente 360. O catálogo é account-scoped, mascarado e pode incluir credencial herdada da
+  agência canônica; segredo nunca volta ao frontend.
+- O keyring legado dos agentes Omnichannel continua aceitando apenas os providers já suportados
+  por esses agentes. Adicionar Anthropic ao cofre compartilhado não altera o brain/outbox/canais.
+- A listagem de modelos Anthropic usa `GET /v1/models` com `x-api-key` e
+  `anthropic-version: 2023-06-01`; nunca envia `Authorization: Bearer` para esse provider.

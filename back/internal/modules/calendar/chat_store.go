@@ -26,6 +26,7 @@ type ChatConversation struct {
 	CreatedByUserID string
 	CreatedByName   string
 	Title           string
+	EntrySurface    string  // calendar | meta_ads | global; origem, nao autorizacao
 	ScopeMode       string  // 'client' | 'all'
 	ScopeClientID   *string // null quando scope_mode='all'
 	CreatedAt       time.Time
@@ -36,6 +37,7 @@ type ChatConversation struct {
 // pelo service via validateScope). ScopeClientID vazio = coluna null.
 type ChatConversationInput struct {
 	Title         string
+	EntrySurface  string
 	ScopeMode     string
 	ScopeClientID string
 }
@@ -51,18 +53,25 @@ type ChatMessage struct {
 	ProposalStatus string
 	// Proposals (WAVE 5.1, multi-tarefa) = lista de propostas com status proprio por item.
 	// Fonte da verdade a partir da 0195; Proposal/ProposalStatus (singular) so p/ retrocompat.
-	Proposals     []StoredProposal
-	CalendarItems []AIContextEvent
-	CreatedAt     time.Time
+	Proposals      []StoredProposal
+	CalendarItems  []AIContextEvent
+	Resources      []AssistantResource
+	ContextModules []string
+	CreatedAt      time.Time
 }
 
 type ChatMessageInput struct {
+	// ID e opcional. O Assistente 360 o pregera quando precisa criar uma
+	// proposta Meta idempotente antes de persistir o card; vazio usa UUID do banco.
+	ID             string
 	Role           string
 	Content        string
 	Proposal       *ChatProposal
 	ProposalStatus string
 	Proposals      []StoredProposal
 	CalendarItems  []AIContextEvent
+	Resources      []AssistantResource
+	ContextModules []string
 }
 
 // chatConversationStore e a fatia de persistencia do chat com memoria consumida pelo
@@ -78,6 +87,7 @@ type chatConversationStore interface {
 	// AppendMessage NAO move updated_at, por isso o bump explicito (contrato D4).
 	TouchConversation(ctx context.Context, accountID, conversationID, titleIfEmpty string) error
 	AppendMessage(ctx context.Context, accountID, conversationID string, in ChatMessageInput) (ChatMessage, error)
+	GetMessage(ctx context.Context, accountID, conversationID, messageID string) (ChatMessage, error)
 	SetProposalStatus(ctx context.Context, accountID, conversationID, messageID, proposalID, status string) (ChatMessage, error)
 	ListLastMessages(ctx context.Context, accountID, conversationID string, limit int) ([]ChatMessage, error)
 	ListMessages(ctx context.Context, accountID, conversationID string) ([]ChatMessage, error)
@@ -87,20 +97,20 @@ type chatConversationStore interface {
 // chatConversationCols e a lista base de colunas da conversa na ordem de scanChatConversation.
 // scope_client_id::text sai como *string (nullable). account/created_by como text (::text).
 const chatConversationCols = `id::text, account_id::text, created_by_user_id::text, title,
-	scope_mode, scope_client_id::text, created_at, updated_at`
+	entry_surface, scope_mode, scope_client_id::text, created_at, updated_at`
 
 func scanChatConversation(row rowScanner) (ChatConversation, error) {
 	var c ChatConversation
 	err := row.Scan(&c.ID, &c.AccountID, &c.CreatedByUserID, &c.Title,
-		&c.ScopeMode, &c.ScopeClientID, &c.CreatedAt, &c.UpdatedAt)
+		&c.EntrySurface, &c.ScopeMode, &c.ScopeClientID, &c.CreatedAt, &c.UpdatedAt)
 	return c, err
 }
 
 func scanChatMessage(row rowScanner) (ChatMessage, error) {
 	var m ChatMessage
-	var proposalRaw, proposalsRaw, itemsRaw json.RawMessage
+	var proposalRaw, proposalsRaw, itemsRaw, resourcesRaw, contextModulesRaw json.RawMessage
 	err := row.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &proposalRaw,
-		&m.ProposalStatus, &proposalsRaw, &itemsRaw, &m.CreatedAt)
+		&m.ProposalStatus, &proposalsRaw, &itemsRaw, &resourcesRaw, &contextModulesRaw, &m.CreatedAt)
 	if err == nil {
 		if len(proposalRaw) > 0 && string(proposalRaw) != "null" {
 			var proposal ChatProposal
@@ -128,23 +138,27 @@ func scanChatMessage(row rowScanner) (ChatMessage, error) {
 		if m.CalendarItems == nil {
 			m.CalendarItems = []AIContextEvent{}
 		}
+		_ = json.Unmarshal(resourcesRaw, &m.Resources)
+		m.Resources = sanitizeAssistantResources(m.Resources)
+		_ = json.Unmarshal(contextModulesRaw, &m.ContextModules)
+		m.ContextModules = sanitizeAssistantContextModules(m.ContextModules)
 	}
 	return m, err
 }
 
 const chatMessageCols = `id::text, conversation_id::text, role, content,
-	proposal, proposal_status, proposals, calendar_items, created_at`
+	proposal, proposal_status, proposals, calendar_items, resources, context_modules, created_at`
 
 // CreateConversation insere uma conversa na account. Escopo por account_id + o dono
 // (created_by_user_id) vem SEMPRE do Principal, nunca do body.
 func (s *Store) CreateConversation(ctx context.Context, accountID, createdByUserID string, in ChatConversationInput) (ChatConversation, error) {
 	const q = `
 		insert into calendar.chat_conversations
-			(account_id, created_by_user_id, title, scope_mode, scope_client_id)
-		values ($1::uuid, $2::uuid, $3, $4, $5::uuid)
+			(account_id, created_by_user_id, title, entry_surface, scope_mode, scope_client_id)
+		values ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid)
 		returning ` + chatConversationCols
 	return scanChatConversation(s.pool.QueryRow(ctx, q,
-		accountID, createdByUserID, in.Title, in.ScopeMode, nullUUID(in.ScopeClientID)))
+		accountID, createdByUserID, in.Title, in.EntrySurface, in.ScopeMode, nullUUID(in.ScopeClientID)))
 }
 
 // GetConversation le uma conversa VIVA no escopo da account. Fora do escopo (outra
@@ -162,7 +176,7 @@ func (s *Store) GetConversation(ctx context.Context, id, accountID string) (Chat
 // => so as created_by = requesterUserID. Ordem: mais recentes primeiro (updated_at desc).
 func (s *Store) ListConversations(ctx context.Context, accountID, requesterUserID string, isAgency bool) ([]ChatConversation, error) {
 	q := `select c.id::text, c.account_id::text, c.created_by_user_id::text, c.title,
-			c.scope_mode, c.scope_client_id::text, c.created_at, c.updated_at,
+			c.entry_surface, c.scope_mode, c.scope_client_id::text, c.created_at, c.updated_at,
 			coalesce(nullif(trim(u.display_name), ''), u.email, '')
 		from calendar.chat_conversations c
 		left join core.users u on u.id = c.created_by_user_id
@@ -184,7 +198,7 @@ func (s *Store) ListConversations(ctx context.Context, accountID, requesterUserI
 	for rows.Next() {
 		var c ChatConversation
 		if err := rows.Scan(&c.ID, &c.AccountID, &c.CreatedByUserID, &c.Title,
-			&c.ScopeMode, &c.ScopeClientID, &c.CreatedAt, &c.UpdatedAt, &c.CreatedByName); err != nil {
+			&c.EntrySurface, &c.ScopeMode, &c.ScopeClientID, &c.CreatedAt, &c.UpdatedAt, &c.CreatedByName); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -233,6 +247,12 @@ func (s *Store) SoftDeleteConversation(ctx context.Context, id, accountID string
 // (insert ... select ... where account_id + deleted_at is null): conversa de outra
 // conta ou apagada => nenhuma linha (ErrNotFound). Espelha o AddComment do tasks.
 func (s *Store) AppendMessage(ctx context.Context, accountID, conversationID string, in ChatMessageInput) (ChatMessage, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	proposal, err := json.Marshal(in.Proposal)
 	if err != nil {
 		return ChatMessage{}, err
@@ -249,19 +269,51 @@ func (s *Store) AppendMessage(ctx context.Context, accountID, conversationID str
 	if err != nil {
 		return ChatMessage{}, err
 	}
+	resourcesRaw, err := json.Marshal(sanitizeAssistantResources(in.Resources))
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	contextModulesRaw, err := json.Marshal(sanitizeAssistantContextModules(in.ContextModules))
+	if err != nil {
+		return ChatMessage{}, err
+	}
 	status := in.ProposalStatus
 	if status == "" {
 		status = "none"
 	}
 	const q = `
 		insert into calendar.chat_messages
-			(conversation_id, account_id, role, content, proposal, proposal_status, proposals, calendar_items)
-		select c.id, c.account_id, $3, $4, $5::jsonb, $6, $7::jsonb, $8::jsonb
+			(id, conversation_id, account_id, role, content, proposal, proposal_status, proposals, calendar_items, resources, context_modules)
+		select coalesce(nullif($3, '')::uuid, gen_random_uuid()), c.id, c.account_id,
+			$4, $5, $6::jsonb, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb
 		from calendar.chat_conversations c
 		where c.id = $1::uuid and c.account_id = $2::uuid and c.deleted_at is null
 		returning ` + chatMessageCols
-	msg, err := scanChatMessage(s.pool.QueryRow(ctx, q, conversationID, accountID,
-		in.Role, in.Content, proposal, status, proposalsRaw, items))
+	msg, err := scanChatMessage(tx.QueryRow(ctx, q, conversationID, accountID,
+		in.ID, in.Role, in.Content, proposal, status, proposalsRaw, items, resourcesRaw, contextModulesRaw))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ChatMessage{}, ErrNotFound
+	}
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	if err := seedChatProposalExecutions(ctx, tx, accountID, conversationID, msg); err != nil {
+		return ChatMessage{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ChatMessage{}, err
+	}
+	return msg, nil
+}
+
+func (s *Store) GetMessage(
+	ctx context.Context,
+	accountID, conversationID, messageID string,
+) (ChatMessage, error) {
+	const q = `select ` + chatMessageCols + `
+		from calendar.chat_messages
+		where id = $1::uuid and account_id = $2::uuid and conversation_id = $3::uuid`
+	msg, err := scanChatMessage(s.pool.QueryRow(ctx, q, messageID, accountID, conversationID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ChatMessage{}, ErrNotFound
 	}
@@ -273,6 +325,12 @@ func (s *Store) AppendMessage(ctx context.Context, accountID, conversationID str
 // (with ordinality). Nenhum elemento pending com esse id (ja resolvido / inexistente /
 // conta errada) => pgx.ErrNoRows => ErrNotFound. account + conversation barram acesso cruzado.
 func (s *Store) SetProposalStatus(ctx context.Context, accountID, conversationID, messageID, proposalID, status string) (ChatMessage, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `update calendar.chat_messages m
 		set proposals = coalesce((
 			select jsonb_agg(
@@ -287,11 +345,26 @@ func (s *Store) SetProposalStatus(ctx context.Context, accountID, conversationID
 			where e->>'id' = $4 and e->>'status' = 'pending'
 		  )
 		returning ` + chatMessageCols
-	msg, err := scanChatMessage(s.pool.QueryRow(ctx, q, messageID, accountID, conversationID, proposalID, status))
+	msg, err := scanChatMessage(tx.QueryRow(ctx, q, messageID, accountID, conversationID, proposalID, status))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ChatMessage{}, ErrNotFound
 	}
-	return msg, err
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	if status == "rejected" {
+		const rejectExecution = `update calendar.chat_proposal_executions
+			set status = 'rejected', rejected_at = now(), completed_at = now(), updated_at = now()
+			where account_id = $1::uuid and conversation_id = $2::uuid
+			  and message_id = $3::uuid and proposal_id = $4 and status = 'pending'`
+		if _, err := tx.Exec(ctx, rejectExecution, accountID, conversationID, messageID, proposalID); err != nil {
+			return ChatMessage{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ChatMessage{}, err
+	}
+	return msg, nil
 }
 
 // ListLastMessages devolve as ULTIMAS `limit` mensagens da conversa (memoria do LLM,
@@ -299,7 +372,7 @@ func (s *Store) SetProposalStatus(ctx context.Context, accountID, conversationID
 // (defesa em profundidade). limit <= 0 = sem teto.
 func (s *Store) ListLastMessages(ctx context.Context, accountID, conversationID string, limit int) ([]ChatMessage, error) {
 	inner := `select m.id, m.conversation_id, m.role, m.content, m.proposal,
-		m.proposal_status, m.proposals, m.calendar_items, m.created_at
+		m.proposal_status, m.proposals, m.calendar_items, m.resources, m.context_modules, m.created_at
 		from calendar.chat_messages m
 		where m.account_id = $1::uuid and m.conversation_id = $2::uuid
 		order by m.created_at desc, m.id desc`
@@ -309,7 +382,7 @@ func (s *Store) ListLastMessages(ctx context.Context, accountID, conversationID 
 		inner += " limit $" + strconv.Itoa(len(args))
 	}
 	q := `select id::text, conversation_id::text, role, content, proposal,
-		proposal_status, proposals, calendar_items, created_at
+		proposal_status, proposals, calendar_items, resources, context_modules, created_at
 		from (` + inner + `) recent
 		order by recent.created_at asc, recent.id asc`
 	return s.queryChatMessages(ctx, q, args...)

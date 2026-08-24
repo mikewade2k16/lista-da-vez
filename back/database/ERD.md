@@ -781,6 +781,8 @@ erDiagram
 - `attendance_analysis_configs`
   - configuracao por conta do Whisper, credencial global, modelo de resumo, temperatura e prompt soberano
   - `credential_id` e uma referencia opaca ao cofre account-scoped `messaging.ai_credentials`
+  - a migration `0284` reforca a referencia com FK composta `(account_id, credential_id)` e
+    `ON DELETE RESTRICT NOT VALID`, sem apagar configuracoes em cascata
 - `attendance_analysis_secrets`
   - legado de rollback da primeira versao do MVP; nenhuma leitura ocorre no runtime
 - `communications`
@@ -798,12 +800,37 @@ erDiagram
   - eventos brutos de analytics do site, recebidos em lote assinado por HMAC
   - idempotencia por `source_id + source_event_id` para retries do outbox
 
+## Assistente 360 — configuracao e cofre
+
+- `automation.omni_chat_configs` mantem a persona e a matriz de modulos por conta; a ausencia de
+  linha numa conta cliente ativa faz o runtime herdar a configuracao da agencia canonica da mesma
+  organizacao (a agencia ativa mais antiga por `created_at, id`). O primeiro save no cliente cria
+  um override explicito e interrompe a heranca.
+- A credencial selecionada continua no cofre unico `messaging.ai_credentials`. Clientes podem usar
+  uma credencial propria ou uma credencial da mesma agencia canonica; o segredo nunca e copiado.
+- A migration `0284` adiciona FK de `automation.omni_chat_configs.credential_id` para o cofre e FK
+  composta em `queue.attendance_analysis_configs`, ambas `ON DELETE RESTRICT NOT VALID`. `NOT VALID`
+  preserva linhas legadas existentes, mas novas escritas e exclusoes passam a respeitar a referencia.
+
 ## Calendario — chat persistido
 
 - `calendar.chat_conversations`: conversa por conta/usuário, com escopo `client|all` e soft-delete.
 - `calendar.chat_messages`: histórico por conversa; além de `role/content`, guarda `proposal`,
-  `proposal_status` e `calendar_items` (snapshot de eventos/mídias reais mostrado no chat).
+  `proposal_status`, `calendar_items` (snapshot de eventos/mídias reais) e `resources` (snapshots
+  read-only de posts/campanhas/contas Meta, selecionados por ID e reconstruídos pelo backend).
 - Uma proposta nasce `pending` e só passa para `accepted` ou `rejected` por ação explícita do usuário.
+- `calendar.chat_proposal_executions` (migration `0287`) e a fonte autoritativa de execucao dos cards
+  Calendar. A projecao JSON continua em `chat_messages.proposals`, mas cada card possui receipt unico
+  `(account_id, message_id, proposal_id)`, chave idempotente por conta+ator, hashes/snapshots de proposta,
+  overrides/before/result e estados `pending|executing|succeeded|failed|unknown|rejected`. FKs compostas
+  garantem que mensagem e conversa pertencem a mesma conta. Efeito local suportado, receipt e projecao
+  `accepted` fazem commit na mesma transacao; Tasks e qualquer caso sem snapshot/version/atomicidade
+  comprovavel ficam fail-closed.
+- `calendar.chat_ask_requests` (migration `0287`) deduplica `/ask` por
+  `(account_id, actor_user_id, idempotency_key)`, guarda request hash e o snapshot da resposta. Retry com
+  o mesmo hash devolve a mesma conversa/mensagens; hash diferente conflita. Os IDs de conversa nao possuem
+  FK deliberadamente: o receipt sobrevive ao delete e impede reexecutar a chave. Estados
+  `executing|unknown` nunca autorizam retry automatico.
 
 ## Omnichannel — CRM e identidades de canal
 
@@ -883,6 +910,8 @@ erDiagram
 
 - `messaging.ai_credentials` (migration `0234`): cofre de chaves nomeadas por conta. Guarda
   provider, ciphertext e últimos quatro caracteres; nunca expõe o segredo cru à UI.
+- As FKs da migration `0284` impedem excluir uma credencial ainda selecionada pelo Assistente 360
+  ou pela analise de atendimento; a remocao nunca faz cascade sobre configuracoes consumidoras.
 - `messaging.ai_agent_versions.response_credential_id` e `media_config.*.credentialId` fixam a
   credencial usada por função sem duplicar segredo entre agentes.
 - `messaging.ai_agent_versions.media_config`: política imutável por versão (áudio, imagem,
@@ -1046,3 +1075,85 @@ A migration de seed cria:
 - `context_snapshot_legal_holds` repete `(account_id, client_account_id, context_snapshot_id)` e
   possui lifecycle auditado `active→released`. Holds de observações do mesmo subject/relationship
   — ou de contexto empresarial do cliente — também bloqueiam a retenção do snapshot.
+
+## Assistente 360 — cofre/provider (0282/0284/0292)
+
+```text
+core.accounts ──< messaging.ai_credentials
+                         │ provider: openai|anthropic|gemini|glm
+                         │ secret cifrado; view HTTP sempre mascarada
+                         │
+                         └──< automation.omni_chat_configs.credential_id
+                                  provider/model/prompt/surface_modules
+```
+
+- A FK é `ON DELETE RESTRICT`; uma chave ativa não pode ser apagada silenciosamente.
+- Cliente pode herdar configuração e credencial da agência canônica, mas o segredo só é resolvido
+  no servidor. O primeiro save cria override local.
+- A 0292 altera apenas os checks de provider; não duplica tabela nem migra ciphertext.
+
+## Meta Ads — OAuth de primeira parte (0285)
+
+```text
+core.accounts (1) ────< meta_ads.oauth_states >──── (1) core.users
+                              │
+                              ├─ state_hash bytea UNIQUE (SHA-256; nunca state bruto)
+                              ├─ redirect_uri + expires_at
+                              └─ consumed_at (single-use atomico)
+
+meta_ads.oauth_states.account_id ──callback──> meta_ads.connections.account_id
+                                           token cifrado via pgcrypto
+```
+
+## Meta Ads — propostas de acao confirmadas (0286/0289/0290/0291/0293/0294)
+
+```text
+core.accounts (viewer) ────< meta_ads.action_proposals >──── core.accounts (resource owner)
+                                      │
+                                      ├──< meta_ads.action_proposal_events (append-only)
+                                      ├──< meta_ads.action_proposal_steps (campaign/ad_set/creative/ad)
+                                      └── target campaign UUID/Meta ID (snapshot validado)
+
+core.accounts (resource owner) ────< meta_ads.action_policies >──── meta_ads.ad_accounts
+                                            │
+                                            ├─ caps daily/lifetime numeric(15,2)
+                                            └─ allow create/duplicate/resume (false por default)
+
+meta_ads.connections.revision ──snapshot/claim──> meta_ads.action_proposals
+meta_ads.ad_accounts/campaigns (is_current) ──hash guard──> meta_ads.action_proposals
+```
+
+- Idempotencia de criacao: UNIQUE `(account_id, idempotency_key)`; idempotencia de confirmacao:
+  UNIQUE parcial `(account_id, confirmation_idempotency_key)`.
+- O row lock faz somente uma transicao `pending -> executing`, com `attempt_count <= 1`.
+  Efeito externo ambiguo fica `unknown` e e resolvido por leitura/reconciliacao, nunca por retry.
+- A 0290 captura hashes de connection revision, mapping, policy e campanha. O claim bloqueia e
+  compara todas as linhas autoritativas na mesma transacao; mismatch falha sem tentativa externa.
+- `claimed_connection_id/revision` ancora o token-at-revision. Rotacao/delete aguardam advisory
+  lease durante Graph; expiracao/revisao stale e budget nao-BRL encerram antes do POST.
+- O target da campanha nao referencia o cache por FK: apagar uma conexao limpa campanhas, mas nao
+  a auditoria. IDs interno/externo e ownership sao revalidados no service antes da confirmacao.
+- Eventos sao append-only durante a vida da account/proposta; o cascade e reservado ao lifecycle
+  administrativo dessas entidades, pois nao ha endpoint operacional de delete/update de eventos.
+- A 0294 mantém um receipt único por etapa da promoção de post. Um receipt
+  `executing|unknown` bloqueia retry; `succeeded` conserva o ID Meta e permite projetar
+  campaign/ad set/creative/ad no histórico sem consultar texto do modelo.
+
+## Meta Ads — identidade Page/Instagram por cliente (0288)
+
+```text
+core.accounts (agencia/resource owner)
+       │
+       ├──── meta_ads.connections
+       │              │
+       │              └──(account_id, connection_id)──<
+       │                                                meta_ads.instagram_identity_client_mappings
+       │                                                          │
+       └──────────────── account_id ───────────────────────────────┤
+                                                                  └── client_account_id ──> core.accounts (cliente)
+```
+
+- UNIQUE `(account_id, ig_user_id)` e `(account_id, page_id)` impedem atribuir a mesma identidade
+  a dois clientes da conexao. A FK composta ancora o resource owner; desconectar remove os mappings.
+- O banco guarda apenas IDs e atribuicao. O service valida agencia/organizacao/cliente e cruza o par
+  com a Graph atual antes de gravar e antes de liberar feed para um client scope.

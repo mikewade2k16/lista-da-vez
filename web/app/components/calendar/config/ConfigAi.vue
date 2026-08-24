@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import AppPanelButton from '~/components/ui/AppPanelButton.vue'
+import { computed, ref } from 'vue'
+import OmniAssistantConfigPanel from '~/components/assistant/OmniAssistantConfigPanel.vue'
 import ConfigAiKeys from '~/components/calendar/config/ConfigAiKeys.vue'
 import ConfigAiModelSelect from '~/components/calendar/config/ConfigAiModelSelect.vue'
 import ConfigAiClientScope from '~/components/calendar/config/ConfigAiClientScope.vue'
-import { useCalendarChat } from '~/composables/useCalendarChat'
 import { useCalendarStore } from '~/stores/calendar'
+import type { OmniAssistantSurface } from '~/composables/useOmniChatPersona'
 import {
   AI_PROVIDER_BASE_URL,
   AI_PROVIDER_LABEL,
@@ -14,20 +14,25 @@ import {
   type CalendarAiProvider,
   type CalendarTranscribeProvider,
 } from '~/utils/calendar'
+import { useCoreAccountStore } from '../../../../layers/core/stores/account'
 
-// Aba IA (SPEC-F1): o PAINEL e a fonte da verdade da IA do calendario. Kill switch
-// (enabled), escopo das chaves (globais x da conta), chaves MASCARADAS por provider
-// (subcomponente ConfigAiKeys), provider+modelo, transcricao e o prompt do sistema (a
-// lei da IA). As chaves de API NUNCA aparecem cruas no front — so status {set,last4}.
+// Configuracao legada/plano do Calendar. O Crow Assistant compartilhado resolve
+// provider/modelo/chave pelo drawer proprio (automation.omni_chat_configs + cofre
+// messaging). Esta tela permanece para plano, transcricao e compatibilidade sem
+// misturar os dois cofres. Chaves nunca aparecem cruas no front.
 const props = defineProps<{ modelValue: CalendarAiConfig }>()
 const emit = defineEmits<{ 'update:modelValue': [value: CalendarAiConfig] }>()
-
-// Chat flutuante: estado singleton. Abrir daqui reusa a MESMA conversa do calendario.
-const chat = useCalendarChat()
 
 // Escopo SALVO (banco) das chaves: dirige a fonte ativa que o ConfigAiKeys mostra. O
 // rascunho (ai.useGlobalKeys) so vira fonte ativa apos salvar as configuracoes.
 const store = useCalendarStore()
+const accountStore = useCoreAccountStore()
+const assistantSurface = ref<OmniAssistantSurface>('calendar')
+const assistantSurfaces: Array<{ id: OmniAssistantSurface; label: string }> = [
+  { id: 'calendar', label: 'Calendário' },
+  { id: 'meta_ads', label: 'Meta Ads' },
+  { id: 'global', label: 'Geral' },
+]
 const savedUseGlobalKeys = computed(() => store.config.ai.useGlobalKeys)
 
 const ai = computed(() => props.modelValue)
@@ -100,191 +105,223 @@ function setTemperature(value: string): void {
 </script>
 
 <template>
-  <section class="calendar-config__section">
-    <h3 class="calendar-config__section-title">Assistente de IA do calendário</h3>
-
-    <!-- Kill switch: desligada, chat/plano/transcricao respondem "IA desligada". -->
+  <div class="calendar-config-ai">
     <div class="calendar-config__block">
-      <span class="calendar-config__label">Status da IA</span>
-      <div class="calendar-config__seg" role="group" aria-label="Ligar ou desligar a IA">
+      <span class="calendar-config__label">Contexto configurado</span>
+      <div class="calendar-config__seg" role="group" aria-label="Contexto do Assistente">
         <button
+          v-for="surfaceOption in assistantSurfaces"
+          :key="surfaceOption.id"
           type="button"
           class="calendar-config__seg-btn"
-          :class="{ 'is-active': ai.enabled }"
-          @click="patch({ enabled: true })"
+          :class="{ 'is-active': assistantSurface === surfaceOption.id }"
+          @click="assistantSurface = surfaceOption.id"
         >
-          Ligada
-        </button>
-        <button
-          type="button"
-          class="calendar-config__seg-btn"
-          :class="{ 'is-active': !ai.enabled }"
-          @click="patch({ enabled: false })"
-        >
-          Desligada
+          {{ surfaceOption.label }}
         </button>
       </div>
       <span class="calendar-config__hint">
-        Desligada, o assistente, o plano do mês e a transcrição respondem que a IA está desligada,
-        sem chamar nenhum provedor.
+        O mesmo Assistente usa uma configuração da conta; aqui você escolhe quais módulos ele pode
+        consultar em cada área da plataforma.
       </span>
     </div>
 
-    <!-- Ordem e estado dos collapses (pedido do dono, 2026-07-11): PROMPT primeiro (e a
+    <OmniAssistantConfigPanel
+      :account-id="accountStore.activeAccountId"
+      :surface="assistantSurface"
+    />
+
+    <section class="calendar-config__section">
+      <h3 class="calendar-config__section-title">Planejamento e transcrição do calendário</h3>
+      <p class="calendar-config__hint">
+        Estas opções atendem o plano mensal, a transcrição e integrações legadas do Calendário. As
+        contas, o modelo e a persona do chat ficam no bloco Crow Assistant acima.
+      </p>
+
+      <!-- Kill switch do runtime legado/plano do Calendar. -->
+      <div class="calendar-config__block">
+        <span class="calendar-config__label">Status da IA</span>
+        <div class="calendar-config__seg" role="group" aria-label="Ligar ou desligar a IA">
+          <button
+            type="button"
+            class="calendar-config__seg-btn"
+            :class="{ 'is-active': ai.enabled }"
+            @click="patch({ enabled: true })"
+          >
+            Ligada
+          </button>
+          <button
+            type="button"
+            class="calendar-config__seg-btn"
+            :class="{ 'is-active': !ai.enabled }"
+            @click="patch({ enabled: false })"
+          >
+            Desligada
+          </button>
+        </div>
+        <span class="calendar-config__hint">
+          Desligada, o plano do mês e as ferramentas legadas do Calendário não chamam o provedor. O
+          Crow Assistant compartilhado possui configuração e permissões próprias.
+        </span>
+      </div>
+
+      <!-- Ordem e estado dos collapses (pedido do dono, 2026-07-11): PROMPT primeiro (e a
          "lei da IA", o que mais se ajusta no dia a dia), Chaves de API por ULTIMO, e TODOS
          os collapses iniciam FECHADOS. -->
-    <details class="calendar-config__collapse">
-      <summary class="calendar-config__collapse-head">Prompt do sistema (a lei da IA)</summary>
-      <div class="calendar-config__collapse-body">
-        <label class="calendar-config__field">
-          <textarea
-            class="calendar-config__input calendar-config__textarea calendar-config__textarea--tall"
-            :value="ai.systemPrompt"
-            placeholder="Defina o comportamento do assistente: tom, foco, regras. Vazio = prompt padrão do workflow."
-            @input="patch({ systemPrompt: ($event.target as HTMLTextAreaElement).value })"
-          ></textarea>
-          <span class="calendar-config__hint">
-            Este texto comanda o assistente, o plano do mês e as respostas. É a instrução principal.
-          </span>
-        </label>
-      </div>
-    </details>
-
-    <details class="calendar-config__collapse">
-      <summary class="calendar-config__collapse-head">Provedor e modelo</summary>
-      <div class="calendar-config__collapse-body">
-        <div class="calendar-config__grid2">
+      <details class="calendar-config__collapse">
+        <summary class="calendar-config__collapse-head">Prompt do sistema (a lei da IA)</summary>
+        <div class="calendar-config__collapse-body">
           <label class="calendar-config__field">
-            <span class="calendar-config__field-label">Provedor</span>
-            <select
-              class="calendar-config__input"
-              :value="ai.provider"
-              @change="setProvider(($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="opt in providerOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </label>
-
-          <ConfigAiModelSelect
-            :provider="ai.provider"
-            :model-value="ai.model"
-            @update:model-value="patch({ model: $event })"
-          />
-
-          <label class="calendar-config__field calendar-config__field--full">
-            <span class="calendar-config__field-label">Base URL (opcional)</span>
-            <input
-              class="calendar-config__input"
-              :value="ai.baseUrl"
-              :placeholder="baseUrlPlaceholder"
-              @input="patch({ baseUrl: ($event.target as HTMLInputElement).value })"
-            />
-            <span class="calendar-config__hint">Vazio = usa o endpoint padrão do provedor.</span>
-          </label>
-
-          <label class="calendar-config__field">
-            <span class="calendar-config__field-label">Temperatura (0 a 1)</span>
-            <input
-              class="calendar-config__input"
-              type="number"
-              min="0"
-              max="1"
-              step="0.1"
-              :value="ai.temperature"
-              @input="setTemperature(($event.target as HTMLInputElement).value)"
-            />
-          </label>
-        </div>
-      </div>
-    </details>
-
-    <details class="calendar-config__collapse">
-      <summary class="calendar-config__collapse-head">Transcrição de voz</summary>
-      <div class="calendar-config__collapse-body">
-        <div class="calendar-config__grid2">
-          <label class="calendar-config__field">
-            <span class="calendar-config__field-label">Transcrição — provedor</span>
-            <select
-              class="calendar-config__input"
-              :value="ai.transcribeProvider"
-              @change="setTranscribeProvider(($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="opt in TRANSCRIBE_OPTIONS" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </label>
-
-          <label class="calendar-config__field">
-            <span class="calendar-config__field-label">Transcrição — modelo</span>
-            <select
-              v-if="ai.transcribeProvider === 'local'"
-              class="calendar-config__input"
-              :value="localModel"
-              @change="patch({ transcribeModel: ($event.target as HTMLSelectElement).value })"
-            >
-              <option v-for="opt in WHISPER_LOCAL_MODELS" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-            <input
-              v-else
-              class="calendar-config__input"
-              :value="ai.transcribeModel"
-              :placeholder="transcribeModelPlaceholder"
-              @input="patch({ transcribeModel: ($event.target as HTMLInputElement).value })"
-            />
-            <span v-if="ai.transcribeProvider === 'local'" class="calendar-config__hint">
-              O modelo baixa na 1ª vez que for usado (pode demorar); depois fica em cache.
+            <textarea
+              class="calendar-config__input calendar-config__textarea calendar-config__textarea--tall"
+              :value="ai.systemPrompt"
+              placeholder="Defina o comportamento do assistente: tom, foco, regras. Vazio = prompt padrão do workflow."
+              @input="patch({ systemPrompt: ($event.target as HTMLTextAreaElement).value })"
+            ></textarea>
+            <span class="calendar-config__hint">
+              Este texto orienta o plano do mês e os fluxos legados do Calendário. A persona do Crow
+              Assistant é configurada na engrenagem do próprio chat.
             </span>
           </label>
         </div>
-      </div>
-    </details>
+      </details>
 
-    <details class="calendar-config__collapse">
-      <summary class="calendar-config__collapse-head">Escopo por cliente</summary>
-      <div class="calendar-config__collapse-body">
-        <ConfigAiClientScope :model-value="ai" @update:model-value="onScope" />
-      </div>
-    </details>
+      <details class="calendar-config__collapse">
+        <summary class="calendar-config__collapse-head">Provedor e modelo do plano</summary>
+        <div class="calendar-config__collapse-body">
+          <div class="calendar-config__grid2">
+            <label class="calendar-config__field">
+              <span class="calendar-config__field-label">Provedor</span>
+              <select
+                class="calendar-config__input"
+                :value="ai.provider"
+                @change="setProvider(($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="opt in providerOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </label>
 
-    <!-- Chaves de API por ULTIMO e FECHADO (mexe-se raramente; setup e feito uma vez). -->
-    <details class="calendar-config__collapse">
-      <summary class="calendar-config__collapse-head">Chaves de API</summary>
-      <div class="calendar-config__collapse-body">
-        <div class="calendar-config__seg" role="group" aria-label="Escopo das chaves de API">
-          <button
-            type="button"
-            class="calendar-config__seg-btn"
-            :class="{ 'is-active': ai.useGlobalKeys }"
-            @click="patch({ useGlobalKeys: true })"
-          >
-            Globais da plataforma
-          </button>
-          <button
-            type="button"
-            class="calendar-config__seg-btn"
-            :class="{ 'is-active': !ai.useGlobalKeys }"
-            @click="patch({ useGlobalKeys: false })"
-          >
-            Desta conta
-          </button>
+            <ConfigAiModelSelect
+              :provider="ai.provider"
+              :model-value="ai.model"
+              @update:model-value="patch({ model: $event })"
+            />
+
+            <label class="calendar-config__field calendar-config__field--full">
+              <span class="calendar-config__field-label">Base URL (opcional)</span>
+              <input
+                class="calendar-config__input"
+                :value="ai.baseUrl"
+                :placeholder="baseUrlPlaceholder"
+                @input="patch({ baseUrl: ($event.target as HTMLInputElement).value })"
+              />
+              <span class="calendar-config__hint">Vazio = usa o endpoint padrão do provedor.</span>
+            </label>
+
+            <label class="calendar-config__field">
+              <span class="calendar-config__field-label">Temperatura (0 a 1)</span>
+              <input
+                class="calendar-config__input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                :value="ai.temperature"
+                @input="setTemperature(($event.target as HTMLInputElement).value)"
+              />
+            </label>
+          </div>
         </div>
-        <span v-if="scopePending" class="calendar-config__hint">
-          Salve as configurações para aplicar o novo escopo das chaves.
-        </span>
-        <ConfigAiKeys :use-global-keys="savedUseGlobalKeys" />
-      </div>
-    </details>
+      </details>
 
-    <div class="calendar-config__section-actions">
-      <AppPanelButton variant="secondary" @click="chat.openPanel()">
-        <UIcon name="i-lucide-sparkles" aria-hidden="true" />
-        Abrir chat com o assistente
-      </AppPanelButton>
-    </div>
-  </section>
+      <details class="calendar-config__collapse">
+        <summary class="calendar-config__collapse-head">Transcrição de voz</summary>
+        <div class="calendar-config__collapse-body">
+          <div class="calendar-config__grid2">
+            <label class="calendar-config__field">
+              <span class="calendar-config__field-label">Transcrição — provedor</span>
+              <select
+                class="calendar-config__input"
+                :value="ai.transcribeProvider"
+                @change="setTranscribeProvider(($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="opt in TRANSCRIBE_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="calendar-config__field">
+              <span class="calendar-config__field-label">Transcrição — modelo</span>
+              <select
+                v-if="ai.transcribeProvider === 'local'"
+                class="calendar-config__input"
+                :value="localModel"
+                @change="patch({ transcribeModel: ($event.target as HTMLSelectElement).value })"
+              >
+                <option v-for="opt in WHISPER_LOCAL_MODELS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+              <input
+                v-else
+                class="calendar-config__input"
+                :value="ai.transcribeModel"
+                :placeholder="transcribeModelPlaceholder"
+                @input="patch({ transcribeModel: ($event.target as HTMLInputElement).value })"
+              />
+              <span v-if="ai.transcribeProvider === 'local'" class="calendar-config__hint">
+                O modelo baixa na 1ª vez que for usado (pode demorar); depois fica em cache.
+              </span>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <details class="calendar-config__collapse">
+        <summary class="calendar-config__collapse-head">Escopo por cliente</summary>
+        <div class="calendar-config__collapse-body">
+          <ConfigAiClientScope :model-value="ai" @update:model-value="onScope" />
+        </div>
+      </details>
+
+      <!-- Chaves de API por ULTIMO e FECHADO (mexe-se raramente; setup e feito uma vez). -->
+      <details class="calendar-config__collapse">
+        <summary class="calendar-config__collapse-head">Chaves do plano e compatibilidade</summary>
+        <div class="calendar-config__collapse-body">
+          <div class="calendar-config__seg" role="group" aria-label="Escopo das chaves de API">
+            <button
+              type="button"
+              class="calendar-config__seg-btn"
+              :class="{ 'is-active': ai.useGlobalKeys }"
+              @click="patch({ useGlobalKeys: true })"
+            >
+              Globais da plataforma
+            </button>
+            <button
+              type="button"
+              class="calendar-config__seg-btn"
+              :class="{ 'is-active': !ai.useGlobalKeys }"
+              @click="patch({ useGlobalKeys: false })"
+            >
+              Desta conta
+            </button>
+          </div>
+          <span v-if="scopePending" class="calendar-config__hint">
+            Salve as configurações para aplicar o novo escopo das chaves.
+          </span>
+          <ConfigAiKeys :use-global-keys="savedUseGlobalKeys" />
+        </div>
+      </details>
+    </section>
+  </div>
 </template>
+
+<style scoped>
+.calendar-config-ai {
+  display: grid;
+  gap: 1rem;
+}
+</style>

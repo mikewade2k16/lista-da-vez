@@ -452,6 +452,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	// simulate, sob /v1/omnichannel/* (RequireAuthWithAccount + gate). Costurado aqui (a F9 rodou
 	// em paralelo e nao pode editar este arquivo).
 	RegisterAIRoutes(mux, h.ai, h.authMiddleware)
+	registerAssistantAICredentialRoutes(mux, h.ai, h.authMiddleware)
 	RegisterKnowledgeRoutes(mux, h.ai, h.authMiddleware)
 	// MVP de automacao: cliente -> numero -> agente + policy configuravel de encerramento.
 	RegisterAutomationRoutes(mux, h.automation, h.authMiddleware)

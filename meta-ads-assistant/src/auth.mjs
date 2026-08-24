@@ -1,85 +1,134 @@
-// Login do MCP oficial da Meta.
-//
-// Dois caminhos, nesta ordem:
-//   1. OAuth proprio do runner (oauth.mjs) — deterministico, sem modelo. O token
-//      e persistido em .auth/tokens.json e injetado como header na conexao MCP,
-//      entao sobrevive a restart/recreate. Caminho preferencial.
-//   2. Fallback in-session via modelo (legado): se discovery/DCR falharem, mantem
-//      o fluxo antigo (tools authenticate/complete_authentication do MCP). O token
-//      vive so na conexao viva e NAO persiste — o detail avisa isso.
+// Login do MCP oficial da Meta, sempre escopado pela account do painel.
+// OAuth proprio persiste em disco; o fallback via modelo permanece apenas como
+// compatibilidade e vive na sessao Claude/MCP daquela mesma account.
 
-import { authCompleteOauth, authStartOauth } from './oauth.mjs';
-import { recreateSession, session } from './session.mjs';
+import { requireAccountId } from "./account-id.mjs";
+import { authCompleteOauth, authStartOauth } from "./oauth.mjs";
+import { OAuthCallbackConflictError } from "./oauth-callback.mjs";
+import { hasValidAccessToken } from "./oauth-store.mjs";
+import { recreateSession, sessionPool } from "./session.mjs";
 
 const AUTH_START_PROMPT =
-  'Chame IMEDIATAMENTE a ferramenta authenticate e devolva SOMENTE a URL de ' +
-  'autorizacao retornada (comeca com https://), sem mais nenhuma palavra. Se voce ' +
-  'JA estiver autenticado (as ferramentas ads_get_* ja existem), responda apenas ' +
+  "Chame IMEDIATAMENTE a ferramenta authenticate e devolva SOMENTE a URL de " +
+  "autorizacao retornada (comeca com https://), sem mais nenhuma palavra. Se voce " +
+  "JA estiver autenticado (as ferramentas ads_get_* ja existem), responda apenas " +
   '"JA_AUTENTICADO".';
 
+const AUTH_MODE_TTL_MS = 10 * 60 * 1000;
+const authModes = new Map();
+
+function setAuthMode(accountId, mode) {
+  const previous = authModes.get(accountId);
+  clearTimeout(previous?.timer);
+  const entry = { mode, timer: null };
+  entry.timer = setTimeout(() => {
+    if (authModes.get(accountId) === entry) {
+      authModes.delete(accountId);
+    }
+  }, AUTH_MODE_TTL_MS);
+  entry.timer.unref?.();
+  authModes.set(accountId, entry);
+}
+
+function clearAuthMode(accountId) {
+  const entry = authModes.get(accountId);
+  clearTimeout(entry?.timer);
+  authModes.delete(accountId);
+}
+
+export class AuthSessionGoneError extends Error {
+  constructor() {
+    super("Nenhuma sessao de autenticacao pendente para esta account.");
+    this.name = "AuthSessionGoneError";
+    this.code = "auth_session_gone";
+  }
+}
+
 function buildCompletePrompt(callbackUrl) {
-  const urlLine = callbackUrl ? `\nURL de callback: ${callbackUrl}` : '';
+  const urlLine = callbackUrl ? `\nURL de callback: ${callbackUrl}` : "";
   return (
-    'O usuario autorizou no navegador; a autenticacao pode ja ter concluido sozinha. ' +
+    "O usuario autorizou no navegador; a autenticacao pode ja ter concluido sozinha. " +
     'Verifique seu acesso chamando ads_get_ad_accounts. Se conseguir, responda "OK: conectado". ' +
-    'Se NAO tiver acesso e existir a ferramenta complete_authentication, chame-a com o callback_url.' +
+    "Se NAO tiver acesso e existir a ferramenta complete_authentication, chame-a com o callback_url." +
     urlLine +
-    '\nSe complete_authentication NAO existir (erro "No such tool"), o login JA foi concluido — ' +
+    '\nSe complete_authentication NAO existir (erro "No such tool"), o login JA foi concluido - ' +
     'responda "OK: conectado". Responda em UMA frase comecando com "OK:" ou "ERRO:".'
   );
 }
 
 function extractUrl(text) {
-  const match = typeof text === 'string' ? text.match(/https?:\/\/[^\s)'"]+/) : null;
-  return match ? match[0] : '';
+  const match =
+    typeof text === "string" ? text.match(/https?:\/\/[^\s)'\"]+/) : null;
+  return match ? match[0] : "";
 }
 
-// authStart inicia o login. Tenta primeiro o OAuth proprio (token persistente);
-// se o servidor MCP nao suportar (discovery/DCR falham), cai no fluxo via modelo.
-// Devolve { url, mode } — mode='oauth' | 'session'. url vazia + alreadyAuthed se
-// ja estiver autenticado pelo modelo.
-export async function authStart(opts = {}) {
+export async function authStart(rawAccountId, opts = {}) {
+  const accountId = requireAccountId(rawAccountId);
+  if (hasValidAccessToken(accountId)) {
+    return { url: "", mode: "oauth", alreadyAuthed: true };
+  }
+
   let oauthStart = null;
   try {
-    oauthStart = await authStartOauth();
-  } catch {
-    oauthStart = null;
+    oauthStart = await authStartOauth(accountId);
+  } catch (err) {
+    if (err instanceof OAuthCallbackConflictError) {
+      throw err;
+    }
   }
   if (oauthStart?.url) {
-    return { url: oauthStart.url, mode: 'oauth' };
+    setAuthMode(accountId, "oauth");
+    return { url: oauthStart.url, mode: "oauth" };
   }
-  // Fallback legado via modelo (token nao persiste).
-  const { reply } = await session.run(AUTH_START_PROMPT, opts, { guard: false });
+
+  const { reply } = await sessionPool.withSession(accountId, (session) =>
+    session.run(AUTH_START_PROMPT, opts, { guard: false, auth: true }),
+  );
   const url = extractUrl(reply);
   if (url) {
-    return { url, mode: 'session' };
+    setAuthMode(accountId, "session");
+    return { url, mode: "session" };
   }
   if (/ja[_\s]?autenticad|ja (esta|estou) (conectad|autenticad)/i.test(reply)) {
-    return { url: '', alreadyAuthed: true, mode: 'session' };
+    return { url: "", alreadyAuthed: true, mode: "session" };
   }
-  throw new Error('authenticate nao devolveu uma URL de autorizacao');
+  throw new Error("authenticate nao devolveu uma URL de autorizacao");
 }
 
-// authComplete conclui o login. Se ha fluxo OAuth pendente, troca code por tokens
-// (deterministico) e recria a sessao MCP para nascer com o header. Senao, usa o
-// fluxo via modelo (token nao persiste).
-export async function authComplete(callbackUrl, opts = {}) {
-  let oauthDone = null;
-  try {
-    oauthDone = await authCompleteOauth(callbackUrl);
-  } catch {
-    oauthDone = null;
+export async function authComplete(rawAccountId, callbackUrl, opts = {}) {
+  const accountId = requireAccountId(rawAccountId);
+  const mode = authModes.get(accountId)?.mode;
+  if (!mode) {
+    throw new AuthSessionGoneError();
   }
-  if (oauthDone?.ok) {
-    // Token novo em disco: descarta a sessao atual para a proxima nascer com o
-    // header Authorization (autenticada sem o modelo).
-    recreateSession();
-    return { ok: true, detail: 'OK: conectado (token persistido em disco).' };
+
+  if (mode === "oauth") {
+    const oauthDone = await authCompleteOauth(accountId, callbackUrl);
+    clearAuthMode(accountId);
+    if (!oauthDone.ok) {
+      throw new AuthSessionGoneError();
+    }
+    recreateSession(accountId);
+    return {
+      ok: true,
+      detail: "OK: conectado (token persistido em disco por account).",
+    };
   }
-  // Fallback legado via modelo (token vive so na conexao viva).
-  const { reply } = await session.run(buildCompletePrompt(callbackUrl), opts, { guard: false });
+
+  const { reply } = await sessionPool.withSession(accountId, (session) =>
+    session.run(buildCompletePrompt(callbackUrl), opts, {
+      guard: false,
+      auth: true,
+    }),
+  );
   const ok =
     /(^|\s)ok:|conclu|conectad|autenticad|sucesso/i.test(reply) &&
     !/(^|\s)erro:|falh|expir|nao consegui|reconectar/i.test(reply);
-  return { ok, detail: `${reply} (fallback in-session — token nao persiste)`.trim() };
+  if (ok) {
+    clearAuthMode(accountId);
+  }
+  return {
+    ok,
+    detail: `${reply} (fallback in-session - token nao persiste)`.trim(),
+  };
 }

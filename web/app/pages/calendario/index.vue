@@ -9,7 +9,6 @@ import MonthGrid from '~/components/calendar/MonthGrid.vue'
 import WeekView from '~/components/calendar/WeekView.vue'
 import DayDrawer from '~/components/calendar/DayDrawer.vue'
 import CalendarEventForm from '~/components/calendar/CalendarEventForm.vue'
-import CalendarChatPanel from '~/components/calendar/CalendarChatPanel.vue'
 import CalendarConfigDrawer from '~/components/calendar/config/CalendarConfigDrawer.vue'
 import { useCalendarChat } from '~/composables/useCalendarChat'
 import { useCalendarShortcuts } from '~/composables/useCalendarShortcuts'
@@ -598,9 +597,5 @@ onBeforeUnmount(() => {
     />
 
     <CalendarConfigDrawer v-model:open="configOpen" />
-
-    <!-- Janela de chat + voz (SPEC-F2): aberta pelos gatilhos dedicados fora da barra
-         compacta do calendario. -->
-    <CalendarChatPanel />
   </div>
 </template>

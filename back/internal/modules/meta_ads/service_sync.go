@@ -5,8 +5,10 @@ import (
 	"time"
 )
 
-// syncDatePreset e a janela puxada da Graph a cada sync (MVP: ultimos 30 dias).
-const syncDatePreset = "last_30d"
+// syncDatePreset cobre a maior janela oferecida pelo painel. Assim selecionar
+// 90 dias nunca promete uma série que o sincronizador deliberadamente deixou
+// pela metade; ranges menores continuam sendo recortes do mesmo cache.
+const syncDatePreset = "last_90d"
 
 // Sync puxa campanhas + insights diarios (nivel conta agregado + por campanha)
 // da Graph para o cache local de uma conta de anuncio. Retorna as contagens
@@ -16,92 +18,103 @@ func (s *Service) Sync(ctx context.Context, accountID, adAccountID string) (Sync
 	if err != nil {
 		return SyncResult{}, err
 	}
-	token, err := s.store.GetDecryptedToken(ctx, accountID)
+	sourceAccountID := adAccount.AccountID
+	connection, err := s.store.GetConnection(ctx, sourceAccountID)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	if connection.ID != adAccount.ConnectionID {
+		return SyncResult{}, ErrConnectionChanged
+	}
+	token, err := s.store.GetDecryptedTokenAtRevision(ctx, sourceAccountID, connection.Revision)
 	if err != nil {
 		return SyncResult{}, err
 	}
 
-	campaigns, err := s.syncCampaigns(ctx, accountID, adAccount, token)
+	// Todas as paginas dos tres endpoints sao obtidas antes de abrir a transacao
+	// de publicacao. Qualquer erro deixa o snapshot anterior integralmente ativo.
+	remoteCampaigns, err := s.client.ListCampaigns(ctx, token, adAccount.MetaAdAccountID)
 	if err != nil {
 		return SyncResult{}, err
 	}
-	insights, err := s.syncInsights(ctx, accountID, adAccount, token)
+	perCampaign, err := s.client.GetInsights(ctx, token, adAccount.MetaAdAccountID, syncDatePreset, "campaign")
 	if err != nil {
+		return SyncResult{}, err
+	}
+	accountLevel, err := s.client.GetInsights(ctx, token, adAccount.MetaAdAccountID, syncDatePreset, "account")
+	if err != nil {
+		return SyncResult{}, err
+	}
+
+	campaigns := campaignSnapshotRows(sourceAccountID, adAccount.ID, remoteCampaigns)
+	insights := insightSnapshotRows(sourceAccountID, adAccount.ID, perCampaign, accountLevel)
+	since, until := rangeWindow(syncDatePreset)
+	if err := s.store.ReplaceReportingSnapshotAtRevision(
+		ctx,
+		sourceAccountID,
+		connection.ID,
+		adAccount.ID,
+		connection.Revision,
+		campaigns,
+		insights,
+		since,
+		until,
+	); err != nil {
 		return SyncResult{}, err
 	}
 
 	return SyncResult{
-		Campaigns: campaigns,
-		Insights:  insights,
+		Campaigns: len(campaigns),
+		Insights:  len(insights),
 		SyncedAt:  time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 
-// syncCampaigns puxa e cacheia as campanhas da conta de anuncio.
-func (s *Service) syncCampaigns(ctx context.Context, accountID string, ad AdAccount, token string) (int, error) {
-	remote, err := s.client.ListCampaigns(ctx, token, ad.MetaAdAccountID)
-	if err != nil {
-		return 0, err
-	}
-	count := 0
+func campaignSnapshotRows(accountID, adAccountID string, remote []GraphCampaign) []Campaign {
+	rows := make([]Campaign, 0, len(remote))
 	for _, c := range remote {
-		row := Campaign{
+		rows = append(rows, Campaign{
 			AccountID:      accountID,
-			AdAccountID:    ad.ID,
+			AdAccountID:    adAccountID,
 			MetaCampaignID: c.ID,
 			Name:           c.Name,
 			Objective:      c.Objective,
 			Status:         c.Status,
 			DailyBudget:    budgetCentsToUnits(c.DailyBudget),
 			LifetimeBudget: budgetCentsToUnits(c.LifetimeBudget),
-		}
-		if err := s.store.UpsertCampaign(ctx, row); err != nil {
-			return count, err
-		}
-		count++
+			IsCurrent:      true,
+		})
 	}
-	return count, nil
+	return rows
 }
 
-// syncInsights puxa e cacheia os insights diarios nos dois niveis: por campanha
-// (meta_campaign_id) e agregado da conta (meta_campaign_id = ”).
-func (s *Service) syncInsights(ctx context.Context, accountID string, ad AdAccount, token string) (int, error) {
-	count := 0
-
-	// Nivel campanha.
-	perCampaign, err := s.client.GetInsights(ctx, token, ad.MetaAdAccountID, syncDatePreset, "campaign")
-	if err != nil {
-		return 0, err
-	}
+func insightSnapshotRows(
+	accountID, adAccountID string,
+	perCampaign, accountLevel []GraphInsight,
+) []InsightDaily {
+	rows := make([]InsightDaily, 0, len(perCampaign)+len(accountLevel))
 	for _, gi := range perCampaign {
-		if err := s.upsertInsight(ctx, accountID, ad.ID, gi.CampaignID, gi); err != nil {
-			return count, err
+		if row, ok := graphInsightSnapshotRow(accountID, adAccountID, gi.CampaignID, gi); ok {
+			rows = append(rows, row)
 		}
-		count++
-	}
-
-	// Nivel conta (agregado): meta_campaign_id = accountLevelCampaignID ('').
-	accountLevel, err := s.client.GetInsights(ctx, token, ad.MetaAdAccountID, syncDatePreset, "account")
-	if err != nil {
-		return count, err
 	}
 	for _, gi := range accountLevel {
-		if err := s.upsertInsight(ctx, accountID, ad.ID, accountLevelCampaignID, gi); err != nil {
-			return count, err
+		if row, ok := graphInsightSnapshotRow(accountID, adAccountID, accountLevelCampaignID, gi); ok {
+			rows = append(rows, row)
 		}
-		count++
 	}
-	return count, nil
+	return rows
 }
 
-// upsertInsight mapeia um GraphInsight -> InsightDaily e persiste. Linhas sem
-// data valida sao ignoradas (sem erro).
-func (s *Service) upsertInsight(ctx context.Context, accountID, adAccountID, metaCampaignID string, gi GraphInsight) error {
+func graphInsightSnapshotRow(
+	accountID, adAccountID, metaCampaignID string,
+	gi GraphInsight,
+) (InsightDaily, bool) {
 	date, err := time.Parse("2006-01-02", gi.DateStart)
 	if err != nil {
-		return nil
+		return InsightDaily{}, false
 	}
-	row := InsightDaily{
+	return InsightDaily{
 		AccountID:      accountID,
 		AdAccountID:    adAccountID,
 		MetaCampaignID: metaCampaignID,
@@ -114,6 +127,5 @@ func (s *Service) upsertInsight(ctx context.Context, accountID, adAccountID, met
 		CPC:            parseFloat(gi.CPC),
 		CPM:            parseFloat(gi.CPM),
 		Conversions:    conversionsFromActions(gi),
-	}
-	return s.store.UpsertInsight(ctx, row)
+	}, true
 }

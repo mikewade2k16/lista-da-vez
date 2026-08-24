@@ -451,11 +451,13 @@ helpers de data/constantes em [utils/calendar.ts]; tipos+helpers da CONFIG (cont
 > MASCARADO `{set,last4}` via `GET /v1/calendar/ai-keys` (fonte ativa global|conta) e grava write-only
 > (`PUT /ai-keys` conta, `PUT /ai-keys/global` so platform_admin; apiKey vazio = limpar). I/O em
 > `calendar-api.ts` (`fetchAiKeys`/`putAiKey`/`fetchGlobalAiKeys`/`putGlobalAiKey`, tipo `CalendarAiKeys`).
-> A aba IA ([ConfigAi.vue]) tem o kill switch, o toggle de escopo (aviso "salve pra aplicar" enquanto o
-> rascunho diverge do salvo), o subcomponente [ConfigAiKeys.vue] (chaves mascaradas + input write-only +
-> limpar, edicao gateada por `isPlatformAdmin` quando a fonte ativa e global), provider+modelo, transcricao
-> e o prompt do sistema (a lei da IA). ConfigAiKeys le o escopo ATIVO do banco (prop `useGlobalKeys` do
-> `store.config`, nao do rascunho) e re-le apos cada PUT (fonte unica = banco).
+> A aba IA ([ConfigAi.vue]) mantém o kill switch, o toggle de escopo, provider/modelo, transcrição legada,
+> prompt e [ConfigAiKeys.vue] **somente para plano mensal e compatibilidade legada do Calendar**.
+> `ConfigAiKeys` lê o escopo ativo do banco e relê após cada PUT, mas `/v1/calendar/ai-keys` não é o
+> cofre do Crow Assistant compartilhado. O chat `/v1/assistant/chat` usa
+> `automation.omni_chat_configs` + `messaging.ai_credentials`; provider/modelo/chave/persona são alterados
+> pela engrenagem do próprio chat. Não voltar a apresentar uma rotação nesta aba como se atualizasse o
+> Assistente 360.
 >
 > **MODELO = SELECT do provedor (Opcao C)**: o campo Modelo NAO e mais texto livre — virou o subcomponente
 > [ConfigAiModelSelect.vue], um `<select>` populado por `fetchAiModels(provider)` (calendar-api.ts ->
@@ -591,11 +593,10 @@ Interacao-chave:
   * `ConfigHolidays.vue` — toggles BR nacional / Sergipe / Aracaju / luxo internacional.
   * `ConfigAppearance.vue` — inicio da semana (seg/dom) + cor por cliente (input color + "Sem cor" =
     `none`) + cor por tipo (checkbox "Usar" + input color) + white-label (titulo/logo/cor).
-  * `ConfigAi.vue` — provider (select, inclui `gemini`) + modelo (subcomponente `ConfigAiModelSelect.vue`,
-    SELECT populado pelo `/models` do provedor — Opcao C, sem texto livre) + baseUrl (placeholder = default do
-    provider) + systemPrompt (textarea) + temperature; AVISO fixo "as chaves de API ficam no n8n, nunca aqui".
-    Tem botao "Abrir chat com o assistente" que so chama `useCalendarChat().openPanel()` — a janela de
-    chat (SPEC-F2) vive montada na pagina index (fora do drawer), aqui so aciona o MESMO estado singleton.
+  * `ConfigAi.vue` — configuração do plano/transcrição e compatibilidade legada do Calendar: provider,
+    modelo, baseUrl, systemPrompt, temperature e chaves Calendar. Exibe aviso explícito de que o Crow
+    Assistant usa o cofre compartilhado e deve ser configurado pela engrenagem do chat. O botão apenas chama
+    `useCalendarChat().openPanel()`; a janela compartilhada vive no shell autenticado e reutiliza o mesmo estado.
   * `ConfigTasks.vue` (SPEC-F6, aba `integracoes`) — select de board + coluna de destino ao criar task
     a partir de um evento (contrato C6, `draft.tasks`). Fonte: `useTasksStore` (import cross-layer
     `../../../../layers/tasks/stores/tasks`), boards carregados LAZY so ao abrir a aba
@@ -618,9 +619,14 @@ Interacao-chave:
     `PUT /v1/calendar/client-profile` (upsert full-replace), `GET /v1/calendar/client-profiles` (index
     lean `{clientId,filled,updatedAt}`). Perfil inexistente = 200 com defaults (nunca 404). Estilos
     `.calendar-profile__*` + `.calendar-config__section--wide` em `assets/styles/calendar/config.css`.
-- **Janela de chat + voz** [CalendarChatPanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarChatPanel.vue)
-  (SPEC-F2/F10, contratos C7/C8/CHATUI/D3/D4). **SEM FAB de canto** (removido na F2): a janela abre CENTRALIZADA
-  sobre a area interna do calendario (`.calendar-page`, medida em runtime) e ganhou **MINIMIZAR**
+- **Janela compartilhada de chat + voz** [CalendarChatPanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarChatPanel.vue)
+  (SPEC-F2/F10, contratos C7/C8/CHATUI/D3/D4). E renderizada uma unica vez por
+  `components/assistant/OmniAssistantHost.vue`, montado dentro de `.app-surface` no layout
+  `dashboard.vue`; paginas de modulo nunca montam outra instancia. O host resolve a surface
+  `calendar | meta_ads | global` pela rota. A engrenagem do header navega para o único editor visual,
+  `Calendário → Configurações → IA` (`/calendario?config=ia`); o chat não monta drawer de
+  configuração próprio. **SEM FAB de canto** (removido na F2): a janela
+  abre CENTRALIZADA sobre a area interna do modulo (seletor injetado no composable) e ganhou **MINIMIZAR**
   (colapsa numa **pill** re-expansivel `.calendar-chat-pill`, sem perder a conversa) e **FECHAR**
   (some; reabre pelo botao chat dos [CalendarControls] ou pelo "Abrir chat" da aba IA). **Posicao/tamanho
   (`config.chat`)**: seletor no header (`center` = largura da area do calendario; `left` = ~painel
@@ -628,12 +634,14 @@ Interacao-chave:
   molde do OmniEntityDrawer; no modo right cresce pela borda esquerda). Toda a matematica de layout +
   persistencia vive em
   [composables/useCalendarChatWindow.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarChatWindow.ts)
-  (mede `.calendar-page`, calcula `panelStyle` left/top/width/height em px, clamps MIN 320 / margem 12,
-  persiste em `config.chat` via `store.saveConfig` DEBOUNCED 600ms — trocar de posicao zera width/height
-  pro default; `localChat` re-hidrata de `store.config.chat` exceto com save pendente, principio 1).
-  Render via `Teleport to="body"` (a `.calendar-page` tem `overflow:hidden`; precedente CalendarAiPlanModal)
+  (mede o seletor da surface, calcula `panelStyle` left/top/width/height em px, clamps MIN 320 /
+  margem 12). Somente `calendar` persiste em `config.chat` via `store.saveConfig` DEBOUNCED 600ms,
+  e apenas depois de `store.isConfigLoaded` confirmar o GET da account ativa; Meta/global guardam
+  layout efemero por `accountId:surface` e jamais fazem o PUT full-replace do Calendar. Trocar de
+  account/surface cancela debounce pendente e re-hidrata o layout daquele contexto.
+  Render via `Teleport to=".app-surface"` (a `.calendar-page` tem `overflow:hidden`)
   com `position:fixed` + style calculado; `.calendar-chat`/`.calendar-chat-pill` z-index 9810 em
-  `assets/styles/calendar/chat.css` (so tokens). Montado 1x em `pages/calendario/index.vue`. Bolhas
+  `assets/styles/calendar/chat.css` (so tokens), sem copiar CSS por surface. Bolhas
   user/assistant espelham o OperationSidePanel; input textarea auto-grow (Enter envia, Shift+Enter quebra
   linha), "digitando...", header com seletor de posicao + nova conversa + minimizar + fechar (Esc fecha,
   preservando o draft). Estado SINGLETON via
@@ -641,12 +649,18 @@ Interacao-chave:
   (`useState`: messages/draft/sending/errorMessage/**panelOpen/minimized**/conversationId + wave 4:
   **conversationTitle/conversations/loadingConversations/loadingConversation/chatScope/scopeMode/
   scopeClientId**; `openPanel` reabre cheia zerando `minimized` E dispara `ensureChatLoaded()` — busca
-  a lista de conversas + o escopo do banco e consulta `GET /v1/calendar/chat/status` sem tokens;
+  a lista de conversas + o escopo do banco e consulta `GET /v1/assistant/chat/status` sem tokens;
   `minimize`/`restore` alternam a pill): `ask()` repete o mesmo preflight ANTES de inserir a pergunta
   no historico e so entao faz POST
-  `/v1/calendar/chat/ask` com `{question, conversationId, scopeMode, scopeClientId, month}` (account*id
+  `/v1/assistant/chat/ask` com `{question, conversationId, surface, scopeMode, scopeClientId}` e
+  header `Idempotency-Key` estavel. O composable conserva uma tentativa pendente (fingerprint + voz + key)
+  apos falha de transporte, nao duplica a bolha local e reapresenta exatamente a mesma operacao no retry;
+  `month` somente na surface calendar (account*id
   nunca no body — o back resolve pelo Principal), a RESPOSTA `{answer, conversationId, title}` adota o
-  id/titulo que o back resolveu e atualiza a lista; AbortController cancela a pergunta anterior em voo;
+  id/titulo/surface que o back resolveu e atualiza a lista. A surface de uma conversa ativa e
+  imutavel ao navegar: so uma conversa nova adota a surface da rota. Troca de account ou usuario
+  aborta requests e limpa imediatamente conversa, mensagens, lista, escopo, tentativa pendente e painel
+  antes da nova leitura. AbortController cancela a pergunta anterior em voo;
   erros 503/`chat_not_configured`, 502/504 viram o bloco acionavel `IA fora do ar`; envio bloqueado
   preserva o draft e nao cria mensagem/conversa.
   **WAVE 4 — PERSISTENCIA + MEMORIA + ESCOPO (SPEC-F10, contrato D3/D4)**: conversas e mensagens agora
@@ -669,11 +683,12 @@ pela permissao (`resolveChatAccess`, nunca do body); conversa/cliente fora do vi
   única): cada item tem `id`, `kind`, `fields`, `status` próprio e `action` (reservado p/ CRUD futuro).
   [CalendarChatMessage.vue] renderiza a LISTA com checkbox por item pendente (marcados por padrão), badge
   `Criado`/`Recusado` nos resolvidos, `×` para recusar um, e o rodapé `Recusar todas` + `Criar N
-  selecionadas`. O composable [useCalendarChat.ts] expõe `confirmSelectedProposals(msgId, ids[])` (cria em
-  LOTE via API autenticada — `applyProposal` por item; falha parcial não aborta, conta e avisa) e
-  `rejectSelectedProposals(msgId, ids[])`. Cada aceite/recusa chama `updateProposalStatus(conv, msg,
-  proposalId, status)` (PATCH `.../proposals/{proposalId}/status`) e o `replaceMessage` atualiza o card item
-  a item; o histórico persiste `accepted`/`rejected` após fechar/recarregar. Retrocompat: mensagem antiga
+  selecionadas`. O composable [useCalendarChat.ts] expõe `confirmSelectedProposals(msgId, ids[])` e chama,
+  por item suportado, `POST .../proposals/{proposalId}/confirm` com `Idempotency-Key` deterministico; o front
+  nao toca Calendar/Tasks stores e substitui a mensagem pelo snapshot autoritativo devolvido. Falha parcial
+  nao aborta as demais. Recusa continua em `PATCH .../status`; aceite por PATCH e permitido apenas para a
+  projecao Meta ja concluida pelo caminho duravel Meta. O historico persiste `accepted`/`rejected` apos
+  fechar/recarregar. Retrocompat: mensagem antiga
   (proposta única) é normalizada como lista de 1.
 
   **CLIENTE NA CRIAÇÃO (WAVE 5.2):** o card recebe `clients`/`scopeMode`/`scopeClientId` (do `chat.chatScope`).
@@ -681,27 +696,30 @@ pela permissao (`resolveChatAccess`, nunca do body); conversa/cliente fora do vi
   FORÇADO, ignora o que a IA sugeriu). Escopo **todos** => cada proposta pendente ganha um `<select>` de
   cliente (editar uma a uma) e, ao "Criar N selecionadas", se algum selecionado ficar sem cliente abre o
   popup inline **[Continuar sem cliente] / [Escolher cliente]** — escolher aplica **um para todas** e cria. O
-  clientId resolvido sobe no `accept-selected` (`items:[{id,clientId}]`) e o composable cria com ele
-  (`applyProposal(proposal, clientId)`). O bloco de propostas é **colapsável** (chevron no header) para
+  clientId resolvido sobe no `accept-selected` (`items:[{id,clientId}]`) como unico override permitido no
+  confirm; o backend torna a resolver e validar esse cliente. O bloco de propostas é **colapsável**
+  (chevron no header) para
   minimizar listas grandes. Cliente faltante so bloqueia **create**; em `update`, se a IA nao enviar
   `fields.clientId`, o card herda o cliente atual do evento alvo (`targetId`) quando houver e nao dispara
   "sem cliente"; cliente so muda por override explicito do usuario/IA.
 
-  **CRUD PELO CHAT (2026-07-07):** `applyProposal` faz switch por `proposal.action`: `create` (createEvent/
-  createTask), `update` (evento existente por `fields.targetId` = id de `context.events`; `store.getEventById`
-  - `updateEvent` full-replace mesclando campos nao-vazios; conflito de versao vira aviso) e `delete`
-    (`store.deleteEvent`). Para `kind:'task'`, o composable carrega o board configurado e usa `targetId` real de
-    `context.tasks` (ou `taskId` de evento vinculado) para `updateTask`/`removeTask`; se `targetId` tambem for
-    evento real, o alvo real vence o `kind`. O card mostra a acao por item (tag **Editar**/**Excluir**, delete com acento de perigo),
-    esconde o seletor de cliente no delete e o botao vira "Aplicar N" quando ha edicao/exclusao. O painel teleporta o chat para `.app-surface` (dentro do
-    shell, mesmo stacking context do header) - nao mais `body`, senao cobre o header do painel.
+  **CRUD PELO CHAT (0287):** o composable nao possui mais `applyProposal` nem muta stores. Cada aceite local
+  passa pelo backend com chave estavel; ele recarrega a proposta persistida, revalida tenant/dono/surface/
+  scope/capability e executa somente o adaptador que pode compartilhar efeito+receipt numa transacao.
+  Eventos create sao Calendar-only (nunca criam Task); update/delete exigem target UUID, before snapshot e
+  versao esperada, e evento ligado a Task fica fail-closed. Note/profile usam allowlist e escopo backend nos
+  casos suportados. O card le `proposal.execution.canConfirm`, mostra **Indisponivel** antes do clique quando
+  nao houver garantia, e apenas projeta `accepted`/resultado da mensagem devolvida. Ele ainda mostra a acao
+  por item (tag **Editar**/**Excluir**), esconde o seletor de cliente no delete e usa "Aplicar N" em
+  edicao/exclusao. O painel teleporta o chat para `.app-surface` (dentro do shell, mesmo stacking context do
+  header) - nao mais `body`, senao cobre o header do painel.
 
   **ITENS DE TASK PELO CROW (2026-08-13):** `kind:'taskItem'` usa `fields.targetId` como task pai e
   `fields.taskItem` como mutacao fechada do checklist (`id/title/completed/status` + datas opcionais).
-  O card mostra o item, a task pai, status/data e nunca pede cliente; criar/editar/excluir so chama
-  `tasksStore.updateTask(..., { checklist })` depois da confirmacao. Creates usam ID estavel derivado de
-  mensagem+proposta para retry nao duplicar. O merge puro vive em `utils/calendar-chat-task-items.ts` e
-  preserva a independencia entre checkbox finalizado e status de producao/postagem.
+  O card mostra o item, a task pai, status/data e nunca pede cliente. `task` e `taskItem` ficam indisponiveis
+  e o backend rejeita confirmacao enquanto nao existir adaptador PostgreSQL Tasks atomico; nao ha fallback
+  para `tasksStore.updateTask` nem retry que possa duplicar item. O merge puro legado pode continuar testado
+  em `utils/calendar-chat-task-items.ts`, mas nao participa do caminho de confirmacao.
 
 (client|all) vem do `GET /chat/scope`: cliente-side (canSelect=false) trava no `lockedClientId`, agencia
 escolhe. **WAVE 4 — SELECT DE ESCOPO (SPEC-F11)**: barra abaixo do header via
@@ -717,9 +735,11 @@ ve todas com autor+data, cliente-side so as suas; estilos`.calendar-chat-convos\
 VOZ: [composables/useVoiceRecorder.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useVoiceRecorder.ts)
 (`MediaRecorder` `audio/webm;codecs=opus`-> fallback`audio/mp4`, limite 2min para sozinho, estados
 idle/recording/transcribing, permissao negada -> mensagem acionavel). Botao mic: gravar -> parar ->
-POST multipart `/v1/calendar/chat/transcribe`(campo`file`; FormData nao serializado pelo api-client)
+POST multipart `/v1/assistant/chat/transcribe`(campo`file`; FormData nao serializado pelo api-client)
 -> texto entra no INPUT (usuario revisa e envia, nao envia direto); erros C8 (503/413/400/502/504)
-com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMessage`.
+com mensagem acionavel. Whisper e apresentado como servico compartilhado; fora da surface Calendar
+a disponibilidade nao e inferida dos defaults de `calendar.config`. A pill (minimizada) mostra um
+badge quando ha `errorMessage`.
 
 - **Realtime + presenca (SPEC-F9, contratos C11/C12)**. Dois composables NOVOS moldados sobre a
   base generica de tasks (import cross-layer `../../layers/tasks/composables/useRealtimeSocket`;

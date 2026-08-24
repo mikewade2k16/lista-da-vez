@@ -135,6 +135,15 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	return m.handle, nil
 }
 
+// Service devolve o service construido no Build para injecao lazy no motor do
+// assistente. Nil antes do Registry.BuildAll.
+func (m *Module) Service() *Service {
+	if m.handle == nil {
+		return nil
+	}
+	return m.handle.service
+}
+
 // ============================================================================
 // Handle
 // ============================================================================

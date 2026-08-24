@@ -68,6 +68,9 @@ const activeTab = ref<ConfigTab>('responsaveis')
 const visited = ref<Set<ConfigTab>>(new Set(['responsaveis']))
 
 const showFooter = computed(() => FOOTER_TABS.includes(activeTab.value))
+const footerSaveLabel = computed(() =>
+  activeTab.value === 'ia' ? 'Salvar planejamento do calendário' : 'Salvar configurações',
+)
 
 watch(
   config,
@@ -287,7 +290,7 @@ function onTasks(value: CalendarTasksConfig): void {
     <template v-if="showFooter" #footer>
       <span v-if="touched" class="calendar-config-page__dirty">Alterações não salvas</span>
       <AppPanelButton variant="primary" :disabled="saving" @click="save">
-        Salvar configurações
+        {{ footerSaveLabel }}
       </AppPanelButton>
     </template>
   </OmniEntityDrawer>

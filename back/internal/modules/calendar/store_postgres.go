@@ -477,18 +477,6 @@ func jsonMedia(items []MediaItem) []byte {
 	return b
 }
 
-// decodeMedia desserializa o jsonb de anexos; falha/nulo -> lista vazia.
-func decodeMedia(raw json.RawMessage) []MediaItem {
-	out := []MediaItem{}
-	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &out)
-	}
-	if out == nil {
-		out = []MediaItem{}
-	}
-	return out
-}
-
 // nullUUID devolve *string (nil se vazio) para colunas uuid nullable.
 func nullUUID(s string) *string {
 	s = strings.TrimSpace(s)

@@ -115,7 +115,7 @@ func writeBridgeError(w http.ResponseWriter, err error) {
 		writeBridgeErrorCode(w, http.StatusNotFound, "not_connected")
 	case isGraphError(err):
 		// err.Error() vem de graphError (meta_client.go): "meta graph: http N:
-		// <mensagem da Graph> (code C)". A URL com access_token NUNCA entra nessa
+		// <mensagem da Graph> (code C)". O bearer da Graph NUNCA entra nessa
 		// string — so a mensagem da Graph e o status. Seguro ecoar ao runner.
 		httpapi.WriteJSON(w, http.StatusBadGateway, map[string]string{
 			"error":   "graph_error",

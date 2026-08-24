@@ -81,10 +81,15 @@ Espelho task->evento ligado por padrao (`config.tasks.mirrorTasks=true`). Card n
 (`topSortOrder`, sort_order asc). IA propoe criar (E7 + **multi-tarefa WAVE 5.1**): o webhook devolve
 `proposals[]` (lista); `chat.go` sanitiza cada uma (`sanitizeProposalList`/`sanitizeProposal`, teto
 `maxChatProposals=31`), gera id por indice + status `pending` (`storedProposalsFrom`) e persiste em
-`chat_messages.proposals`. A criacao real e do FRONT pela API autenticada do usuario (sem service-token
-escrevendo), aprovando em LOTE. Status por proposta muda em `PATCH /v1/calendar/chat/conversations/{id}/
-messages/{messageId}/proposals/{proposalId}/status` (`SetProposalStatus` idempotente: so item ainda
-`pending`, via `jsonb_agg`+`jsonb_set` preservando a ordem).
+`chat_messages.proposals`. Desde a migration 0287, esse JSON e somente a PROJECAO do card: a fonte
+autoritativa de execucao nasce na mesma transacao em `calendar.chat_proposal_executions`. Cards locais
+sao confirmados exclusivamente por `POST /v1/assistant/chat/conversations/{id}/messages/{messageId}/
+proposals/{proposalId}/confirm`, com `Idempotency-Key` estavel. O backend recarrega conversa, mensagem e
+snapshot persistidos, revalida tenant/dono/surface/scope/capability, aceita apenas overrides editaveis e
+executa efeito + receipt + status `accepted` em uma unica transacao PostgreSQL. Repetir a mesma chave/hash
+devolve o mesmo recurso; reutilizar a chave com outro hash retorna 409. `PATCH .../status` continua apenas
+para recusa local idempotente e para a projecao Meta ja concluida pelo executor Meta; nao aceita atalho
+`accepted` para Calendar/Tasks.
 CRUD de ANOTACAO e PERFIL do cliente pelo chat (WAVE 7): os `kind` de proposta ganham `note` e
 `clientProfile` alem de event|task. `chat_proposals_crud.go` (novo) traz `ChatProposalNote`
 (`{month,content,mode(append|replace)}`) e `ChatProposalProfile` (9 estaveis + `extra` +
@@ -92,11 +97,11 @@ CRUD de ANOTACAO e PERFIL do cliente pelo chat (WAVE 7): os `kind` de proposta g
 kind que `sanitizeProposal` (chat.go) DESPACHA (`canonicalProposalKind`/`sanitizeNoteProposal`/
 `sanitizeProfileProposal`; note: create/update exige `content`, delete limpa; clientProfile: exige >=1
 campo, delete exige clearAll|clearFields, `clientId` opcional). O cliente-alvo do perfil reusa
-`fields.clientId` (a IA resolve por NOME do contexto ou o dono escolhe no cartao). A EXECUCAO e do FRONT
-(`web/app/utils/calendar-chat-crud.ts`) pela API do usuario: anotacao via `PUT /notes/{month}` (ACRESCENTA
-por padrao; mes ativo usa `store.setNotesForActiveMonth`, senao GET+aplica+PUT); perfil via
-GET->merge->`PUT /client-profile` (full-replace preservando os campos nao tocados; clearAll usa o perfil
-default). Insistencia: `runtime_context.go` `missingProfileFields` expoe os campos vazios — `ProfileMissing`
+`fields.clientId` (a IA resolve por NOME do contexto ou o dono escolhe no cartao). A execucao suportada
+ocorre no backend, com allowlist, escopo e before-hash revalidados na transacao; nota fica fail-closed fora
+de conta de agencia + escopo `all`, pois o schema atual nao possui `client_id`. Update/delete de perfil
+tambem fica indisponivel quando o snapshot autoritativo nao puder ser provado no storage resolvido.
+Insistencia: `runtime_context.go` `missingProfileFields` expoe os campos vazios — `ProfileMissing`
 no `AIContextClientLean` (escopo all) + o no "Montar contexto" calcula de `ctx.client.profile` (escopo
 client) — e o prompt manda a IA avisar o que falta e insistir com moderacao. Sem migration/env nova; so
 re-importar o workflow `calendar-chat` (nos "Montar contexto" + "Extrair resposta" atualizados). Doc
@@ -108,11 +113,13 @@ ITEM DE TASK PELO CROW: `kind=taskItem` usa `fields.targetId` para a task-pai e
 `AIContextTask.Items`; status aceitos: `captured|editing|approval|approved|scheduled|posted`, e datas
 sao estritamente `YYYY-MM-DD`. `chat_task_items.go` resolve task/item somente no contexto autorizado,
 por ID real ou titulo unico, sobrescreve `taskTitle/itemTitle` com snapshots autoritativos e descarta
-alvo inventado/ambiguo. Create exige task real + titulo (o front gera o ID); update exige item real +
-campo editavel; delete exige task/item reais. Mudanca de status/conclusao sem data recebe hoje em
-`America/Sao_Paulo`; `completed=false` limpa `completedDate`. Data isolada so sobrevive se o estado
-atual correspondente existir. `taskItem` NAO passa pela guarda de prioridade do Calendar. Descartes
-sem alvo geram aviso deterministico; outras propostas validas ficam.
+alvo inventado/ambiguo. Create exige task real + titulo; update exige item real + campo editavel; delete
+exige task/item reais. Mudanca de status/conclusao sem data recebe hoje em `America/Sao_Paulo`;
+`completed=false` limpa `completedDate`. Data isolada so sobrevive se o estado atual correspondente
+existir. `taskItem` NAO passa pela guarda de prioridade do Calendar. Descartes sem alvo geram aviso
+deterministico; outras propostas validas ficam. A migration 0287 NAO introduz escrita Tasks dentro da
+transacao Calendar: `task` e `taskItem` sao projetados como indisponiveis e o confirm retorna conflito
+fail-closed ate existir um adaptador PostgreSQL autoritativo e atomico para Tasks.
 Secrets de IA (WAVE 3, SEC) em `secrets.go` (tipos `KeyStatus{set,last4}`/`KeyStatusView{scope,keys}`/
 `GlobalSecrets` + service: `GetAccountKeyStatus`/`PutAccountKey`/`GetGlobalKeyStatus`/`PutGlobalKey`/
 `resolveAIKey`/`mask`), `store_secrets.go` (interface `secretStore` + CRUD de `calendar.ai_secrets` por
@@ -275,11 +282,14 @@ helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToS
   `scope_mode` (`client`|`all`, default client), `scope_client_id` (uuid nullable, preenchido no modo client),
   timestamps + `deleted_at` (soft-delete). Indice parcial `(account_id, created_by_user_id, updated_at desc)
   where deleted_at is null`. Conversas HIBRIDAS: cliente-side ve so as suas, agencia ve todas da conta.
-- `calendar.chat_messages` (0191 + 0194 + **0195**): `id` PK (uuid), **conversation_id** (FK
+- `calendar.chat_messages` (0191 + 0194 + **0195** + 0283): `id` PK (uuid), **conversation_id** (FK
   calendar.chat_conversations on delete cascade), **account_id** (FK core.accounts on delete cascade, defesa
   em profundidade), `role` (`user`|`assistant`), `content`, `proposal jsonb`, `proposal_status`
   (`none`|`pending`|`accepted`|`rejected`), **`proposals jsonb not null default '[]'` (0195, multi-tarefa)**,
-  `calendar_items jsonb` e `created_at`. Indice `(conversation_id, created_at)`.
+  `calendar_items jsonb`, **`resources jsonb not null default '[]'` (0283)** e `created_at`.
+  `resources` guarda somente snapshots read-only sanitizados que o backend cruzou pelo ID contra
+  o registry autorizado (`instagram_post|meta_campaign|meta_ad_account`); nunca persiste titulo/URL
+  devolvido livremente pelo LLM. Indice `(conversation_id, created_at)`.
   **MULTI-TAREFA (WAVE 5.1)**: uma mensagem pode trazer VARIAS propostas de criacao — `proposals` e um array
   `[{id,action,kind,fields,status}]`, cada uma com **status proprio** (`pending|accepted|rejected`) e id
   estavel (indice na mensagem). `action` (`create`|`update`|`delete`) + `fields.targetId` dirigem o **CRUD pelo chat** (create/update/delete
@@ -287,16 +297,27 @@ helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToS
   `responsibleId/involvedIds`, `description/contentHtml`, `dueDate/dueEndDate`, `clientId/clientName`,
   `columnId`, `archived`, `targetId`. `sanitizeProposal` valida por acao: update/delete exigem `targetId`;
   delete dispensa titulo; create exige titulo; update aceita edicao parcial (ex.: so prioridade/descricao).
-  O front (`applyProposal`) executa evento via `store.updateEvent`/`deleteEvent`; task via store de tasks
-  quando `targetId` for id real de `context.tasks` ou evento com `taskId` vinculado. `buildChatContext` acrescenta
+  O front nao executa mais mutacao local: para kinds suportados chama o endpoint canonico de confirmacao,
+  substitui a mensagem pelo snapshot devolvido e apenas projeta o outcome. `buildChatContext` acrescenta
   `tasks` com a projecao lean do board configurado (`maxContextTasks=100`) usando permissao real do usuario.
   Cada task pode incluir `items[]` (max 200) com `{id,title,completed,status?,statusDate?,completedDate?}`;
-  propostas `taskItem` continuam em `calendar.chat_messages.proposals` e so sao executadas depois da
-  confirmacao explicita do card, nunca pelo n8n.
+  propostas `task`/`taskItem` continuam em `calendar.chat_messages.proposals`, mas ficam explicitamente
+  indisponiveis ate haver adaptador transacional Tasks; nunca sao executadas pelo front ou pelo n8n.
   O `proposal`/`proposal_status` singular vira retrocompat: o backfill da 0195 migra mensagem antiga para a
   lista de 1 (id '0') e o scan tem a mesma rede de seguranca. `calendar_items` guarda o snapshot de eventos
   reais cujos IDs vieram do contexto e foram revalidados pelo Go. Sem soft-delete (some junto com a conversa
   via cascade). Fonte da memória do LLM.
+- `calendar.chat_proposal_executions` (0287): fonte autoritativa/receipt de cada card nao-Meta, unique
+  `(account_id,message_id,proposal_id)` e chave de confirmacao unica por conta+ator. Persiste hash/snapshot
+  da proposta, overrides editaveis, target/version/before-hash, resultado/erro/ator e estados
+  `pending|executing|succeeded|failed|unknown|rejected`. FKs compostas provam que mensagem e conversa
+  pertencem a mesma conta. Para eventos locais, create/update/delete + receipt + projecao `accepted` usam
+  uma transacao; update/delete exigem UUID e versao esperada e evento vinculado a Task fica fail-closed.
+  Note/profile usam allowlist e before-hash quando suportados; kinds sem garantia atomica nao confirmam.
+- `calendar.chat_ask_requests` (0287): recibo de `/ask`, unique `(account_id,actor_user_id,idempotency_key)`.
+  Mesmo hash devolve a resposta/mensagens ja persistidas; hash diferente conflita. IDs de conversa ficam
+  deliberadamente sem FK para a chave sobreviver ao delete e nunca permitir uma segunda execucao. Estado
+  `executing/unknown` nao recebe retry automatico.
   **GUARDA DE ALVO POR DIA/CLIENTE (WAVE 14, `chat_target_guard.go`)**: o modelo erra DEMAIS escolhendo o
   alvo — chega a dizer "nao ha evento no dia 13" tendo um — entao o BACK RESOLVE o alvo, determinista, em
   vez de so validar a escolha da IA. Roda no `ChatAsk` ANTES de `resolveProposalTargets` (pode reescrever o
@@ -524,8 +545,9 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   por `account_id` e o nome/perfil de `clientId` forjado de outra conta volta vazio (mesma amarra
   de `loadAccountNames`/`loadProfiles`). O bloco `context` do chat (C7) e este agregado SEM
   `account`, montado pela MESMA `BuildAIContext`.
-- `POST /v1/calendar/chat/ask` — **chat de IA com memoria + escopo (C7/D4, WAVE 4)**.
-  RequireAuthWithAccount. Body `{question, conversationId?, scopeMode?('client'|'all'), scopeClientId?,
+- `POST /v1/assistant/chat/ask` (alias legado `/v1/calendar/chat/ask`) — **chat de IA com memoria +
+  escopo (C7/D4, WAVE 4)**. RequireAuthWithAccount e header `Idempotency-Key` ASCII obrigatorio (8..200).
+  Body `{question, conversationId?, scopeMode?('client'|'all'), scopeClientId?,
   clientId?(legado, fallback de scopeClientId), month?}` (`question` obrigatoria, trim, max 4000 chars).
   Persiste na conversa (cria se `conversationId` vazio), grava a pergunta, carrega as ultimas N=12 como
   `history`, monta o payload (`ai` = config EFETIVA + KEY CRUA em `ai.apiKey`; `context` = `BuildAIContext`
@@ -533,7 +555,11 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   `calendar-chat`; grava a resposta e titula a conversa. Resposta 200 `{answer, conversationId, title}`.
   Quando o webhook devolve `eventIds`, o Go cruza os IDs com o contexto autoritativo e persiste
   `calendarItems[]` para os cards; se o `answer` vier com lista textual repetida, compacta para uma
-  sintese curta + "lista nos cards" antes de gravar.
+  sintese curta + "lista nos cards" antes de gravar. O receipt 0287 inclui conta+ator+surface+escopo e
+  request hash: retry da mesma chave/hash devolve a MESMA conversa/mensagens/propostas, inclusive quando
+  `conversationId` era vazio; chave com hash diferente retorna 409. `executing/unknown` nunca dispara retry
+  automatico. Se o receipt ficou `unknown` antes do snapshot final, a chave permanece em quarentena para
+  reconciliacao operacional; ainda nao existe endpoint que reconstrua esse turno incompleto.
   Escopo SEMPRE normalizado server-side (`validateScope`): cliente-side (1 cliente) trava no seu cliente;
   `scopeClientId` fora do visivel => **404 `not_found`** (nao vaza QUAIS clientes existem); `all` so p/ quem
   tem select (agency/multi-cliente). Erros: 400 `invalid_question`; 400 `invalid_date` (`month` malformado);
@@ -552,6 +578,13 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   `{conversations:[{id,title,scopeMode,scopeClientId,createdByUserId,createdByName,updatedAt}]}` (updated_at desc).
 - `GET /v1/calendar/chat/conversations/{id}` — **conversa + mensagens (D3)**. Dono OU agency (senao 404).
   Resposta `{id,title,scopeMode,scopeClientId,messages:[{id,role,content,createdAt}]}` (ordem cronologica).
+- `POST /v1/assistant/chat/conversations/{id}/messages/{messageId}/proposals/{proposalId}/confirm` — porta
+  canonica para cards locais. Exige `Idempotency-Key`; body aceita somente `{fields?,clientId?}`. O backend
+  ignora qualquer troca de target/meta, recarrega a proposta persistida e revalida WRITE exata por kind,
+  conta, dono, scope, surface e cliente antes da transacao. Event/note/clientProfile executam somente nos
+  casos em que storage, snapshot/version e atomicidade podem ser provados; `task`/`taskItem`, evento ligado
+  a Task e snapshot insuficiente falham fechados. Replay devolve a mesma mensagem/resource; hash diferente
+  retorna 409; outcome incerto tambem retorna 409, com codigo proprio e sem retry automatico.
 - `POST /v1/calendar/chat/conversations` — **cria conversa vazia (D3)**. Body `{scopeMode?,scopeClientId?,title?}`
   (escopo normalizado server-side; cliente fora do visivel => 404). Resposta **201** com o resumo da conversa.
 - `DELETE /v1/calendar/chat/conversations/{id}` — **soft-delete (D3)**. Dono OU agency (senao 404). 204.
@@ -676,3 +709,40 @@ Ao subir a WAVE 3 pra producao, NAO basta o deploy da imagem. Fazer, em ordem:
   uma cópia com prefixo explícito de leitura é anexada apenas ao contexto do prompt; a nota real
   do mês nunca é alterada.
 - Falha do provider não interrompe o Crow e, principalmente, o Crow não dispara, agenda nem grava alertas.
+
+## Motor compartilhado do assistente (2026-08-18)
+
+- `/v1/assistant/chat/*` e o alias canonico; `/v1/calendar/chat/*` permanece compativel. As
+  conversas continuam em `calendar.chat_*` e registram `entry_surface` imutavel
+  (`calendar|meta_ads|global`).
+- `AssistantRuntimeProvider`, `MetaAssistantContextProvider` e
+  `AssistantModuleAvailabilityProvider` sao interfaces owner-neutral injetadas por `app.go`.
+  Calendar nao pode importar Automation nem Meta Ads.
+- Para requests compartilhadas, o service intersecta `surface_modules`,
+  `core.account_modules.enabled` e RBAC efetiva antes de consultar Calendar, Tasks, Users ou Meta.
+
+### Confirmação idempotente e cofre multi-provider — checkpoint 2026-08-19
+
+- `calendar.chat_ask_requests` e `calendar.chat_proposal_executions` (0287) são a fonte de verdade
+  para replay e execução de cards. O front nunca aplica a mutação antes de atualizar o card.
+- `event|note|clientProfile|task|taskItem` executam sob `Repeatable Read`, revalidando storage,
+  scope, surface, módulo e RBAC dentro da transação. Tasks expõe apenas a porta transacional em
+  `tasks/assistant_tx.go`; auditoria, realtime, notificações e sync rodam após commit.
+- Tasks nasce com `version=0`; snapshot zero é válido. `nil` significa snapshot ausente.
+- Evento vinculado a Task não é bloqueado: Calendar+receipt fazem commit atômico e o sync/unlink da
+  Task ocorre depois, best-effort, igual a `UpdateEvent`/`DeleteEvent` existentes.
+- Provider/modelo/chave do chat não vêm de `calendar.ai_secrets`. O runtime compartilhado resolve
+  `automation.omni_chat_configs` + `messaging.ai_credentials`; a 0292 permite Anthropic nesse
+  caminho sem ampliar o keyring nativo do Omnichannel.
+  `core` e obrigatorio e, portanto, implicitamente habilitado sem linha em `account_modules`;
+  a leitura de Users ainda exige RBAC. Owner/platform admin ignoram apenas RBAC, nunca modulo
+  satelite desligado.
+- A surface `calendar` tem fallback de transicao para `EffectiveAIConfig` + chave historica somente
+  quando a credencial canonica ainda nao existe/esta indisponivel. Kill switch explicito nao faz
+  fallback; `meta_ads` e `global` nunca herdam chave legada do Calendar.
+- Propostas continuam duraveis e exigem confirmacao. O backend remove propostas cujo modulo nao
+  tenha `effectiveMode=write`; Meta Ads permanece somente leitura nesta fatia.
+- Cards de recursos Meta sao duraveis em `chat_messages.resources`: o provider devolve contexto +
+  registry account/client-scoped, o workflow devolve somente `resourceIds`, e o Go sanitiza HTTPS,
+  limita/deduplica/intersecta os IDs antes de persistir/expor. O history recebe apenas resumo curto,
+  sem URL/metadata. Esses cards nao concedem escrita nem chamam o runner legado.

@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { useCoreAccountStore } from '../../../layers/core/stores/account'
+import { useCalendarChat } from '~/composables/useCalendarChat'
 import { useMetaAdsStore } from '~/stores/meta-ads'
 
 const store = useMetaAdsStore()
+const assistant = useCalendarChat()
+const accountStore = useCoreAccountStore()
 
 interface RangeOption {
   value: string
@@ -38,25 +42,48 @@ function onRangeChange(event: Event) {
 }
 
 function onSync() {
-  if (store.syncing) return
+  if (store.syncing || !store.canManageMetaAds) return
   void store.sync()
 }
 
-onMounted(() => {
-  void store.init()
-})
+function openSharedAssistant(): void {
+  assistant.setSurface('meta_ads')
+  if (
+    (assistant.conversationId.value || assistant.messages.value.length) &&
+    assistant.conversationSurface.value !== 'meta_ads'
+  ) {
+    assistant.newConversation()
+  }
+  assistant.openPanel()
+}
 
-// `connected` so fica true depois do init() async — carrega historico + health
-// do assistente assim que a conexao confirmar (e em reconexoes futuras).
+// Fail-closed no tenant switch: limpa sincronamente tudo que estava visivel, aborta
+// requests da geracao anterior no store e so entao carrega a account nova.
+watch(
+  () => accountStore.activeAccountId,
+  (accountId) => {
+    store.resetState()
+    if (accountId) void store.init()
+  },
+  { immediate: true, flush: 'sync' },
+)
+
+// `connected` so fica true depois do init() async. O chat compartilhado usa a
+// conexao Graph canonica do backend; o OAuth paralelo do runner legado nao e
+// carregado nem exibido nesta surface.
 watch(
   () => store.connected,
   (connected) => {
     if (connected) {
-      void store.loadAssistant()
+      void store.loadClientScope()
     }
   },
   { immediate: true },
 )
+
+onBeforeUnmount(() => {
+  store.cancelDataLoads()
+})
 </script>
 
 <template>
@@ -87,7 +114,12 @@ watch(
         <button
           type="button"
           class="meta-ads__sync"
-          :disabled="store.syncing || !store.selectedAdAccountId"
+          :disabled="store.syncing || !store.selectedAdAccountId || !store.canManageMetaAds"
+          :title="
+            store.canManageMetaAds
+              ? 'Atualizar dados da conta de anúncios'
+              : 'Sua função possui acesso somente leitura ao Meta Ads'
+          "
           @click="onSync"
         >
           <span v-if="store.syncing" class="meta-ads__spinner" aria-hidden="true"></span>
@@ -125,13 +157,39 @@ watch(
       </div>
 
       <div v-show="activeTab === 'assistant'" class="meta-ads__panel">
-        <MetaAdsAssistantAuth />
-        <MetaAdsAssistantCard />
-        <MetaAdsAssistantSettings />
+        <article class="meta-ads__assistant-launcher" aria-labelledby="meta-assistant-title">
+          <div class="meta-ads__assistant-launcher-copy">
+            <span class="meta-ads__assistant-launcher-icon" aria-hidden="true">
+              <UIcon name="i-lucide-sparkles" />
+            </span>
+            <div>
+              <h3 id="meta-assistant-title" class="meta-ads__assistant-launcher-title">
+                Crow Assistant para Meta Ads
+              </h3>
+              <p class="meta-ads__assistant-launcher-text">
+                Use o mesmo chat da plataforma para consultar campanhas e trabalhar por linguagem
+                natural, com o contexto desta conta e as permissões configuradas para Meta Ads.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="meta-ads__assistant-launcher-button"
+            @click="openSharedAssistant"
+          >
+            <UIcon name="i-lucide-message-circle" aria-hidden="true" />
+            Abrir Crow Assistant
+          </button>
+        </article>
+        <MetaAdsActionHistoryCard />
       </div>
 
       <div v-show="activeTab === 'connections'" class="meta-ads__panel">
         <MetaAdsConnectionCard />
+        <MetaAdsActionPolicyCard />
+        <MetaAdsClientMappingCard
+          v-if="accountStore.activeAccount?.isAgency === true && store.clientScope.canSelect"
+        />
       </div>
     </template>
   </section>
@@ -289,6 +347,74 @@ watch(
   gap: 1.25rem;
 }
 
+.meta-ads__assistant-launcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: rgb(var(--surface));
+  box-shadow: var(--shadow-card);
+}
+
+.meta-ads__assistant-launcher-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.meta-ads__assistant-launcher-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-soft);
+  color: rgb(var(--primary));
+  background: rgb(var(--primary) / 0.14);
+  font-size: 1.2rem;
+}
+
+.meta-ads__assistant-launcher-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.meta-ads__assistant-launcher-text {
+  max-width: 64ch;
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.meta-ads__assistant-launcher-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: 0.65rem 1rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-soft);
+  background: linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary-600)));
+  color: rgb(255 255 255);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.meta-ads__assistant-launcher-button:focus-visible {
+  outline: 3px solid rgb(var(--ring) / 0.3);
+  outline-offset: 2px;
+}
+
 @keyframes meta-ads-spin {
   to {
     transform: rotate(360deg);
@@ -298,6 +424,15 @@ watch(
 @media (max-width: 720px) {
   .meta-ads__header {
     flex-direction: column;
+  }
+
+  .meta-ads__assistant-launcher {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .meta-ads__assistant-launcher-button {
+    width: 100%;
   }
 }
 </style>

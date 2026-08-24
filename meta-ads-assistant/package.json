@@ -2,14 +2,15 @@
   "name": "meta-ads-assistant",
   "version": "0.1.0",
   "private": true,
-  "description": "Agent-runner do modulo meta_ads: Claude headless (Agent SDK) + MCP oficial da Meta para criar/editar campanhas via texto.",
+  "description": "Runner tenant-scoped do assistente Meta Ads com Claude headless e MCP em modo somente leitura.",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "start": "node src/server.mjs",
-    "dev": "node src/server.mjs"
+    "dev": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.173",

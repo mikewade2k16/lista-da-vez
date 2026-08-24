@@ -1,9 +1,9 @@
 // Package metaads e o modulo de integracao com Meta/Facebook Ads.
 //
-// MVP: conectar (System User token cifrado), sincronizar contas de anuncio +
-// campanhas + insights da Marketing API para o cache local (schema meta_ads.*)
-// e exibir relatorios no painel. Write ops (criar/editar campanha), IA e OAuth
-// vem na fase Plataforma. Plano: docs/meta-ads/PLANO_INTEGRACAO_META_ADS.md.
+// O modulo conecta via OAuth first-party ou token manual cifrado, sincroniza contas
+// de anuncio, campanhas e insights no cache PostgreSQL e fornece contexto escopado
+// ao Assistente 360. Writes confirmados usam proposals e executor first-party;
+// o escopo atual e os gaps ficam em ASSISTENTE_360_STATUS_E_ROADMAP.md.
 //
 // Convencoes: todo metodo de Service recebe accountID como 1o arg apos ctx;
 // todo SQL filtra por account_id. accountID vem SEMPRE do Principal/header,
@@ -38,6 +38,7 @@ type Connection struct {
 	Name           string
 	TokenExpiresAt *time.Time
 	Status         string
+	Revision       string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -52,6 +53,7 @@ type AdAccount struct {
 	Name            string
 	Currency        string
 	Status          string
+	IsCurrent       bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -67,6 +69,7 @@ type Campaign struct {
 	Status         string
 	DailyBudget    *float64
 	LifetimeBudget *float64
+	IsCurrent      bool
 	SyncedAt       time.Time
 }
 
@@ -100,6 +103,7 @@ type ConnectionView struct {
 	MetaBusinessID string  `json:"metaBusinessId"`
 	Status         string  `json:"status"`
 	TokenExpiresAt *string `json:"tokenExpiresAt"`
+	Revision       string  `json:"revision"`
 }
 
 // AdAccountView e uma conta de anuncio para o seletor do painel.
@@ -170,6 +174,7 @@ func toConnectionView(c Connection) ConnectionView {
 		Name:           c.Name,
 		MetaBusinessID: c.MetaBusinessID,
 		Status:         c.Status,
+		Revision:       c.Revision,
 	}
 	if c.TokenExpiresAt != nil {
 		s := c.TokenExpiresAt.UTC().Format(time.RFC3339)

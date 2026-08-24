@@ -26,8 +26,18 @@ type Module struct {
 	// publisher e o transporte realtime do calendario (contrato C11). Injetado via
 	// WithPublisher no app.go (o realtimeService); nil = canal realtime desligado.
 	// Ver publisher.go.
-	publisher                 Publisher
-	contentOperationsProvider ContentOperationsBriefProvider
+	publisher                               Publisher
+	contentOperationsProvider               ContentOperationsBriefProvider
+	assistantRuntimeProvider                AssistantRuntimeProvider
+	assistantExecutionCapabilityProvider    AssistantExecutionCapabilityProvider
+	metaAssistantContextProvider            MetaAssistantContextProvider
+	metaAssistantActionProvider             MetaAssistantActionProvider
+	metaAssistantActionStatusProvider       MetaAssistantActionStatusProvider
+	metaAssistantActionBindProvider         MetaAssistantActionBindProvider
+	metaAssistantActionConfirmProvider      MetaAssistantActionConfirmProvider
+	metaAssistantActionCancelProvider       MetaAssistantActionCancelProvider
+	metaAssistantConversationCancelProvider MetaAssistantConversationCancelProvider
+	assistantModuleAvailability             AssistantModuleAvailabilityProvider
 }
 
 // ContentOperationsBriefProvider e uma leitura opcional, permission-scoped, do modulo
@@ -122,7 +132,16 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		WithChat(chatWebhook, transcribeWebhook).
 		WithTasks(m.tasksProvider).
 		WithPublisher(m.publisher).
-		WithClientScope(clientScope)
+		WithClientScope(clientScope).
+		WithAssistantRuntimeProvider(m.assistantRuntimeProvider).
+		WithAssistantExecutionCapabilityProvider(m.assistantExecutionCapabilityProvider).
+		WithMetaAssistantContextProvider(m.metaAssistantContextProvider).
+		WithMetaAssistantActionProvider(m.metaAssistantActionProvider, m.metaAssistantActionStatusProvider).
+		WithMetaAssistantActionLifecycle(
+			m.metaAssistantActionBindProvider, m.metaAssistantActionConfirmProvider,
+			m.metaAssistantActionCancelProvider, m.metaAssistantConversationCancelProvider,
+		).
+		WithAssistantModuleAvailability(m.assistantModuleAvailability)
 	svc.contentOperationsProvider = m.contentOperationsProvider
 	m.handle = &handle{
 		service:        svc,

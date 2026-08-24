@@ -98,13 +98,21 @@ services:
       CALENDAR_CHAT_WEBHOOK_URL: ${CALENDAR_CHAT_WEBHOOK_URL:-}
       CALENDAR_TRANSCRIBE_WEBHOOK_URL: ${CALENDAR_TRANSCRIBE_WEBHOOK_URL:-}
       # Modulo meta_ads: base da Graph/Marketing API da Meta (bump de versao via env).
-      META_ADS_GRAPH_BASE: ${META_ADS_GRAPH_BASE:-https://graph.facebook.com/v21.0}
+      META_ADS_GRAPH_BASE: ${META_ADS_GRAPH_BASE:-https://graph.facebook.com/v24.0}
+      # Kill switch do executor confirmado. Default false: propostas/auditoria
+      # funcionam, mas nenhuma mutacao e enviada a Graph.
+      META_ADS_WRITES_ENABLED: ${META_ADS_WRITES_ENABLED:-false}
       # Chave simetrica (pgcrypto) p/ cifrar o System User token at-rest. SEM ela,
       # conectar a Meta retorna 503. Definir um valor forte no .env (NAO commitar).
       META_ADS_CRYPTO_KEY: ${META_ADS_CRYPTO_KEY:-}
-      # Assistente meta_ads (MA1): URL do agent-runner que o Go chama no proxy
-      # /v1/meta-ads/assistant. Default aponta pro runner rodando no HOST
-      # (npm start em meta-ads-assistant/), via host.docker.internal.
+      # Facebook Login de primeira parte do dashboard. Vazios mantem somente o
+      # fallback manual; /oauth/start responde 503 sem expor segredo.
+      META_ADS_APP_ID: ${META_ADS_APP_ID:-}
+      META_ADS_APP_SECRET: ${META_ADS_APP_SECRET:-}
+      META_ADS_OAUTH_REDIRECT_URL: ${META_ADS_OAUTH_REDIRECT_URL:-}
+      # Runner MCP legado/read-only, sem rota publica de chat e sem writes.
+      # Compatibilidade interna fora do produto/producao; o Assistente 360 usa
+      # /v1/assistant/chat e o executor confirmado usa Graph first-party em Go.
       META_ADS_ASSISTANT_RUNNER_URL: ${META_ADS_ASSISTANT_RUNNER_URL:-http://host.docker.internal:8765}
       # Token de servico do runner. Deve bater com o META_ADS_ASSISTANT_TOKEN
       # usado pelo runner (host ou servico meta-ads-assistant).
@@ -472,11 +480,10 @@ services:
     ports:
       - "${WHISPER_PORT:-8010}:8000"
 
-  # Agent-runner do modulo meta_ads (MA1) — OPCIONAL, pensado p/ VPS/futuro.
-  # O modo padrao LOCAL e rodar no host (npm start em meta-ads-assistant/),
-  # porque o OAuth do MCP da Meta fica cacheado no ~/.claude do host.
-  # Sobe com: docker compose --profile meta-ads-assistant up -d
-  # Exige CLAUDE_CODE_OAUTH_TOKEN no .env (gerado via `claude setup-token`).
+  # Runner legado/read-only de compatibilidade interna. Este profile e opcional
+  # apenas para diagnostico local do legado; nao integra o produto, nao executa
+  # writes e fica deliberadamente fora do compose de producao.
+  # Credenciais tenant-scoped do legado persistem no volume /app/.auth.
   meta-ads-assistant:
     build:
       context: ./meta-ads-assistant
@@ -492,8 +499,10 @@ services:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     ports:
       - "${META_ADS_ASSISTANT_PORT:-8765}:8765"
+    volumes:
+      - meta_ads_assistant_auth:/app/.auth
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8765/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8765/healthz?accountId=00000000-0000-4000-8000-000000000000',{headers:{Authorization:'Bearer '+process.env.META_ADS_ASSISTANT_TOKEN}}).then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -599,5 +608,6 @@ volumes:
   automation_waha_media:
   automation_n8n_data:
   automation_whisper_cache:
+  meta_ads_assistant_auth:
   evolution_instances:
   evolution_db_data:

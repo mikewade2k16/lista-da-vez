@@ -17,11 +17,49 @@ func normalizeAICredentialName(value string) (string, error) {
 	return value, nil
 }
 
+func requireAssistantCredentialCatalogAccess(accountID string, p auth.Principal) error {
+	if strings.TrimSpace(accountID) == "" || !auth.CanConfigureAssistant(p) {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func requireAssistantCredentialMutationAccess(accountID string, p auth.Principal) error {
+	if strings.TrimSpace(accountID) == "" || !auth.CanManageAssistantCredentials(p) {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func ownedAICredentialView(view AICredentialView) AICredentialView {
+	view.OwnedByAccount = true
+	view.ReadOnly = false
+	return view
+}
+
 func (s *AIService) ListAICredentials(ctx context.Context, accountID string, p auth.Principal) ([]AICredentialView, error) {
 	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
 		return nil, err
 	}
 	rows, err := s.store.ListAICredentials(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AICredentialView, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, ownedAICredentialView(row.AICredentialView))
+	}
+	return out, nil
+}
+
+// ListAssistantAICredentials devolve apenas a projecao mascarada utilizavel
+// pela conta ativa. Para clientes, inclui a credencial herdada da agencia
+// canonica da mesma organizacao como read-only.
+func (s *AIService) ListAssistantAICredentials(ctx context.Context, accountID string, p auth.Principal) ([]AICredentialView, error) {
+	if err := requireAssistantCredentialCatalogAccess(accountID, p); err != nil {
+		return nil, err
+	}
+	rows, err := s.store.ListAssistantAICredentials(ctx, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -36,11 +74,22 @@ func (s *AIService) CreateAICredential(ctx context.Context, accountID string, p 
 	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
 		return AICredentialView{}, err
 	}
+	return s.createAICredential(ctx, accountID, p.UserID, in)
+}
+
+func (s *AIService) CreateAssistantAICredential(ctx context.Context, accountID string, p auth.Principal, in AICredentialInput) (AICredentialView, error) {
+	if err := requireAssistantCredentialMutationAccess(accountID, p); err != nil {
+		return AICredentialView{}, err
+	}
+	return s.createAICredential(ctx, accountID, p.UserID, in)
+}
+
+func (s *AIService) createAICredential(ctx context.Context, accountID, userID string, in AICredentialInput) (AICredentialView, error) {
 	name, err := normalizeAICredentialName(in.Name)
 	if err != nil {
 		return AICredentialView{}, err
 	}
-	provider := normalizeAIProviderKeyID(in.Provider)
+	provider := normalizeAICredentialProvider(in.Provider)
 	raw := strings.TrimSpace(in.APIKey)
 	if provider == "" || raw == "" || len(raw) > 8192 || s.box == nil {
 		return AICredentialView{}, ErrValidation
@@ -49,17 +98,28 @@ func (s *AIService) CreateAICredential(ctx context.Context, accountID string, p 
 	if err != nil {
 		return AICredentialView{}, err
 	}
-	row, err := s.store.CreateAICredential(ctx, accountID, p.UserID, name, provider, ciphertext, secretbox.Mask(raw).Last4)
+	row, err := s.store.CreateAICredential(ctx, accountID, userID, name, provider, ciphertext, secretbox.Mask(raw).Last4)
 	if err != nil {
 		return AICredentialView{}, translate(err)
 	}
-	return row.AICredentialView, nil
+	return ownedAICredentialView(row.AICredentialView), nil
 }
 
 func (s *AIService) UpdateAICredential(ctx context.Context, accountID string, p auth.Principal, credentialID string, in AICredentialPatch) (AICredentialView, error) {
 	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
 		return AICredentialView{}, err
 	}
+	return s.updateAICredential(ctx, accountID, credentialID, in)
+}
+
+func (s *AIService) UpdateAssistantAICredential(ctx context.Context, accountID string, p auth.Principal, credentialID string, in AICredentialPatch) (AICredentialView, error) {
+	if err := requireAssistantCredentialMutationAccess(accountID, p); err != nil {
+		return AICredentialView{}, err
+	}
+	return s.updateAICredential(ctx, accountID, credentialID, in)
+}
+
+func (s *AIService) updateAICredential(ctx context.Context, accountID, credentialID string, in AICredentialPatch) (AICredentialView, error) {
 	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(credentialID)) || (in.Name == nil && in.APIKey == nil) {
 		return AICredentialView{}, ErrValidation
 	}
@@ -87,13 +147,24 @@ func (s *AIService) UpdateAICredential(ctx context.Context, accountID string, p 
 	if err != nil {
 		return AICredentialView{}, translate(err)
 	}
-	return row.AICredentialView, nil
+	return ownedAICredentialView(row.AICredentialView), nil
 }
 
 func (s *AIService) DeleteAICredential(ctx context.Context, accountID string, p auth.Principal, credentialID string) error {
 	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
 		return err
 	}
+	return s.deleteAICredential(ctx, accountID, credentialID)
+}
+
+func (s *AIService) DeleteAssistantAICredential(ctx context.Context, accountID string, p auth.Principal, credentialID string) error {
+	if err := requireAssistantCredentialMutationAccess(accountID, p); err != nil {
+		return err
+	}
+	return s.deleteAICredential(ctx, accountID, credentialID)
+}
+
+func (s *AIService) deleteAICredential(ctx context.Context, accountID, credentialID string) error {
 	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(credentialID)) {
 		return ErrNotFound
 	}
@@ -105,7 +176,7 @@ func (s *AIService) credentialAPIKey(ctx context.Context, accountID, credentialI
 	if err != nil {
 		return "", err
 	}
-	if normalizeAIProviderKeyID(provider) == "" || row.Provider != normalizeAIProviderKeyID(provider) || s.box == nil {
+	if normalizeAICredentialProvider(provider) == "" || row.Provider != normalizeAICredentialProvider(provider) || s.box == nil {
 		return "", ErrAIProviderKeyMissing
 	}
 	raw, err := s.box.Decrypt(row.SecretCiphertext)
@@ -115,11 +186,28 @@ func (s *AIService) credentialAPIKey(ctx context.Context, accountID, credentialI
 	return strings.TrimSpace(raw), nil
 }
 
+// normalizeAICredentialProvider belongs to the shared named vault. Keep it
+// separate from the legacy per-agent keyring so enabling a provider for the
+// Assistant 360 cannot silently expand Omnichannel agent execution.
+func normalizeAICredentialProvider(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	switch provider {
+	case "openai", "anthropic", "gemini", "glm":
+		return provider
+	default:
+		return ""
+	}
+}
+
 // ResolveRuntimeCredential resolves a vault entry for an explicitly injected
-// server-side consumer. A credential from the agency account can be shared only
-// with active client accounts in the same organization. It never exposes the
-// secret through an HTTP view.
+// server-side consumer. A credential from the canonical agency account can be
+// shared only with active client accounts in the same organization. It never
+// exposes the secret through an HTTP view.
 func (s *AIService) ResolveRuntimeCredential(ctx context.Context, accountID, credentialID string) (RuntimeAICredential, error) {
+	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(accountID)) ||
+		!omnichannelUUIDPattern.MatchString(strings.TrimSpace(credentialID)) {
+		return RuntimeAICredential{}, ErrNotFound
+	}
 	row, err := s.store.GetSharedRuntimeAICredential(
 		ctx,
 		strings.TrimSpace(accountID),
@@ -156,6 +244,17 @@ func (s *AIService) ImportLegacyAICredentials(ctx context.Context, accountID str
 	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
 		return AICredentialImportView{}, err
 	}
+	return s.importLegacyAICredentials(ctx, accountID, p.UserID)
+}
+
+func (s *AIService) ImportAssistantLegacyAICredentials(ctx context.Context, accountID string, p auth.Principal) (AICredentialImportView, error) {
+	if err := requireAssistantCredentialMutationAccess(accountID, p); err != nil {
+		return AICredentialImportView{}, err
+	}
+	return s.importLegacyAICredentials(ctx, accountID, p.UserID)
+}
+
+func (s *AIService) importLegacyAICredentials(ctx context.Context, accountID, userID string) (AICredentialImportView, error) {
 	if s.box == nil {
 		return AICredentialImportView{}, ErrAIProviderKeyMissing
 	}
@@ -207,7 +306,7 @@ func (s *AIService) ImportLegacyAICredentials(ctx context.Context, accountID str
 			if encryptErr != nil {
 				return AICredentialImportView{}, encryptErr
 			}
-			if _, createErr := s.store.CreateAICredential(ctx, accountID, p.UserID, name, provider, ciphertext, last4); createErr != nil {
+			if _, createErr := s.store.CreateAICredential(ctx, accountID, userID, name, provider, ciphertext, last4); createErr != nil {
 				return AICredentialImportView{}, translate(createErr)
 			}
 			known[identity] = struct{}{}

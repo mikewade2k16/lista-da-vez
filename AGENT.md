@@ -69,8 +69,9 @@ Comandos principais:
 - `npm run dev:build`
 - `npm run dev:logs`
 - `npm run dev:ps`
-- `npm run dev:down`
-- `npm run dev:down:volumes`
+- `npm run dev:down` (somente `stop`; preserva containers e volumes)
+- `npm run dev:remove-containers -- -Confirmation REMOVE_OMNI_CONTAINERS` (destrutivo e explicito)
+- `npm run dev:down:volumes -- -Confirmation DELETE_OMNI_LOCAL_DATA` (apaga dados locais; guard obrigatorio)
 
 Quando rebuild ainda e necessario:
 

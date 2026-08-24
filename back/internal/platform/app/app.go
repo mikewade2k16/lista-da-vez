@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
@@ -455,13 +457,16 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		registry.MustRegister(crm.New())
 		// automation: painel de WhatsApp/IA. Rotas montadas via handle.RegisterRoutes
 		// (loop abaixo); gating em moduleGatingRules (/v1/automation -> automation).
-		registry.MustRegister(automation.New(
+		automationModule := automation.New(
 			automation.WithOmniChatCredentialResolver(omniChatCredentials),
-		))
+		)
+		registry.MustRegister(automationModule)
 		// meta_ads: painel de Meta/Facebook Ads. Rotas montadas via
 		// handle.RegisterRoutes (loop abaixo); gating em moduleGatingRules
 		// (/v1/meta-ads -> meta_ads).
-		registry.MustRegister(metaads.New())
+		var calendarModule *calendar.Module
+		metaAdsModule := metaads.New()
+		registry.MustRegister(metaAdsModule)
 		// bio: paginas de link-in-bio servidas pelo front bio (repo separado).
 		// Painel em /v1/bio (gating abaixo); rota publica /v1/public/bio/{slug}
 		// fora do gate. Plano: docs/bio/PLANO_MODULO_BIO.md.
@@ -473,7 +478,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// realtimeService como transporte do canal calendar:account:{id} (contrato C11:
 		// o Service publica create/update/delete evento, notas, day media, config e plano).
 		var contentOperationsModule *contentoperations.Module
-		calendarModule := calendar.New(
+		calendarModule = calendar.New(
 			calendarMediaStorage,
 			calendar.WithTasksService(func() *tasks.Service { return tasksModule.Service() }),
 			calendar.WithPublisher(realtimeService),
@@ -487,7 +492,131 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				}
 				return contentoperations.PrepareCrowBrief(contentoperations.FilterBrief(brief, clientIDs)), nil
 			}),
+			calendar.WithAssistantRuntimeProvider(func(ctx context.Context, accountID string) (calendar.AssistantRuntime, error) {
+				service := automationModule.Service()
+				if service == nil {
+					return calendar.AssistantRuntime{}, calendar.ErrAssistantRuntimeUnavailable
+				}
+				runtime, runtimeErr := service.OmniChatRuntime(ctx, accountID)
+				if runtimeErr != nil {
+					switch {
+					case errors.Is(runtimeErr, automation.ErrOmniChatDisabled):
+						return calendar.AssistantRuntime{}, calendar.ErrAssistantDisabled
+					case errors.Is(runtimeErr, automation.ErrOmniChatCredentialUnavailable):
+						return calendar.AssistantRuntime{}, calendar.ErrAssistantCredentialUnavailable
+					case errors.Is(runtimeErr, automation.ErrOmniChatInvalidConfig):
+						return calendar.AssistantRuntime{}, calendar.ErrAssistantRuntimeUnavailable
+					default:
+						return calendar.AssistantRuntime{}, runtimeErr
+					}
+				}
+				return calendar.AssistantRuntime{
+					Enabled: runtime.Enabled, SystemPrompt: runtime.SystemPrompt,
+					Provider: runtime.Provider, Model: runtime.Model, APIKey: runtime.APIKey,
+					Temperature: runtime.Temperature, HistoryWindow: runtime.HistoryWindow,
+					SurfaceModules: runtime.SurfaceModules,
+				}, nil
+			}),
+			calendar.WithAssistantExecutionCapabilityProvider(func(
+				ctx context.Context,
+				tx pgx.Tx,
+				accountID, surface, module string,
+			) (string, error) {
+				service := automationModule.Service()
+				if service == nil {
+					return "off", calendar.ErrAssistantRuntimeUnavailable
+				}
+				return service.OmniChatSurfaceModuleModeTx(ctx, tx, accountID, surface, module)
+			}),
+			calendar.WithMetaAssistantContextProvider(func(ctx context.Context, req calendar.MetaAssistantContextRequest) (calendar.MetaAssistantContextResult, error) {
+				service := metaAdsModule.Service()
+				if service == nil {
+					return calendar.MetaAssistantContextResult{}, calendar.ErrAssistantRuntimeUnavailable
+				}
+				bundle, err := service.AssistantContextBundleForScope(ctx, metaads.AssistantContextRequest{
+					AccountID: req.AccountID, ClientAccountID: req.ClientAccountID,
+					VisibleClientIDs: req.VisibleClientIDs, IsAgency: req.IsAgency,
+				})
+				if err != nil {
+					return calendar.MetaAssistantContextResult{}, err
+				}
+				resources := make([]calendar.AssistantResource, 0, len(bundle.Resources))
+				for _, resource := range bundle.Resources {
+					resources = append(resources, calendar.AssistantResource{
+						ID: resource.ID, Kind: resource.Kind, Title: resource.Title,
+						Subtitle: resource.Subtitle, Status: resource.Status,
+						ImageURL: resource.ImageURL, Permalink: resource.Permalink,
+						Metadata: resource.Metadata,
+					})
+				}
+				actionAdAccounts := make([]calendar.MetaAssistantActionAdAccount, 0, len(bundle.Context.AdAccounts))
+				for _, account := range bundle.Context.AdAccounts {
+					clientAccountID := ""
+					if account.ClientAccountID != nil {
+						clientAccountID = *account.ClientAccountID
+					}
+					actionAdAccounts = append(actionAdAccounts, calendar.MetaAssistantActionAdAccount{
+						ID: account.ID, Name: account.Name, Currency: account.Currency,
+						ClientAccountID: clientAccountID,
+					})
+				}
+				actionCampaigns := make([]calendar.MetaAssistantActionCampaign, 0, len(bundle.Context.Campaigns))
+				for _, campaign := range bundle.Context.Campaigns {
+					actionCampaigns = append(actionCampaigns, calendar.MetaAssistantActionCampaign{
+						ID: campaign.ID, AdAccountID: campaign.AdAccountID, Name: campaign.Name,
+						DailyBudget: campaign.DailyBudget, LifetimeBudget: campaign.LifetimeBudget,
+					})
+				}
+				actionInstagramPosts := make([]calendar.MetaAssistantActionInstagramPost, 0, len(bundle.Context.Instagram.Posts))
+				for _, post := range bundle.Context.Instagram.Posts {
+					clientAccountID := ""
+					if post.ClientAccountID != nil {
+						clientAccountID = *post.ClientAccountID
+					}
+					actionInstagramPosts = append(actionInstagramPosts, calendar.MetaAssistantActionInstagramPost{
+						ID: post.ID, Title: post.Caption, IGUserID: post.IGUserID,
+						PageID: post.PageID, ClientAccountID: clientAccountID,
+					})
+				}
+				return calendar.MetaAssistantContextResult{
+					Context: bundle.Context, Resources: resources,
+					ActionAdAccounts: actionAdAccounts, ActionCampaigns: actionCampaigns,
+					ActionInstagramPosts: actionInstagramPosts,
+				}, nil
+			}),
+			calendar.WithMetaAssistantActionProvider(
+				metaAssistantActionProvider(func() *metaads.Service { return metaAdsModule.Service() }),
+				metaAssistantActionStatusProvider(func() *metaads.Service { return metaAdsModule.Service() }),
+			),
+			calendar.WithMetaAssistantActionLifecycle(
+				metaAssistantActionBindProvider(func() *metaads.Service { return metaAdsModule.Service() }),
+				metaAssistantActionConfirmProvider(func() *metaads.Service { return metaAdsModule.Service() }),
+				metaAssistantActionCancelProvider(func() *metaads.Service { return metaAdsModule.Service() }),
+				metaAssistantConversationCancelProvider(func() *metaads.Service { return metaAdsModule.Service() }),
+			),
+			calendar.WithAssistantModuleAvailability(func(ctx context.Context, accountID, moduleID string) (bool, error) {
+				// Core e obrigatorio e nao depende de linha em core.account_modules.
+				// A capability users continua limitada pela RBAC efetiva abaixo.
+				if moduleID == "core" {
+					return true, nil
+				}
+				if modulesGuard == nil {
+					return false, nil
+				}
+				return modulesGuard.IsEnabled(ctx, accountID, moduleID)
+			}),
 		)
+		metaAdsModule.WithAssistantActionSourceValidator(func(
+			ctx context.Context, accountID, conversationID, messageID, proposalID string,
+		) error {
+			service := calendarModule.Service()
+			if service == nil {
+				return calendar.ErrNotFound
+			}
+			return service.ValidateMetaAssistantActionSource(
+				ctx, accountID, conversationID, messageID, proposalID,
+			)
+		})
 		registry.MustRegister(calendarModule)
 		// Operacao de conteudo calcula alertas diretamente de Tasks + Calendario.
 		// O Crow apenas recebe o Brief pronto em modo leitura; ele nao participa dos disparos.

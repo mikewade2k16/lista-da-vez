@@ -36,6 +36,14 @@ WSL2 (~100x mais lento por arquivo) e o nuxt dev nao terminava nem o boot. O
 codigo agora e copiado no build da imagem (target dev) e o watch sincroniza as
 edicoes host -> container; o watcher usa inotify real (polling DESLIGADO).
 
+O build de producao desliga sourcemaps de client e server em `nuxt.config.ts`;
+o dev continua com ambos. O painel e SPA e os maps nao sao publicados, enquanto
+o bundle server com Tailwind/Vue multiplicava RAM e podia ser encerrado pelo host.
+O target `build` do Dockerfile fixa `NODE_ENV=production` antes de avaliar o config;
+sem isso o CLI normaliza a variavel tarde demais e os maps voltam a ser gerados.
+Nao reativar maps de producao sem ajustar memoria do runner e publicar/armazenar os
+artefatos de forma intencional.
+
 Dia a dia (duas formas equivalentes):
 
 ```powershell

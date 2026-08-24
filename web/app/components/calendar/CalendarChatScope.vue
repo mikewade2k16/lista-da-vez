@@ -16,6 +16,7 @@ const props = defineProps<{
   scope: CalendarChatScope
   mode: CalendarChatScopeMode
   clientId: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -29,6 +30,7 @@ const ALL_VALUE = ''
 const selected = computed<string>(() => (props.mode === 'client' ? props.clientId : ALL_VALUE))
 
 function onChange(event: Event): void {
+  if (props.disabled) return
   const value = (event.target as HTMLSelectElement).value
   if (value === ALL_VALUE) emit('change', 'all', '')
   else emit('change', 'client', value)
@@ -41,6 +43,7 @@ function onChange(event: Event): void {
     <select
       class="calendar-chat-scope__select"
       :value="selected"
+      :disabled="disabled"
       aria-label="Escopo do contexto do assistente"
       title="Contexto que a IA usa: todos os clientes ou um cliente especifico"
       @change="onChange"

@@ -10,13 +10,58 @@ import { useCalendarChatWindow } from '~/composables/useCalendarChatWindow'
 import { useCalendarShortcuts } from '~/composables/useCalendarShortcuts'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
 import { useLiveDictation } from '~/composables/useLiveDictation'
+import { useAuthStore } from '~/stores/auth'
 import { useCalendarStore } from '~/stores/calendar'
+import { canViewAssistantConfiguration } from '~/utils/assistant-access'
 import type { CalendarChatPosition } from '~/utils/calendar'
+import type { AssistantChatSurface, AssistantResource } from '~/domain/calendar/calendar-chat-api'
+
+const props = defineProps<{ surface: AssistantChatSurface }>()
+const emit = defineEmits<{ 'open-config': [surface: AssistantChatSurface] }>()
 
 const chat = useCalendarChat()
-const voice = useVoiceRecorder()
+// A conversa persistida tem uma surface imutavel. Ao navegar entre modulos, ela continua
+// autoritativa ate o usuario iniciar uma nova conversa; copy, voz, configuracao e layout
+// precisam seguir o mesmo contexto que o /ask realmente executara.
+const effectiveSurface = computed<AssistantChatSurface>(() =>
+  chat.conversationId.value || chat.messages.value.length
+    ? chat.conversationSurface.value
+    : props.surface,
+)
+const voice = useVoiceRecorder(() => effectiveSurface.value)
 const live = useLiveDictation()
+const auth = useAuthStore()
 const store = useCalendarStore()
+
+const canOpenAssistantConfig = computed(() => canViewAssistantConfiguration(auth))
+
+const surfaceCopy: Record<AssistantChatSurface, { aria: string; empty: string }> = {
+  calendar: {
+    aria: 'Crow Assistant do calendário',
+    empty:
+      'Pergunte sobre o planejamento do mês, ideias por cliente ou datas. O assistente usa o cliente filtrado e o mês em foco como contexto.',
+  },
+  meta_ads: {
+    aria: 'Crow Assistant do Meta Ads',
+    empty:
+      'Pergunte sobre campanhas, desempenho ou ativos do Meta Ads. O assistente respeita o cliente e a conta de anúncios selecionados.',
+  },
+  global: {
+    aria: 'Crow Assistant da plataforma',
+    empty:
+      'Pergunte sobre os módulos disponíveis para esta conta. O assistente respeita seu acesso e o cliente selecionado.',
+  },
+}
+const surfaceLabels: Record<AssistantChatSurface, string> = {
+  calendar: 'Calendário',
+  meta_ads: 'Meta Ads',
+  global: 'Visão 360',
+}
+const panelAriaLabel = computed(() => surfaceCopy[effectiveSurface.value].aria)
+const emptyStateText = computed(() => surfaceCopy[effectiveSurface.value].empty)
+const surfaceMismatch = computed(() => effectiveSurface.value !== props.surface)
+const effectiveSurfaceLabel = computed(() => surfaceLabels[effectiveSurface.value])
+const routeSurfaceLabel = computed(() => surfaceLabels[props.surface])
 
 // WAVE 5 (E7): proposta de criacao da IA (evento/task) — o cartao de confirmacao usa isto.
 // WAVE 5: repete a ultima pergunta do usuario (botao do bloco "IA fora do ar").
@@ -26,14 +71,24 @@ function retryLast(): void {
   const text = lastUser?.text?.trim()
   if (text) void chat.ask(text)
 }
-const { localChat, resizing, panelStyle, resizeFromLeft, measureArea, setPosition, startResize } =
-  useCalendarChatWindow()
 
-// Modo de voz (persistido por usuario): 'whisper' = self-hosted privado (grava -> para ->
-// transcreve); 'live' = ditado ao vivo pelo navegador (Web Speech API, palavras aparecem
-// enquanto fala, mas o audio passa pelo Google). Padrao whisper (escolha do dono: privado).
+function prepareResourceInstruction(resource: AssistantResource): void {
+  chat.prepareResourceInstruction(resource)
+  void nextTick(() => inputRef.value?.focus())
+}
+function chatAnchorSelector(): string {
+  if (effectiveSurface.value === 'calendar') return '.calendar-page'
+  if (effectiveSurface.value === 'meta_ads') return '.meta-ads'
+  return '.module-workspace-full'
+}
+const { localChat, resizing, panelStyle, resizeFromLeft, measureArea, setPosition, startResize } =
+  useCalendarChatWindow(chatAnchorSelector, () => effectiveSurface.value)
+
+// Modo de voz (persistido por usuario): 'whisper' usa o servico compartilhado (grava ->
+// para -> transcreve); 'live' = ditado ao vivo pelo navegador (Web Speech API, palavras
+// aparecem enquanto fala, mas o audio passa pelo Google). Padrao whisper.
 type VoiceMode = 'whisper' | 'live'
-const voiceMode = useState<VoiceMode>('calendar-chat:voice-mode', () => 'whisper')
+const voiceMode = useState<VoiceMode>('assistant-chat:voice-mode', () => 'whisper')
 // Prefixo do input capturado quando o ditado ao vivo comeca (o texto vivo e' anexado a ele).
 let liveBase = ''
 
@@ -44,7 +99,7 @@ const POSITION_OPTIONS: { value: CalendarChatPosition; icon: string; label: stri
   { value: 'left', icon: 'i-lucide-panel-left', label: 'Ancorar a esquerda' },
   { value: 'center', icon: 'i-lucide-rectangle-horizontal', label: 'Centralizar (janela enxuta)' },
   { value: 'right', icon: 'i-lucide-panel-right', label: 'Ancorar a direita' },
-  { value: 'fullscreen', icon: 'i-lucide-maximize', label: 'Tela cheia (área do calendário)' },
+  { value: 'fullscreen', icon: 'i-lucide-maximize', label: 'Tela cheia (área do módulo)' },
 ]
 
 // Guardrail da voz (UX): so libera o microfone quando a transcricao TEM como funcionar.
@@ -57,7 +112,10 @@ const voiceReason = computed(() => {
       ? ''
       : 'Ditado ao vivo indisponível neste navegador. Use Chrome/Edge ou troque para o Whisper.'
   }
-  if (!store.config.ai.enabled) return 'A IA do calendário está desligada (aba IA).'
+  // Fora do Calendar, voz usa o endpoint compartilhado e nao pode ser bloqueada pelos
+  // defaults de calendar.config de uma pagina que sequer foi inicializada.
+  if (effectiveSurface.value !== 'calendar') return ''
+  if (!store.config.ai.enabled) return 'A IA está desligada na configuração do assistente.'
   // So Whisper (self-hosted 'local' ou 'openai') aceita o audio webm do navegador.
   if (!['local', 'openai'].includes(store.config.ai.transcribeProvider)) {
     return 'A transcrição atual não aceita o áudio do navegador. Selecione Whisper (self-hosted) na aba IA para usar a voz.'
@@ -68,7 +126,7 @@ const voiceAvailable = computed(() => voiceReason.value === '')
 
 // Modo de voz: opcoes do toggle no header.
 const VOICE_MODES: { value: VoiceMode; label: string }[] = [
-  { value: 'whisper', label: 'Whisper (privado)' },
+  { value: 'whisper', label: 'Whisper compartilhado' },
   { value: 'live', label: 'Ao vivo' },
 ]
 
@@ -87,7 +145,9 @@ const voiceError = computed(() =>
 // Trocar de modo cancela qualquer captura em andamento (nao mistura os dois).
 function setVoiceMode(mode: VoiceMode): void {
   if (mode === voiceMode.value) return
-  if (voice.state.value === 'recording') voice.cancel()
+  // Tambem invalida um getUserMedia ainda aguardando permissao, que permanece
+  // visualmente `idle` ate a stream ser concedida.
+  voice.cancel()
   if (live.state.value === 'listening') live.stop()
   voiceMode.value = mode
 }
@@ -208,6 +268,9 @@ function pinLastUserMessageToTop(): void {
 
 watch(windowVisible, (visible) => {
   if (!visible) {
+    // Tambem cobre fechamentos disparados fora deste componente, inclusive o reset
+    // fail-closed ao trocar de account/usuario.
+    stopCapture()
     return
   }
   void nextTick(() => {
@@ -290,9 +353,37 @@ function onEnter(event: KeyboardEvent): void {
 
 // Cancela qualquer captura em andamento (whisper OU ao vivo).
 function stopCapture(): void {
-  if (voice.state.value === 'recording') voice.cancel()
+  // Cancel e intencionalmente incondicional: durante o prompt de permissao do
+  // navegador ainda nao existe recorder/estado `recording`, mas a captura precisa
+  // ser invalidada ao fechar ou trocar de conversa.
+  voice.cancel()
   if (live.state.value === 'listening') live.stop()
 }
+
+function startConversationForCurrentPage(): void {
+  stopCapture()
+  chat.newConversation()
+}
+
+function openConversation(id: string): void {
+  stopCapture()
+  void chat.openConversation(id)
+}
+
+function removeConversation(id: string): void {
+  stopCapture()
+  void chat.removeConversation(id)
+}
+
+watch(
+  () => props.surface,
+  (next, previous) => {
+    if (previous && previous !== next) stopCapture()
+    chat.setSurface(next)
+    void nextTick(measureArea)
+  },
+  { immediate: true },
+)
 
 function closePanel(): void {
   // Fechar cancela a captura em andamento (nao deixa o mic ligado escondido).
@@ -357,7 +448,7 @@ useCalendarShortcuts([
     action: 'chatClose',
     force: true,
     when: () => chat.panelOpen.value,
-    handler: () => chat.closePanel(),
+    handler: closePanel,
   },
 ])
 </script>
@@ -394,7 +485,7 @@ useCalendarShortcuts([
         :class="{ 'calendar-chat--resizing': resizing }"
         :style="panelStyle"
         role="dialog"
-        aria-label="Crow Assistant do calendario"
+        :aria-label="panelAriaLabel"
         @keydown.esc="closePanel"
       >
         <header class="calendar-chat__header">
@@ -411,13 +502,23 @@ useCalendarShortcuts([
             </span>
           </strong>
           <div class="calendar-chat__head-actions">
+            <button
+              v-if="canOpenAssistantConfig"
+              type="button"
+              class="calendar-chat__icon-btn"
+              :aria-label="`Configurar ${panelAriaLabel}`"
+              title="Configurar assistente"
+              @click="emit('open-config', effectiveSurface)"
+            >
+              <UIcon name="i-lucide-settings" aria-hidden="true" />
+            </button>
             <CalendarChatConversations
               :conversations="chat.conversations.value"
               :active-id="chat.conversationId.value"
               :loading="chat.loadingConversations.value"
-              @select="chat.openConversation"
-              @new="chat.newConversation"
-              @delete="chat.removeConversation"
+              @select="openConversation"
+              @new="startConversationForCurrentPage"
+              @delete="removeConversation"
             />
             <div class="calendar-chat__pos" role="group" aria-label="Posicao da janela">
               <button
@@ -440,7 +541,7 @@ useCalendarShortcuts([
               :disabled="!chat.messages.value.length && !chat.sending.value"
               aria-label="Nova conversa"
               title="Nova conversa (limpa o historico)"
-              @click="chat.newConversation()"
+              @click="startConversationForCurrentPage"
             >
               <UIcon name="i-lucide-rotate-ccw" aria-hidden="true" />
             </button>
@@ -465,6 +566,23 @@ useCalendarShortcuts([
           </div>
         </header>
 
+        <div v-if="surfaceMismatch" class="calendar-chat__surface-notice" role="status">
+          <UIcon name="i-lucide-info" aria-hidden="true" />
+          <span>
+            Esta conversa continua em
+            <strong>{{ effectiveSurfaceLabel }}</strong>
+            .
+          </span>
+          <button
+            type="button"
+            class="calendar-chat__surface-switch"
+            :disabled="chat.sending.value || chat.loadingConversation.value || isTranscribing"
+            @click="startConversationForCurrentPage"
+          >
+            Nova conversa em {{ routeSurfaceLabel }}
+          </button>
+        </div>
+
         <!-- Escopo do contexto (SPEC-F11): so aparece p/ agencia/multi-cliente
              (canSelect=true); usuario-cliente fica travado no lockedClientId. A escolha
              viaja no ask() e fica salva na conversa. -->
@@ -472,6 +590,13 @@ useCalendarShortcuts([
           :scope="chat.chatScope.value"
           :mode="chat.scopeMode.value"
           :client-id="chat.scopeClientId.value"
+          :disabled="
+            chat.sending.value ||
+            chat.loadingConversation.value ||
+            Boolean(chat.conversationId.value) ||
+            Boolean(chat.messages.value.length) ||
+            isTranscribing
+          "
           @change="chat.setScope"
         />
 
@@ -480,8 +605,7 @@ useCalendarShortcuts([
             Carregando conversa...
           </p>
           <p v-else-if="!chat.messages.value.length" class="calendar-chat__empty">
-            Pergunte sobre o planejamento do mes, ideias por cliente ou datas. O assistente usa o
-            cliente filtrado e o mes em foco como contexto.
+            {{ emptyStateText }}
           </p>
 
           <template v-else>
@@ -495,6 +619,8 @@ useCalendarShortcuts([
               :scope-client-id="chat.scopeClientId.value"
               @accept-selected="chat.confirmSelectedProposals"
               @reject-selected="chat.rejectSelectedProposals"
+              @reconcile-meta="chat.reconcileMetaAction"
+              @use-resource="prepareResourceInstruction"
             />
           </template>
 
@@ -567,7 +693,7 @@ useCalendarShortcuts([
             :title="
               m.value === 'live'
                 ? 'Ditado ao vivo pelo navegador (Chrome/Edge; audio passa pelo Google)'
-                : 'Whisper self-hosted (privado; transcreve ao parar)'
+                : 'Serviço Whisper compartilhado; transcreve ao parar'
             "
             @click="setVoiceMode(m.value)"
           >

@@ -1,16 +1,17 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { useAuthStore } from '~/stores/auth'
+import { fetchChatScope, type CalendarChatScope } from '~/domain/calendar/calendar-chat-api'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import type {
   MetaAdsAdAccount,
-  MetaAdsAssistantHealth,
-  MetaAdsAssistantMessage,
-  MetaAdsAssistantSettings,
   MetaAdsCampaign,
   MetaAdsConnection,
   MetaAdsInsightPoint,
+  MetaAdsInstagramIdentity,
+  MetaAdsOAuthStart,
   MetaAdsOverview,
 } from '~/types/meta-ads'
 
@@ -20,32 +21,38 @@ import type {
 // computeds e actions). Nao renomear sem alinhar com o agente de componentes.
 // X-Account-Id e injetado automaticamente pelo createApiRequest (account ativa).
 const DEFAULT_RANGE = 'last_30d'
-
-// Shape minimo dos erros do $fetch/ofetch para mapear os codigos do assistente
-// (503 assistant_not_configured / 502 assistant_error) sem usar `any`.
-interface AssistantApiError {
-  statusCode?: number
+const DEFAULT_CLIENT_SCOPE: CalendarChatScope = {
+  canSelect: false,
+  lockedClientId: '',
+  clients: [],
 }
 
-function assistantSendErrorMessage(caught: unknown): string {
-  const statusCode = (caught as AssistantApiError | null)?.statusCode
-  if (statusCode === 503) {
-    return 'Assistente nao configurado no servidor. Suba o runner (meta-ads-assistant/README) e tente de novo.'
-  }
-  if (statusCode === 502) {
-    return 'O assistente falhou ao executar o comando. Tente novamente em instantes.'
-  }
-  return getApiErrorMessage(caught, 'Nao foi possivel falar com o assistente.')
+interface MetaAdsDataScope {
+  accountId: string
+  adAccountId: string
+  range: string
+  contextGeneration: number
 }
 
-// Backend persiste actions como jsonb — defensivo contra null no lugar de [].
-function normalizeAssistantMessage(message: MetaAdsAssistantMessage): MetaAdsAssistantMessage {
-  return { ...message, actions: Array.isArray(message.actions) ? message.actions : [] }
+interface MetaAdsSelectionRequest extends MetaAdsDataScope {
+  generation: number
+  signal: AbortSignal
+}
+
+interface MetaAdsReportRequest extends MetaAdsDataScope {
+  generation: number
+  signal: AbortSignal
+}
+
+interface MetaAdsDataRequest {
+  selection: MetaAdsSelectionRequest
+  report: MetaAdsReportRequest
 }
 
 export const useMetaAdsStore = defineStore('meta-ads', () => {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
+  const accountStore = useCoreAccountStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   const connection = ref<MetaAdsConnection | null>(null)
@@ -59,34 +66,149 @@ export const useMetaAdsStore = defineStore('meta-ads', () => {
   const connecting = ref(false)
   const syncing = ref(false)
   const error = ref('')
+  const clientScope = ref<CalendarChatScope>({ ...DEFAULT_CLIENT_SCOPE })
+  const clientScopeLoading = ref(false)
+  const clientMappingBusyId = ref('')
+  const clientMappingError = ref('')
+  const instagramIdentities = ref<MetaAdsInstagramIdentity[]>([])
+  const instagramIdentitiesLoading = ref(false)
+  const instagramIdentityMappingBusyId = ref('')
+  const instagramIdentityMappingError = ref('')
 
-  // --- Assistente MCP (chat) ---
-  const assistantMessages = ref<MetaAdsAssistantMessage[]>([])
-  const assistantSending = ref(false)
-  const assistantError = ref('')
-  const assistantHealth = ref<MetaAdsAssistantHealth | null>(null)
-
-  // --- Login do assistente no MCP da Meta (OAuth dirigido pelo painel) ---
-  const assistantAuthUrl = ref('')
-  const assistantAuthBusy = ref(false)
-  const assistantAuthError = ref('')
-  const assistantAuthDone = ref(false)
-
-  // AbortController do envio em andamento (botao Cancelar).
-  let assistantSendAbort: AbortController | null = null
-
-  // --- Configuracoes do assistente (modelo + system prompt editaveis) ---
-  const assistantSettings = ref<MetaAdsAssistantSettings | null>(null)
-  const assistantSettingsSaving = ref(false)
-  const assistantSettingsError = ref('')
+  // Toda leitura/mutacao pertence a geracao da account ativa. Ao trocar account, o
+  // workspace chama resetState(): requests antigas sao abortadas e respostas tardias
+  // nao podem repopular a UI com dados do tenant anterior.
+  let contextGeneration = 0
+  let contextAbort = new AbortController()
+  // A account ativa, a conta de anuncio e o periodo podem mudar sem trocar a
+  // geracao global. Selecao e relatorio usam cancelamento independente para que
+  // respostas fora de ordem nunca sobrescrevam o snapshot atual.
+  let selectionGeneration = 0
+  let selectionAbort: AbortController | null = null
+  let reportGeneration = 0
+  let reportAbort: AbortController | null = null
 
   const connected = computed(() => connection.value?.connected ?? false)
   const kpis = computed(() => overview.value?.kpis ?? null)
   const selectedAdAccount = computed(
     () => adAccounts.value.find((adAccount) => adAccount.id === selectedAdAccountId.value) ?? null,
   )
+  const hasPrivilegedRole = computed(() => auth.role === 'platform_admin' || auth.role === 'owner')
+  const canManageMetaAds = computed(
+    () =>
+      hasPrivilegedRole.value ||
+      (auth.effectivePermissionsResolved &&
+        auth.effectivePermissionKeys.includes('meta_ads.manage')),
+  )
+  const canConnectMetaAds = computed(
+    () =>
+      hasPrivilegedRole.value ||
+      (auth.effectivePermissionsResolved &&
+        auth.effectivePermissionKeys.includes('meta_ads.connect')),
+  )
+  const canManageClientMapping = computed(() => canManageMetaAds.value)
+
+  function requestContext(): { generation: number; signal: AbortSignal } {
+    return { generation: contextGeneration, signal: contextAbort.signal }
+  }
+
+  function isCurrentContext(generation: number): boolean {
+    return generation === contextGeneration
+  }
+
+  function captureDataScope(): MetaAdsDataScope {
+    return {
+      accountId: String(accountStore.activeAccountId || '').trim(),
+      adAccountId: String(selectedAdAccountId.value || '').trim(),
+      range: String(range.value || '').trim() || DEFAULT_RANGE,
+      contextGeneration,
+    }
+  }
+
+  function dataScopeHeaders(scope: MetaAdsDataScope): Record<string, string> | undefined {
+    return scope.accountId ? { 'X-Account-Id': scope.accountId } : undefined
+  }
+
+  function isCurrentDataScope(scope: MetaAdsDataScope): boolean {
+    return (
+      isCurrentContext(scope.contextGeneration) &&
+      scope.accountId === String(accountStore.activeAccountId || '').trim() &&
+      scope.adAccountId === String(selectedAdAccountId.value || '').trim() &&
+      scope.range === (String(range.value || '').trim() || DEFAULT_RANGE)
+    )
+  }
+
+  function abortSelectionLoad(): void {
+    selectionGeneration += 1
+    selectionAbort?.abort()
+    selectionAbort = null
+  }
+
+  function abortReportLoad(): void {
+    reportGeneration += 1
+    reportAbort?.abort()
+    reportAbort = null
+  }
+
+  function beginSelectionRequest(scope = captureDataScope()): MetaAdsSelectionRequest {
+    abortSelectionLoad()
+    selectionAbort = new AbortController()
+    return {
+      ...scope,
+      generation: selectionGeneration,
+      signal: selectionAbort.signal,
+    }
+  }
+
+  function beginReportRequest(scope = captureDataScope()): MetaAdsReportRequest {
+    abortReportLoad()
+    reportAbort = new AbortController()
+    return {
+      ...scope,
+      generation: reportGeneration,
+      signal: reportAbort.signal,
+    }
+  }
+
+  function beginDataRequest(): MetaAdsDataRequest {
+    const scope = captureDataScope()
+    return {
+      selection: beginSelectionRequest(scope),
+      report: beginReportRequest(scope),
+    }
+  }
+
+  function isCurrentSelectionRequest(request: MetaAdsSelectionRequest): boolean {
+    return (
+      request.generation === selectionGeneration &&
+      selectionAbort?.signal === request.signal &&
+      isCurrentDataScope(request)
+    )
+  }
+
+  function isCurrentReportRequest(request: MetaAdsReportRequest): boolean {
+    return (
+      request.generation === reportGeneration &&
+      reportAbort?.signal === request.signal &&
+      isCurrentDataScope(request)
+    )
+  }
+
+  function isCurrentDataRequest(request: MetaAdsDataRequest): boolean {
+    return isCurrentSelectionRequest(request.selection) && isCurrentReportRequest(request.report)
+  }
+
+  function cancelDataLoads(): void {
+    abortSelectionLoad()
+    abortReportLoad()
+    pending.value = false
+  }
 
   function resetState() {
+    contextGeneration += 1
+    contextAbort.abort()
+    contextAbort = new AbortController()
+    cancelDataLoads()
     connection.value = null
     adAccounts.value = []
     selectedAdAccountId.value = ''
@@ -94,387 +216,390 @@ export const useMetaAdsStore = defineStore('meta-ads', () => {
     campaigns.value = []
     insights.value = []
     range.value = DEFAULT_RANGE
-    assistantMessages.value = []
-    assistantSending.value = false
-    assistantError.value = ''
-    assistantHealth.value = null
-    assistantAuthUrl.value = ''
-    assistantAuthBusy.value = false
-    assistantAuthError.value = ''
-    assistantAuthDone.value = false
-    assistantSettings.value = null
-    assistantSettingsSaving.value = false
-    assistantSettingsError.value = ''
+    pending.value = false
+    connecting.value = false
+    syncing.value = false
+    error.value = ''
+    clientScope.value = { ...DEFAULT_CLIENT_SCOPE }
+    clientScopeLoading.value = false
+    clientMappingBusyId.value = ''
+    clientMappingError.value = ''
+    instagramIdentities.value = []
+    instagramIdentitiesLoading.value = false
+    instagramIdentityMappingBusyId.value = ''
+    instagramIdentityMappingError.value = ''
   }
 
-  async function loadOverview() {
-    const query = selectedAdAccountId.value
-      ? `?adAccountId=${encodeURIComponent(selectedAdAccountId.value)}`
+  async function loadOverviewForRequest(request: MetaAdsSelectionRequest): Promise<void> {
+    const query = request.adAccountId
+      ? `?adAccountId=${encodeURIComponent(request.adAccountId)}`
       : ''
     const response = (await apiRequest(`/v1/meta-ads/overview${query}`, {
       method: 'GET',
+      signal: request.signal,
+      headers: dataScopeHeaders(request),
     })) as MetaAdsOverview
+    if (!isCurrentSelectionRequest(request)) return
     overview.value = response
     if (response?.connection) {
       connection.value = response.connection
     }
   }
 
+  async function loadOverview(): Promise<void> {
+    const request = beginSelectionRequest()
+    try {
+      await loadOverviewForRequest(request)
+    } catch (caught) {
+      if (isCurrentSelectionRequest(request)) throw caught
+    }
+  }
+
   async function loadAdAccounts() {
+    const request = requestContext()
     const response = (await apiRequest('/v1/meta-ads/ad-accounts', {
       method: 'GET',
+      signal: request.signal,
     })) as { adAccounts?: MetaAdsAdAccount[] } | MetaAdsAdAccount[]
+    if (!isCurrentContext(request.generation)) return
     adAccounts.value = Array.isArray(response) ? response : (response?.adAccounts ?? [])
   }
 
-  async function loadCampaigns() {
+  async function loadClientScope(): Promise<void> {
+    const request = requestContext()
+    clientScopeLoading.value = true
+    clientMappingError.value = ''
+    try {
+      const scope = await fetchChatScope(apiRequest, request.signal)
+      if (!isCurrentContext(request.generation)) return
+      clientScope.value = scope
+    } catch (caught) {
+      if (isCurrentContext(request.generation)) {
+        clientScope.value = { ...DEFAULT_CLIENT_SCOPE }
+        clientMappingError.value = getApiErrorMessage(
+          caught,
+          'Nao foi possivel carregar os clientes visiveis.',
+        )
+      }
+    } finally {
+      if (isCurrentContext(request.generation)) clientScopeLoading.value = false
+    }
+  }
+
+  async function setAdAccountClient(adAccountId: string, clientAccountId: string): Promise<void> {
+    const id = String(adAccountId || '').trim()
+    if (!id || !canManageClientMapping.value) return
+    const request = requestContext()
+    clientMappingBusyId.value = id
+    clientMappingError.value = ''
+    try {
+      const updated = (await apiRequest(
+        `/v1/meta-ads/ad-accounts/${encodeURIComponent(id)}/client`,
+        {
+          method: 'PATCH',
+          body: { clientAccountId: String(clientAccountId || '').trim() },
+          signal: request.signal,
+        },
+      )) as MetaAdsAdAccount
+      if (!isCurrentContext(request.generation)) return
+      adAccounts.value = adAccounts.value.map((adAccount) =>
+        adAccount.id === id ? updated : adAccount,
+      )
+    } catch (caught) {
+      if (isCurrentContext(request.generation)) {
+        clientMappingError.value = getApiErrorMessage(
+          caught,
+          'Nao foi possivel vincular a conta de anuncio ao cliente.',
+        )
+      }
+    } finally {
+      if (isCurrentContext(request.generation) && clientMappingBusyId.value === id) {
+        clientMappingBusyId.value = ''
+      }
+    }
+  }
+
+  async function loadInstagramIdentities(): Promise<void> {
+    const request = requestContext()
+    instagramIdentitiesLoading.value = true
+    instagramIdentityMappingError.value = ''
+    try {
+      const response = (await apiRequest('/v1/meta-ads/instagram-identities', {
+        method: 'GET',
+        signal: request.signal,
+      })) as MetaAdsInstagramIdentity[] | { identities?: MetaAdsInstagramIdentity[] }
+      if (!isCurrentContext(request.generation)) return
+      instagramIdentities.value = Array.isArray(response) ? response : (response.identities ?? [])
+    } catch (caught) {
+      if (isCurrentContext(request.generation)) {
+        instagramIdentities.value = []
+        instagramIdentityMappingError.value = getApiErrorMessage(
+          caught,
+          'Nao foi possivel carregar as Paginas e contas do Instagram.',
+        )
+      }
+    } finally {
+      if (isCurrentContext(request.generation)) instagramIdentitiesLoading.value = false
+    }
+  }
+
+  async function setInstagramIdentityClient(
+    igUserId: string,
+    clientAccountId: string,
+  ): Promise<void> {
+    const id = String(igUserId || '').trim()
+    if (!id || !canManageClientMapping.value) return
+    const request = requestContext()
+    instagramIdentityMappingBusyId.value = id
+    instagramIdentityMappingError.value = ''
+    try {
+      const updated = (await apiRequest(
+        `/v1/meta-ads/instagram-identities/${encodeURIComponent(id)}/client`,
+        {
+          method: 'PATCH',
+          body: { clientAccountId: String(clientAccountId || '').trim() },
+          signal: request.signal,
+        },
+      )) as MetaAdsInstagramIdentity
+      if (!isCurrentContext(request.generation)) return
+      instagramIdentities.value = instagramIdentities.value.map((identity) =>
+        identity.igUserId === id ? updated : identity,
+      )
+    } catch (caught) {
+      if (isCurrentContext(request.generation)) {
+        instagramIdentityMappingError.value = getApiErrorMessage(
+          caught,
+          'Nao foi possivel vincular a identidade do Instagram ao cliente.',
+        )
+      }
+    } finally {
+      if (isCurrentContext(request.generation) && instagramIdentityMappingBusyId.value === id) {
+        instagramIdentityMappingBusyId.value = ''
+      }
+    }
+  }
+
+  async function loadCampaignsForRequest(request: MetaAdsSelectionRequest): Promise<void> {
     const response = (await apiRequest(
-      `/v1/meta-ads/campaigns?adAccountId=${encodeURIComponent(selectedAdAccountId.value)}`,
-      { method: 'GET' },
+      `/v1/meta-ads/campaigns?adAccountId=${encodeURIComponent(request.adAccountId)}`,
+      {
+        method: 'GET',
+        signal: request.signal,
+        headers: dataScopeHeaders(request),
+      },
     )) as { campaigns?: MetaAdsCampaign[] } | MetaAdsCampaign[]
+    if (!isCurrentSelectionRequest(request)) return
     campaigns.value = Array.isArray(response) ? response : (response?.campaigns ?? [])
   }
 
-  async function loadInsights() {
+  async function loadCampaigns(): Promise<void> {
+    const request = beginSelectionRequest()
+    try {
+      await loadCampaignsForRequest(request)
+    } catch (caught) {
+      if (isCurrentSelectionRequest(request)) throw caught
+    }
+  }
+
+  async function loadInsightsForRequest(request: MetaAdsReportRequest): Promise<void> {
     const response = (await apiRequest(
       `/v1/meta-ads/insights?adAccountId=${encodeURIComponent(
-        selectedAdAccountId.value,
-      )}&range=${encodeURIComponent(range.value)}&level=account`,
-      { method: 'GET' },
+        request.adAccountId,
+      )}&range=${encodeURIComponent(request.range)}&level=account`,
+      {
+        method: 'GET',
+        signal: request.signal,
+        headers: dataScopeHeaders(request),
+      },
     )) as { insights?: MetaAdsInsightPoint[] } | MetaAdsInsightPoint[]
+    if (!isCurrentReportRequest(request)) return
     insights.value = Array.isArray(response) ? response : (response?.insights ?? [])
+  }
+
+  async function loadInsights(): Promise<void> {
+    const request = beginReportRequest()
+    try {
+      await loadInsightsForRequest(request)
+    } catch (caught) {
+      if (isCurrentReportRequest(request)) throw caught
+    }
+  }
+
+  async function loadSelectedData(request: MetaAdsDataRequest): Promise<void> {
+    try {
+      await Promise.all([
+        loadOverviewForRequest(request.selection),
+        loadCampaignsForRequest(request.selection),
+        loadInsightsForRequest(request.report),
+      ])
+    } catch (caught) {
+      if (isCurrentDataRequest(request)) throw caught
+    }
   }
 
   async function selectAdAccount(id: string) {
     selectedAdAccountId.value = String(id || '').trim()
+    cancelDataLoads()
+    overview.value = null
+    campaigns.value = []
+    insights.value = []
 
     if (!selectedAdAccountId.value) {
       return
     }
+    const request = beginDataRequest()
 
     pending.value = true
     error.value = ''
     try {
-      await Promise.all([loadOverview(), loadCampaigns(), loadInsights()])
+      await loadSelectedData(request)
     } catch (caught) {
-      error.value = getApiErrorMessage(caught, 'Nao foi possivel carregar a conta de anuncio.')
+      if (isCurrentDataRequest(request)) {
+        error.value = getApiErrorMessage(caught, 'Nao foi possivel carregar a conta de anuncio.')
+      }
     } finally {
-      pending.value = false
+      if (isCurrentDataRequest(request)) pending.value = false
     }
   }
 
   async function init() {
+    const request = requestContext()
     pending.value = true
     error.value = ''
     try {
       const response = (await apiRequest('/v1/meta-ads/overview', {
         method: 'GET',
+        signal: request.signal,
       })) as MetaAdsOverview
+      if (!isCurrentContext(request.generation)) return
       overview.value = response
       connection.value = response?.connection ?? null
 
       if (connected.value) {
         await loadAdAccounts()
+        if (!isCurrentContext(request.generation)) return
         const first = adAccounts.value[0]
         if (first) {
           await selectAdAccount(first.id)
         }
       }
     } catch (caught) {
-      error.value = getApiErrorMessage(caught, 'Nao foi possivel carregar o Meta Ads.')
+      if (isCurrentContext(request.generation)) {
+        error.value = getApiErrorMessage(caught, 'Nao foi possivel carregar o Meta Ads.')
+      }
     } finally {
-      pending.value = false
+      if (isCurrentContext(request.generation)) pending.value = false
     }
   }
 
   async function saveConnection(token: string) {
+    if (!canConnectMetaAds.value) return
+    const request = requestContext()
     connecting.value = true
     error.value = ''
     try {
       await apiRequest('/v1/meta-ads/connection', {
         method: 'POST',
         body: { token },
+        signal: request.signal,
       })
+      if (!isCurrentContext(request.generation)) return
       await init()
     } catch (caught) {
-      error.value = getApiErrorMessage(caught, 'Nao foi possivel conectar na Meta.')
+      if (isCurrentContext(request.generation)) {
+        error.value = getApiErrorMessage(caught, 'Nao foi possivel conectar na Meta.')
+      }
     } finally {
-      connecting.value = false
+      if (isCurrentContext(request.generation)) connecting.value = false
+    }
+  }
+
+  async function startConnectionOAuth(): Promise<MetaAdsOAuthStart | null> {
+    if (!canConnectMetaAds.value) return null
+    const request = requestContext()
+    connecting.value = true
+    error.value = ''
+    try {
+      const response = (await apiRequest('/v1/meta-ads/oauth/start', {
+        method: 'POST',
+        signal: request.signal,
+      })) as MetaAdsOAuthStart
+      if (!isCurrentContext(request.generation)) return null
+      return response
+    } catch (caught) {
+      if (isCurrentContext(request.generation)) {
+        error.value = getApiErrorMessage(
+          caught,
+          'Nao foi possivel iniciar o Facebook Login. Use a conexao manual se necessario.',
+        )
+      }
+      return null
+    } finally {
+      if (isCurrentContext(request.generation)) connecting.value = false
     }
   }
 
   async function deleteConnection() {
+    if (!canConnectMetaAds.value) return
+    const request = requestContext()
     error.value = ''
     try {
-      await apiRequest('/v1/meta-ads/connection', { method: 'DELETE' })
+      await apiRequest('/v1/meta-ads/connection', {
+        method: 'DELETE',
+        signal: request.signal,
+      })
+      if (!isCurrentContext(request.generation)) return
       resetState()
     } catch (caught) {
-      error.value = getApiErrorMessage(caught, 'Nao foi possivel desconectar.')
+      if (isCurrentContext(request.generation)) {
+        error.value = getApiErrorMessage(caught, 'Nao foi possivel desconectar.')
+      }
     }
   }
 
   async function sync() {
+    if (!canManageMetaAds.value || !selectedAdAccountId.value) return
+    const request = requestContext()
     syncing.value = true
     error.value = ''
     try {
       await apiRequest('/v1/meta-ads/sync', {
         method: 'POST',
         body: { adAccountId: selectedAdAccountId.value },
+        signal: request.signal,
       })
-      await Promise.all([loadOverview(), loadCampaigns(), loadInsights()])
+      if (!isCurrentContext(request.generation)) return
+      await loadSelectedData(beginDataRequest())
     } catch (caught) {
-      error.value = getApiErrorMessage(caught, 'Nao foi possivel sincronizar com a Meta.')
+      if (isCurrentContext(request.generation)) {
+        error.value = getApiErrorMessage(caught, 'Nao foi possivel sincronizar com a Meta.')
+      }
     } finally {
-      syncing.value = false
+      if (isCurrentContext(request.generation)) syncing.value = false
     }
   }
 
   async function setRange(nextRange: string) {
     range.value = String(nextRange || '').trim() || DEFAULT_RANGE
+    insights.value = []
 
     if (!selectedAdAccountId.value) {
+      abortReportLoad()
+      pending.value = false
       return
     }
+    const request = beginReportRequest()
 
     pending.value = true
     error.value = ''
     try {
-      await loadInsights()
+      await loadInsightsForRequest(request)
     } catch (caught) {
-      error.value = getApiErrorMessage(caught, 'Nao foi possivel carregar as metricas.')
+      if (isCurrentReportRequest(request)) {
+        error.value = getApiErrorMessage(caught, 'Nao foi possivel carregar as metricas.')
+      }
     } finally {
-      pending.value = false
-    }
-  }
-
-  // --- Assistente MCP (chat texto → acoes na Meta via runner headless) ---
-
-  async function loadAssistantHealth() {
-    try {
-      const response = (await apiRequest('/v1/meta-ads/assistant/health', {
-        method: 'GET',
-      })) as MetaAdsAssistantHealth
-      // Normaliza defensivamente (detail nulo nao pode quebrar os computeds da UI).
-      assistantHealth.value = {
-        ok: Boolean(response?.ok),
-        claudeAuth: Boolean(response?.claudeAuth),
-        detail: String(response?.detail ?? ''),
-      }
-    } catch {
-      // Health responde 200 sempre; falha aqui = backend/rede fora.
-      assistantHealth.value = {
-        ok: false,
-        claudeAuth: false,
-        detail: 'Nao foi possivel consultar a saude do assistente.',
-      }
-    }
-  }
-
-  async function loadAssistant() {
-    assistantError.value = ''
-    try {
-      const response = (await apiRequest('/v1/meta-ads/assistant/messages?limit=50', {
-        method: 'GET',
-      })) as MetaAdsAssistantMessage[]
-      assistantMessages.value = (Array.isArray(response) ? response : []).map(
-        normalizeAssistantMessage,
-      )
-    } catch (caught) {
-      assistantError.value = getApiErrorMessage(
-        caught,
-        'Nao foi possivel carregar o historico do assistente.',
-      )
-    }
-    await loadAssistantHealth()
-  }
-
-  // Envia um comando. A resposta pode levar 30-120s (Claude + MCP da Meta):
-  // skipLoadingIndicator evita a barra global e o estado fica em assistantSending.
-  // Retorna true em sucesso para o componente decidir manter/restaurar o rascunho.
-  async function sendAssistant(text: string): Promise<boolean> {
-    const trimmed = String(text || '').trim()
-    if (!trimmed || assistantSending.value) {
-      return false
-    }
-    if (!selectedAdAccountId.value) {
-      assistantError.value = 'Selecione uma conta de anuncio antes de usar o assistente.'
-      return false
-    }
-
-    assistantSending.value = true
-    assistantError.value = ''
-
-    // Eco local imediato (resposta imediata ao clique); o backend devolve a
-    // mensagem do usuario persistida + a resposta — o eco e substituido por elas.
-    const localId = `local-${Date.now()}`
-    assistantMessages.value = [
-      ...assistantMessages.value,
-      {
-        id: localId,
-        role: 'user',
-        content: trimmed,
-        actions: [],
-        createdAt: new Date().toISOString(),
-      },
-    ]
-
-    const abort = new AbortController()
-    assistantSendAbort = abort
-    try {
-      const response = (await apiRequest('/v1/meta-ads/assistant/messages', {
-        method: 'POST',
-        body: { message: trimmed, adAccountId: selectedAdAccountId.value },
-        skipLoadingIndicator: true,
-        signal: abort.signal,
-      })) as { messages?: MetaAdsAssistantMessage[]; syncTriggered?: boolean }
-
-      const returned = (response?.messages ?? []).map(normalizeAssistantMessage)
-      assistantMessages.value = [
-        ...assistantMessages.value.filter((message) => message.id !== localId),
-        ...returned,
-      ]
-
-      if (response?.syncTriggered) {
-        try {
-          await Promise.all([loadOverview(), loadCampaigns(), loadInsights()])
-        } catch (caught) {
-          error.value = getApiErrorMessage(
-            caught,
-            'Acao concluida, mas nao foi possivel atualizar os dados. Sincronize manualmente.',
-          )
-        }
-      }
-      return true
-    } catch (caught) {
-      assistantMessages.value = assistantMessages.value.filter((message) => message.id !== localId)
-      // Cancelado pelo usuario: sem erro vermelho.
-      assistantError.value = abort.signal.aborted ? '' : assistantSendErrorMessage(caught)
-      return false
-    } finally {
-      assistantSendAbort = null
-      assistantSending.value = false
-    }
-  }
-
-  // Limpa todo o historico do chat (botao Limpar conversa).
-  async function clearAssistant() {
-    if (assistantSending.value) return
-    assistantError.value = ''
-    try {
-      await apiRequest('/v1/meta-ads/assistant/messages', { method: 'DELETE' })
-      assistantMessages.value = []
-    } catch (caught) {
-      assistantError.value = getApiErrorMessage(caught, 'Nao foi possivel limpar a conversa.')
-    }
-  }
-
-  // Cancela o envio em andamento (aborta a requisicao; o eco local sai no catch).
-  function cancelAssistant() {
-    if (assistantSendAbort) {
-      assistantSendAbort.abort()
-    }
-  }
-
-  // Carrega as configuracoes do assistente (modelo + system prompt).
-  async function loadAssistantSettings() {
-    assistantSettingsError.value = ''
-    try {
-      const response = (await apiRequest('/v1/meta-ads/assistant/settings', {
-        method: 'GET',
-      })) as MetaAdsAssistantSettings
-      assistantSettings.value = {
-        model: String(response?.model ?? ''),
-        systemPrompt: String(response?.systemPrompt ?? ''),
-      }
-    } catch (caught) {
-      assistantSettingsError.value = getApiErrorMessage(
-        caught,
-        'Nao foi possivel carregar as configuracoes.',
-      )
-    }
-  }
-
-  // Salva modelo + system prompt; devolve true em sucesso.
-  async function saveAssistantSettings(model: string, systemPrompt: string): Promise<boolean> {
-    assistantSettingsSaving.value = true
-    assistantSettingsError.value = ''
-    try {
-      const response = (await apiRequest('/v1/meta-ads/assistant/settings', {
-        method: 'PUT',
-        body: { model, systemPrompt },
-      })) as MetaAdsAssistantSettings
-      assistantSettings.value = {
-        model: String(response?.model ?? ''),
-        systemPrompt: String(response?.systemPrompt ?? ''),
-      }
-      return true
-    } catch (caught) {
-      assistantSettingsError.value = getApiErrorMessage(
-        caught,
-        'Nao foi possivel salvar as configuracoes.',
-      )
-      return false
-    } finally {
-      assistantSettingsSaving.value = false
-    }
-  }
-
-  // Inicia o login do MCP da Meta: pede a URL de autorizacao ao runner. O
-  // usuario abre a URL, autoriza, e cola a URL de callback em completeAssistantAuth.
-  async function startAssistantAuth() {
-    assistantAuthBusy.value = true
-    assistantAuthError.value = ''
-    assistantAuthUrl.value = ''
-    assistantAuthDone.value = false
-    try {
-      const response = (await apiRequest('/v1/meta-ads/assistant/auth/start', {
-        method: 'POST',
-        skipLoadingIndicator: true,
-      })) as { url?: string }
-      assistantAuthUrl.value = String(response?.url ?? '')
-      if (!assistantAuthUrl.value) {
-        // Sem URL = o assistente ja esta autenticado nesta sessao.
-        assistantAuthDone.value = true
-        await loadAssistantHealth()
-      }
-    } catch (caught) {
-      assistantAuthError.value = assistantSendErrorMessage(caught)
-    } finally {
-      assistantAuthBusy.value = false
-    }
-  }
-
-  // Conclui o login com a URL de callback (localhost/callback?code=...) colada.
-  async function completeAssistantAuth(callbackUrl: string): Promise<boolean> {
-    // callbackUrl e opcional: com a sessao persistente o login pode concluir
-    // sozinho (redirect localhost capturado com a conexao viva).
-    const trimmed = String(callbackUrl || '').trim()
-    if (assistantAuthBusy.value) {
-      return false
-    }
-    assistantAuthBusy.value = true
-    assistantAuthError.value = ''
-    try {
-      const response = (await apiRequest('/v1/meta-ads/assistant/auth/complete', {
-        method: 'POST',
-        body: { callbackUrl: trimmed },
-        skipLoadingIndicator: true,
-      })) as { ok?: boolean; detail?: string }
-      if (response?.ok) {
-        assistantAuthDone.value = true
-        assistantAuthUrl.value = ''
-        await loadAssistantHealth()
-        return true
-      }
-      assistantAuthError.value =
-        String(response?.detail ?? '') ||
-        'Nao foi possivel concluir o login. Confira a URL de callback e tente de novo.'
-      return false
-    } catch (caught) {
-      assistantAuthError.value = assistantSendErrorMessage(caught)
-      return false
-    } finally {
-      assistantAuthBusy.value = false
+      if (isCurrentReportRequest(request)) pending.value = false
     }
   }
 
@@ -490,38 +615,36 @@ export const useMetaAdsStore = defineStore('meta-ads', () => {
     connecting,
     syncing,
     error,
+    clientScope,
+    clientScopeLoading,
+    clientMappingBusyId,
+    clientMappingError,
+    instagramIdentities,
+    instagramIdentitiesLoading,
+    instagramIdentityMappingBusyId,
+    instagramIdentityMappingError,
     connected,
     kpis,
     selectedAdAccount,
+    canManageMetaAds,
+    canConnectMetaAds,
+    canManageClientMapping,
+    resetState,
+    cancelDataLoads,
     init,
     loadAdAccounts,
+    loadClientScope,
+    setAdAccountClient,
+    loadInstagramIdentities,
+    setInstagramIdentityClient,
     selectAdAccount,
     loadOverview,
     loadCampaigns,
     loadInsights,
+    startConnectionOAuth,
     saveConnection,
     deleteConnection,
     sync,
     setRange,
-    assistantMessages,
-    assistantSending,
-    assistantError,
-    assistantHealth,
-    loadAssistant,
-    loadAssistantHealth,
-    sendAssistant,
-    clearAssistant,
-    cancelAssistant,
-    assistantSettings,
-    assistantSettingsSaving,
-    assistantSettingsError,
-    loadAssistantSettings,
-    saveAssistantSettings,
-    assistantAuthUrl,
-    assistantAuthBusy,
-    assistantAuthError,
-    assistantAuthDone,
-    startAssistantAuth,
-    completeAssistantAuth,
   }
 })

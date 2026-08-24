@@ -22,9 +22,10 @@ var (
 const aiModelsMaxResponseBytes = 2 << 20
 
 var aiProviderModelsBaseURL = map[string]string{
-	"openai": "https://api.openai.com/v1",
-	"gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
-	"glm":    "https://api.z.ai/api/paas/v4",
+	"openai":    "https://api.openai.com/v1",
+	"anthropic": "https://api.anthropic.com/v1",
+	"gemini":    "https://generativelanguage.googleapis.com/v1beta/openai",
+	"glm":       "https://api.z.ai/api/paas/v4",
 }
 
 type aiModelsResponse struct {
@@ -59,21 +60,26 @@ func (s *AIService) ListAgentModels(ctx context.Context, accountID string, p aut
 }
 
 func fetchAgentProviderModels(ctx context.Context, baseURL, apiKey, provider string) ([]string, error) {
-	ids, err := fetchProviderModelIDs(ctx, baseURL, apiKey)
+	ids, err := fetchProviderModelIDs(ctx, baseURL, apiKey, provider)
 	if err != nil {
 		return nil, err
 	}
 	return filterAgentModels(provider, "response", ids), nil
 }
 
-func fetchProviderModelIDs(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+func fetchProviderModelIDs(ctx context.Context, baseURL, apiKey, provider string) ([]string, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
 	if err != nil {
 		return nil, ErrAIModelsUnavailable
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if provider == "anthropic" {
+		req.Header.Set("x-api-key", apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	} else {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "Omni-Omnichannel/1.0")
 
@@ -152,10 +158,8 @@ func (s *AIService) ListCredentialModels(ctx context.Context, accountID string, 
 	if err != nil {
 		return nil, err
 	}
-	capability = strings.ToLower(strings.TrimSpace(capability))
-	switch capability {
-	case "response", "audio", "image", "video", "document":
-	default:
+	capability, ok := normalizeAICredentialCapability(capability)
+	if !ok {
 		return nil, ErrValidation
 	}
 	baseURL, ok := aiProviderModelsBaseURL[row.Provider]
@@ -166,11 +170,47 @@ func (s *AIService) ListCredentialModels(ctx context.Context, accountID string, 
 	if err != nil {
 		return nil, err
 	}
-	ids, err := fetchProviderModelIDs(ctx, baseURL, apiKey)
+	ids, err := fetchProviderModelIDs(ctx, baseURL, apiKey, row.Provider)
 	if err != nil {
 		return nil, err
 	}
 	return filterAgentModels(row.Provider, capability, ids), nil
+}
+
+// ListAssistantCredentialModels aceita tanto uma credencial propria quanto a
+// credencial read-only herdada da agencia canonica. A chave e resolvida e usada
+// exclusivamente nesta chamada server-side.
+func (s *AIService) ListAssistantCredentialModels(ctx context.Context, accountID string, p auth.Principal, credentialID, capability string) ([]string, error) {
+	if err := requireAssistantCredentialCatalogAccess(accountID, p); err != nil {
+		return nil, err
+	}
+	capability, ok := normalizeAICredentialCapability(capability)
+	if !ok {
+		return nil, ErrValidation
+	}
+	credential, err := s.ResolveRuntimeCredential(ctx, accountID, credentialID)
+	if err != nil {
+		return nil, err
+	}
+	baseURL, ok := aiProviderModelsBaseURL[credential.Provider]
+	if !ok {
+		return nil, ErrAIProviderUnsupported
+	}
+	ids, err := fetchProviderModelIDs(ctx, baseURL, credential.APIKey, credential.Provider)
+	if err != nil {
+		return nil, err
+	}
+	return filterAgentModels(credential.Provider, capability, ids), nil
+}
+
+func normalizeAICredentialCapability(capability string) (string, bool) {
+	capability = strings.ToLower(strings.TrimSpace(capability))
+	switch capability {
+	case "response", "audio", "image", "video", "document":
+		return capability, true
+	default:
+		return "", false
+	}
 }
 
 func isAgentChatModel(provider, id string) bool {
@@ -182,6 +222,8 @@ func isAgentChatModel(provider, id string) bool {
 		return strings.Contains(id, "gemini") && !containsAgentModelMarker(id, "embedding", "aqa", "imagen")
 	case "glm":
 		return strings.HasPrefix(id, "glm") && !containsAgentModelMarker(id, "embedding", "voice", "video", "image", "cogview", "rerank")
+	case "anthropic":
+		return strings.HasPrefix(id, "claude-")
 	default:
 		return false
 	}

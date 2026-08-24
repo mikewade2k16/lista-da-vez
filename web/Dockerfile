@@ -9,6 +9,11 @@ FROM deps AS build
 
 COPY . .
 
+# O config do Nuxt e avaliado antes de o CLI normalizar NODE_ENV. Fixar aqui
+# garante que o build realmente use as opcoes de producao (incluindo sourcemaps
+# desligados) sem alterar o target dev abaixo.
+ENV NODE_ENV=production
+
 # O Nitro ultrapassa 4 GB ao empacotar o servidor. O ARG permite ajuste pelo
 # deploy sem mudar a imagem final; 5120 MB cabe no Docker Desktop atual (~6 GB)
 # quando o deploy pausa temporariamente a stack local.

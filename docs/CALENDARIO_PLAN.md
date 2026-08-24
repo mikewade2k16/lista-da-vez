@@ -423,3 +423,26 @@ exceto `stores/calendar.ts` — ver "Ordem/Dependências" no SPECS2).
   `calendar/{shell,grid,notes-drawer,week-form}.css` (cada um < 450).
 - Store: `stores/calendar.ts` (407) + `composables/useCalendarViewport.ts` (foco/scroll/rail/nav)
   + `domain/calendar/calendar-api.ts` (I/O). Back: módulo em arquivos < 450.
+
+## 8. Checkpoint de produção do Assistente 360 — 2026-08-19
+
+- O chat canônico é `/v1/assistant/chat/*`; os aliases `/v1/calendar/chat/*` permanecem por
+  compatibilidade. Conversa, voz, memória e cards continuam usando a UX do Calendário.
+- Provider/modelo/chave do chat vêm de `automation.omni_chat_configs` e do cofre nomeado
+  `messaging.ai_credentials`. A engrenagem permite cadastrar várias chaves OpenAI, Anthropic,
+  Gemini e GLM com apelidos e alternar a credencial ativa. `/v1/calendar/ai-keys` continua
+  atendendo o plano mensal legado e não deve ser usado para rotacionar o Crow Assistant.
+- A 0287 moveu a confirmação de `event|note|clientProfile|task|taskItem` para o backend. Efeito,
+  receipt e status do card são atômicos; retry reproduz o mesmo recurso. Eventos ligados a Tasks
+  mantêm o sync pós-commit best-effort já usado pelo endpoint normal do Calendário.
+- A 0292 adiciona Anthropic somente ao cofre/runtime compartilhado. O workflow Calendar Chat usa
+  a API Messages nativa e não grava chave no export, no n8n ou em logs.
+- Provas locais: `go test ./...`; migrations 0001–0292 em PostgreSQL 16 limpo; integração real de
+  event/task/taskItem + replay/hash conflict/revogação; 27 testes front; ESLint sem erros; API,
+  Redis e n8n healthy; workflow ativo igual ao export canônico.
+- Gate externo antes do deploy: revogar qualquer chave exposta, cadastrar uma nova pelo drawer e
+  executar smoke autenticado de texto + voz. O build Nuxt cliente concluiu, mas a etapa Nitro foi
+  morta por RAM do host; gerar a imagem no CI/runner com memória suficiente.
+- Rollback do workflow local: backup temporário
+  `%TEMP%/calendar-chat-before-20260819.json`. A migration 0292 é compatível com OpenAI/Gemini/GLM
+  existentes; não exige backfill nem troca a credencial selecionada.

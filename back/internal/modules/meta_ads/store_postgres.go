@@ -40,38 +40,84 @@ type rowScanner interface {
 // token: ele e lido a parte via GetDecryptedToken.
 func (s *Store) GetConnection(ctx context.Context, accountID string) (Connection, error) {
 	const q = `select id, account_id, organization_id, meta_business_id, name,
-			token_expires_at, status, created_at, updated_at
+			token_expires_at, status, revision::text, created_at, updated_at
 		from meta_ads.connections
-		where account_id = $1`
+		where account_id = $1 and status = 'active'
+		  and (token_expires_at is null or token_expires_at > now())`
 	return scanConnection(s.pool.QueryRow(ctx, q, accountID))
 }
 
-// UpsertConnection cifra e persiste o token (1 conexao por account). Em conflito
-// (account_id) atualiza o token e os metadados, reativando a conexao.
-func (s *Store) UpsertConnection(ctx context.Context, accountID, metaBusinessID, name, token string) (Connection, error) {
-	if s.cryptoKey == "" {
-		return Connection{}, ErrCryptoKeyMissing
-	}
-	const q = `insert into meta_ads.connections
-			(account_id, meta_business_id, name, encrypted_token, status, updated_at)
-		values ($1, $2, $3, pgp_sym_encrypt($4, $5), 'active', now())
-		on conflict (account_id) do update
-			set meta_business_id = excluded.meta_business_id,
-			    name = excluded.name,
-			    encrypted_token = excluded.encrypted_token,
-			    status = 'active',
-			    updated_at = now()
-		returning id, account_id, organization_id, meta_business_id, name,
-			token_expires_at, status, created_at, updated_at`
-	return scanConnection(s.pool.QueryRow(ctx, q, accountID, metaBusinessID, name, token, s.cryptoKey))
+// FindAgencyConnectionForClient localiza a conexao central da conta-agencia da
+// mesma organizacao do cliente. A query exige contas ativas e nunca cruza orgs.
+func (s *Store) FindAgencyConnectionForClient(ctx context.Context, clientAccountID string) (Connection, error) {
+	const q = `select c.id, c.account_id, c.organization_id, c.meta_business_id, c.name,
+			c.token_expires_at, c.status, c.revision::text, c.created_at, c.updated_at
+		from core.accounts client
+		join core.accounts agency
+		  on agency.organization_id = client.organization_id
+		 and agency.is_agency = true
+		 and agency.is_active = true
+		join meta_ads.connections c on c.account_id = agency.id
+		where client.id = $1::uuid
+		  and client.is_agency = false
+		  and client.is_active = true
+		  and client.organization_id is not null
+		  and c.status = 'active'
+		  and (c.token_expires_at is null or c.token_expires_at > now())
+		order by c.updated_at desc
+		limit 1`
+	return scanConnection(s.pool.QueryRow(ctx, q, clientAccountID))
+}
+
+// AgencyCanAssignClient valida o vinculo no core sem revelar dados do cliente.
+// Somente uma account-agencia ativa pode vincular outra account ativa da mesma
+// organization.
+func (s *Store) AgencyCanAssignClient(ctx context.Context, agencyAccountID, clientAccountID string) (bool, error) {
+	const q = `select exists (
+		select 1
+		from core.accounts agency
+		join core.accounts client
+		  on client.organization_id = agency.organization_id
+		 and client.is_active = true
+		 and client.is_agency = false
+		where agency.id = $1::uuid
+		  and agency.is_active = true
+		  and agency.is_agency = true
+		  and agency.organization_id is not null
+		  and client.id = $2::uuid
+	)`
+	var allowed bool
+	err := s.pool.QueryRow(ctx, q, agencyAccountID, clientAccountID).Scan(&allowed)
+	return allowed, err
+}
+
+func (s *Store) AccountIsAgency(ctx context.Context, accountID string) (bool, error) {
+	const q = `select exists (
+		select 1 from core.accounts
+		where id = $1::uuid and is_active = true and is_agency = true
+	)`
+	var isAgency bool
+	err := s.pool.QueryRow(ctx, q, accountID).Scan(&isAgency)
+	return isAgency, err
 }
 
 // DeleteConnection remove a conexao da account (cascade nas tabelas filhas).
 // Idempotente: ausencia de linha nao e erro.
 func (s *Store) DeleteConnection(ctx context.Context, accountID string) error {
-	const q = `delete from meta_ads.connections where account_id = $1`
-	_, err := s.pool.Exec(ctx, q, accountID)
-	return err
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockMetaActionConnectionTx(ctx, tx, accountID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
+		`delete from meta_ads.connections where account_id = $1::uuid`, accountID,
+	); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // GetDecryptedToken decifra e retorna o token da conexao da account. Usado
@@ -82,9 +128,29 @@ func (s *Store) GetDecryptedToken(ctx context.Context, accountID string) (string
 	}
 	const q = `select pgp_sym_decrypt(encrypted_token, $2)
 		from meta_ads.connections
-		where account_id = $1`
+		where account_id = $1 and status = 'active'
+		  and (token_expires_at is null or token_expires_at > now())`
 	var token string
 	if err := s.pool.QueryRow(ctx, q, accountID, s.cryptoKey).Scan(&token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// GetDecryptedTokenAtRevision evita que uma sincronizacao iniciada com uma
+// conexao antiga continue depois de uma rotacao concorrente do token.
+func (s *Store) GetDecryptedTokenAtRevision(ctx context.Context, accountID, revision string) (string, error) {
+	if s.cryptoKey == "" {
+		return "", ErrCryptoKeyMissing
+	}
+	const q = `select pgp_sym_decrypt(encrypted_token, $3)
+		from meta_ads.connections
+		where account_id = $1::uuid and revision = $2::uuid and status = 'active'
+		  and (token_expires_at is null or token_expires_at > now())`
+	var token string
+	if err := s.pool.QueryRow(ctx, q, accountID, revision, s.cryptoKey).Scan(&token); errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrConnectionChanged
+	} else if err != nil {
 		return "", err
 	}
 	return token, nil
@@ -94,7 +160,7 @@ func scanConnection(row rowScanner) (Connection, error) {
 	var c Connection
 	err := row.Scan(
 		&c.ID, &c.AccountID, &c.OrganizationID, &c.MetaBusinessID, &c.Name,
-		&c.TokenExpiresAt, &c.Status, &c.CreatedAt, &c.UpdatedAt,
+		&c.TokenExpiresAt, &c.Status, &c.Revision, &c.CreatedAt, &c.UpdatedAt,
 	)
 	return c, err
 }

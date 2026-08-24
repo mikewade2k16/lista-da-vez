@@ -1,4 +1,5 @@
 const shouldEnableNuxtDevtools = process.env.NUXT_DEVTOOLS === 'true'
+const shouldGenerateSourceMaps = process.env.NODE_ENV !== 'production'
 // PWA estacionado por decisao de produto. So volta a registrar manifest/SW
 // quando for explicitamente habilitado no ambiente.
 const shouldEnablePwa = process.env.NUXT_PWA_ENABLED === 'true'
@@ -22,6 +23,13 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-03-23',
   devtools: {
     enabled: shouldEnableNuxtDevtools,
+  },
+  // Nuxt habilita sourcemap do bundle server por padrao mesmo em producao. Neste
+  // painel SPA isso multiplica o consumo de RAM e os maps do Tailwind/Vue nao sao
+  // publicados. Mantemos maps no dev e removemos somente do artefato de producao.
+  sourcemap: {
+    server: shouldGenerateSourceMaps,
+    client: shouldGenerateSourceMaps,
   },
   // O painel inteiro e SPA (client-rendered): cada pagina autenticada e ssr:false.
   // Manter TODA rota nova de painel aqui — uma rota fora da lista roda SSR e o

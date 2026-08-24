@@ -46,7 +46,7 @@ var profileClearableKeys = map[string]bool{
 }
 
 // canonicalProposalKind normaliza o kind para a forma canonica usada pelo front
-// (event|task|taskItem|note|clientProfile); "" = kind desconhecido (proposta descartada).
+// (event|task|taskItem|note|clientProfile|metaAction); "" = kind desconhecido.
 func canonicalProposalKind(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "event":
@@ -59,6 +59,8 @@ func canonicalProposalKind(raw string) string {
 		return "note"
 	case "clientprofile", "client_profile", "profile":
 		return "clientProfile"
+	case "metaaction", "meta_action":
+		return "metaAction"
 	default:
 		return ""
 	}

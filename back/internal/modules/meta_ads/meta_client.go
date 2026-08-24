@@ -13,14 +13,14 @@ import (
 )
 
 // MetaClient fala com a Graph/Marketing API da Meta (graph.facebook.com).
-// Autenticacao por access_token (System User token de longa duracao). Nunca
-// loga o token: ele e passado por query param e nao deve aparecer em logs.
+// Autenticacao por Authorization Bearer. O token de longa duracao nunca entra
+// na URL nem deve aparecer em logs.
 type MetaClient struct {
 	base string
 	http *http.Client
 }
 
-// NewMetaClient cria o cliente. graphBase ex.: "https://graph.facebook.com/v21.0".
+// NewMetaClient cria o cliente. graphBase ex.: "https://graph.facebook.com/v24.0".
 func NewMetaClient(graphBase string) *MetaClient {
 	return &MetaClient{
 		base: strings.TrimRight(graphBase, "/"),
@@ -42,8 +42,26 @@ type metaError struct {
 }
 
 type metaPaging struct {
-	Next string `json:"next"`
+	Next    string `json:"next"`
+	Cursors struct {
+		After string `json:"after"`
+	} `json:"cursors"`
 }
+
+type metaPage[T any] struct {
+	Data   []T        `json:"data"`
+	Paging metaPaging `json:"paging"`
+}
+
+const (
+	maxMetaPagingCursorLength = 4096
+	maxMetaAdAccountPages     = 50
+	maxMetaAdAccounts         = 10_000
+	maxMetaCampaignPages      = 100
+	maxMetaCampaigns          = 50_000
+	maxMetaInsightPages       = 250
+	maxMetaInsights           = 125_000
+)
 
 // GraphAdAccount e uma conta de anuncio em /me/adaccounts.
 type GraphAdAccount struct {
@@ -92,14 +110,17 @@ type GraphInsight struct {
 func (c *MetaClient) GetAdAccounts(ctx context.Context, token string) ([]GraphAdAccount, error) {
 	q := url.Values{}
 	q.Set("fields", "account_id,name,currency,account_status")
-	var out struct {
-		Data   []GraphAdAccount `json:"data"`
-		Paging metaPaging       `json:"paging"`
-	}
-	if err := c.getJSON(ctx, "/me/adaccounts", token, q, &out); err != nil {
-		return nil, err
-	}
-	return out.Data, nil
+	q.Set("limit", "200")
+	return graphPageData[GraphAdAccount](
+		ctx, c, "/me/adaccounts", token, q, maxMetaAdAccountPages, maxMetaAdAccounts,
+	)
+}
+
+// ListPermissions usa a mesma leitura sanitizada de grants do Facebook Login.
+// O connect manual exige a mesma allowlist antes de descobrir ou persistir
+// qualquer conta de anuncio.
+func (c *MetaClient) ListPermissions(ctx context.Context, token string) ([]OAuthPermission, error) {
+	return listMetaPermissions(ctx, c.base, c.http, token)
 }
 
 // ListCampaigns lista as campanhas de uma conta de anuncio. metaAdAccountID pode
@@ -108,15 +129,10 @@ func (c *MetaClient) ListCampaigns(ctx context.Context, token, metaAdAccountID s
 	q := url.Values{}
 	q.Set("fields", "id,name,objective,status,daily_budget,lifetime_budget")
 	q.Set("limit", "200")
-	var out struct {
-		Data   []GraphCampaign `json:"data"`
-		Paging metaPaging      `json:"paging"`
-	}
 	path := "/" + actPrefixed(metaAdAccountID) + "/campaigns"
-	if err := c.getJSON(ctx, path, token, q, &out); err != nil {
-		return nil, err
-	}
-	return out.Data, nil
+	return graphPageData[GraphCampaign](
+		ctx, c, path, token, q, maxMetaCampaignPages, maxMetaCampaigns,
+	)
 }
 
 // GetInsights busca insights diarios (time_increment=1) de uma conta de anuncio.
@@ -128,24 +144,69 @@ func (c *MetaClient) GetInsights(ctx context.Context, token, metaAdAccountID, da
 	q.Set("time_increment", "1")
 	q.Set("fields", "impressions,clicks,spend,reach,ctr,cpc,cpm,date_start,actions")
 	q.Set("limit", "500")
-	var out struct {
-		Data   []GraphInsight `json:"data"`
-		Paging metaPaging     `json:"paging"`
-	}
 	path := "/" + actPrefixed(metaAdAccountID) + "/insights"
-	if err := c.getJSON(ctx, path, token, q, &out); err != nil {
-		return nil, err
-	}
-	return out.Data, nil
+	return graphPageData[GraphInsight](
+		ctx, c, path, token, q, maxMetaInsightPages, maxMetaInsights,
+	)
 }
 
 // ============================================================================
 // Helpers de transporte e parsing
 // ============================================================================
 
-// getJSON executa GET {base}{path}?{q}&access_token=... e decodifica em dst.
+// graphPageData percorre apenas cursores opacos devolvidos pela Graph e sempre
+// recompõe a próxima chamada sobre o mesmo host/path server-side. O campo
+// paging.next nunca é seguido diretamente: além de poder carregar token na URL,
+// confiar nessa URL permitiria SSRF se o provider/proxy fosse comprometido.
+func graphPageData[T any](
+	ctx context.Context,
+	client *MetaClient,
+	path, token string,
+	query url.Values,
+	maxPages, maxItems int,
+) ([]T, error) {
+	if client == nil || maxPages <= 0 || maxItems <= 0 {
+		return nil, fmt.Errorf("meta graph: paginacao invalida")
+	}
+	pageQuery := cloneURLValues(query)
+	items := make([]T, 0)
+	seenCursors := make(map[string]struct{})
+	for pageNumber := 0; pageNumber < maxPages; pageNumber++ {
+		var page metaPage[T]
+		if err := client.getJSON(ctx, path, token, pageQuery, &page); err != nil {
+			return nil, err
+		}
+		if len(page.Data) > maxItems-len(items) {
+			return nil, fmt.Errorf("meta graph: limite seguro de itens excedido")
+		}
+		items = append(items, page.Data...)
+		if strings.TrimSpace(page.Paging.Next) == "" {
+			return items, nil
+		}
+		after := strings.TrimSpace(page.Paging.Cursors.After)
+		if after == "" || len(after) > maxMetaPagingCursorLength {
+			return nil, fmt.Errorf("meta graph: cursor de paginacao invalido")
+		}
+		if _, repeated := seenCursors[after]; repeated {
+			return nil, fmt.Errorf("meta graph: cursor de paginacao repetido")
+		}
+		seenCursors[after] = struct{}{}
+		pageQuery.Set("after", after)
+	}
+	return nil, fmt.Errorf("meta graph: limite seguro de paginas excedido")
+}
+
+func cloneURLValues(input url.Values) url.Values {
+	out := make(url.Values, len(input))
+	for key, values := range input {
+		out[key] = append([]string(nil), values...)
+	}
+	return out
+}
+
+// getJSON executa GET {base}{path}?{q} e decodifica em dst. O token segue no
+// header Authorization para nao vazar em URL, proxy ou access log.
 func (c *MetaClient) getJSON(ctx context.Context, path, token string, q url.Values, dst any) error {
-	q.Set("access_token", token)
 	endpoint := c.base + path + "?" + q.Encode()
 	// G704 (gosec): falso-positivo. O host vem de c.base (META_ADS_GRAPH_BASE ou
 	// o default constante), nunca de input do usuario; path/query sao fixos no
@@ -154,6 +215,7 @@ func (c *MetaClient) getJSON(ctx context.Context, path, token string, q url.Valu
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.http.Do(req) //nolint:gosec // host de config confiavel, nao de input
 	if err != nil {
 		return err

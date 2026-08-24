@@ -215,6 +215,27 @@ Ambiente esperado:
   separadamente o contrato de `platform/jobs`; rajadas de insights nunca disputam claim/worker
   com publicacoes e nenhuma lane reutiliza `messaging.outbox`.
 
+## Assistente 360 (migrations 0282-0284 e 0287)
+
+- `calendar.chat_conversations.entry_surface` registra somente a origem imutavel
+  `calendar|meta_ads|global`; nao concede modulo ou permissao.
+- `calendar.chat_messages.resources` guarda no maximo 20 snapshots read-only sanitizados. O LLM
+  devolve apenas IDs prefixados e o Go cruza com um registry account/client-scoped; URL/titulo livre
+  do modelo nunca e persistido.
+- `automation.omni_chat_configs.credential_id` e
+  `queue.attendance_analysis_configs.(account_id, credential_id)` possuem FKs para
+  `messaging.ai_credentials` com `ON DELETE RESTRICT NOT VALID`. A restricao protege novas
+  referencias e deletes sem varrer/corrigir automaticamente legado anterior ao rollout.
+- `calendar.chat_proposal_executions` e a fonte autoritativa de confirmacao dos cards Calendar. O JSON
+  em `chat_messages.proposals` e apenas projecao; receipt, efeito PostgreSQL suportado e `accepted` devem
+  compartilhar a mesma transacao. A unicidade `(account_id,message_id,proposal_id)` e as FKs compostas
+  mensagem+conversa+conta sao obrigatorias. Update/delete exigem target UUID, snapshot/before-hash e versao
+  quando aplicavel; kinds sem garantia atomica ficam fail-closed, nunca voltam a mutacao pelo front.
+- `calendar.chat_ask_requests` deduplica `/ask` por conta+ator+chave e armazena hash/snapshot para replay
+  exato. `requested_conversation_id`/`conversation_id` ficam deliberadamente sem FK para o receipt
+  sobreviver ao delete. Uma chave em `executing`/`unknown` nunca pode ser reclamada automaticamente;
+  hash diferente sempre conflita.
+
 ## Omnichannel CRM intelligence (migration 0236)
 
 - `messaging.contact_intelligence` e uma extensao 1:1 de `messaging.contacts`, sempre com
@@ -296,3 +317,58 @@ Ambiente esperado:
   sobreposicao util de 2,5 segundos, retry/lease independentes e merge em
   `attendance_recordings.live_transcript_text`. O texto integral produzido no
   encerramento continua autoritativo e e o unico enviado para analise.
+
+## Meta Ads OAuth (migration 0285)
+
+- `meta_ads.oauth_states` vincula cada inicio de Facebook Login a uma `account_id`
+  e ao usuario autenticado que iniciou o fluxo.
+- Somente `SHA-256(state)` e persistido; state bruto, authorization code, app secret
+  e access token nunca entram no banco dessa autorizacao efemera.
+- `expires_at` limita o state a 10 minutos e `consumed_at` e preenchido por UPDATE
+  atomico; expirado, inexistente e reutilizado fecham com o mesmo resultado.
+
+## Meta Ads action proposals (migration 0286)
+
+- `meta_ads.action_policies` pertence a conta dona da ad account e guarda caps monetarios
+  `numeric(15,2)` + gates de create/duplicate/resume. Sem linha/cap, a operacao financeira fecha.
+- `meta_ads.action_proposals.account_id` e o tenant autenticado que visualiza/confirma;
+  `resource_account_id` e a dona da conexao Graph e possui FK `ON DELETE RESTRICT`.
+- Proposta tem payload objeto canonico, hash e idempotencia por tenant. Confirmacao e unica por
+  tenant, `attempt_count <= 1` e lifecycle `pending|executing|succeeded|failed|unknown`.
+- `target_campaign_id`/Meta ID sao snapshots deliberadamente sem FK para o cache: disconnect nao
+  apaga auditoria. O service revalida viewer, resource owner, ad account e campanha antes do write.
+- `action_proposal_events` nao possui endpoint de update/delete. O cascade ocorre somente junto ao
+  lifecycle administrativo da proposta/account; operacao comum e append-only.
+
+## Meta Ads action execution guards (migrations 0290/0291)
+
+- `connections.revision` identifica a versao exata do token; `ad_accounts.is_current` e
+  `campaigns.is_current` tornam snapshots antigos inelegiveis sem apagar auditoria.
+- A proposta 0290 guarda hashes/snapshots de revision, mapping cliente, policy (moeda/caps/flags) e
+  campanha (`synced_at`, status, nome e budgets). Legado fica na versao 0 e falha fechado.
+- O claim atomico persiste `claimed_connection_id/revision` iguais ao snapshot; drift termina
+  `failed/proposal_stale` antes de consumir a unica tentativa.
+- Rotacao e delete de connection usam o mesmo advisory lock account-scoped do lease de execucao.
+  Token expirado ou revision divergente nao e decifrado para Graph. Budget executavel e BRL-only.
+
+## Meta Ads Instagram post -> anúncio (migrations 0293/0294)
+
+- A 0293 estende a constraint BRL/policy snapshot a `create_campaign` com budget.
+- A 0294 adiciona `promote_instagram_post` e a tabela
+  `meta_ads.action_proposal_steps`, filha tenant-scoped da proposal.
+- Existe no máximo um receipt por `(account_id, proposal_id, step)` para
+  `campaign|ad_set|creative|ad`; request hash divergente fecha com conflito.
+- `executing` sem receipt terminal e `unknown` impedem repetir POST externo. Sucesso
+  persiste o ID Meta; falha/unknown guardam somente erro sanitizado e snapshot bounded.
+
+## Meta Ads Page/Instagram -> cliente (migration 0288)
+
+- `meta_ads.instagram_identity_client_mappings` guarda somente a atribuicao de uma identidade
+  Graph (`ig_user_id + page_id`) a uma account-cliente; token, post e payload externo ficam fora.
+- `account_id` e a conta-agencia dona da conexao. A FK composta
+  `(account_id, connection_id)` impede apontar para conexao de outro tenant e apaga os vinculos ao
+  desconectar; `client_account_id` usa `ON DELETE RESTRICT` para exigir desvinculo explicito.
+- Os dois IDs externos sao unicos por owner e possuem checks numericos/tamanho. A transacao do store
+  repete agencia ativa, cliente ativo nao-agencia e mesma organizacao antes do insert.
+- Em client scope, a leitura nunca confia somente nessa tabela: cruza o par persistido com as
+  identidades atuais retornadas pela Graph. Par stale ou ausente nao libera posts.

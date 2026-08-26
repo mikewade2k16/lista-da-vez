@@ -34,6 +34,13 @@ if [ "${#rel_files[@]}" -eq 0 ]; then
 fi
 
 cd "$web_root"
+# A configuracao flat do projeto estende o arquivo gerado pelo modulo @nuxt/eslint.
+# Caches podem ser removidos entre builds; regenere apenas quando ele estiver ausente.
+if [ ! -f .nuxt/eslint.config.mjs ]; then
+  echo "Preparing Nuxt ESLint config..."
+  node node_modules/@nuxt/cli/bin/nuxi.mjs prepare
+fi
+
 # Nao use `npx eslint` aqui: quando node_modules foi criado no container,
 # web/node_modules/.bin/eslint e um symlink Linux quebrado no host Windows.
 # Chamar o entrypoint com Node funciona nos dois ambientes.

@@ -4,7 +4,7 @@ import {
   applyRemoteStoreData,
   applySettingsBundleToRuntime,
   buildSettingsBundleFromState,
-} from './runtime-remote-state'
+} from '~/domain/runtime-remote-state'
 
 // Opcoes de buildFallbackSettingsBundle: preservar ou descartar settings atuais.
 interface FallbackSettingsOptions {
@@ -46,7 +46,10 @@ interface HydrateRuntimeOptions {
 // runtime-remote.test, etc.) importam estas funcoes de '~/utils/runtime-remote'.
 // A logica de normalizacao/estado vive agora em runtime-remote-normalize.ts e
 // runtime-remote-state.ts; este arquivo concentra fetch + hidratacao remota.
-export { applyOperationSnapshotToState, applySettingsBundleToState } from './runtime-remote-state'
+export {
+  applyOperationSnapshotToState,
+  applySettingsBundleToState,
+} from '~/domain/runtime-remote-state'
 export { applyRemoteStoreData, applySettingsBundleToRuntime, buildSettingsBundleFromState }
 
 const SETTINGS_LOAD_STATE_LOADED = 'loaded'

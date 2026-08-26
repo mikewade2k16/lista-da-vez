@@ -11,7 +11,7 @@ import {
   normalizeOptions,
   normalizeProducts,
   resolveOperationRoster,
-} from './runtime-remote-normalize'
+} from '~/utils/runtime-remote-normalize'
 
 // Transformacoes que aplicam o payload remoto (settings/consultants/snapshot)
 // sobre o estado do runtime store, sempre devolvendo estado novo (imutavel).

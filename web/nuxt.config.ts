@@ -1,3 +1,5 @@
+import { createLogger } from 'vite'
+
 const shouldEnableNuxtDevtools = process.env.NUXT_DEVTOOLS === 'true'
 const shouldGenerateSourceMaps = process.env.NODE_ENV !== 'production'
 // PWA estacionado por decisao de produto. So volta a registrar manifest/SW
@@ -17,10 +19,76 @@ const watcherIgnorePatterns = [
   '**/*.log',
 ]
 const watcherInterval = Number(process.env.CHOKIDAR_INTERVAL || 350)
+const ignoredProductionSourcemapPlugins = [
+  '@tailwindcss/vite:generate:build',
+  'nuxt:module-preload-polyfill',
+]
+const viteLogger = createLogger()
+const defaultViteWarn = viteLogger.warn.bind(viteLogger)
+const defaultViteWarnOnce = viteLogger.warnOnce.bind(viteLogger)
+
+function isIgnoredProductionBuildWarning(message: string) {
+  if (shouldGenerateSourceMaps) {
+    return false
+  }
+
+  const isKnownSourcemapNoise =
+    message.includes('Sourcemap is likely to be incorrect') &&
+    ignoredProductionSourcemapPlugins.some((pluginName) => message.includes(pluginName))
+  const isVueUseAnnotationNoise =
+    message.includes('node_modules/@vueuse/core/dist/index.js') &&
+    message.includes('annotation that Rollup cannot interpret')
+
+  return isKnownSourcemapNoise || isVueUseAnnotationNoise
+}
+
+function isIgnoredNitroBuildWarning(message: string) {
+  const isKnownWindowsCacheDriverResolutionNoise =
+    process.platform === 'win32' &&
+    message.includes('@nuxt/nitro-server/dist/runtime/utils/cache-driver.js') &&
+    message.includes('virtual:#nitro-internal-virtual/storage') &&
+    message.includes('could not be resolved')
+  const isKnownVendorCircularDependency =
+    message.startsWith('Circular dependency: ') &&
+    message
+      .slice('Circular dependency: '.length)
+      .split(' -> ')
+      .every(
+        (moduleId) =>
+          moduleId.startsWith('node_modules/nitropack/dist/runtime/') ||
+          moduleId.startsWith('node_modules/@nuxt/') ||
+          moduleId.startsWith('\0virtual:#nitro-internal-virtual/') ||
+          moduleId === '\0virtual:#imports',
+      )
+
+  return (
+    isKnownWindowsCacheDriverResolutionNoise ||
+    isKnownVendorCircularDependency ||
+    isIgnoredProductionBuildWarning(message)
+  )
+}
+
+viteLogger.warn = (message, options) => {
+  if (!isIgnoredProductionBuildWarning(message)) {
+    defaultViteWarn(message, options)
+  }
+}
+viteLogger.warnOnce = (message, options) => {
+  if (!isIgnoredProductionBuildWarning(message)) {
+    defaultViteWarnOnce(message, options)
+  }
+}
 
 export default defineNuxtConfig({
   extends: ['./layers/core', './layers/queue', './layers/tasks', './layers/finance'],
   compatibilityDate: '2026-03-23',
+  hooks: {
+    // Modulos do Nuxt substituem o logger durante o setup. Aplicar no hook final
+    // garante o mesmo filtro no client e no server sem silenciar o logger inteiro.
+    'vite:extendConfig'(config) {
+      config.customLogger = viteLogger
+    },
+  },
   devtools: {
     enabled: shouldEnableNuxtDevtools,
   },
@@ -30,6 +98,17 @@ export default defineNuxtConfig({
   sourcemap: {
     server: shouldGenerateSourceMaps,
     client: shouldGenerateSourceMaps,
+  },
+  nitro: {
+    rollupConfig: {
+      // O Nitro usa uma instancia propria do Rollup e nao herda o logger do Vite.
+      // Filtramos somente assinaturas conhecidas; qualquer outro aviso continua visivel.
+      onwarn(warning, defaultHandler) {
+        if (!isIgnoredNitroBuildWarning(warning.message)) {
+          defaultHandler(warning)
+        }
+      },
+    },
   },
   // O painel inteiro e SPA (client-rendered): cada pagina autenticada e ssr:false.
   // Manter TODA rota nova de painel aqui — uma rota fora da lista roda SSR e o
@@ -113,6 +192,8 @@ export default defineNuxtConfig({
     collections: ['lucide'],
   },
   vite: {
+    // Tambem define o logger antes dos modulos; o hook acima o reaplica depois.
+    customLogger: viteLogger,
     optimizeDeps: {
       include: [
         '@tiptap/extension-image',

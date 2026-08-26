@@ -1,6 +1,6 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import { useCalendarStore } from '~/stores/calendar'
-import { shortcutComboFromEvent } from '~/utils/calendar-config'
+import { shortcutComboFromEvent } from '~/domain/calendar/calendar-config'
 
 // Atalhos de teclado do calendario/assistente (WAVE 11). O MAPA (acao -> tecla) e DADO da
 // config por conta (config.shortcuts, editavel na aba Aparencia); aqui so a execucao:

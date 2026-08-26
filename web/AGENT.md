@@ -41,6 +41,21 @@ o dev continua com ambos. O painel e SPA e os maps nao sao publicados, enquanto
 o bundle server com Tailwind/Vue multiplicava RAM e podia ser encerrado pelo host.
 O target `build` do Dockerfile fixa `NODE_ENV=production` antes de avaliar o config;
 sem isso o CLI normaliza a variavel tarde demais e os maps voltam a ser gerados.
+O `.husky/pre-push` deve fazer o mesmo antes do build nativo; definir a variavel
+somente depois de carregar o Nuxt reativa sourcemaps, aumenta o uso de disco/RAM e
+repete centenas de warnings `@tailwindcss/vite:generate:build`.
+Como Tailwind v4 e `nuxt:module-preload-polyfill` ainda emitem o aviso mesmo com o
+artefato final sem maps, o `customLogger` filtra somente essas duas assinaturas em
+producao. O mesmo filtro cobre apenas a anotacao `PURE` mal posicionada do pacote
+`@vueuse/core`, que o Rollup remove com seguranca; o hook `vite:extendConfig`
+reaplica o logger depois do setup dos modulos.
+O Nitro possui um Rollup proprio e nao herda esse logger; seu `onwarn` repete o
+mesmo filtro estrito e, apenas no build nativo do Windows, ignora a resolucao por
+`file://` do `cache-driver.js` virtual que e resolvida normalmente no artefato Linux.
+Tambem ignora ciclos formados exclusivamente por runtime de `nitropack`, pacotes
+`@nuxt` e modulos virtuais internos; se qualquer modulo do projeto entrar no ciclo,
+o warning permanece visivel.
+Nao ampliar nenhum dos filtros: warnings de outros plugins continuam acionaveis.
 Nao reativar maps de producao sem ajustar memoria do runner e publicar/armazenar os
 artefatos de forma intencional.
 

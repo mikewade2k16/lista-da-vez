@@ -181,7 +181,13 @@ Use com parcimonia — o ponto do hook e evitar regressao silenciosa.
 O pre-push continua exigindo o build de producao do web. Como o bundle atual pode ultrapassar
 o heap padrao de aproximadamente 4 GB do Node no Windows, `.husky/pre-push` aplica 8192 MB somente
 ao processo do hook. Para uma maquina com outro limite, use `OMNI_WEB_BUILD_HEAP_MB` sem remover o
-build obrigatorio.
+build obrigatorio. O hook tambem exporta `NODE_ENV=production` antes de iniciar o Nuxt: essa ordem
+mantem sourcemaps de producao desligados no build nativo, reduz disco/RAM e evita os warnings
+repetitivos de sourcemap do Tailwind. `DEP0155` e suprimido de forma pontual porque hoje vem do
+resolver de dependencias Nuxt/VueUse; outros warnings do Node continuam visiveis.
+Antes de compilar, o hook exige 3072 MB livres por padrao para evitar uma espera longa seguida
+de `ENOSPC`; `OMNI_WEB_BUILD_MIN_FREE_MB` permite ajustar o limite conscientemente sem remover
+a verificacao.
 
 ## Validacao minima
 

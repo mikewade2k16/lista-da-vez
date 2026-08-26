@@ -10,7 +10,7 @@ import {
   CONTENT_TYPES,
   CONTENT_STATUSES,
   CONTENT_PRIORITIES,
-  type StatusTone as SharedStatusTone,
+  type StatusTone,
 } from '~/utils/content-taxonomy'
 
 export type RgbTriplet = readonly [number, number, number]
@@ -28,8 +28,6 @@ export type CalendarEventStatus =
 export type CalendarPriority = 'alta' | 'media' | 'baixa'
 
 // StatusTone e a taxonomia sao fonte UNICA em ~/utils/content-taxonomy (compartilhada com o tasks).
-export type StatusTone = SharedStatusTone
-
 export type CalendarView = 'month' | 'week'
 
 export type WeekStart = 'sunday' | 'monday'
@@ -179,7 +177,7 @@ export {
   type CalendarTasksConfig,
   type CalendarTranscribeProvider,
   type CalendarWhiteLabel,
-} from '~/utils/calendar-config'
+} from '~/domain/calendar/calendar-config'
 
 // Perfil estrategico do cliente (contrato C3) vive em calendar-profile.ts (limite
 // de 450 linhas/arquivo). Re-exportado aqui para manter a fonte unica de import.
@@ -190,7 +188,7 @@ export {
   type CalendarClientProfile,
   type CalendarClientProfileExtra,
   type CalendarClientProfileIndexItem,
-} from '~/utils/calendar-profile'
+} from '~/domain/calendar/calendar-profile'
 
 // Plano de IA do mes (contrato C4) vive em calendar-ai.ts (limite de 450 linhas/
 // arquivo). Re-exportado aqui para manter a fonte unica de import `~/utils/calendar`.
@@ -208,7 +206,7 @@ export {
   type CalendarAiPlanIndexItem,
   type CalendarAiPlanPillar,
   type CalendarAiPlanStatus,
-} from '~/utils/calendar-ai'
+} from '~/domain/calendar/calendar-ai'
 
 /** Feriado/data comemorativa (vem do back, calculado). */
 export interface CalendarHoliday {

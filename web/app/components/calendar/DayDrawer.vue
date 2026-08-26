@@ -21,8 +21,8 @@ import {
   type CalendarPerson,
   type CalendarPriority,
   type RgbTriplet,
-  type StatusTone,
 } from '~/utils/calendar'
+import type { StatusTone } from '~/utils/content-taxonomy'
 
 const FALLBACK_COLOR: RgbTriplet = [148, 163, 184]
 

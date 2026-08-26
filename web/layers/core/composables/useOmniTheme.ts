@@ -20,7 +20,7 @@ import {
   type OmniThemeVariableGroup,
   type OmniThemeVariableKind,
   type ThemeVars,
-} from './omni-theme-catalog'
+} from '../domain/theme/omni-theme-catalog'
 
 // Re-export para os consumidores que importam estes símbolos via useOmniTheme
 // (o catálogo passou a ser a fonte, mas mantemos o ponto de import estável).

@@ -12,6 +12,8 @@ const {
   responsibleOptionsAvatar,
   typeOptions,
   BOARD_GROUP_OPTIONS,
+  CLIENT_SCOPE_OPTIONS,
+  TASK_SOURCE_OPTIONS,
   FIELD_DEFS,
   filterSwitchDefs,
   cardFieldSwitchDefs,
@@ -22,6 +24,10 @@ const {
   deleteProject,
   settingsSaving,
   saveProjectSettings,
+  clientOptionsForSettings,
+  clientScopeSelectionInvalid,
+  sourceProjectOptions,
+  taskSourceSelectionInvalid,
 } = ctx
 </script>
 
@@ -47,6 +53,53 @@ const {
           />
         </div>
 
+        <div
+          class="tasks-page__settings-group rounded-[var(--radius-sm)] border border-[rgb(var(--border))] p-3"
+        >
+          <p class="tasks-page__settings-group-title mb-1 text-sm font-semibold">
+            Tasks exibidas nesta pagina
+          </p>
+          <p class="mb-3 text-xs text-[rgb(var(--muted))]">
+            Por padrao, uma pagina nova fica vazia e mostra apenas as tasks criadas nela. Voce pode
+            inclui-la como uma visualizacao de outras paginas sem duplicar ou mover as tasks.
+          </p>
+          <div class="grid gap-3">
+            <OmniSelectMenuInput
+              v-model="projectSettingsDraft.taskSourceMode"
+              :items="TASK_SOURCE_OPTIONS"
+              placeholder="Origem das tasks"
+              :searchable="false"
+              :full-content-width="true"
+              item-display-mode="text"
+              color="neutral"
+              variant="none"
+              :highlight="false"
+              :badge-mode="true"
+              option-edit-mode="none"
+            />
+            <div v-if="projectSettingsDraft.taskSourceMode === 'selected'" class="space-y-1">
+              <OmniSelectMenuInput
+                v-model="projectSettingsDraft.taskSourceBoardIds"
+                :items="sourceProjectOptions"
+                placeholder="Selecione uma ou mais paginas"
+                :multiple="true"
+                :searchable="true"
+                :full-content-width="true"
+                item-display-mode="text"
+                color="neutral"
+                variant="none"
+                :highlight="false"
+                :badge-mode="true"
+                clear
+                option-edit-mode="none"
+              />
+              <p v-if="taskSourceSelectionInvalid" class="text-xs text-error">
+                Selecione pelo menos uma pagina de origem para usar este modo.
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div class="tasks-page__settings-field space-y-1">
           <p
             class="tasks-page__settings-label text-xs font-semibold uppercase tracking-wide text-[rgb(var(--muted))]"
@@ -59,6 +112,53 @@ const {
             :rows="2"
             placeholder="Descreva o uso desta pagina"
           />
+        </div>
+
+        <div
+          class="tasks-page__settings-group rounded-[var(--radius-sm)] border border-[rgb(var(--border))] p-3"
+        >
+          <p class="tasks-page__settings-group-title mb-1 text-sm font-semibold">
+            Clientes desta pagina
+          </p>
+          <p class="mb-3 text-xs text-[rgb(var(--muted))]">
+            Escolha quais clientes e demandas podem aparecer neste board. A alteracao nao exclui
+            tasks.
+          </p>
+          <div class="grid gap-3">
+            <OmniSelectMenuInput
+              v-model="projectSettingsDraft.clientScopeMode"
+              :items="CLIENT_SCOPE_OPTIONS"
+              placeholder="Escopo de clientes"
+              :searchable="false"
+              :full-content-width="true"
+              item-display-mode="text"
+              color="neutral"
+              variant="none"
+              :highlight="false"
+              :badge-mode="true"
+              option-edit-mode="none"
+            />
+            <div v-if="projectSettingsDraft.clientScopeMode === 'selected'" class="space-y-1">
+              <OmniSelectMenuInput
+                v-model="projectSettingsDraft.clientScopeIds"
+                :items="clientOptionsForSettings"
+                placeholder="Selecione um ou mais clientes"
+                :multiple="true"
+                :searchable="true"
+                :full-content-width="true"
+                item-display-mode="text"
+                color="neutral"
+                variant="none"
+                :highlight="false"
+                :badge-mode="true"
+                clear
+                option-edit-mode="none"
+              />
+              <p v-if="clientScopeSelectionInvalid" class="text-xs text-error">
+                Selecione pelo menos um cliente para usar este modo.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div class="tasks-page__settings-field space-y-1">
@@ -352,6 +452,7 @@ const {
             label="Salvar"
             color="primary"
             :loading="settingsSaving"
+            :disabled="clientScopeSelectionInvalid || taskSourceSelectionInvalid"
             @click="saveProjectSettings"
           />
         </div>

@@ -32,6 +32,7 @@ import {
 } from '../utils/select-display'
 import { normalizeTaskChecklist } from '../utils/task-checklist'
 import { isTaskUpdatedEventAlreadyApplied } from '../utils/realtime-refresh'
+import { taskClientVisibleInScope } from '../utils/client-scope'
 import { uploadTaskVideoFile, type TaskVideoUploadProgress } from '../utils/task-video-upload'
 import { useTasksWorkspace } from './useTasksWorkspace'
 import { useTimeTracking } from './useTimeTracking'
@@ -47,6 +48,8 @@ import type {
   TaskChecklistItem,
   TaskItem,
   TaskPriority,
+  TaskProjectClientScopeMode,
+  TaskProjectTaskSourceMode,
   TaskProjectItem,
   TaskVideoItem,
   TaskCalendarMediaItem,
@@ -104,6 +107,16 @@ export function useTasksPageContext() {
     { label: 'Cliente', value: 'clientId' },
     { label: 'Tipo', value: 'type' },
     { label: 'Prioridade', value: 'priority' },
+  ]
+  const CLIENT_SCOPE_OPTIONS: OmniSelectOption[] = [
+    { label: 'Somente clientes ativos', value: 'active' },
+    { label: 'Todos os clientes', value: 'all' },
+    { label: 'Selecionar clientes', value: 'selected' },
+  ]
+  const TASK_SOURCE_OPTIONS: OmniSelectOption[] = [
+    { label: 'Somente tasks desta pagina', value: 'own' },
+    { label: 'Tasks de todas as paginas', value: 'all' },
+    { label: 'Selecionar paginas de origem', value: 'selected' },
   ]
   const FIELD_DEFS = [
     { key: 'title', label: 'Titulo' },
@@ -198,6 +211,10 @@ export function useTasksPageContext() {
     defaults: TaskProjectItem['defaults']
     filters: TaskProjectItem['filters']
     cardFields: TaskProjectItem['cardFields']
+    clientScopeMode: TaskProjectClientScopeMode
+    clientScopeIds: string[]
+    taskSourceMode: TaskProjectTaskSourceMode
+    taskSourceBoardIds: string[]
   }>({
     name: '',
     description: '',
@@ -223,6 +240,10 @@ export function useTasksPageContext() {
       priority: true,
       createdAt: false,
     },
+    clientScopeMode: 'active',
+    clientScopeIds: [],
+    taskSourceMode: 'own',
+    taskSourceBoardIds: [],
   })
 
   const columnDraft = reactive({ id: '', label: '', color: 'indigo' })
@@ -393,13 +414,51 @@ export function useTasksPageContext() {
   const projectOptions = computed(() =>
     tasksWorkspace.projects.value.map((p) => ({ label: p.name, value: p.id })),
   )
+  const sourceProjectOptions = computed(() =>
+    tasksWorkspace.projects.value
+      .filter((project) => project.id !== activeProject.value?.id)
+      .map((project) => ({ label: project.name, value: project.id })),
+  )
+  function tasksVisibleInProject(projectId: string) {
+    const configuredIds = tasksWorkspace.visibleTaskIdsByBoard.value[projectId]
+    if (!configuredIds) {
+      return tasksWorkspace.tasks.value.filter((task) => task.projectId === projectId)
+    }
+    const visibleIds = new Set(configuredIds)
+    return tasksWorkspace.tasks.value.filter((task) => visibleIds.has(task.id))
+  }
   const isPlatformAdmin = computed(() => String(auth.role || '') === 'platform_admin')
   // Clientes reais de core.accounts (/v1/tenants/clients); sem marcador de mock (WAVE 6: mock removido).
-  const clientOptions = computed(() =>
+  const allClientOptions = computed(() =>
     tasksClient.clientOptions.map((c) => ({
       label: c.label,
       value: c.value,
+      active: c.active,
     })),
+  )
+  const clientOptions = computed(() => {
+    const project = activeProject.value
+    const mode = project?.clientScopeMode || 'active'
+    const selectedClientIds = project?.clientScopeIds || []
+    return allClientOptions.value.filter((client) =>
+      taskClientVisibleInScope(client, mode, selectedClientIds),
+    )
+  })
+  const clientOptionsForSettings = computed(() =>
+    allClientOptions.value.map((client) => ({
+      label: client.active ? client.label : `${client.label} (inativo)`,
+      value: client.value,
+    })),
+  )
+  const clientScopeSelectionInvalid = computed(
+    () =>
+      projectSettingsDraft.clientScopeMode === 'selected' &&
+      projectSettingsDraft.clientScopeIds.length === 0,
+  )
+  const taskSourceSelectionInvalid = computed(
+    () =>
+      projectSettingsDraft.taskSourceMode === 'selected' &&
+      projectSettingsDraft.taskSourceBoardIds.length === 0,
   )
   const currentUserName = computed(
     () =>
@@ -648,9 +707,7 @@ export function useTasksPageContext() {
       currentUserName.value,
       ...directoryUserLabels.value,
       ...project.responsibles,
-      ...tasksWorkspace.tasks.value
-        .filter((t) => t.projectId === project.id)
-        .map((t) => t.responsible),
+      ...tasksVisibleInProject(project.id).map((task) => task.responsible),
     ])
   })
   const involvedOptions = computed<OmniSelectOption[]>(() => {
@@ -660,9 +717,10 @@ export function useTasksPageContext() {
       currentUserName.value,
       ...directoryUserLabels.value,
       ...project.responsibles,
-      ...tasksWorkspace.tasks.value
-        .filter((t) => t.projectId === project.id)
-        .flatMap((t) => [t.responsible, ...(Array.isArray(t.involved) ? t.involved : [])]),
+      ...tasksVisibleInProject(project.id).flatMap((task) => [
+        task.responsible,
+        ...(Array.isArray(task.involved) ? task.involved : []),
+      ]),
     ])
   })
   const typeOptions = computed<OmniSelectOption[]>(() => {
@@ -678,7 +736,7 @@ export function useTasksPageContext() {
     const sharedValues = new Set(CONTENT_TYPES.map((t) => t.value))
     const legacy = uniqueValues([
       ...project.types,
-      ...tasksWorkspace.tasks.value.filter((t) => t.projectId === project.id).map((t) => t.type),
+      ...tasksVisibleInProject(project.id).map((task) => task.type),
     ]).filter((v) => v && !sharedValues.has(v))
     return [
       ...shared,
@@ -736,7 +794,7 @@ export function useTasksPageContext() {
   const projectTasks = computed(() => {
     const project = activeProject.value
     if (!project) return []
-    return tasksWorkspace.tasks.value.filter((t) => t.projectId === project.id)
+    return tasksVisibleInProject(project.id)
   })
 
   const filteredTasks = computed(() => {
@@ -1019,6 +1077,10 @@ export function useTasksPageContext() {
         clientFromSession: true,
         showCreatedAt: false,
       }
+      projectSettingsDraft.clientScopeMode = 'active'
+      projectSettingsDraft.clientScopeIds = []
+      projectSettingsDraft.taskSourceMode = 'own'
+      projectSettingsDraft.taskSourceBoardIds = []
       return
     }
     const board = projectView(project, 'board')
@@ -1050,6 +1112,10 @@ export function useTasksPageContext() {
     projectSettingsDraft.filters = { ...project.filters }
     projectSettingsDraft.cardFields = { ...project.cardFields }
     projectSettingsDraft.defaults = { ...project.defaults }
+    projectSettingsDraft.clientScopeMode = project.clientScopeMode
+    projectSettingsDraft.clientScopeIds = [...project.clientScopeIds]
+    projectSettingsDraft.taskSourceMode = project.taskSourceMode
+    projectSettingsDraft.taskSourceBoardIds = [...project.taskSourceBoardIds]
   }
 
   function clearTaskVideoDrafts() {
@@ -1756,10 +1822,11 @@ export function useTasksPageContext() {
 
   async function onCreateProject(option: OmniSelectOption) {
     const name = normalizeText(option.label || option.value, 140)
-    if (!name) return
+    if (!name) return null
     const created = await tasksWorkspace.createProject(name)
     if (created) hydrateProjectDraft(created)
     Object.assign(filters, DEFAULT_FILTERS)
+    return created
   }
 
   function columnsFromStatusDraft() {
@@ -1783,7 +1850,7 @@ export function useTasksPageContext() {
 
   async function saveProjectSettings() {
     const project = activeProject.value
-    if (!project) return
+    if (!project || clientScopeSelectionInvalid.value || taskSourceSelectionInvalid.value) return
     settingsSaving.value = true
     const currentBoardView = projectView(project, 'board')
     const currentTableView = projectView(project, 'table')
@@ -1816,6 +1883,10 @@ export function useTasksPageContext() {
         filters: { ...projectSettingsDraft.filters },
         cardFields: { ...projectSettingsDraft.cardFields },
         defaults: { ...projectSettingsDraft.defaults },
+        clientScopeMode: projectSettingsDraft.clientScopeMode,
+        clientScopeIds: [...projectSettingsDraft.clientScopeIds],
+        taskSourceMode: projectSettingsDraft.taskSourceMode,
+        taskSourceBoardIds: [...projectSettingsDraft.taskSourceBoardIds],
       })
       if (updated) {
         hydrateProjectDraft(updated)
@@ -1823,6 +1894,12 @@ export function useTasksPageContext() {
         if (!updated.filters.responsible) filters.responsible = ''
         if (!updated.filters.type) filters.type = ''
         if (!updated.filters.client) filters.clientId = ''
+        if (
+          filters.clientId &&
+          !clientOptions.value.some((client) => client.value === filters.clientId)
+        ) {
+          filters.clientId = ''
+        }
       }
       projectSettingsOpen.value = false
     } finally {
@@ -3215,6 +3292,8 @@ export function useTasksPageContext() {
     COLUMN_COLOR_OPTIONS,
     DEFAULT_FILTERS,
     BOARD_GROUP_OPTIONS,
+    CLIENT_SCOPE_OPTIONS,
+    TASK_SOURCE_OPTIONS,
     FIELD_DEFS,
     filterSwitchDefs,
     cardFieldSwitchDefs,
@@ -3257,10 +3336,15 @@ export function useTasksPageContext() {
     taskDraft,
     // computed
     viewerUserType,
+    canManageBoards,
     isPlatformAdmin,
     activeProject,
     projectOptions,
     clientOptions,
+    clientOptionsForSettings,
+    clientScopeSelectionInvalid,
+    sourceProjectOptions,
+    taskSourceSelectionInvalid,
     currentUserName,
     taskEditorCssVars,
     boardSchemaColumns,

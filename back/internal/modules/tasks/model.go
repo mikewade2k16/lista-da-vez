@@ -11,6 +11,12 @@ type Perspective string
 const (
 	PerspectiveAgency       Perspective = "agency"
 	PerspectiveClientViewer Perspective = "client_viewer"
+	ClientScopeAll          string      = "all"
+	ClientScopeActive       string      = "active"
+	ClientScopeSelected     string      = "selected"
+	TaskSourceOwn           string      = "own"
+	TaskSourceAll           string      = "all"
+	TaskSourceSelected      string      = "selected"
 )
 
 type AccessContext struct {
@@ -36,20 +42,24 @@ func (access AccessContext) Has(permission string) bool {
 }
 
 type Board struct {
-	ID              string    `json:"id"`
-	AccountID       string    `json:"accountId,omitempty"`
-	OrganizationID  *string   `json:"organizationId,omitempty"`
-	Slug            string    `json:"slug"`
-	Name            string    `json:"name"`
-	Description     string    `json:"description"`
-	Icon            string    `json:"icon"`
-	Archived        bool      `json:"archived"`
-	CreatedByUserID string    `json:"createdByUserId,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
-	Columns         []Column  `json:"columns,omitempty"`
-	Fields          []Field   `json:"fields,omitempty"`
-	Views           []View    `json:"views,omitempty"`
+	ID                 string    `json:"id"`
+	AccountID          string    `json:"accountId,omitempty"`
+	OrganizationID     *string   `json:"organizationId,omitempty"`
+	Slug               string    `json:"slug"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description"`
+	Icon               string    `json:"icon"`
+	Archived           bool      `json:"archived"`
+	ClientScopeMode    string    `json:"clientScopeMode"`
+	ClientScopeIDs     []string  `json:"clientScopeIds"`
+	TaskSourceMode     string    `json:"taskSourceMode"`
+	TaskSourceBoardIDs []string  `json:"taskSourceBoardIds"`
+	CreatedByUserID    string    `json:"createdByUserId,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
+	Columns            []Column  `json:"columns,omitempty"`
+	Fields             []Field   `json:"fields,omitempty"`
+	Views              []View    `json:"views,omitempty"`
 }
 
 type Column struct {
@@ -240,12 +250,24 @@ type CreateBoardInput struct {
 }
 
 type UpdateBoardInput struct {
-	ID          string
-	Name        *string `json:"name"`
-	Slug        *string `json:"slug"`
-	Description *string `json:"description"`
-	Icon        *string `json:"icon"`
-	Archived    *bool   `json:"archived"`
+	ID                 string
+	Name               *string   `json:"name"`
+	Slug               *string   `json:"slug"`
+	Description        *string   `json:"description"`
+	Icon               *string   `json:"icon"`
+	Archived           *bool     `json:"archived"`
+	ClientScopeMode    *string   `json:"clientScopeMode"`
+	ClientScopeIDs     *[]string `json:"clientScopeIds"`
+	TaskSourceMode     *string   `json:"taskSourceMode"`
+	TaskSourceBoardIDs *[]string `json:"taskSourceBoardIds"`
+}
+
+type UserPreferences struct {
+	LastBoardID string `json:"lastBoardId"`
+}
+
+type UpdateUserPreferencesInput struct {
+	LastBoardID string `json:"lastBoardId"`
 }
 
 type CreateColumnInput struct {
@@ -362,6 +384,10 @@ type Repository interface {
 	IsAccountMember(ctx context.Context, accountID, userID string) (bool, error)
 	ListPermissionsForUser(ctx context.Context, accountID, userID string) ([]string, error)
 	FindOrganizationIDForAccount(ctx context.Context, accountID string) (*string, error)
+	ValidateBoardClientScope(ctx context.Context, accountID, boardID string, clientIDs []string) error
+	ValidateBoardTaskSources(ctx context.Context, accountID, boardID string, sourceBoardIDs []string) error
+	GetUserPreferences(ctx context.Context, accountID, userID string) (UserPreferences, error)
+	SaveUserPreferences(ctx context.Context, accountID, userID, lastBoardID string) (UserPreferences, error)
 
 	ListBoards(ctx context.Context, access AccessContext) ([]Board, error)
 	GetBoard(ctx context.Context, access AccessContext, boardID string) (Board, error)

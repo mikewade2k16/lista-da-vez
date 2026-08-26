@@ -18,7 +18,9 @@ type txQueryer interface {
 func (repository *PostgresRepository) ListBoards(ctx context.Context, access AccessContext) ([]Board, error) {
 	sql, args := repository.scopedQuery(access.AccountID, `
 		select id::text, account_id::text, organization_id::text, slug, name, description,
-		       icon, archived, created_by_user_id::text, created_at, updated_at
+		       icon, archived, client_scope_mode, client_scope_ids::text[],
+		       task_source_mode, task_source_board_ids::text[],
+		       created_by_user_id::text, created_at, updated_at
 		from tasks.boards
 		where account_id = $1::uuid and archived = false
 		order by updated_at desc, name asc
@@ -44,7 +46,9 @@ func (repository *PostgresRepository) ListBoards(ctx context.Context, access Acc
 func (repository *PostgresRepository) GetBoard(ctx context.Context, access AccessContext, boardID string) (Board, error) {
 	sql, args := repository.scopedQuery(access.AccountID, `
 		select id::text, account_id::text, organization_id::text, slug, name, description,
-		       icon, archived, created_by_user_id::text, created_at, updated_at
+		       icon, archived, client_scope_mode, client_scope_ids::text[],
+		       task_source_mode, task_source_board_ids::text[],
+		       created_by_user_id::text, created_at, updated_at
 		from tasks.boards
 		where account_id = $1::uuid and id = $2::uuid and archived = false
 	`, boardID)
@@ -87,7 +91,9 @@ func (repository *PostgresRepository) CreateBoard(
 			account_id, organization_id, slug, name, description, icon, created_by_user_id
 		) values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::uuid)
 		returning id::text, account_id::text, organization_id::text, slug, name, description,
-		          icon, archived, created_by_user_id::text, created_at, updated_at
+		          icon, archived, client_scope_mode, client_scope_ids::text[],
+		          task_source_mode, task_source_board_ids::text[],
+		          created_by_user_id::text, created_at, updated_at
 	`, organizationID, input.Slug, input.Name, input.Description, input.Icon, createdByUserID)
 
 	board, err := scanBoard(tx.QueryRow(ctx, sql, args...).Scan)
@@ -140,6 +146,14 @@ func (repository *PostgresRepository) CreateBoard(
 }
 
 func (repository *PostgresRepository) UpdateBoard(ctx context.Context, accountID string, input UpdateBoardInput) (Board, error) {
+	var clientScopeIDs any
+	if input.ClientScopeIDs != nil {
+		clientScopeIDs = *input.ClientScopeIDs
+	}
+	var taskSourceBoardIDs any
+	if input.TaskSourceBoardIDs != nil {
+		taskSourceBoardIDs = *input.TaskSourceBoardIDs
+	}
 	sql, args := repository.scopedQuery(accountID, `
 		update tasks.boards
 		   set name = coalesce($3, name),
@@ -147,11 +161,18 @@ func (repository *PostgresRepository) UpdateBoard(ctx context.Context, accountID
 		       description = coalesce($5, description),
 		       icon = coalesce($6, icon),
 		       archived = coalesce($7, archived),
+		       client_scope_mode = coalesce($8, client_scope_mode),
+		       client_scope_ids = coalesce($9::text[]::uuid[], client_scope_ids),
+		       task_source_mode = coalesce($10, task_source_mode),
+		       task_source_board_ids = coalesce($11::text[]::uuid[], task_source_board_ids),
 		       updated_at = now()
 		 where account_id = $1::uuid and id = $2::uuid
 		returning id::text, account_id::text, organization_id::text, slug, name, description,
-		          icon, archived, created_by_user_id::text, created_at, updated_at
-	`, input.ID, input.Name, input.Slug, input.Description, input.Icon, input.Archived)
+		          icon, archived, client_scope_mode, client_scope_ids::text[],
+		          task_source_mode, task_source_board_ids::text[],
+		          created_by_user_id::text, created_at, updated_at
+	`, input.ID, input.Name, input.Slug, input.Description, input.Icon, input.Archived,
+		input.ClientScopeMode, clientScopeIDs, input.TaskSourceMode, taskSourceBoardIDs)
 
 	board, err := scanBoard(repository.pool.QueryRow(ctx, sql, args...).Scan)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -159,6 +180,16 @@ func (repository *PostgresRepository) UpdateBoard(ctx context.Context, accountID
 	}
 	if err != nil {
 		return Board{}, err
+	}
+	return repository.completeUpdatedBoard(ctx, accountID, board)
+}
+
+// completeUpdatedBoard hidrata colunas/fields/views somente enquanto o board continua ativo.
+// GetBoard esconde arquivados por contrato; chama-lo depois de archived=true transformaria uma
+// mutacao concluida em ErrBoardNotFound/404, embora o UPDATE ja tivesse sido persistido.
+func (repository *PostgresRepository) completeUpdatedBoard(ctx context.Context, accountID string, board Board) (Board, error) {
+	if board.Archived {
+		return board, nil
 	}
 	return repository.GetBoard(ctx, AccessContext{AccountID: accountID, Perspective: PerspectiveAgency, IsPlatformAdmin: true}, board.ID)
 }
@@ -460,6 +491,10 @@ func scanBoard(scan func(...any) error) (Board, error) {
 		&board.Description,
 		&board.Icon,
 		&board.Archived,
+		&board.ClientScopeMode,
+		&board.ClientScopeIDs,
+		&board.TaskSourceMode,
+		&board.TaskSourceBoardIDs,
 		&board.CreatedByUserID,
 		&board.CreatedAt,
 		&board.UpdatedAt,

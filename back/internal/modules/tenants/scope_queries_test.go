@@ -102,6 +102,21 @@ func TestBuildListAccessibleQueryBuildsGlobalClientCatalogForPlatformAdmin(t *te
 	assertQueryContains(t, query, "true or")
 }
 
+func TestBuildListAccessibleQueryCanIncludeInactiveClientsWithoutChangingOrganizationScope(t *testing.T) {
+	query, args := buildListAccessibleQuery(auth.Principal{
+		UserID: "user-agency-member",
+	}, ListInput{ClientCatalog: true, IncludeInactive: true})
+
+	assertQueryContains(t, query, "t.is_agency = false")
+	assertQueryContains(t, query, "core.organization_users")
+	if strings.Contains(query, "t.is_active = true") {
+		t.Fatalf("catalogo com includeInactive nao deveria filtrar clientes inativos:\n%s", query)
+	}
+	if len(args) != 1 || args[0] != "user-agency-member" {
+		t.Fatalf("expected organization-scoped user id arg, got %#v", args)
+	}
+}
+
 func assertQueryUsesCoreRoles(t *testing.T, query string) {
 	t.Helper()
 	assertQueryContains(t, query, "core.account_users")

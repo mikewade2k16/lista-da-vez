@@ -65,6 +65,9 @@ export interface TaskProjectDefaultsConfig {
   showCreatedAt: boolean
 }
 
+export type TaskProjectClientScopeMode = 'all' | 'active' | 'selected'
+export type TaskProjectTaskSourceMode = 'own' | 'all' | 'selected'
+
 export interface TaskBoardColumn {
   id: string
   label: string
@@ -123,6 +126,10 @@ export interface TaskProjectItem {
   filters: TaskProjectFiltersConfig
   cardFields: TaskProjectCardFieldsConfig
   defaults: TaskProjectDefaultsConfig
+  clientScopeMode: TaskProjectClientScopeMode
+  clientScopeIds: string[]
+  taskSourceMode: TaskProjectTaskSourceMode
+  taskSourceBoardIds: string[]
   createdAt: string
   updatedAt: string
 }

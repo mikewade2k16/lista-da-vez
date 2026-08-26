@@ -43,6 +43,10 @@ direta em `core.account_users` preserva o proprio cliente. Esta rota foi criada 
 porque `/v1/tenants` resolve o escopo legado pelo papel coarse e devolvia lista vazia para o
 papel custom `editor` da agencia, apesar da RBAC de Tasks estar correta.
 
+O catalogo `/clients` tambem aceita `includeInactive=true`. O escopo organizacional permanece
+identico; apenas clientes inativos desse mesmo escopo sao incluidos. Tasks usa essa variante na
+configuracao de boards para permitir `all` e selecoes explicitas sem perder referencias arquivadas.
+
 O catálogo interno aceita `ListInput.ModuleID` para restringir contas às que possuem
 `core.account_modules.enabled=true`; esse filtro não é exposto como query pública. O Omnichannel
 usa `ModuleID: "omnichannel"` no seletor de clientes da automação de atendimento.

@@ -8,6 +8,8 @@ import { useCoreAccountStore } from '../../core/stores/account'
 import { sanitizeTaskContentHtml, stripHtmlToText } from '../utils/content'
 import { compactUserLabel } from '../utils/user-label'
 import { normalizeTaskChecklist } from '../utils/task-checklist'
+import { normalizeTaskClientScopeIds, normalizeTaskClientScopeMode } from '../utils/client-scope'
+import { normalizeTaskSourceBoardIds, normalizeTaskSourceMode } from '../utils/task-source'
 import type {
   OrchestratorField,
   OrchestratorView,
@@ -90,6 +92,10 @@ interface BackendBoard {
   description?: string
   icon?: string
   archived?: boolean
+  clientScopeMode?: string
+  clientScopeIds?: string[]
+  taskSourceMode?: string
+  taskSourceBoardIds?: string[]
   columns?: BackendColumn[]
   fields?: BackendField[]
   views?: BackendView[]
@@ -148,6 +154,10 @@ interface TasksUiMetadata {
   activeProjectId?: string
   projects: Record<string, ProjectUiMetadata>
   tasks: Record<string, TaskUiMetadata>
+}
+
+interface BackendUserPreferences {
+  lastBoardId?: string
 }
 
 export interface TasksStoreTaskItem extends TaskItem {
@@ -884,6 +894,19 @@ function buildProject(
     filters: defaultFiltersConfig(projectUi?.filters || existingProject?.filters),
     cardFields: defaultCardFieldsConfig(projectUi?.cardFields || existingProject?.cardFields),
     defaults: defaultProjectDefaults(projectUi?.defaults || existingProject?.defaults),
+    clientScopeMode: normalizeTaskClientScopeMode(
+      board.clientScopeMode || existingProject?.clientScopeMode,
+    ),
+    clientScopeIds: normalizeTaskClientScopeIds(
+      board.clientScopeIds || existingProject?.clientScopeIds,
+    ),
+    taskSourceMode: normalizeTaskSourceMode(
+      board.taskSourceMode || existingProject?.taskSourceMode,
+    ),
+    taskSourceBoardIds: normalizeTaskSourceBoardIds(
+      board.taskSourceBoardIds || existingProject?.taskSourceBoardIds,
+      board.id,
+    ),
     createdAt:
       normalizeText(board.createdAt, 80) || existingProject?.createdAt || new Date().toISOString(),
     updatedAt:
@@ -907,6 +930,7 @@ export const useTasksStore = defineStore('tasks', () => {
   const projects = ref<TaskProjectItem[]>([])
   const tasks = ref<TasksStoreTaskItem[]>([])
   const activeProjectId = ref('')
+  const visibleTaskIdsByBoard = ref<Record<string, string[]>>({})
   const legacyMigrationNotice = ref(false)
   const uiMetadata = ref<TasksUiMetadata>(readUiMetadata())
 
@@ -920,6 +944,8 @@ export const useTasksStore = defineStore('tasks', () => {
   // Fetch em voo por board, para cancelar ao trocar de board/rota e evitar respostas obsoletas
   // sobrescrevendo o board ativo.
   const boardLoadControllers = new Map<string, AbortController>()
+  let preferenceLoaded = false
+  let preferenceWriteQueue = Promise.resolve()
 
   if (uiMetadata.value.activeProjectId) {
     activeProjectId.value = uiMetadata.value.activeProjectId
@@ -932,7 +958,9 @@ export const useTasksStore = defineStore('tasks', () => {
     ),
   )
   const canManageBoards = computed(
-    () => auth.role === 'platform_admin' || auth.permissionKeys.includes('tasks.boards.manage'),
+    () =>
+      auth.role === 'platform_admin' ||
+      auth.effectivePermissionKeys.includes('tasks.boards.manage'),
   )
 
   async function request(path: string, options: Record<string, any> = {}) {
@@ -950,6 +978,33 @@ export const useTasksStore = defineStore('tasks', () => {
         'X-Account-Id': resolvedAccountId,
       },
     })
+  }
+
+  async function readUserPreferences() {
+    const response = (await request('/v1/tasks/preferences', { dedupe: false })) as {
+      preferences?: BackendUserPreferences
+    }
+    return (response?.preferences as BackendUserPreferences | undefined) || {}
+  }
+
+  function queueLastBoardPreference(boardId: string) {
+    const normalizedBoardId = normalizeText(boardId, 80)
+    if (!normalizedBoardId) return
+    preferenceWriteQueue = preferenceWriteQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await request('/v1/tasks/preferences', {
+          method: 'PUT',
+          body: { lastBoardId: normalizedBoardId },
+          dedupe: false,
+        })
+      })
+      .catch((error) => {
+        errorMessage.value = getApiErrorMessage(
+          error,
+          'A pagina foi alterada, mas nao foi possivel salvar essa preferencia.',
+        )
+      })
   }
 
   function showLegacyNoticeIfNeeded() {
@@ -1095,8 +1150,8 @@ export const useTasksStore = defineStore('tasks', () => {
     return collected
   }
 
-  // Substitui no store as tasks de um board especifico pelas recem-carregadas, preservando as
-  // dos demais boards. Centraliza o mapeamento BackendTask -> store item.
+  // Atualiza a lista canonica de tasks e registra quais ids pertencem a visualizacao carregada.
+  // Uma pagina pode incluir tasks de outros boards sem duplicar ou trocar a propriedade da task.
   function applyBoardTasks(board: BackendBoard | undefined, backendTasks: BackendTask[]) {
     const boardId = normalizeText(board?.id, 80)
     if (!boardId) {
@@ -1108,16 +1163,28 @@ export const useTasksStore = defineStore('tasks', () => {
     if (!project) {
       return
     }
-    const mappedTasks = backendTasks.map((task) =>
-      mapTaskToStoreItem(
+    const mappedTasks = backendTasks.map((task) => {
+      const sourceProjectId = normalizeText(task.boardId, 80)
+      const sourceProject = projects.value.find((item) => item.id === sourceProjectId) || project
+      return mapTaskToStoreItem(
         task,
-        project,
+        sourceProject,
         uiMetadata.value.tasks[normalizeText(task.id, 80)],
         auth.user,
-      ),
+      )
+    })
+    const nextVisibleTaskIds = {
+      ...visibleTaskIdsByBoard.value,
+      [boardId]: mappedTasks.map((task) => task.id),
+    }
+    visibleTaskIdsByBoard.value = nextVisibleTaskIds
+
+    const canonicalTasks = new Map(tasks.value.map((task) => [task.id, task] as const))
+    mappedTasks.forEach((task) => canonicalTasks.set(task.id, task))
+    const referencedTaskIds = new Set(Object.values(nextVisibleTaskIds).flat())
+    tasks.value = sortTasks(
+      Array.from(canonicalTasks.values()).filter((task) => referencedTaskIds.has(task.id)),
     )
-    const others = tasks.value.filter((task) => task.projectId !== boardId)
-    tasks.value = sortTasks([...others, ...mappedTasks])
   }
 
   function abortBoardLoad(boardId: string) {
@@ -1203,6 +1270,20 @@ export const useTasksStore = defineStore('tasks', () => {
     return (response?.board as BackendBoard | undefined) || board
   }
 
+  async function loadCurrentBoardDetails(board: BackendBoard) {
+    try {
+      return await loadBoardDetails(board)
+    } catch (error) {
+      // A lista e os detalhes nao fazem parte da mesma transacao: um board pode ser arquivado
+      // entre GET /boards e GET /task-boards/:id. Nesse caso, ele simplesmente deixou de fazer
+      // parte do snapshot atual; nao transforme a exclusao valida em erro de sincronizacao.
+      if (apiStatusCode(error) === 404) {
+        return null
+      }
+      throw error
+    }
+  }
+
   // refresh carrega os boards (above-the-fold) e as tasks APENAS do board ativo. Os demais boards
   // ficam com as tasks lazy: sao buscadas em `setActiveProject`/`ensureBoardTasksLoaded`. As tasks
   // dos boards ja carregados anteriormente sao preservadas e remapeadas com os projetos novos para
@@ -1218,15 +1299,27 @@ export const useTasksStore = defineStore('tasks', () => {
       const previousLoaded = loadedBoardIds.value
       const previousArchived = archivedBoardIds.value
       const previousTasks = tasks.value
-      const response = await request('/v1/tasks/boards')
+      const preferencesPromise = preferenceLoaded
+        ? Promise.resolve<BackendUserPreferences>({})
+        : readUserPreferences().catch((): BackendUserPreferences => ({}))
+      const [response, preferences] = await Promise.all([
+        request('/v1/tasks/boards'),
+        preferencesPromise,
+      ])
       const boards = Array.isArray(response?.boards)
         ? (response.boards as BackendBoard[]).filter((board) => !board?.archived)
         : []
-      const detailedBoards = await Promise.all(boards.map((board) => loadBoardDetails(board)))
+      const detailedBoards = (await Promise.all(boards.map(loadCurrentBoardDetails))).filter(
+        (board): board is BackendBoard => board !== null,
+      )
       const boardIds = new Set(detailedBoards.map((board) => normalizeText(board.id, 80)))
 
       // Determina o board ativo ja com a lista nova de boards, para carregar so as tasks dele.
-      let nextActiveId = normalizeText(activeProjectId.value, 80)
+      const preferredBoardId = preferenceLoaded ? '' : normalizeText(preferences.lastBoardId, 80)
+      preferenceLoaded = true
+      let nextActiveId = boardIds.has(preferredBoardId)
+        ? preferredBoardId
+        : normalizeText(activeProjectId.value, 80)
       if (!boardIds.has(nextActiveId)) {
         const rememberedProjectId = normalizeText(uiMetadata.value.activeProjectId, 80)
         nextActiveId = boardIds.has(rememberedProjectId)
@@ -1247,6 +1340,7 @@ export const useTasksStore = defineStore('tasks', () => {
       // tinhamos para os projetos novos. O board ativo e sempre recarregado do servidor.
       const boardTasksMap = new Map<string, TasksStoreTaskItem[]>()
       const placeholderProjects = new Map<string, TaskProjectItem>()
+      const previousVisibleTaskIds = visibleTaskIdsByBoard.value
       detailedBoards.forEach((board) => {
         const boardId = normalizeText(board.id, 80)
         placeholderProjects.set(
@@ -1260,14 +1354,16 @@ export const useTasksStore = defineStore('tasks', () => {
         if (boardId === nextActiveId) {
           boardTasksMap.set(
             boardId,
-            activeBoardTasks.map((task) =>
-              mapTaskToStoreItem(
+            activeBoardTasks.map((task) => {
+              const sourceProject =
+                placeholderProjects.get(normalizeText(task.boardId, 80)) || placeholderProject
+              return mapTaskToStoreItem(
                 task,
-                placeholderProject,
+                sourceProject,
                 uiMetadata.value.tasks[normalizeText(task.id, 80)],
                 auth.user,
-              ),
-            ),
+              )
+            }),
           )
         } else if (previousLoaded.has(boardId)) {
           // Reaproveita verbatim as tasks ja carregadas dos boards nao-ativos (sem refetch e sem
@@ -1275,7 +1371,9 @@ export const useTasksStore = defineStore('tasks', () => {
           // novo, `ensureBoardTasksLoaded(force)` busca a versao autoritativa.
           boardTasksMap.set(
             boardId,
-            previousTasks.filter((task) => task.projectId === boardId),
+            previousTasks.filter((task) =>
+              (previousVisibleTaskIds[boardId] || []).includes(task.id),
+            ),
           )
         }
       })
@@ -1289,7 +1387,17 @@ export const useTasksStore = defineStore('tasks', () => {
           uiMetadata.value.projects[boardId],
         )
       })
-      tasks.value = sortTasks(Array.from(boardTasksMap.values()).flat())
+      const canonicalTasks = new Map<string, TasksStoreTaskItem>()
+      Array.from(boardTasksMap.values())
+        .flat()
+        .forEach((task) => canonicalTasks.set(task.id, task))
+      tasks.value = sortTasks(Array.from(canonicalTasks.values()))
+      visibleTaskIdsByBoard.value = Object.fromEntries(
+        Array.from(boardTasksMap.entries()).map(([boardId, boardTasks]) => [
+          boardId,
+          boardTasks.map((task) => task.id),
+        ]),
+      )
       activeProjectId.value = nextActiveId
 
       // Atualiza os Sets de cache: mantemos apenas boards ainda existentes; o ativo passa a estar
@@ -1359,9 +1467,11 @@ export const useTasksStore = defineStore('tasks', () => {
     boardLoadControllers.clear()
     loadedBoardIds.value = new Set()
     archivedBoardIds.value = new Set()
+    visibleTaskIdsByBoard.value = {}
     tasks.value = []
     projects.value = []
     activeProjectId.value = ''
+    preferenceLoaded = false
     initialized.value = false
     await initialize({ allowAutoCreate: false })
   }
@@ -1444,6 +1554,7 @@ export const useTasksStore = defineStore('tasks', () => {
     activeProjectId.value = targetId
     uiMetadata.value.activeProjectId = targetId
     persistUiMetadata()
+    queueLastBoardPreference(targetId)
     // Cancela carregamento do board anterior (se ainda em voo) e busca as tasks do novo board
     // sob demanda. Fire-and-forget: a UI ja reage ao board ativo via projects/tasks reativos.
     if (previousId && previousId !== targetId) {
@@ -1488,6 +1599,11 @@ export const useTasksStore = defineStore('tasks', () => {
       replaceProject(project)
       activeProjectId.value = project.id
       uiMetadata.value.activeProjectId = project.id
+      visibleTaskIdsByBoard.value = {
+        ...visibleTaskIdsByBoard.value,
+        [project.id]: [],
+      }
+      queueLastBoardPreference(project.id)
       saveProjectUiMetadata(project.id, {
         views: project.views,
         activeViewId: project.activeViewId,
@@ -1513,15 +1629,29 @@ export const useTasksStore = defineStore('tasks', () => {
     if (!target) {
       return false
     }
-    await request(`/v1/tasks/boards/${encodeURIComponent(target.id)}`, {
-      method: 'PATCH',
-      body: { archived: true },
-    })
+    try {
+      await request(`/v1/tasks/boards/${encodeURIComponent(target.id)}`, {
+        method: 'PATCH',
+        body: { archived: true },
+      })
+    } catch (error) {
+      // Exclusao e idempotente na UI: outra aba/realtime pode ter arquivado o board depois do
+      // ultimo snapshot. O 404 confirma que ele ja nao esta ativo; qualquer outro erro continua
+      // sendo propagado e nao remove estado local como falso sucesso.
+      if (apiStatusCode(error) !== 404) {
+        throw error
+      }
+    }
     projects.value = projects.value.filter((project) => project.id !== target.id)
-    tasks.value = tasks.value.filter((task) => task.projectId !== target.id)
+    const nextVisibleTaskIds = { ...visibleTaskIdsByBoard.value }
+    delete nextVisibleTaskIds[target.id]
+    visibleTaskIdsByBoard.value = nextVisibleTaskIds
+    const referencedTaskIds = new Set(Object.values(nextVisibleTaskIds).flat())
+    tasks.value = tasks.value.filter((task) => referencedTaskIds.has(task.id))
     delete uiMetadata.value.projects[target.id]
     if (activeProjectId.value === target.id) {
       activeProjectId.value = projects.value[0]?.id || ''
+      if (activeProjectId.value) queueLastBoardPreference(activeProjectId.value)
     }
     pruneUiMetadata()
     return true
@@ -1545,6 +1675,10 @@ export const useTasksStore = defineStore('tasks', () => {
         | 'cardFields'
         | 'defaults'
         | 'activeViewId'
+        | 'clientScopeMode'
+        | 'clientScopeIds'
+        | 'taskSourceMode'
+        | 'taskSourceBoardIds'
       >
     >,
   ) {
@@ -1562,10 +1696,33 @@ export const useTasksStore = defineStore('tasks', () => {
     const nextIcon = Object.prototype.hasOwnProperty.call(payload, 'icon')
       ? normalizeText(payload.icon, 40)
       : current.icon
+    const nextClientScopeMode = Object.prototype.hasOwnProperty.call(payload, 'clientScopeMode')
+      ? normalizeTaskClientScopeMode(payload.clientScopeMode)
+      : current.clientScopeMode
+    const nextClientScopeIds = Object.prototype.hasOwnProperty.call(payload, 'clientScopeIds')
+      ? normalizeTaskClientScopeIds(payload.clientScopeIds)
+      : current.clientScopeIds
+    const clientScopeChanged =
+      nextClientScopeMode !== current.clientScopeMode ||
+      nextClientScopeIds.join(',') !== current.clientScopeIds.join(',')
+    const nextTaskSourceMode = Object.prototype.hasOwnProperty.call(payload, 'taskSourceMode')
+      ? normalizeTaskSourceMode(payload.taskSourceMode)
+      : current.taskSourceMode
+    const nextTaskSourceBoardIds = Object.prototype.hasOwnProperty.call(
+      payload,
+      'taskSourceBoardIds',
+    )
+      ? normalizeTaskSourceBoardIds(payload.taskSourceBoardIds, current.id)
+      : current.taskSourceBoardIds
+    const taskSourceChanged =
+      nextTaskSourceMode !== current.taskSourceMode ||
+      nextTaskSourceBoardIds.join(',') !== current.taskSourceBoardIds.join(',')
     if (
       nextName !== current.name ||
       nextDescription !== current.description ||
-      nextIcon !== current.icon
+      nextIcon !== current.icon ||
+      clientScopeChanged ||
+      taskSourceChanged
     ) {
       const response = await request(`/v1/tasks/boards/${encodeURIComponent(current.id)}`, {
         method: 'PATCH',
@@ -1573,6 +1730,10 @@ export const useTasksStore = defineStore('tasks', () => {
           name: nextName,
           description: nextDescription,
           icon: nextIcon,
+          clientScopeMode: nextClientScopeMode,
+          clientScopeIds: nextClientScopeMode === 'selected' ? nextClientScopeIds : [],
+          taskSourceMode: nextTaskSourceMode,
+          taskSourceBoardIds: nextTaskSourceMode === 'selected' ? nextTaskSourceBoardIds : [],
         },
       })
       remoteBoard = (response?.board as BackendBoard | undefined) || null
@@ -1583,6 +1744,10 @@ export const useTasksStore = defineStore('tasks', () => {
         name: nextName,
         description: nextDescription,
         icon: nextIcon,
+        clientScopeMode: nextClientScopeMode,
+        clientScopeIds: nextClientScopeMode === 'selected' ? nextClientScopeIds : [],
+        taskSourceMode: nextTaskSourceMode,
+        taskSourceBoardIds: nextTaskSourceMode === 'selected' ? nextTaskSourceBoardIds : [],
         columns:
           payload.columns?.map((column) => ({
             id: column.id,
@@ -1628,6 +1793,10 @@ export const useTasksStore = defineStore('tasks', () => {
         activeViewId: payload.activeViewId || current.activeViewId,
         fields: payload.fields || current.fields,
         columns: payload.columns || current.columns,
+        clientScopeMode: nextClientScopeMode,
+        clientScopeIds: nextClientScopeMode === 'selected' ? nextClientScopeIds : [],
+        taskSourceMode: nextTaskSourceMode,
+        taskSourceBoardIds: nextTaskSourceMode === 'selected' ? nextTaskSourceBoardIds : [],
       },
       tasks.value.filter((task) => task.projectId === current.id),
     )
@@ -1656,6 +1825,12 @@ export const useTasksStore = defineStore('tasks', () => {
       cardFields: nextProject.cardFields,
       defaults: nextProject.defaults,
     })
+    if (clientScopeChanged || taskSourceChanged) {
+      await ensureBoardTasksLoaded(nextProject.id, {
+        includeArchived: archivedBoardIds.value.has(nextProject.id),
+        force: true,
+      })
+    }
     return nextProject
   }
 
@@ -1760,6 +1935,12 @@ export const useTasksStore = defineStore('tasks', () => {
     }
     const mapped = mapTaskToStoreItem(task, project, uiMetadata.value.tasks[task.id], auth.user)
     replaceTask(mapped)
+    visibleTaskIdsByBoard.value = {
+      ...visibleTaskIdsByBoard.value,
+      [project.id]: Array.from(
+        new Set([...(visibleTaskIdsByBoard.value[project.id] || []), mapped.id]),
+      ),
+    }
     const refreshedProject = buildProject(
       {
         id: project.id,
@@ -2010,6 +2191,12 @@ export const useTasksStore = defineStore('tasks', () => {
       method: 'DELETE',
     })
     tasks.value = tasks.value.filter((item) => item.id !== currentTask.id)
+    visibleTaskIdsByBoard.value = Object.fromEntries(
+      Object.entries(visibleTaskIdsByBoard.value).map(([boardId, taskIds]) => [
+        boardId,
+        taskIds.filter((id) => id !== currentTask.id),
+      ]),
+    )
     deleteTaskUiMetadata(currentTask.id)
     return true
   }
@@ -2239,6 +2426,7 @@ export const useTasksStore = defineStore('tasks', () => {
     projects,
     tasks,
     activeProjectId,
+    visibleTaskIdsByBoard,
     legacyMigrationNotice,
     loadedBoardIds,
     archivedBoardIds,

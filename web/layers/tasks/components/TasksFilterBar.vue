@@ -37,6 +37,7 @@ const {
   showAllColumns,
   createTableTask,
   beginCreateTaskInFirstColumn,
+  canManageBoards,
 } = ctx
 
 const projectCreateOpen = ref(false)
@@ -54,8 +55,8 @@ async function submitProjectCreate() {
 
   projectCreatePending.value = true
   try {
-    await onCreateProject({ label: name, value: name })
-    closeProjectCreate()
+    const created = await onCreateProject({ label: name, value: name })
+    if (created) closeProjectCreate()
   } finally {
     projectCreatePending.value = false
   }
@@ -69,7 +70,7 @@ async function submitProjectCreate() {
         v-model="projectModel"
         :items="projectOptions"
         placeholder="Selecionar pagina"
-        :creatable="true"
+        :creatable="canManageBoards"
         :searchable="true"
         :full-content-width="true"
         item-display-mode="text"
@@ -316,49 +317,17 @@ async function submitProjectCreate() {
       @click="viewMode === 'table' ? createTableTask() : beginCreateTaskInFirstColumn()"
     />
 
-    <UPopover v-else v-model:open="projectCreateOpen" :content="{ side: 'bottom', align: 'end' }">
-      <UButton
-        class="tasks-toolbar__primary"
-        icon="i-lucide-folder-plus"
-        label="Novo projeto"
-        color="primary"
-        variant="soft"
-        size="sm"
-      />
-      <template #content>
-        <form class="tasks-toolbar__filter-popover w-80 space-y-3" @submit.prevent="submitProjectCreate">
-          <div class="space-y-1">
-            <p class="text-xs font-medium text-[rgb(var(--text-muted))]">Nome do projeto</p>
-            <UInput
-              v-model="projectCreateName"
-              placeholder="Ex.: Planejamento comercial"
-              size="sm"
-              :disabled="projectCreatePending"
-            />
-          </div>
-          <div class="flex justify-end gap-2">
-            <UButton
-              type="button"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              label="Cancelar"
-              :disabled="projectCreatePending"
-              @click="closeProjectCreate"
-            />
-            <UButton
-              type="submit"
-              color="primary"
-              variant="soft"
-              size="sm"
-              label="Criar projeto"
-              :loading="projectCreatePending"
-              :disabled="!projectCreateName.trim()"
-            />
-          </div>
-        </form>
-      </template>
-    </UPopover>
+    <UButton
+      v-else
+      class="tasks-toolbar__primary"
+      icon="i-lucide-folder-plus"
+      label="Nova pagina"
+      color="primary"
+      variant="soft"
+      size="sm"
+      :disabled="!canManageBoards"
+      @click="projectCreateOpen = true"
+    />
 
     <UPopover :content="{ side: 'bottom', align: 'end' }">
       <UButton
@@ -371,6 +340,15 @@ async function submitProjectCreate() {
       />
       <template #content>
         <div class="tasks-toolbar__menu">
+          <button
+            class="tasks-toolbar__menu-item"
+            type="button"
+            :disabled="!canManageBoards"
+            @click="projectCreateOpen = true"
+          >
+            <UIcon name="i-lucide-folder-plus" />
+            <span>Nova pagina</span>
+          </button>
           <button
             class="tasks-toolbar__menu-item"
             type="button"
@@ -408,5 +386,46 @@ async function submitProjectCreate() {
         </div>
       </template>
     </UPopover>
+
+    <UModal :open="projectCreateOpen" @update:open="!$event && closeProjectCreate()">
+      <template #content>
+        <UCard class="w-[min(28rem,calc(100vw-2rem))]">
+          <template #header>
+            <div>
+              <h3 class="text-base font-semibold">Nova pagina de tasks</h3>
+              <p class="mt-1 text-sm text-[rgb(var(--muted))]">
+                Crie um board separado, por exemplo Campanha.
+              </p>
+            </div>
+          </template>
+          <form class="space-y-3" @submit.prevent="submitProjectCreate">
+            <UInput
+              v-model="projectCreateName"
+              placeholder="Ex.: Campanha"
+              autofocus
+              :disabled="projectCreatePending"
+            />
+          </form>
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                label="Cancelar"
+                color="neutral"
+                variant="ghost"
+                :disabled="projectCreatePending"
+                @click="closeProjectCreate"
+              />
+              <UButton
+                label="Criar pagina"
+                icon="i-lucide-folder-plus"
+                :loading="projectCreatePending"
+                :disabled="!projectCreateName.trim()"
+                @click="submitProjectCreate"
+              />
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
   </div>
 </template>

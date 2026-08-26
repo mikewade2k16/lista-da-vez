@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
 	platformmodules "github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
 )
+
+var taskUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type Service struct {
 	repository Repository
@@ -222,6 +225,60 @@ func (service *Service) UpdateBoard(ctx context.Context, access AccessContext, i
 	if err != nil {
 		return Board{}, err
 	}
+	clientScopeMode := before.ClientScopeMode
+	if input.ClientScopeMode != nil {
+		clientScopeMode = strings.ToLower(strings.TrimSpace(*input.ClientScopeMode))
+		switch clientScopeMode {
+		case ClientScopeAll, ClientScopeActive, ClientScopeSelected:
+			*input.ClientScopeMode = clientScopeMode
+		default:
+			return Board{}, ErrValidation
+		}
+	}
+	if input.ClientScopeIDs != nil || input.ClientScopeMode != nil {
+		clientScopeIDs := before.ClientScopeIDs
+		if input.ClientScopeIDs != nil {
+			clientScopeIDs = normalizeBoardClientScopeIDs(*input.ClientScopeIDs)
+		}
+		if clientScopeMode == ClientScopeSelected {
+			if len(clientScopeIDs) == 0 {
+				return Board{}, ErrValidation
+			}
+			if err := service.repository.ValidateBoardClientScope(ctx, access.AccountID, input.ID, clientScopeIDs); err != nil {
+				return Board{}, err
+			}
+		} else {
+			clientScopeIDs = []string{}
+		}
+		input.ClientScopeIDs = &clientScopeIDs
+	}
+	taskSourceMode := before.TaskSourceMode
+	if input.TaskSourceMode != nil {
+		taskSourceMode = strings.ToLower(strings.TrimSpace(*input.TaskSourceMode))
+		switch taskSourceMode {
+		case TaskSourceOwn, TaskSourceAll, TaskSourceSelected:
+			*input.TaskSourceMode = taskSourceMode
+		default:
+			return Board{}, ErrValidation
+		}
+	}
+	if input.TaskSourceBoardIDs != nil || input.TaskSourceMode != nil {
+		taskSourceBoardIDs := before.TaskSourceBoardIDs
+		if input.TaskSourceBoardIDs != nil {
+			taskSourceBoardIDs = normalizeBoardIDs(*input.TaskSourceBoardIDs, input.ID)
+		}
+		if taskSourceMode == TaskSourceSelected {
+			if len(taskSourceBoardIDs) == 0 {
+				return Board{}, ErrValidation
+			}
+			if err := service.repository.ValidateBoardTaskSources(ctx, access.AccountID, input.ID, taskSourceBoardIDs); err != nil {
+				return Board{}, err
+			}
+		} else {
+			taskSourceBoardIDs = []string{}
+		}
+		input.TaskSourceBoardIDs = &taskSourceBoardIDs
+	}
 	after, err := service.repository.UpdateBoard(ctx, access.AccountID, input)
 	if err != nil {
 		return Board{}, err
@@ -230,6 +287,46 @@ func (service *Service) UpdateBoard(ctx context.Context, access AccessContext, i
 	service.audit(ctx, access, "board.updated", "board", after.ID, before, after)
 	service.publisher.PublishBoardEvent(ctx, BoardEvent{Type: "board.updated", AccountID: access.AccountID, BoardID: after.ID})
 	return after, nil
+}
+
+func normalizeBoardClientScopeIDs(values []string) []string {
+	return normalizeBoardIDs(values, "")
+}
+
+func normalizeBoardIDs(values []string, excludedID string) []string {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	excludedID = strings.ToLower(strings.TrimSpace(excludedID))
+	for _, value := range values {
+		itemID := strings.ToLower(strings.TrimSpace(value))
+		if !taskUUIDPattern.MatchString(itemID) || itemID == excludedID {
+			continue
+		}
+		if _, exists := seen[itemID]; exists {
+			continue
+		}
+		seen[itemID] = struct{}{}
+		normalized = append(normalized, itemID)
+	}
+	return normalized
+}
+
+func (service *Service) GetUserPreferences(ctx context.Context, access AccessContext) (UserPreferences, error) {
+	if !access.Has(PermBoardsView) {
+		return UserPreferences{}, ErrForbidden
+	}
+	return service.repository.GetUserPreferences(ctx, access.AccountID, access.UserID)
+}
+
+func (service *Service) SaveUserPreferences(ctx context.Context, access AccessContext, input UpdateUserPreferencesInput) (UserPreferences, error) {
+	if !access.Has(PermBoardsView) {
+		return UserPreferences{}, ErrForbidden
+	}
+	input.LastBoardID = strings.ToLower(strings.TrimSpace(input.LastBoardID))
+	if !taskUUIDPattern.MatchString(input.LastBoardID) {
+		return UserPreferences{}, ErrValidation
+	}
+	return service.repository.SaveUserPreferences(ctx, access.AccountID, access.UserID, input.LastBoardID)
 }
 
 func (service *Service) CreateColumn(ctx context.Context, access AccessContext, input CreateColumnInput) (Column, error) {

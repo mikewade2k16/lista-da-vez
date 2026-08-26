@@ -29,8 +29,9 @@ type ListInput struct {
 	// É um filtro interno de catálogo; o endpoint público /v1/tenants não o expõe.
 	ModuleID string
 	// ClientCatalog lista apenas contas-cliente acessiveis para seletores de
-	// modulos da agencia. Membros da organizacao veem os clientes ativos da sua
-	// org; membership direta continua vendo o proprio cliente.
+	// modulos da agencia. Membros da organizacao veem os clientes da sua org;
+	// membership direta continua vendo o proprio cliente. Inativos so entram
+	// quando IncludeInactive e solicitado.
 	ClientCatalog bool
 }
 

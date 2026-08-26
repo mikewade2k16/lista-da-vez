@@ -10,7 +10,7 @@ migrar para backend Go nas Fases T1–T5.
 - `web/layers/tasks/pages/tasks.vue` — protótipo monolítico (foi ~2955 linhas, agora dividido em sub-componentes)
 - `web/layers/tasks/composables/useTasksWorkspace.ts` — CRUD localStorage, chave `omni.admin.tasks.workspace.v1`
 - `web/layers/tasks/composables/useTimeTracking.ts` — timer localStorage, chave `tasks-tracking-v1`
-- `web/layers/tasks/stores/tasks-client.ts` — store do catalogo real de clientes. Consome `GET /v1/tenants/clients`, que resolve no backend os clientes da organizacao para `agency_owner` e `agency_member` inclusive com papel custom, e nunca inclui a conta-agencia. Nao voltar para `/v1/tenants`: essa rota usa escopo coarse legado e em 2026-08-12 devolvia vazio para o papel custom `editor` da Crow, embora a usuaria tivesse RBAC de Tasks.
+- `web/layers/tasks/stores/tasks-client.ts` — store do catalogo real de clientes. Consome `GET /v1/tenants/clients?includeInactive=true`, que resolve no backend os clientes da organizacao para `agency_owner` e `agency_member` inclusive com papel custom, e nunca inclui a conta-agencia. Os inativos precisam permanecer no catalogo para configurar paginas em modo `all` ou `selected`; os seletores operacionais filtram conforme o board ativo. Nao voltar para `/v1/tenants`: essa rota usa escopo coarse legado e em 2026-08-12 devolvia vazio para o papel custom `editor` da Crow, embora a usuaria tivesse RBAC de Tasks.
 - `web/layers/tasks/composables/useTasksPageContext.ts` — contexto compartilhado via provide/inject (Fase T0.5)
 
 ## Backend disponível após Fase T1
@@ -23,6 +23,31 @@ migrar para backend Go nas Fases T1–T5.
 - Validação executada na T2: `go test ./...` em `back/`.
 
 Status 2026-05-15: o frontend ja consome API/WS real para Tasks; nao voltar para localStorage como fonte principal.
+
+### Paginas/boards e escopo de clientes (2026-08-24)
+
+- A barra superior e o menu de reticencias exibem a acao explicita `Nova pagina`; ela cria outro
+  board pela API e nao duplica nem transforma o board `Tasks` existente.
+- `Configurar pagina` persiste no proprio board um dos modos: todos os clientes (`all`), somente
+  ativos (`active`) ou clientes selecionados (`selected`). No ultimo modo, ao menos um cliente e
+  obrigatorio.
+- O catalogo de configuracao inclui clientes inativos e os identifica no label. Filtros, cards e
+  modal de task recebem somente as opcoes permitidas pelo escopo do board ativo.
+- A API continua sendo a fonte autoritativa: nao persistir essa configuracao apenas em localStorage.
+
+### Paginas como visualizacoes salvas (2026-08-26)
+
+- Pagina nova usa `taskSourceMode=own`: possui colunas, mas nasce sem tasks e exibe somente as tasks
+  criadas nela.
+- Em `Configurar pagina`, `all` inclui tasks de todas as paginas da conta e `selected` inclui apenas
+  as paginas escolhidas. A task mantem o board de origem; a UI usa os IDs retornados pela consulta da
+  pagina ativa para nao duplicar nem transferir a task.
+- A ultima pagina selecionada e persistida em `tasks.user_preferences` por usuario e conta via
+  `GET/PUT /v1/tasks/preferences`. O metadata local existente e apenas fallback de carregamento.
+- Alterar origem de tasks ou escopo de clientes forca nova leitura autoritativa da pagina ativa.
+- Exclusao da pagina ativa e idempotente na UI. Se o board for arquivado entre a listagem e a leitura
+  de detalhes, o `404` daquele detalhe significa que ele saiu do snapshot e deve ser ignorado; outros
+  erros continuam visiveis. O backend deve responder `200` ao proprio PATCH que arquiva o board.
 
 ## Estrutura de componentes (após Fase T0.5)
 
@@ -382,10 +407,15 @@ const displayMs = computed(() => durationMsFromServer + (Date.now() - localStart
 
 ```typescript
 export function useCan(permissionKey: string) {
-  const me = useMeContext()
-  return computed(() => me.permissions.includes(permissionKey))
+  const auth = useAuthStore()
+  return computed(
+    () => auth.role === 'platform_admin' || auth.effectivePermissionKeys.includes(permissionKey),
+  )
 }
 ```
+
+O gate do frontend deve espelhar o bypass de `platform_admin` do backend e usar as permissoes
+efetivas da conta ativa, incluindo RBAC custom carregado por `/v2/me/context`.
 
 ## Paginação (Fase T5)
 

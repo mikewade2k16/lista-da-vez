@@ -96,3 +96,89 @@ func (repository *PostgresRepository) FindOrganizationIDForAccount(ctx context.C
 	}
 	return organizationID, err
 }
+
+func (repository *PostgresRepository) ValidateBoardClientScope(ctx context.Context, accountID, boardID string, clientIDs []string) error {
+	var validCount int
+	err := repository.pool.QueryRow(ctx, `
+		select count(*)
+		from unnest($3::text[]) requested(client_id)
+		where exists (
+			select 1
+			from tasks.boards b
+			join core.accounts client
+			  on client.id::text = requested.client_id
+			 and client.is_agency = false
+			where b.account_id = $1::uuid
+			  and b.id = $2::uuid
+			  and (
+				client.id = b.account_id
+				or (b.organization_id is not null and client.organization_id = b.organization_id)
+			  )
+		)
+	`, accountID, boardID, clientIDs).Scan(&validCount)
+	if err != nil {
+		return err
+	}
+	if validCount != len(clientIDs) {
+		return ErrValidation
+	}
+	return nil
+}
+
+func (repository *PostgresRepository) ValidateBoardTaskSources(ctx context.Context, accountID, boardID string, sourceBoardIDs []string) error {
+	var validCount int
+	err := repository.pool.QueryRow(ctx, `
+		select count(distinct source.id)
+		from unnest($3::text[]) requested(board_id)
+		join tasks.boards source
+		  on source.id::text = requested.board_id
+		 and source.account_id = $1::uuid
+		 and source.id <> $2::uuid
+		 and source.archived = false
+	`, accountID, boardID, sourceBoardIDs).Scan(&validCount)
+	if err != nil {
+		return err
+	}
+	if validCount != len(sourceBoardIDs) {
+		return ErrBoardNotFound
+	}
+	return nil
+}
+
+func (repository *PostgresRepository) GetUserPreferences(ctx context.Context, accountID, userID string) (UserPreferences, error) {
+	var preferences UserPreferences
+	err := repository.pool.QueryRow(ctx, `
+		select preference.last_board_id::text
+		from tasks.user_preferences preference
+		join tasks.boards board
+		  on board.id = preference.last_board_id
+		 and board.account_id = preference.account_id
+		 and board.archived = false
+		where preference.account_id = $1::uuid
+		  and preference.user_id = $2::uuid
+	`, accountID, userID).Scan(&preferences.LastBoardID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return UserPreferences{}, nil
+	}
+	return preferences, err
+}
+
+func (repository *PostgresRepository) SaveUserPreferences(ctx context.Context, accountID, userID, lastBoardID string) (UserPreferences, error) {
+	var preferences UserPreferences
+	err := repository.pool.QueryRow(ctx, `
+		insert into tasks.user_preferences (account_id, user_id, last_board_id, updated_at)
+		select board.account_id, $2::uuid, board.id, now()
+		from tasks.boards board
+		where board.account_id = $1::uuid
+		  and board.id = $3::uuid
+		  and board.archived = false
+		on conflict (account_id, user_id) do update set
+			last_board_id = excluded.last_board_id,
+			updated_at = excluded.updated_at
+		returning last_board_id::text
+	`, accountID, userID, lastBoardID).Scan(&preferences.LastBoardID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return UserPreferences{}, ErrBoardNotFound
+	}
+	return preferences, err
+}

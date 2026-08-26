@@ -372,3 +372,11 @@ Ambiente esperado:
   repete agencia ativa, cliente ativo nao-agencia e mesma organizacao antes do insert.
 - Em client scope, a leitura nunca confia somente nessa tabela: cruza o par persistido com as
   identidades atuais retornadas pela Graph. Par stale ou ausente nao libera posts.
+
+## Tasks: paginas-filtro e preferencia do usuario (migration 0296)
+
+- `tasks.boards.task_source_mode` nasce como `own`; incluir outras paginas exige `all` ou IDs
+  validados da mesma conta em `task_source_board_ids`.
+- A task continua em seu `board_id` original. A configuracao altera somente a consulta da pagina.
+- `tasks.user_preferences` e tenant-scoped por `account_id + user_id`; `last_board_id` usa FK
+  composta para impedir preferencia apontando para board de outra conta.

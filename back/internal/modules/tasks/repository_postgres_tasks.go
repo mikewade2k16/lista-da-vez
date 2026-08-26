@@ -20,6 +20,26 @@ type listTasksCursor struct {
 	ID        string    `json:"i"`
 }
 
+const boardClientScopeClause = `
+		  and (
+		      (target.client_scope_mode <> 'selected' and t.client_account_id is null)
+		      or target.client_scope_mode = 'all'
+		      or (target.client_scope_mode = 'active' and client.is_active = true)
+		      or (target.client_scope_mode = 'selected' and t.client_account_id = any(target.client_scope_ids))
+		  )`
+
+const boardTaskSourceClause = `
+		  and (
+		      t.board_id = target.id
+		      or target.task_source_mode = 'all'
+		      or (target.task_source_mode = 'selected' and t.board_id = any(target.task_source_board_ids))
+		  )`
+
+const boardTaskListScopeClause = `
+		where t.account_id = $1::uuid
+		  and ($3::boolean = true or t.archived = false)
+		  and ($4::boolean = false or (t.sort_order, t.created_at, t.id) > ($5::float8, $6::timestamptz, $7::uuid))`
+
 func encodeListTasksCursor(cursor listTasksCursor) string {
 	payload, err := json.Marshal(cursor)
 	if err != nil {
@@ -68,9 +88,16 @@ func (repository *PostgresRepository) ListTasks(ctx context.Context, access Acce
 		       t.roadmap_module_id::text, t.pinned_to_roadmap, t.version,
 		       t.created_at, t.updated_at
 		from tasks.tasks t
-		where t.account_id = $1::uuid and t.board_id = $2::uuid
-		  and ($3::boolean = true or t.archived = false)
-		  and ($4::boolean = false or (t.sort_order, t.created_at, t.id) > ($5::float8, $6::timestamptz, $7::uuid))
+		join tasks.boards target
+		  on target.id = $2::uuid
+		 and target.account_id = t.account_id
+		 and target.archived = false
+		join tasks.boards source
+		  on source.id = t.board_id
+		 and source.account_id = t.account_id
+		 and source.archived = false
+		left join core.accounts client on client.id = t.client_account_id
+		`+boardTaskListScopeClause+boardTaskSourceClause+boardClientScopeClause+`
 		order by t.sort_order asc, t.created_at asc, t.id asc
 		limit $8
 	`, input.BoardID, input.IncludeArchived, hasCursor, cursorSortOrder, cursorCreatedAt, cursorID, fetchLimit)

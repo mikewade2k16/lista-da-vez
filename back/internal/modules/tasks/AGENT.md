@@ -67,6 +67,28 @@ DELETE /v1/tasks/columns/:columnId        body: { remapToColumnId }
 POST   /v1/tasks/boards/:boardId/fields
 ```
 
+Arquivar via `PATCH {"archived":true}` devolve `200` com o board marcado como arquivado. A resposta
+vem diretamente do `UPDATE ... RETURNING`, porque a leitura de detalhe esconde arquivados por
+contrato; nunca reconsultar o mesmo board com `GetBoard` depois de arquiva-lo, ou a mutacao valida
+vira um falso `404`.
+
+**Escopo de clientes por board (migration `0295_tasks_board_client_scope.sql`):**
+`tasks.boards.client_scope_mode` aceita `all`, `active` ou `selected`, e
+`client_scope_ids` guarda os UUIDs quando o modo e `selected`. O `PATCH` do board valida que
+os clientes selecionados pertencem a conta do board ou a mesma organizacao da agencia. A listagem
+de tasks aplica esse escopo no PostgreSQL: `all` inclui clientes ativos e inativos, `active` inclui
+somente clientes ativos e `selected` inclui somente os IDs configurados. Tasks sem cliente continuam
+visiveis nos modos `all` e `active`; no modo `selected`, o recorte e estrito. Esse filtro controla a
+composicao da pagina; nao substitui RBAC nem autoriza acesso cross-tenant direto a uma task.
+
+**Paginas como filtros salvos (migration `0296_tasks_board_sources_and_user_preferences.sql`):**
+`tasks.boards.task_source_mode` aceita `own`, `all` ou `selected`, com default `own` para que uma
+pagina nova continue vazia. `task_source_board_ids` guarda outras paginas da mesma conta quando o
+modo e `selected`. A listagem sempre inclui as tasks proprias e pode incluir as origens configuradas;
+a task preserva seu `board_id` original, nao e copiada nem movida. `tasks.user_preferences` persiste
+`last_board_id` por `account_id + user_id`; `GET/PUT /v1/tasks/preferences` usam exclusivamente o
+principal autenticado e so aceitam board ativo da mesma conta.
+
 **Trava T5 (2026-05-14):** nao reintroduzir `GET /v1/tasks/boards/:boardId` no Go `ServeMux` atual. Essa rota conflita com rotas parametrizadas como `GET /v1/tasks/:taskId/comments`, pois ambas podem casar caminhos como `/v1/tasks/boards/comments`. O detalhe de board fica em `GET /v1/task-boards/:boardId` ate o desenho de rotas ser reorganizado.
 
 ### Tasks

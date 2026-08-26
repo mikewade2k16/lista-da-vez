@@ -2,6 +2,25 @@
 
 ## Visao atual do banco
 
+### Escopo de clientes dos boards de Tasks (migration 0295)
+
+- `tasks.boards.client_scope_mode`: `all`, `active` ou `selected`; default `active` para preservar
+  o comportamento seguro dos boards existentes.
+- `tasks.boards.client_scope_ids`: array UUID autoritativo quando o modo e `selected`; vazio nos
+  demais modos e indexado por GIN.
+- A listagem do board cruza `tasks.tasks.client_account_id` com `core.accounts`. Tasks sem cliente
+  continuam visiveis em `all`/`active`; `selected` e estrito. O escopo nao substitui as regras
+  multi-tenant/RBAC do modulo.
+
+### Paginas-filtro e ultima pagina de Tasks (migration 0296)
+
+- `tasks.boards.task_source_mode`: `own`, `all` ou `selected`; default `own` mantem pagina nova sem
+  tasks herdadas.
+- `tasks.boards.task_source_board_ids`: UUIDs de paginas de origem da mesma conta para o modo
+  `selected`, com indice GIN. A consulta inclui as tasks proprias e as origens sem duplicar registros.
+- `tasks.user_preferences`: uma linha por `account_id + user_id`, com `last_board_id` tenant-safe e
+  FK composta para `tasks.boards(id, account_id)`.
+
 ### Storage compartilhado (migrations 0268-0272)
 
 - `storage.provider_state`: vinculo singleton do adapter `cloudflare_r2` ao account ID e bucket

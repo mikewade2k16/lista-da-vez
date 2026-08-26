@@ -15,6 +15,10 @@ type repositoryMock struct {
 	onIsAccountMember              func(ctx context.Context, accountID, userID string) (bool, error)
 	onListPermissionsForUser       func(ctx context.Context, accountID, userID string) ([]string, error)
 	onFindOrganizationIDForAccount func(ctx context.Context, accountID string) (*string, error)
+	onValidateBoardClientScope     func(ctx context.Context, accountID, boardID string, clientIDs []string) error
+	onValidateBoardTaskSources     func(ctx context.Context, accountID, boardID string, sourceBoardIDs []string) error
+	onGetUserPreferences           func(ctx context.Context, accountID, userID string) (UserPreferences, error)
+	onSaveUserPreferences          func(ctx context.Context, accountID, userID, lastBoardID string) (UserPreferences, error)
 
 	onListBoards  func(ctx context.Context, access AccessContext) ([]Board, error)
 	onGetBoard    func(ctx context.Context, access AccessContext, boardID string) (Board, error)
@@ -79,6 +83,34 @@ func (m *repositoryMock) FindOrganizationIDForAccount(ctx context.Context, accou
 		return m.onFindOrganizationIDForAccount(ctx, accountID)
 	}
 	return nil, nil
+}
+
+func (m *repositoryMock) ValidateBoardClientScope(ctx context.Context, accountID, boardID string, clientIDs []string) error {
+	if m.onValidateBoardClientScope != nil {
+		return m.onValidateBoardClientScope(ctx, accountID, boardID, clientIDs)
+	}
+	return nil
+}
+
+func (m *repositoryMock) ValidateBoardTaskSources(ctx context.Context, accountID, boardID string, sourceBoardIDs []string) error {
+	if m.onValidateBoardTaskSources != nil {
+		return m.onValidateBoardTaskSources(ctx, accountID, boardID, sourceBoardIDs)
+	}
+	return nil
+}
+
+func (m *repositoryMock) GetUserPreferences(ctx context.Context, accountID, userID string) (UserPreferences, error) {
+	if m.onGetUserPreferences != nil {
+		return m.onGetUserPreferences(ctx, accountID, userID)
+	}
+	return UserPreferences{}, nil
+}
+
+func (m *repositoryMock) SaveUserPreferences(ctx context.Context, accountID, userID, lastBoardID string) (UserPreferences, error) {
+	if m.onSaveUserPreferences != nil {
+		return m.onSaveUserPreferences(ctx, accountID, userID, lastBoardID)
+	}
+	return UserPreferences{LastBoardID: lastBoardID}, nil
 }
 
 func (m *repositoryMock) ListBoards(ctx context.Context, access AccessContext) ([]Board, error) {

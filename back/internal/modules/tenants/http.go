@@ -37,7 +37,10 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		clients, err := service.ListAccessible(r.Context(), principal, ListInput{ClientCatalog: true})
+		clients, err := service.ListAccessible(r.Context(), principal, ListInput{
+			ClientCatalog:   true,
+			IncludeInactive: readBoolQuery(r, "includeInactive"),
+		})
 		if err != nil {
 			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao carregar os clientes.")
 			return

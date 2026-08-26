@@ -9,6 +9,7 @@ import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 interface TaskClientOption {
   label: string
   value: string
+  active: boolean
 }
 
 interface BackendTenant {
@@ -56,13 +57,14 @@ export const useTasksClientStore = defineStore('tasks-client', () => {
     loadingClientOptions.value = true
     clientOptionsError.value = ''
     try {
-      const response = await apiRequest('/v1/tenants/clients')
+      const response = await apiRequest('/v1/tenants/clients?includeInactive=true')
       const list = Array.isArray(response?.tenants) ? (response.tenants as BackendTenant[]) : []
       clientOptions.value = list
-        .filter((tenant) => tenant?.id && (tenant.active ?? tenant.isActive ?? true))
+        .filter((tenant) => tenant?.id)
         .map((tenant) => ({
           label: String(tenant.name || '').trim() || `Cliente ${String(tenant.id).slice(0, 8)}`,
           value: String(tenant.id),
+          active: Boolean(tenant.active ?? tenant.isActive ?? true),
         }))
       clientOptionsSynced.value = true
     } catch (error) {

@@ -23,6 +23,8 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 }
 
 func (handler *HTTPHandler) RegisterRoutes(mux *http.ServeMux, middleware *auth.Middleware) {
+	mux.Handle("GET /v1/tasks/preferences", middleware.RequireAuth(handler.withPermission(PermBoardsView, handler.getUserPreferences)))
+	mux.Handle("PUT /v1/tasks/preferences", middleware.RequireAuth(handler.withPermission(PermBoardsView, handler.saveUserPreferences)))
 	mux.Handle("GET /v1/tasks/boards", middleware.RequireAuth(handler.withPermission(PermBoardsView, handler.listBoards)))
 	mux.Handle("POST /v1/tasks/boards", middleware.RequireAuth(handler.withPermission(PermBoardsManage, handler.createBoard)))
 	mux.Handle("GET /v1/task-boards/{boardId}", middleware.RequireAuth(handler.withPermission(PermBoardsView, handler.getBoard)))
@@ -52,6 +54,29 @@ func (handler *HTTPHandler) RegisterRoutes(mux *http.ServeMux, middleware *auth.
 	mux.Handle("GET /v1/tasks/{taskId}/audit", middleware.RequireAuth(handler.withPermission(PermBoardsManage, handler.listAudit)))
 
 	handler.registerTrackingRoutes(mux, middleware)
+}
+
+func (handler *HTTPHandler) getUserPreferences(w http.ResponseWriter, r *http.Request, ctx taskHTTPContext) {
+	preferences, err := handler.service.GetUserPreferences(r.Context(), ctx.Access)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+}
+
+func (handler *HTTPHandler) saveUserPreferences(w http.ResponseWriter, r *http.Request, ctx taskHTTPContext) {
+	var input UpdateUserPreferencesInput
+	if err := httpapi.ReadJSON(r, &input); err != nil {
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+		return
+	}
+	preferences, err := handler.service.SaveUserPreferences(r.Context(), ctx.Access, input)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
 }
 
 type taskHTTPContext struct {

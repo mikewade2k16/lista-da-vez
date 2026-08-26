@@ -156,10 +156,17 @@ export const useAuthStore = defineStore('auth', () => {
       effectivePermissionsResolved.value,
     ),
   )
-  // Usuario ativo sem nenhum workspace continua autenticado. `/perfil` e a rota
-  // universal (sem workspace/module gate); usar `/operacao` como fallback criava
-  // um loop no auth.global: a rota negada redirecionava para ela mesma.
-  const homeWorkspaceId = computed(() => allowedWorkspaces.value[0] || '')
+  // A conta-agencia (hoje, Crow Visuals) entra pelo calendario quando o papel
+  // realmente pode acessar esse workspace. O gate preserva papeis restritos e
+  // evita que auth.global redirecione de volta para uma home sem autorizacao.
+  // Usuario sem workspace continua autenticado e cai na rota universal `/perfil`.
+  const homeWorkspaceId = computed(() => {
+    if (coreAccount.activeAccount?.isAgency && allowedWorkspaces.value.includes('calendar')) {
+      return 'calendar'
+    }
+
+    return allowedWorkspaces.value[0] || ''
+  })
   const homePath = computed(() =>
     homeWorkspaceId.value ? getWorkspacePath(homeWorkspaceId.value) : '/perfil',
   )
@@ -453,10 +460,12 @@ export const useAuthStore = defineStore('auth', () => {
 
       accessToken.value = response.session.accessToken
       hydrated.value = false
-      // deferRuntime: navega assim que user/principal/homePath estao prontos
-      // (/v1/me/context). A hidratacao pesada (accounts/settings/operacao) roda em
-      // background — o login deixa de esperar 4+ round-trips antes de sair da tela.
+      // deferRuntime mantem settings/operacao em background, mas a account ativa
+      // precisa estar resolvida antes da navegacao: homePath usa isAgency para
+      // abrir o Calendario como home da agencia. fetchAccounts e deduplicado com
+      // a mesma chamada que syncRuntimeAccess possa ter iniciado em paralelo.
       await fetchContext({ deferRuntime: true })
+      await coreAccount.fetchAccounts()
       return response
     } catch (error) {
       clearSession()

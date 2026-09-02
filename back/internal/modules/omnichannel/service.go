@@ -17,11 +17,12 @@ import (
 type Service struct {
 	store                 *Store
 	groupMetadataResolver *groupMetadataResolver
+	publisher             Publisher
 }
 
 // NewService cria o Service.
 func NewService(store *Store) *Service {
-	return &Service{store: store}
+	return &Service{store: store, publisher: noopPublisher{}}
 }
 
 func (s *Service) setGroupMetadataResolver(resolver *groupMetadataResolver) {
@@ -66,13 +67,12 @@ func (s *Service) ListConversations(ctx context.Context, accountID string, calle
 		return ConversationPageView{}, err
 	}
 	f := ConversationFilter{ConversationPageFilter: normalized}
-	if !caller.IsAdmin {
-		scopeKeys, err := s.accessibleScopeKeys(ctx, accountID, caller)
-		if err != nil {
-			return ConversationPageView{}, err
-		}
-		f.ScopeKeys = scopeKeys
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, caller.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
+	if err != nil {
+		return ConversationPageView{}, err
 	}
+	f.Visibility = &visibility
 	f.Limit = normalized.Limit + 1
 	rows, err := s.store.ListConversations(ctx, accountID, f)
 	if err != nil {
@@ -151,22 +151,20 @@ func normalizeConversationFilter(f ConversationPageFilter) (ConversationPageFilt
 // vazia = o usuario nao alcanca instancia nenhuma; devolvemos um scope impossivel para
 // a query nao virar "sem filtro" (fail-close: sem acesso => inbox vazio, nao inbox
 // inteiro). O gate de dado DEFINITIVO e queue_members e chega na F8 (canonico §5.2).
-func (s *Service) accessibleScopeKeys(ctx context.Context, accountID string, caller Caller) ([]string, error) {
-	instances, err := s.store.ListInstances(ctx, accountID, InstanceFilter{
-		ActiveOnly:        true,
-		ResponsibleUserID: caller.UserID,
-	})
+func (s *Service) resolveConversationVisibility(ctx context.Context, accountID, userID, permissionKey string, required InstanceGrantLevel) (VisibilityScope, error) {
+	scope, err := s.store.LoadConversationAccessScope(ctx, accountID, userID)
 	if err != nil {
-		return nil, err
+		return VisibilityScope{}, err
 	}
-	keys := make([]string, 0, len(instances))
-	for _, i := range instances {
-		keys = append(keys, i.InstanceName)
+	if !scope.Eligible || !scope.allowsPermission(permissionKey) {
+		return VisibilityScope{}, ErrForbidden
 	}
-	if len(keys) == 0 {
-		return []string{}, nil
-	}
-	return keys, nil
+	return scope.conversationVisibility(required), nil
+}
+
+func (s *Service) requireInstanceAccess(ctx context.Context, accountID, userID, instanceID, permissionKey string, required InstanceGrantLevel) error {
+	_, err := s.store.RequireInstanceAccess(ctx, accountID, userID, instanceID, permissionKey, required)
+	return err
 }
 
 // conversationView monta a view do front a partir da linha crua: projeta state -> status
@@ -218,12 +216,17 @@ func conversationView(row conversationRow) (ConversationView, error) {
 // ListMessages devolve a pagina do historico. A conversa e resolvida ANTES (escopo:
 // conversa de outra conta => 404) e a paginacao e `limit` + `beforeId`, nao cursor.
 func (s *Service) ListMessages(ctx context.Context, accountID string, caller Caller, conversationID string, f MessagePageFilter) (MessagePageView, error) {
-	if err := s.assertConversationScope(ctx, accountID, caller, conversationID); err != nil {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, caller.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
+	if err != nil {
 		return MessagePageView{}, err
+	}
+	if _, err := s.store.GetVisibleConversation(ctx, accountID, visibility, conversationID); err != nil {
+		return MessagePageView{}, translate(err)
 	}
 	f.Limit = normalizeLimit(f.Limit)
 
-	messages, err := s.store.ListMessages(ctx, accountID, caller.UserID, conversationID, f)
+	messages, err := s.store.ListVisibleMessages(ctx, accountID, conversationID, visibility, f)
 	if err != nil {
 		return MessagePageView{}, translate(err)
 	}
@@ -232,7 +235,7 @@ func (s *Service) ListMessages(ctx context.Context, accountID string, caller Cal
 	// em ASC, entao a primeira e a mais antiga). Pagina vazia = nao ha mais nada atras.
 	hasMore := false
 	if len(messages) > 0 {
-		hasMore, err = s.store.HasOlderMessage(ctx, accountID, caller.UserID, conversationID, messages[0].CreatedAt, messages[0].ID)
+		hasMore, err = s.store.HasOlderVisibleMessage(ctx, accountID, conversationID, visibility, messages[0].CreatedAt, messages[0].ID)
 		if err != nil {
 			return MessagePageView{}, err
 		}
@@ -247,10 +250,12 @@ func (s *Service) ListMessages(ctx context.Context, accountID string, caller Cal
 // GetMessage devolve uma mensagem da conversa (escopo validado antes; a query do Store
 // filtra por account TAMBEM — defesa em profundidade).
 func (s *Service) GetMessage(ctx context.Context, accountID string, caller Caller, conversationID, messageID string) (MessageView, error) {
-	if err := s.assertConversationScope(ctx, accountID, caller, conversationID); err != nil {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, caller.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
+	if err != nil {
 		return MessageView{}, err
 	}
-	m, err := s.store.GetMessage(ctx, accountID, caller.UserID, conversationID, messageID)
+	m, err := s.store.GetVisibleMessage(ctx, accountID, conversationID, messageID, visibility)
 	if err != nil {
 		return MessageView{}, translate(err)
 	}
@@ -261,30 +266,19 @@ func (s *Service) GetMessage(ctx context.Context, accountID string, caller Calle
 // alcanca (A2). Qualquer falha vira ErrNotFound -> 404: nunca 403, que confirmaria a
 // existencia do recurso (enumeration).
 func (s *Service) assertConversationScope(ctx context.Context, accountID string, caller Caller, conversationID string) error {
-	hidden, err := s.store.IsConversationHidden(ctx, accountID, conversationID)
+	return s.assertConversationAccess(ctx, accountID, caller.UserID, conversationID,
+		"omnichannel.conversations.view", InstanceGrantView)
+}
+
+func (s *Service) assertConversationAccess(ctx context.Context, accountID, userID, conversationID, permissionKey string, required InstanceGrantLevel) error {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, userID, permissionKey, required)
 	if err != nil {
 		return err
 	}
-	if hidden {
-		return ErrNotFound
-	}
-	row, err := s.store.GetConversation(ctx, accountID, conversationID)
-	if err != nil {
+	if _, err := s.store.GetVisibleConversation(ctx, accountID, visibility, conversationID); err != nil {
 		return translate(err)
 	}
-	if caller.IsAdmin {
-		return nil
-	}
-	keys, err := s.accessibleScopeKeys(ctx, accountID, caller)
-	if err != nil {
-		return err
-	}
-	for _, k := range keys {
-		if k == row.InstanceScopeKey {
-			return nil
-		}
-	}
-	return ErrNotFound
+	return nil
 }
 
 // normalizeLimit aplica o contrato do front: 1..200, default 100. Fora da faixa nao e

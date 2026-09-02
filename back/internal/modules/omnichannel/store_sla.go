@@ -3,6 +3,7 @@ package omnichannel
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -85,21 +86,102 @@ func (s *Store) EvaluateSLAs(ctx context.Context, nowUnix int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
-	created := 0
+	items := make([]slaDueRow, 0)
 	for rows.Next() {
 		var item slaDueRow
 		if err := rows.Scan(&item.AccountID, &item.ConversationID, &item.HandoffID, &item.QueueID, &item.RequestedAt, &item.FirstResponse); err != nil {
-			return created, err
+			rows.Close()
+			return 0, err
 		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	created := 0
+	for _, item := range items {
 		for _, eventType := range dueSLAEvents(nowUnix, item.RequestedAt, item.FirstResponse) {
-			if err := s.insertSLAEvent(ctx, item.AccountID, item.ConversationID, item.HandoffID, eventType, "sla:"+item.HandoffID+":"+eventType, nil); err != nil {
+			inserted, err := s.materializeSLAEventIfVisible(ctx, nowUnix, item, eventType)
+			if err != nil {
 				return created, err
 			}
-			created++
+			if inserted {
+				created++
+			}
 		}
 	}
-	return created, rows.Err()
+	return created, nil
+}
+
+// materializeSLAEventIfVisible lineariza a materializacao com o reset da
+// instancia. O fence compartilhado e adquirido antes de reler handoff,
+// conversa e policy; o insert idempotente ocorre na mesma transacao. Assim,
+// reset-first nao cria evento e scheduler-first produz um evento anterior ao
+// novo cutoff que permanece preservado, mas oculto da projecao operacional.
+func (s *Store) materializeSLAEventIfVisible(
+	ctx context.Context,
+	nowUnix int64,
+	item slaDueRow,
+	eventType string,
+) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockHistoryExternalEffectScope(
+		ctx, tx, item.AccountID, item.ConversationID, "none",
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrHistoryResetInvalidated) {
+			return false, nil
+		}
+		return false, err
+	}
+	var requestedAt int64
+	var firstResponse int
+	err = tx.QueryRow(ctx, `select extract(epoch from handoff.requested_at)::bigint,
+			policy.first_response_seconds
+		from messaging.handoffs handoff
+		join messaging.conversations conversation
+		  on conversation.account_id=handoff.account_id
+		 and conversation.id=handoff.conversation_id
+		join messaging.queue_sla_policies policy
+		  on policy.account_id=handoff.account_id
+		 and policy.queue_id=handoff.target_queue_id
+		 and policy.is_active
+		where handoff.account_id=$1::uuid
+		  and handoff.conversation_id=$2::uuid
+		  and handoff.id=$3::uuid
+		  and handoff.status in ('queued','accepted')
+		  and handoff.target_queue_id is not null`+
+		s.historyVisibleConversationPredicate("conversation")+`
+		  and handoff.requested_at > `+s.effectiveHistoryCutoffExpression("conversation"),
+		item.AccountID, item.ConversationID, item.HandoffID).Scan(&requestedAt, &firstResponse)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !slices.Contains(dueSLAEvents(nowUnix, requestedAt, firstResponse), eventType) {
+		return false, nil
+	}
+	tag, err := tx.Exec(ctx, `insert into messaging.sla_events
+		(account_id,conversation_id,handoff_id,event_type,idempotency_key,metadata)
+		values ($1::uuid,$2::uuid,$3::uuid,$4,$5,'{}'::jsonb)
+		on conflict (account_id,idempotency_key) do nothing`,
+		item.AccountID, item.ConversationID, item.HandoffID, eventType,
+		"sla:"+item.HandoffID+":"+eventType)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 func dueSLAEvents(nowUnix, requestedAt int64, firstResponseSeconds int) []string {

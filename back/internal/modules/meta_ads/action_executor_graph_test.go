@@ -437,6 +437,25 @@ func TestMetaClientReadFailureAfterSuccessStatusIsAmbiguous(t *testing.T) {
 	}
 }
 
+func TestMetaClientTimeoutAfterMutationRequestIsAmbiguous(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		response.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	client := NewMetaClient(server.URL)
+	client.http.Timeout = 10 * time.Millisecond
+
+	_, err := client.UpdateCampaignAction(
+		context.Background(), "secret-token", "123456789", url.Values{"status": {"PAUSED"}},
+	)
+	classified := classifyGraphActionError(err, false)
+	if classified == nil || !classified.Ambiguous || classified.Code != "execution_outcome_unknown" {
+		t.Fatalf("classified = %#v, raw err %v", classified, err)
+	}
+}
+
 func TestGraphActionExecutorPromotesLiveInstagramPostAsFullyPausedTree(t *testing.T) {
 	t.Parallel()
 
@@ -486,8 +505,63 @@ func TestGraphActionExecutorPromotesLiveInstagramPostAsFullyPausedTree(t *testin
 	}
 	if client.adSetValues.Get("daily_budget") != "2500" ||
 		!strings.Contains(client.adSetValues.Get("targeting"), `"countries":["BR"]`) ||
-		client.creativeValues.Get("source_instagram_media_id") != "77889900" {
+		client.creativeValues.Get("source_instagram_media_id") != "77889900" ||
+		client.creativeValues.Get("object_id") != "55667788" ||
+		client.creativeValues.Get("instagram_user_id") != "66778899" ||
+		client.creativeValues.Has("page_id") {
 		t.Fatalf("adset=%#v creative=%#v", client.adSetValues, client.creativeValues)
+	}
+}
+
+func TestGraphActionExecutorDoesNotRepeatUncertainInstagramCreationStep(t *testing.T) {
+	t.Parallel()
+
+	client := newFakeActionGraphClient()
+	client.created = graphActionCreate{ID: "11223344"}
+	client.adSetErr = &graphActionRequestError{
+		status: http.StatusTooManyRequests,
+		cause:  errors.New("graph throttled after request"),
+	}
+	client.pages = []GraphInstagramPage{{PageID: "55667788", IGUserID: "66778899"}}
+	client.media = []GraphInstagramMedia{{ID: "77889900"}}
+	steps := newFakeActionStepRepository()
+	executor := &graphActionExecutor{
+		tokens: &fakeActionTokenProvider{token: "secret-token"}, client: client,
+		steps: steps, instagramScopes: &fakeInstagramActionScope{},
+	}
+	proposal := executableActionProposal(ActionPromoteInstagramPost)
+	proposal.ID = actionTestProposal
+	proposal.AccountID = actionTestAccount
+	proposal.AdAccountID = actionTestAdAccount
+	proposal.MetaAdAccountID = "987654321"
+	proposal.Payload = json.RawMessage(`{
+		"name":"Campanha post","instagramPostId":"77889900","igUserId":"66778899",
+		"pageId":"55667788","adSetName":"Conjunto post","adName":"Anuncio post",
+		"budget":{"type":"daily","amount":25},"countries":["BR"],
+		"ageMin":18,"ageMax":65,"status":"PAUSED"
+	}`)
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		_, err := executor.Execute(context.Background(), proposal)
+		var executorErr *ActionExecutorError
+		if !errors.As(err, &executorErr) || !executorErr.Ambiguous ||
+			executorErr.Code != "execution_outcome_unknown" {
+			t.Fatalf("attempt %d error = %#v", attempt, err)
+		}
+	}
+	if client.createCalls != 1 || client.adSetCalls != 1 ||
+		client.creativeCalls != 0 || client.adCalls != 0 {
+		t.Fatalf("Graph calls create/adset/creative/ad = %d/%d/%d/%d",
+			client.createCalls, client.adSetCalls, client.creativeCalls, client.adCalls)
+	}
+	reconciled, err := executor.Reconcile(context.Background(), proposal)
+	if err != nil || reconciled.Status != ActionUnknown ||
+		reconciled.ErrorCode != "creation_step_unconfirmed" {
+		t.Fatalf("Reconcile() = %#v, err %v", reconciled, err)
+	}
+	var partial map[string]any
+	if err := json.Unmarshal(reconciled.Result, &partial); err != nil || partial["campaignId"] != "11223344" {
+		t.Fatalf("partial result = %s, err %v", reconciled.Result, err)
 	}
 }
 
@@ -613,6 +687,9 @@ type fakeActionGraphClient struct {
 	err            error
 	createErr      error
 	copyErr        error
+	adSetErr       error
+	creativeErr    error
+	adErr          error
 	current        graphActionCampaign
 	currentErr     error
 	values         url.Values
@@ -685,7 +762,7 @@ func (c *fakeActionGraphClient) CreateAdSetAction(
 ) (graphActionCreate, error) {
 	c.adSetCalls++
 	c.adSetValues = values
-	return graphActionCreate{ID: "22334455"}, nil
+	return graphActionCreate{ID: "22334455"}, c.adSetErr
 }
 
 func (c *fakeActionGraphClient) CreateAdCreativeAction(
@@ -693,7 +770,7 @@ func (c *fakeActionGraphClient) CreateAdCreativeAction(
 ) (graphActionCreate, error) {
 	c.creativeCalls++
 	c.creativeValues = values
-	return graphActionCreate{ID: "33445566"}, nil
+	return graphActionCreate{ID: "33445566"}, c.creativeErr
 }
 
 func (c *fakeActionGraphClient) CreateAdAction(
@@ -701,7 +778,7 @@ func (c *fakeActionGraphClient) CreateAdAction(
 ) (graphActionCreate, error) {
 	c.adCalls++
 	c.adValues = values
-	return graphActionCreate{ID: "44556677"}, nil
+	return graphActionCreate{ID: "44556677"}, c.adErr
 }
 
 func (c *fakeActionGraphClient) ListPagesWithInstagram(

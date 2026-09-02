@@ -24,7 +24,9 @@ func (s *Store) HideMessages(ctx context.Context, accountID, userID, conversatio
 	rows, err := s.pool.Query(ctx, `insert into messaging.hidden_messages (account_id, user_id, message_id)
 		select $1::uuid, $2::uuid, m.id
 		from messaging.messages m
-		where m.account_id = $1::uuid and m.conversation_id = $3::uuid and m.id = any($4::uuid[])
+		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+		where m.account_id = $1::uuid and m.conversation_id = $3::uuid and m.id = any($4::uuid[])`+
+		s.historyVisibleMessagePredicate("m", "c")+`
 		on conflict (user_id, message_id) do nothing
 		returning message_id::text`, accountID, userID, conversationID, ids)
 	if err != nil {
@@ -68,7 +70,9 @@ type messageActionRow struct {
 func (s *Store) ListActionMessages(ctx context.Context, accountID, conversationID string, ids []string) ([]messageActionRow, error) {
 	rows, err := s.pool.Query(ctx, `select m.id::text, m.external_message_id, m.direction
 		from messaging.messages m
-		where m.account_id = $1::uuid and m.conversation_id = $2::uuid and m.id = any($3::uuid[])`,
+		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+		where m.account_id = $1::uuid and m.conversation_id = $2::uuid and m.id = any($3::uuid[])`+
+		s.historyVisibleMessagePredicate("m", "c"),
 		accountID, conversationID, ids)
 	if err != nil {
 		return nil, err
@@ -104,7 +108,8 @@ func (s *Store) ConversationChannelTarget(ctx context.Context, accountID, conver
 	err := s.pool.QueryRow(ctx, `select coalesce(i.provider, ''), c.instance_scope_key, c.contact_phone, c.external_id
 		from messaging.conversations c
 		left join messaging.whatsapp_instances i on i.id = c.instance_id and i.account_id = c.account_id
-		where c.account_id = $1::uuid and c.id = $2::uuid`, accountID, conversationID,
+		where c.account_id = $1::uuid and c.id = $2::uuid`+visibleConversationFilter+
+		s.historyVisibleConversationPredicate("c"), accountID, conversationID,
 	).Scan(&t.Provider, &t.InstanceScopeKey, &t.ContactPhone, &t.ExternalID)
 	return t, err
 }
@@ -116,6 +121,46 @@ func (s *Store) FindContactConversationID(ctx context.Context, accountID, contac
 	err := s.pool.QueryRow(ctx, `select id::text from messaging.conversations
 		where account_id = $1::uuid and contact_id = $2::uuid
 		order by last_message_at desc limit 1`, accountID, contactID).Scan(&id)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return "", false, nil
+	case err != nil:
+		return "", false, err
+	default:
+		return id, true, nil
+	}
+}
+
+func (s *Store) FindVisibleContactConversationID(ctx context.Context, accountID, contactID string, scope VisibilityScope) (string, bool, error) {
+	query := `select c.id::text from messaging.conversations c
+		where c.account_id=$1::uuid and c.contact_id=$2::uuid` + visibleConversationFilter
+	args := []any{accountID, contactID}
+	query, args = appendConversationVisibility(query, args, "c", scope)
+	query += s.historyVisibleConversationPredicate("c") + ` order by c.last_message_at desc,c.id desc limit 1`
+	var id string
+	err := s.pool.QueryRow(ctx, query, args...).Scan(&id)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return "", false, nil
+	case err != nil:
+		return "", false, err
+	default:
+		return id, true, nil
+	}
+}
+
+// FindAuthorizedContactConversationForComposeID resolve somente a linha canonica que pode
+// receber uma nova mensagem. O cutoff continua escondendo historico, previews e leituras, mas
+// nao transforma um reset de historico em bloqueio permanente para contatos que o ator ainda
+// alcanca pelo grant da instancia somado a manage/fila/atribuicao.
+func (s *Store) FindAuthorizedContactConversationForComposeID(ctx context.Context, accountID, contactID string, scope VisibilityScope) (string, bool, error) {
+	query := `select c.id::text from messaging.conversations c
+		where c.account_id=$1::uuid and c.contact_id=$2::uuid` + visibleConversationFilter
+	args := []any{accountID, contactID}
+	query, args = appendConversationVisibility(query, args, "c", scope)
+	query += ` order by c.last_message_at desc,c.id desc limit 1`
+	var id string
+	err := s.pool.QueryRow(ctx, query, args...).Scan(&id)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return "", false, nil
@@ -163,5 +208,5 @@ func (s *Store) CreateContactConversation(ctx context.Context, accountID, contac
 	if err != nil {
 		return conversationRow{}, err
 	}
-	return s.GetConversation(ctx, accountID, convID)
+	return s.GetConversationForCompose(ctx, accountID, convID)
 }

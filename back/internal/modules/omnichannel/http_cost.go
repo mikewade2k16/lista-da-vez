@@ -32,12 +32,12 @@ func RegisterCostRoutes(mux *http.ServeMux, svc *CostService, middleware *auth.M
 
 func handleAIUsage(svc *CostService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, ok := scope(w, r)
+		accountID, caller, ok := scope(w, r)
 		if !ok {
 			return
 		}
 		from, toExclusive := parseUsageWindow(r.URL.Query().Get("from"), r.URL.Query().Get("to"), time.Now().UTC())
-		report, err := svc.Usage(r.Context(), accountID, from, toExclusive)
+		report, err := svc.Usage(r.Context(), accountID, caller.UserID, from, toExclusive)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

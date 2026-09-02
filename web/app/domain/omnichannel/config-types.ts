@@ -5,6 +5,16 @@
 //
 // A credencial NUNCA volta crua: so o status mascarado {set,last4}.
 
+import type { OmniInstanceAccessPolicy, OmniInstanceCapabilities } from './instance-access-types'
+export type {
+  OmniInstanceAccessAdmin,
+  OmniInstanceAccessPolicy,
+  OmniInstanceAccessWrite,
+  OmniInstanceCapabilities,
+  OmniInstanceGrant,
+  OmniInstanceGrantLevel,
+} from './instance-access-types'
+
 // ============================================================================
 // Numeros / instancias / providers
 // ============================================================================
@@ -64,6 +74,8 @@ export interface OmniInstance {
   tenantId: string
   instanceName: string
   provider: OmniProvider
+  accessPolicy: OmniInstanceAccessPolicy
+  accessRevision: number
   displayName: string | null
   phoneNumber: string | null
   queueLabel: string | null
@@ -75,6 +87,9 @@ export interface OmniInstance {
   isActive: boolean
   hasEvolutionApiKey: boolean
   assignedUserIds: string[]
+  historyVisibleFrom: string | null
+  historyResetRevision: number
+  myCapabilities: OmniInstanceCapabilities
   createdAt: string
   updatedAt: string
 }
@@ -93,6 +108,11 @@ export interface OmniInstanceManagement {
   currentChannels: number
   instances: OmniInstance[]
   users: OmniAssignableUser[]
+}
+
+export interface OmniInstanceAccess {
+  hasMultipleActiveInstances: boolean
+  instances: OmniInstance[]
 }
 
 export interface OmniChannelLimit {

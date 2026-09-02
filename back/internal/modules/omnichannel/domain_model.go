@@ -203,12 +203,12 @@ type TransitionPayload struct {
 	TargetQueueID string // queue.transfer: fila destino (validada contra a conta => 404)
 }
 
-// VisibilityScope e o gate de DADO por fila (Contrato 5). Broad = platform_admin OU
-// settings.manage (ve inclusive conversa unrouted). Caso contrario, ve so as filas onde e
-// membro ativo + as atribuidas a ele.
+// VisibilityScope combina as instancias autorizadas com o gate de fila/atribuicao. Permissoes
+// administrativas nunca transformam este escopo em "ver tudo".
 type VisibilityScope struct {
-	UserID  string
-	IsBroad bool
+	UserID                  string
+	InstanceScopeKeys       []string
+	ManageInstanceScopeKeys []string
 }
 
 // ============================================================================

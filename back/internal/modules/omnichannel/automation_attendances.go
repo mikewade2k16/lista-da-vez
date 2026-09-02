@@ -3,6 +3,7 @@ package omnichannel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -35,6 +36,14 @@ func (s *Store) ListAutomationAttendances(ctx context.Context, accountID, client
 		from messaging.conversations c
 		join messaging.automation_profiles p
 		  on p.account_id=c.account_id and p.whatsapp_instance_id=c.instance_id
+		 and p.client_account_id=c.client_account_id
+		join messaging.channel_client_bindings binding
+		  on binding.account_id=p.account_id
+		 and binding.client_account_id=p.client_account_id
+		 and binding.whatsapp_instance_id=p.whatsapp_instance_id
+		 and binding.channel='WHATSAPP'
+		 and binding.effective_from <= now()
+		 and (binding.effective_to is null or binding.effective_to > now())
 		join messaging.whatsapp_instances wi
 		  on wi.account_id=p.account_id and wi.id=p.whatsapp_instance_id
 		left join lateral (
@@ -42,12 +51,20 @@ func (s *Store) ListAutomationAttendances(ctx context.Context, accountID, client
 			from messaging.handoffs h
 			where h.account_id=c.account_id and h.conversation_id=c.id
 			  and h.status in ('requested','queued')
+			  and h.requested_at > `+s.effectiveHistoryCutoffExpression("c")+`
 			order by h.requested_at desc,h.id desc limit 1
 		) handoff on true
 		left join lateral (
 			select d.status
 			from messaging.ai_dispatches d
 			where d.account_id=c.account_id and d.conversation_id=c.id
+			  and d.generation=c.ai_generation
+			  and not exists (select 1 from unnest(d.message_ids) captured(message_id)
+				where not exists (select 1 from messaging.messages dispatch_message
+					where dispatch_message.account_id=d.account_id
+					  and dispatch_message.conversation_id=d.conversation_id
+					  and dispatch_message.id=captured.message_id`+
+		s.historyVisibleMessagePredicate("dispatch_message", "c")+`))
 			order by d.created_at desc,d.id desc limit 1
 		) dispatch on true
 		left join lateral (
@@ -58,6 +75,9 @@ func (s *Store) ListAutomationAttendances(ctx context.Context, accountID, client
 			join messaging.ai_agent_versions av
 			  on av.account_id=r.account_id and av.id=r.agent_version_id
 			where r.account_id=c.account_id and r.conversation_id=c.id
+			  and exists (select 1 from messaging.messages run_message
+				where run_message.account_id=r.account_id and run_message.conversation_id=c.id
+				  and run_message.id=r.message_id`+s.historyVisibleMessagePredicate("run_message", "c")+`)
 			order by r.created_at desc,r.id desc limit 1
 		) ai_run on true
 		left join lateral (
@@ -66,17 +86,15 @@ func (s *Store) ListAutomationAttendances(ctx context.Context, accountID, client
 			       min(m.created_at) as pending_since
 			from messaging.messages m
 			where m.account_id=c.account_id and m.conversation_id=c.id and m.direction='INBOUND'
-			  and m.created_at > coalesce((select suppression.history_cleared_at
-			      from messaging.contact_suppressions suppression
-			      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id),
-			      '-infinity'::timestamptz)
+			`+s.historyVisibleMessagePredicate("m", "c")+`
 			  and m.created_at > coalesce((
 				select max(answer.created_at) from messaging.messages answer
 				where answer.account_id=c.account_id and answer.conversation_id=c.id
-				  and answer.direction='OUTBOUND' and answer.status <> 'FAILED'
+				  and answer.direction='OUTBOUND' and answer.status <> 'FAILED'`+
+		s.historyVisibleMessagePredicate("answer", "c")+`
 			  ),'-infinity'::timestamptz)
 		) pending on true
-		where c.account_id=$1::uuid
+		where c.account_id=$1::uuid`+s.historyVisibleConversationPredicate("c")+`
 		  and not exists (select 1 from messaging.contact_suppressions suppression
 		      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id
 		        and suppression.is_hidden=true)
@@ -110,7 +128,15 @@ func (s *Store) AutomationConversationScope(ctx context.Context, accountID, conv
 		from messaging.conversations c
 		join messaging.automation_profiles p
 		  on p.account_id=c.account_id and p.whatsapp_instance_id=c.instance_id
-		where c.account_id=$1::uuid and c.id=$2::uuid
+		 and p.client_account_id=c.client_account_id
+		join messaging.channel_client_bindings binding
+		  on binding.account_id=p.account_id
+		 and binding.client_account_id=p.client_account_id
+		 and binding.whatsapp_instance_id=p.whatsapp_instance_id
+		 and binding.channel='WHATSAPP'
+		 and binding.effective_from <= now()
+		 and (binding.effective_to is null or binding.effective_to > now())
+		where c.account_id=$1::uuid and c.id=$2::uuid`+s.historyVisibleConversationPredicate("c")+`
 		  and not exists (select 1 from messaging.contact_suppressions suppression
 		      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id
 		        and suppression.is_hidden=true)`, accountID, conversationID).
@@ -148,6 +174,13 @@ func (s *AutomationService) ListAttendances(ctx context.Context, accountID strin
 		client, allowed := byID[row.ClientAccountID]
 		if !allowed {
 			continue
+		}
+		if err := s.permissions.assertConversationAccess(ctx, accountID, p.UserID, row.ConversationID,
+			"omnichannel.agents.manage", InstanceGrantManage); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			return nil, err
 		}
 		mode := automationAttendanceAIStopped
 		if row.ConversationState == string(StateAIActive) {
@@ -241,6 +274,13 @@ func normalizeAutomationAction(conversationID string, in *AutomationActionInput)
 }
 
 func (s *AutomationService) authorizeAutomationConversation(ctx context.Context, accountID string, p auth.Principal, conversationID string) (automationConversationScope, error) {
+	if s.permissions == nil {
+		return automationConversationScope{}, ErrForbidden
+	}
+	if err := s.permissions.assertConversationAccess(ctx, accountID, p.UserID, conversationID,
+		"omnichannel.agents.manage", InstanceGrantManage); err != nil {
+		return automationConversationScope{}, err
+	}
 	scope, err := s.store.AutomationConversationScope(ctx, accountID, conversationID)
 	if err != nil {
 		return automationConversationScope{}, err

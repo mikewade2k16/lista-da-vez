@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -18,21 +19,23 @@ func isWhatsAppGroupExternalID(externalID string) bool {
 func aiOutboundAllowedTx(ctx context.Context, tx pgx.Tx, accountID, conversationID string) (bool, error) {
 	var externalID string
 	var instanceID *string
-	var bindingState, bindingMode string
+	var bindingState, bindingMode, clientAccountID string
 	if err := tx.QueryRow(ctx, `
 		select
 			c.external_id,
 			c.instance_id::text,
 			c.client_binding_state,
+			coalesce(c.client_account_id::text,''),
 			coalesce(ac.channel_binding_mode, 'shadow')
 		from messaging.conversations c
 		left join messaging.account_config ac on ac.account_id = c.account_id
 		where c.account_id=$1::uuid and c.id=$2::uuid`,
 		accountID, conversationID,
-	).Scan(&externalID, &instanceID, &bindingState, &bindingMode); err != nil {
+	).Scan(&externalID, &instanceID, &bindingState, &clientAccountID, &bindingMode); err != nil {
 		return false, err
 	}
-	if instanceID == nil || strings.TrimSpace(*instanceID) == "" || isWhatsAppGroupExternalID(externalID) {
+	if instanceID == nil || strings.TrimSpace(*instanceID) == "" ||
+		strings.TrimSpace(clientAccountID) == "" || isWhatsAppGroupExternalID(externalID) {
 		return false, nil
 	}
 	if bindingMode == "enforced" && bindingState != "resolved" {
@@ -44,15 +47,30 @@ func aiOutboundAllowedTx(ctx context.Context, tx pgx.Tx, accountID, conversation
 		from messaging.automation_profiles p
 		join messaging.whatsapp_instances wi
 		  on wi.account_id=p.account_id and wi.id=p.whatsapp_instance_id
+		join messaging.channel_client_bindings binding
+		  on binding.account_id=p.account_id
+		 and binding.client_account_id=p.client_account_id
+		 and binding.whatsapp_instance_id=p.whatsapp_instance_id
+		 and binding.channel='WHATSAPP'
+		 and binding.effective_from <= now()
+		 and (binding.effective_to is null or binding.effective_to > now())
 		join messaging.ai_agents aa
 		  on aa.account_id=p.account_id and aa.id=p.ai_agent_id
 		where p.account_id=$1::uuid and p.whatsapp_instance_id=$2::uuid
+		  and p.client_account_id=$3::uuid
 		  and p.enabled and wi.is_active and aa.enabled and aa.active_version_id is not null`,
-		accountID, *instanceID).Scan(&allowed)
+		accountID, *instanceID, clientAccountID).Scan(&allowed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
-	return allowed, err
+	if err != nil || !allowed {
+		return false, err
+	}
+	rollout, err := evaluateAIRollout(ctx, tx, accountID, conversationID, time.Now().UTC())
+	if err != nil {
+		return false, err
+	}
+	return rollout.RunAI && rollout.AutoSend, nil
 }
 
 func invalidateAutomationInstanceTx(ctx context.Context, tx pgx.Tx, accountID, instanceID, reason string, dispatchV2 bool) error {
@@ -70,6 +88,14 @@ func invalidateAutomationInstanceTx(ctx context.Context, tx pgx.Tx, accountID, i
 		set state=case when state='ai_active' then 'routing' else state end,
 		    ai_generation=ai_generation+1, updated_at=now()
 		where account_id=$1::uuid and instance_id=$2::uuid`, accountID, instanceID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.ai_reply_drafts draft
+		set status='expired',decision_reason=$3,decided_at=now(),updated_at=now()
+		from messaging.conversations conversation
+		where draft.account_id=$1::uuid and draft.account_id=conversation.account_id
+		  and draft.conversation_id=conversation.id and draft.status='pending'
+		  and conversation.instance_id=$2::uuid`, accountID, instanceID, reason); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `update messaging.outbox o

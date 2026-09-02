@@ -1,17 +1,22 @@
 import { computed, ref } from "vue";
 import type {
   WhatsAppBootstrapResponse,
-  WhatsAppConversationHistoryClearResponse,
-  WhatsAppInstanceManagementResponse,
-  WhatsAppInstanceRecord,
   WhatsAppQrCodeResponse,
   WhatsAppStatusResponse
 } from "~/types";
+import type {
+  OmniInstanceAccess,
+  OmniInstance,
+} from "~/domain/omnichannel/config-types";
 import { extractAdminError } from "~/composables/omnichannel/useOmnichannelAdminShared";
 import { useOmnichannelAdminConnectionState } from "~/composables/omnichannel/useOmnichannelAdminConnectionState";
 import { useOmnichannelAdminQrPolling } from "~/composables/omnichannel/useOmnichannelAdminQrPolling";
-import { useAdminSession } from "~/composables/useAdminSession";
+import {
+  canResetInstanceHistory,
+  useOmnichannelScopeInvalidation
+} from "~/composables/omnichannel/useOmnichannelScopeInvalidation";
 import { useApi } from "~/composables/useApi";
+import { useAuthStore } from "~/stores/auth";
 
 export const NEW_WHATSAPP_INSTANCE_VALUE = "__new__";
 
@@ -28,18 +33,19 @@ function buildProviderUnavailableState() {
 }
 
 export function useOmnichannelWhatsAppSession() {
-  const { legacyRole } = useAdminSession();
+  const auth = useAuthStore();
   const { apiFetch } = useApi();
+  const scopeInvalidation = useOmnichannelScopeInvalidation();
 
   const loadingInstances = ref(false);
+  const instanceAccessState = ref<"loading" | "resolved-empty" | "resolved-nonempty" | "error">("loading");
   const refreshingStatus = ref(false);
   const fetchingQr = ref(false);
   const generatingQr = ref(false);
   const disconnecting = ref(false);
-  const clearingHistory = ref(false);
   const savingDisplayName = ref(false);
 
-  const instances = ref<WhatsAppInstanceRecord[]>([]);
+  const instances = ref<OmniInstance[]>([]);
   const statusResult = ref<WhatsAppStatusResponse | null>(null);
   const qrResult = ref<WhatsAppQrCodeResponse | null>(null);
   const infoMessage = ref("");
@@ -50,7 +56,9 @@ export function useOmnichannelWhatsAppSession() {
 
   let active = false;
 
-  const canManageChannel = computed(() => legacyRole.value === "ADMIN");
+  const canManageChannel = computed(() =>
+    auth.effectivePermissionKeys.includes("omnichannel.instances.manage")
+  );
   const selectedInstance = computed(() =>
     instances.value.find((entry) => entry.id === selectedInstanceKey.value) ?? null
   );
@@ -61,15 +69,20 @@ export function useOmnichannelWhatsAppSession() {
       value: entry.id
     }));
 
-    return [
-      ...options,
-      { label: "Nova conexao WhatsApp", value: NEW_WHATSAPP_INSTANCE_VALUE }
-    ];
+    return canManageChannel.value
+      ? [...options, { label: "Nova conexao WhatsApp", value: NEW_WHATSAPP_INSTANCE_VALUE }]
+      : options;
   });
   const internalInstanceLabel = computed(() =>
     selectedInstance.value?.instanceName?.trim() || "Sera gerado automaticamente ao criar a conexao."
   );
   const isCreatingNewInstance = computed(() => !selectedInstance.value);
+  const canResetHistory = computed(() => canResetInstanceHistory(selectedInstance.value));
+  const clearingHistory = computed(
+    () => Boolean(
+      selectedInstance.value && scopeInvalidation.isResettingInstance(selectedInstance.value.id)
+    )
+  );
 
   const {
     connectionState,
@@ -115,25 +128,35 @@ export function useOmnichannelWhatsAppSession() {
     lastSavedDisplayName.value = displayName.value;
   }
 
-  async function loadInstances(options: { preferredKey?: string | null; silent?: boolean } = {}) {
-    if (!canManageChannel.value) {
-      instances.value = [];
-      syncSelection();
-      return;
-    }
-
+  async function loadInstances(options: {
+    preferredKey?: string | null;
+    silent?: boolean;
+    throwOnError?: boolean;
+  } = {}) {
     loadingInstances.value = true;
+    instanceAccessState.value = "loading";
     if (!options.silent) {
       clearMessages(true);
     }
 
     try {
-      const response = await apiFetch<WhatsAppInstanceManagementResponse>("/tenant/whatsapp/instances");
-      instances.value = response.instances;
+      const response = await apiFetch<OmniInstanceAccess>(
+        canManageChannel.value
+          ? "/tenant/whatsapp/instances"
+          : "/tenant/whatsapp/instances/access"
+      );
+      instances.value = Array.isArray(response.instances) ? response.instances : [];
+      instanceAccessState.value = instances.value.length > 0 ? "resolved-nonempty" : "resolved-empty";
       syncSelection(options.preferredKey);
     } catch (error) {
+      instances.value = [];
+      instanceAccessState.value = "error";
+      syncSelection();
       if (!options.silent) {
         errorMessage.value = extractAdminError(error);
+      }
+      if (options.throwOnError) {
+        throw error;
       }
     } finally {
       loadingInstances.value = false;
@@ -224,6 +247,11 @@ export function useOmnichannelWhatsAppSession() {
       return;
     }
 
+    if (!canManageChannel.value) {
+      stopQrPolling();
+      return;
+    }
+
     if (!selectedInstance.value) {
       qrResult.value = {
         configured: false,
@@ -248,10 +276,6 @@ export function useOmnichannelWhatsAppSession() {
   }
 
   async function activate() {
-    if (!canManageChannel.value) {
-      return;
-    }
-
     active = true;
     await loadInstances();
     await refreshSelectedState();
@@ -299,7 +323,7 @@ export function useOmnichannelWhatsAppSession() {
     clearMessages(true);
 
     try {
-      const updated = await apiFetch<WhatsAppInstanceRecord>(
+      const updated = await apiFetch<OmniInstance>(
         `/tenant/whatsapp/instances/${selectedInstance.value.id}`,
         {
           method: "PATCH",
@@ -421,43 +445,32 @@ export function useOmnichannelWhatsAppSession() {
   }
 
   async function clearConversationHistory() {
-    if (!canManageChannel.value) {
-      errorMessage.value = "Perfil sem permissao para limpar o historico do WhatsApp.";
-      return null;
-    }
-
-    if (!selectedInstance.value) {
+    const instance = selectedInstance.value;
+    if (!instance) {
       errorMessage.value = "Selecione uma conexao existente para limpar o historico.";
       return null;
     }
 
-    clearingHistory.value = true;
     clearMessages();
-
-    try {
-      const response = await apiFetch<WhatsAppConversationHistoryClearResponse>(
-        "/tenant/whatsapp/conversations/clear",
-        {
-          method: "POST",
-          body: {
-            instanceId: selectedInstance.value.id
-          }
-        }
-      );
-
-      infoMessage.value = `${response.message}. ${response.deletedConversations} conversa(s) e ${response.deletedMessages} mensagem(ns) removida(s).`;
-      return response;
-    } catch (error) {
-      errorMessage.value = extractAdminError(error);
-      return null;
-    } finally {
-      clearingHistory.value = false;
+    const result = await scopeInvalidation.requestInstanceHistoryReset(instance, {
+      rehydrate: async () => {
+        await loadInstances({
+          preferredKey: instance.id,
+          silent: true,
+          throwOnError: true
+        });
+      }
+    });
+    if (result.status === "success") {
+      return result.result;
     }
+    return null;
   }
 
   return {
     NEW_WHATSAPP_INSTANCE_VALUE,
     loadingInstances,
+    instanceAccessState,
     refreshingStatus,
     fetchingQr,
     generatingQr,
@@ -472,6 +485,7 @@ export function useOmnichannelWhatsAppSession() {
     selectedInstanceKey,
     displayName,
     canManageChannel,
+    canResetHistory,
     selectedInstance,
     hasExistingInstances,
     instanceItems,

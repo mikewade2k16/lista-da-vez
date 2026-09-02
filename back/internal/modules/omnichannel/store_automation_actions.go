@@ -54,6 +54,13 @@ func (s *Store) ReplayAutomationWithAI(ctx context.Context, accountID, conversat
 		from messaging.automation_profiles p
 		join messaging.whatsapp_instances wi
 		  on wi.account_id=p.account_id and wi.id=p.whatsapp_instance_id
+		join messaging.channel_client_bindings binding
+		  on binding.account_id=p.account_id
+		 and binding.client_account_id=p.client_account_id
+		 and binding.whatsapp_instance_id=p.whatsapp_instance_id
+		 and binding.channel='WHATSAPP'
+		 and binding.effective_from <= now()
+		 and (binding.effective_to is null or binding.effective_to > now())
 		join messaging.ai_agents aa
 		  on aa.account_id=p.account_id and aa.id=p.ai_agent_id
 		join messaging.ai_agent_versions av
@@ -72,13 +79,10 @@ func (s *Store) ReplayAutomationWithAI(ctx context.Context, accountID, conversat
 	var messageIDs []string
 	err = tx.QueryRow(ctx, `select coalesce(array_agg(m.id order by m.created_at,m.id),'{}'::uuid[])::text[]
 		from messaging.messages m
-		where m.account_id=$1::uuid and m.conversation_id=$2::uuid and m.direction='INBOUND'
-		  and m.created_at > coalesce((select suppression.history_cleared_at
-		      from messaging.conversations conversation
-		      join messaging.contact_suppressions suppression
-		        on suppression.account_id=conversation.account_id and suppression.contact_id=conversation.contact_id
-		      where conversation.account_id=m.account_id and conversation.id=m.conversation_id),
-		      '-infinity'::timestamptz)
+		join messaging.conversations conversation
+		  on conversation.account_id=m.account_id and conversation.id=m.conversation_id
+		where m.account_id=$1::uuid and m.conversation_id=$2::uuid and m.direction='INBOUND'`+
+		s.historyVisibleMessagePredicate("m", "conversation")+`
 		  and m.created_at > coalesce((
 			select max(answer.created_at) from messaging.messages answer
 			where answer.account_id=$1::uuid and answer.conversation_id=$2::uuid

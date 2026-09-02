@@ -96,6 +96,25 @@ func TestMetaClientCreatesInstagramAdTreeWithBearerForms(t *testing.T) {
 		if strings.Contains(r.URL.RawQuery, "access_token") {
 			t.Fatalf("token leaked in URL: %s", r.URL.String())
 		}
+		switch requests {
+		case 0:
+			if r.Form.Get("status") != "PAUSED" ||
+				!strings.Contains(r.Form.Get("targeting"), `"publisher_platforms":["instagram"]`) {
+				t.Fatalf("ad set form = %#v", r.Form)
+			}
+		case 1:
+			if r.Form.Get("object_id") != "55667788" ||
+				r.Form.Get("instagram_user_id") != "66778899" ||
+				r.Form.Get("source_instagram_media_id") != "77889900" ||
+				r.Form.Has("page_id") {
+				t.Fatalf("creative form = %#v", r.Form)
+			}
+		case 2:
+			if r.Form.Get("status") != "PAUSED" ||
+				!strings.Contains(r.Form.Get("creative"), `"creative_id":"98765432"`) {
+				t.Fatalf("ad form = %#v", r.Form)
+			}
+		}
 		requests++
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": "98765432"})
@@ -105,16 +124,20 @@ func TestMetaClientCreatesInstagramAdTreeWithBearerForms(t *testing.T) {
 	client := NewMetaClient(server.URL)
 	if _, err := client.CreateAdSetAction(context.Background(), token, "123456", url.Values{
 		"status": {"PAUSED"}, "daily_budget": {"2500"},
+		"targeting": {`{"publisher_platforms":["instagram"]}`},
 	}); err != nil {
 		t.Fatalf("CreateAdSetAction: %v", err)
 	}
 	if _, err := client.CreateAdCreativeAction(context.Background(), token, "123456", url.Values{
+		"object_id":                 {"55667788"},
+		"instagram_user_id":         {"66778899"},
 		"source_instagram_media_id": {"77889900"},
 	}); err != nil {
 		t.Fatalf("CreateAdCreativeAction: %v", err)
 	}
 	if _, err := client.CreateAdAction(context.Background(), token, "123456", url.Values{
-		"status": {"PAUSED"},
+		"status":   {"PAUSED"},
+		"creative": {`{"creative_id":"98765432"}`},
 	}); err != nil {
 		t.Fatalf("CreateAdAction: %v", err)
 	}

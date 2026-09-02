@@ -21,9 +21,10 @@ func scanAutoCloseDecision(row rowScanner) (AutoCloseDecisionView, error) {
 	return out, err
 }
 
-// ApplyAIAutoClose serializes the final policy check, state transition and audit
-// row. The callback belongs to the domain service and is the only code that can
-// authorize the close; this repository only supplies locked, tenant-scoped data.
+// ApplyAIAutoClose serializes the history fence, final policy check, state
+// transition and audit row. The callback belongs to the domain service and is
+// the only code that can authorize the close; this repository only supplies
+// locked, tenant-scoped data.
 func (s *Store) ApplyAIAutoClose(ctx context.Context, accountID, conversationID string, in AutoCloseRequest,
 	decide func(autoCloseLockedContext) (autoClosePersistence, error)) (AutoCloseDecisionView, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -35,6 +36,25 @@ func (s *Store) ApplyAIAutoClose(ctx context.Context, accountID, conversationID 
 	idempotencyKey := strings.TrimSpace(in.IdempotencyKey)
 	if idempotencyKey == "" || len([]rune(idempotencyKey)) > 128 {
 		return AutoCloseDecisionView{}, ErrInvalidBody
+	}
+	// Keep the canonical instance -> conversation lock order used by history
+	// reset. A reset that committed first makes the conversation invisible; an
+	// auto-close that acquired the lease first keeps the reset waiting until its
+	// complete write-set (reply, outbox, evaluation and state) commits.
+	if err := lockHistoryExternalEffectScope(ctx, tx, accountID, conversationID, "update"); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrHistoryResetInvalidated) {
+			return AutoCloseDecisionView{}, ErrNotFound
+		}
+		return AutoCloseDecisionView{}, err
+	}
+	var visible bool
+	if err := tx.QueryRow(ctx, `select exists(select 1 from messaging.conversations c
+		where c.account_id=$1::uuid and c.id=$2::uuid`+
+		s.historyVisibleConversationPredicate("c")+`)`, accountID, conversationID).Scan(&visible); err != nil {
+		return AutoCloseDecisionView{}, err
+	}
+	if !visible {
+		return AutoCloseDecisionView{}, ErrNotFound
 	}
 	view, err := scanAutoCloseDecision(tx.QueryRow(ctx, `select `+autoCloseDecisionColumns+`
 		from messaging.ai_close_evaluations
@@ -67,6 +87,17 @@ func (s *Store) ApplyAIAutoClose(ctx context.Context, accountID, conversationID 
 	persist, err := decide(autoCloseLockedContext{Snapshot: snap, Policy: policy, Collected: collected})
 	if err != nil {
 		return AutoCloseDecisionView{}, err
+	}
+	// pgx encodes nil slices as SQL NULL, while the persisted evidence contract
+	// requires empty arrays when a profile has no required fields or blockers.
+	if policy.RequiredFields == nil {
+		policy.RequiredFields = []string{}
+	}
+	if persist.Evaluation.ReasonCodes == nil {
+		persist.Evaluation.ReasonCodes = []string{}
+	}
+	if persist.Evaluation.MissingFields == nil {
+		persist.Evaluation.MissingFields = []string{}
 	}
 	var finalMessage *MessageView
 	finalMessageCreated := false
@@ -141,8 +172,15 @@ func automationClosePolicyTx(ctx context.Context, tx pgx.Tx, accountID string, i
 	err := tx.QueryRow(ctx, `select id::text, enabled, auto_close_enabled,
 		auto_close_min_confidence::float8, auto_close_require_all_fields,
 		auto_close_block_human_request, auto_close_block_sensitive
-		from messaging.automation_profiles
-		where account_id=$1::uuid and whatsapp_instance_id=$2::uuid`, accountID, *instanceID).
+		from messaging.automation_profiles profile
+		where profile.account_id=$1::uuid and profile.whatsapp_instance_id=$2::uuid
+		  and exists (select 1 from messaging.channel_client_bindings binding
+		      where binding.account_id=profile.account_id
+		        and binding.client_account_id=profile.client_account_id
+		        and binding.whatsapp_instance_id=profile.whatsapp_instance_id
+		        and binding.channel='WHATSAPP'
+		        and binding.effective_from <= now()
+		        and (binding.effective_to is null or binding.effective_to > now()))`, accountID, *instanceID).
 		Scan(&out.ProfileID, &out.ProfileEnabled, &out.AutoCloseEnabled,
 			&out.MinimumConfidence, &out.RequireAllRequiredFields,
 			&out.BlockOnHumanRequest, &out.BlockSensitiveTopics)
@@ -156,6 +194,13 @@ func automationClosePolicyTx(ctx context.Context, tx pgx.Tx, accountID string, i
 	rows, err := tx.Query(ctx, `select c.key from messaging.collect_field_defs c
 		join messaging.automation_profiles p
 		  on p.account_id=c.account_id and p.ai_agent_id=c.agent_id
+		join messaging.channel_client_bindings binding
+		  on binding.account_id=p.account_id
+		 and binding.client_account_id=p.client_account_id
+		 and binding.whatsapp_instance_id=p.whatsapp_instance_id
+		 and binding.channel='WHATSAPP'
+		 and binding.effective_from <= now()
+		 and (binding.effective_to is null or binding.effective_to > now())
 		where p.account_id=$1::uuid and p.whatsapp_instance_id=$2::uuid and c.required
 		order by c.sort_order,c.key`, accountID, *instanceID)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 type fakeMediaFetchStore struct {
 	data       mediaFetchData
 	getErr     error
+	hidden     bool
 	ready      *StoredMedia
 	failedCode string
 	audits     []string
@@ -23,6 +24,18 @@ type fakeMediaFetchStore struct {
 
 func (f *fakeMediaFetchStore) GetMediaFetchData(context.Context, string, string) (mediaFetchData, error) {
 	return f.data, f.getErr
+}
+func (f *fakeMediaFetchStore) IsMessageHistoryVisible(context.Context, string, string, string) (bool, error) {
+	return !f.hidden, nil
+}
+func (f *fakeMediaFetchStore) WithMessageExternalEffectLease(_ context.Context, _, _, _ string, effect func() error) (bool, error) {
+	if f.hidden {
+		return false, nil
+	}
+	if effect != nil {
+		return true, effect()
+	}
+	return true, nil
 }
 func (f *fakeMediaFetchStore) UpdateFetchedMedia(_ context.Context, _, _, _ string, media StoredMedia) (MessageView, error) {
 	f.ready = &media
@@ -44,6 +57,7 @@ type fakeMediaProvider struct {
 	limit       int64
 	lastRef     channel.MediaRef
 	credentials channel.Credentials
+	downloads   int
 }
 
 func (p *fakeMediaProvider) ID() string { return "media-test" }
@@ -57,11 +71,26 @@ func (p *fakeMediaProvider) SendMessage(context.Context, channel.Credentials, ch
 	return channel.SendResult{}, nil
 }
 func (p *fakeMediaProvider) DownloadMedia(_ context.Context, credentials channel.Credentials, ref channel.MediaRef) (io.ReadCloser, channel.MediaMeta, error) {
+	p.downloads++
 	p.credentials, p.lastRef = credentials, ref
 	if p.err != nil {
 		return nil, channel.MediaMeta{}, p.err
 	}
 	return io.NopCloser(strings.NewReader(p.reader)), p.meta, nil
+}
+
+func TestMediaFetchHandlerHistoryResetStopsBeforeProvider(t *testing.T) {
+	store := &fakeMediaFetchStore{data: baseMediaFetchData(), hidden: true}
+	provider := &fakeMediaProvider{reader: "must-not-download"}
+	handler := NewMediaFetchHandler(store, NewDiskMediaStorage(t.TempDir()), channel.NewRegistry(provider), nil, nil, nil)
+
+	err := handler.Handle(context.Background(), mediaJob(t, 1))
+	if err == nil || !jobs.Classify(err).Unrecoverable || !errors.Is(err, ErrHistoryResetInvalidated) {
+		t.Fatalf("Handle err=%v, want history reset unrecoverable", err)
+	}
+	if provider.downloads != 0 || store.ready != nil || store.failedCode != "" {
+		t.Fatalf("downloads=%d ready=%v failed=%q", provider.downloads, store.ready, store.failedCode)
+	}
 }
 func (p *fakeMediaProvider) SendReaction(context.Context, channel.Credentials, channel.ReactionInput) error {
 	return nil

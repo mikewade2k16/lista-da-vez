@@ -29,9 +29,52 @@ func RegisterSendRoutes(mux *http.ServeMux, send *SendService, media *MediaServi
 		return middleware.RequireAuthWithAccount(h)
 	}
 	mux.Handle("POST /v1/omnichannel/conversations/{id}/messages", wrap(handleSendMessage(send)))
+	mux.Handle("GET /v1/omnichannel/conversations/{id}/ai-reply-draft", wrap(handleGetAIReplyDraft(send)))
+	mux.Handle("POST /v1/omnichannel/conversations/{id}/ai-reply-drafts/{draftId}/dismiss", wrap(handleDismissAIReplyDraft(send)))
 	mux.Handle("GET /v1/omnichannel/conversations/{cid}/messages/{mid}/media", wrap(handleGetMedia(media)))
 	mux.Handle("GET /v1/omnichannel/conversations/{cid}/messages/{mid}/media/analyses", wrap(handleListMediaAnalyses(media)))
 	mux.Handle("POST /v1/omnichannel/conversations/{cid}/messages/{mid}/media/retry", wrap(handleRetryMedia(media)))
+}
+
+func handleGetAIReplyDraft(svc *SendService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, principal, ok := sendPrincipalScope(w, r)
+		if !ok {
+			return
+		}
+		view, err := svc.GetPendingAIReplyDraft(r.Context(), accountID, principal, r.PathValue("id"))
+		if err != nil {
+			writeSendError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+type dismissAIReplyDraftInput struct {
+	Reason string `json:"reason"`
+}
+
+func handleDismissAIReplyDraft(svc *SendService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, principal, ok := sendPrincipalScope(w, r)
+		if !ok {
+			return
+		}
+		var in dismissAIReplyDraftInput
+		if r.Body != nil && r.ContentLength != 0 {
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&in); err != nil {
+				httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+				return
+			}
+		}
+		if err := svc.DismissAIReplyDraft(r.Context(), accountID, principal,
+			r.PathValue("id"), r.PathValue("draftId"), in.Reason); err != nil {
+			writeSendError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 func handleListMediaAnalyses(svc *MediaService) http.HandlerFunc {
@@ -105,27 +148,27 @@ func sendPrincipalScope(w http.ResponseWriter, r *http.Request) (string, auth.Pr
 }
 
 // handleGetMedia faz stream do arquivo com Range (http.ServeContent). Content-Type explicito
-// (do mime salvo, allowlist), Cache-Control private, nosniff. Disposition inline|attachment.
+// (do mime salvo, allowlist), Cache-Control private/no-store, nosniff. Disposition inline|attachment.
 func handleGetMedia(svc *MediaService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accountID, caller, ok := scope(w, r)
 		if !ok {
 			return
 		}
-		opened, err := svc.OpenMedia(r.Context(), accountID, caller, r.PathValue("cid"), r.PathValue("mid"))
+		err := svc.ServeMedia(r.Context(), accountID, caller, r.PathValue("cid"), r.PathValue("mid"), func(opened openedMedia) {
+			w.Header().Set("Content-Type", opened.MimeType)
+			w.Header().Set("Cache-Control", "private, no-store")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Content-Disposition", mediaDisposition(r, opened.FileName))
+			// Range/If-Range/206 sem carregar o arquivo inteiro em memoria.
+			http.ServeContent(w, r, opened.FileName, opened.ModTime, opened.File)
+		})
 		if err != nil {
 			writeSendError(w, r, err)
 			return
 		}
-		defer func() { _ = opened.File.Close() }()
-
-		w.Header().Set("Content-Type", opened.MimeType)
-		w.Header().Set("Cache-Control", "private, max-age=60")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Disposition", mediaDisposition(r, opened.FileName))
-		// ServeContent resolve Range/If-Range/206/Content-Range/Accept-Ranges e NAO carrega o
-		// arquivo em memoria (seek no *os.File). O legado fazia arrayBuffer() inteiro — D2 elimina.
-		http.ServeContent(w, r, opened.FileName, opened.ModTime, opened.File)
 	}
 }
 

@@ -82,9 +82,9 @@ func (e *graphActionExecutor) executePromoteInstagramPost(
 
 			creativeValues := url.Values{
 				"name":                      {payload.AdName + " - criativo"},
+				"object_id":                 {payload.PageID},
 				"source_instagram_media_id": {payload.InstagramPostID},
 				"instagram_user_id":         {payload.IGUserID},
-				"page_id":                   {payload.PageID},
 			}
 			creativeID, err := e.executeInstagramCreationStep(
 				ctx, proposal, actionStepCreative, creativeValues,

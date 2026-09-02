@@ -3,6 +3,7 @@ package omnichannel
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
@@ -153,7 +154,13 @@ func (s *Service) AddQueueMember(ctx context.Context, accountID string, p auth.P
 	if !ok {
 		return QueueMemberView{}, ErrNotFound
 	}
-	return s.store.AddQueueMember(ctx, accountID, queueID, userID)
+	member, err := s.store.AddQueueMember(ctx, accountID, queueID, userID)
+	if err != nil {
+		return QueueMemberView{}, err
+	}
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
+	return member, nil
 }
 
 func (s *Service) RemoveQueueMember(ctx context.Context, accountID string, p auth.Principal, queueID, userID string) error {
@@ -163,7 +170,12 @@ func (s *Service) RemoveQueueMember(ctx context.Context, accountID string, p aut
 	if err := s.assertQueueInAccount(ctx, accountID, queueID); err != nil {
 		return err
 	}
-	return s.store.RemoveQueueMember(ctx, accountID, queueID, strings.TrimSpace(userID))
+	if err := s.store.RemoveQueueMember(ctx, accountID, queueID, strings.TrimSpace(userID)); err != nil {
+		return err
+	}
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
+	return nil
 }
 
 func (s *Service) assertQueueInAccount(ctx context.Context, accountID, queueID string) error {

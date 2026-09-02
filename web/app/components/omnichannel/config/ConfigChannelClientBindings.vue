@@ -168,6 +168,23 @@ onMounted(() => void load())
       </button>
     </header>
 
+    <div class="binding-config__ownership-guide">
+      <article>
+        <strong>Número próprio do cliente</strong>
+        <span>
+          É criado na conta do cliente, recebe vínculo padrão com essa mesma conta e pode ser
+          operado no portal do cliente.
+        </span>
+      </article>
+      <article>
+        <strong>Número da agência dedicado ao cliente</strong>
+        <span>
+          Continua pertencendo à conta da agência. O vínculo organiza CRM e roteamento, mas não
+          concede acesso ao portal do cliente.
+        </span>
+      </article>
+    </div>
+
     <p v-if="error" class="binding-config__error">{{ error }}</p>
 
     <div v-if="policy" class="binding-config__policy">
@@ -331,6 +348,7 @@ onMounted(() => void load())
 .binding-config > header,
 .binding-config__policy,
 .binding-config__form,
+.binding-config__ownership-guide article,
 .binding-config__actions,
 .binding-config__exceptions,
 .binding-config__list article {
@@ -359,10 +377,20 @@ onMounted(() => void load())
   font-size: 0.78rem;
 }
 .binding-config__policy,
-.binding-config__form {
+.binding-config__form,
+.binding-config__ownership-guide {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+}
+.binding-config__ownership-guide article {
+  display: grid;
+  gap: 0.35rem;
+}
+.binding-config__ownership-guide span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 .binding-config label,
 .binding-config__list article > div {
@@ -406,7 +434,8 @@ onMounted(() => void load())
 }
 @media (max-width: 760px) {
   .binding-config__policy,
-  .binding-config__form {
+  .binding-config__form,
+  .binding-config__ownership-guide {
     grid-template-columns: 1fr;
   }
   .binding-config > header,

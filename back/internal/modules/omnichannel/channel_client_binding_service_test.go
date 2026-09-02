@@ -27,6 +27,14 @@ func (f *bindingPermissionFake) requirePermission(_ context.Context, _ string, _
 	return f.err
 }
 
+func (f *bindingPermissionFake) requireInstanceAccess(context.Context, string, string, string, string, InstanceGrantLevel) error {
+	return f.err
+}
+
+func (f *bindingPermissionFake) assertConversationAccess(context.Context, string, string, string, string, InstanceGrantLevel) error {
+	return f.err
+}
+
 type bindingClientCatalogFake struct {
 	items []AutomationClientRef
 	err   error

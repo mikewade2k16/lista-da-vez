@@ -1,11 +1,15 @@
-import { effectScope, ref } from "vue";
+import { effectScope, ref, type Ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
+import { ApiClientError } from "~/composables/useApi";
 import type { Conversation, Message } from "~/types";
 import type {
   ConversationsPageResponse,
   MessagesPageResponse
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
-import { useOmnichannelInboxHistory } from "~/composables/omnichannel/useOmnichannelInboxHistory";
+import {
+  refreshAuthorizedActiveConversation,
+  useOmnichannelInboxHistory
+} from "~/composables/omnichannel/useOmnichannelInboxHistory";
 
 function buildConversation(id: string, lastMessageAt: string): Conversation {
   return {
@@ -70,7 +74,14 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function createHistory(apiFetch: (path: string, init?: Record<string, unknown>) => Promise<unknown>) {
+function createHistory(
+  apiFetch: (path: string, init?: Record<string, unknown>) => Promise<unknown>,
+  scopeOptions: {
+    getScopeGeneration?: () => number;
+    isScopeRefetching?: Ref<boolean>;
+    isComposeOnlyConversation?: (conversationId: string) => boolean;
+  } = {}
+) {
   const conversations = ref<Conversation[]>([]);
   const messages = ref<Message[]>([]);
   const activeConversationId = ref<string | null>(null);
@@ -93,6 +104,7 @@ function createHistory(apiFetch: (path: string, init?: Record<string, unknown>) 
     visibleMessagesConversationId,
     activeConversationId,
     selectedInstanceId: ref("all"),
+    whatsappInstanceAccessState: ref("resolved-nonempty"),
     search,
     channel: ref("all"),
     status: ref("all"),
@@ -136,7 +148,10 @@ function createHistory(apiFetch: (path: string, init?: Record<string, unknown>) 
       return [...byId.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     },
     updateConversationPreviewFromMessage: vi.fn(),
-    messageNeedsMediaHydration: () => false
+    messageNeedsMediaHydration: () => false,
+    getScopeGeneration: scopeOptions.getScopeGeneration,
+    isScopeRefetching: scopeOptions.isScopeRefetching,
+    isComposeOnlyConversation: scopeOptions.isComposeOnlyConversation
   }));
 
   if (!history) {
@@ -161,6 +176,23 @@ function createHistory(apiFetch: (path: string, init?: Record<string, unknown>) 
 }
 
 describe("useOmnichannelInboxHistory E1-R1", () => {
+  it("preserva o contexto de composicao no 404 sem publicar a conversa na lista", async () => {
+    const composeConversationId = "compose-after-reset";
+    const apiFetch = vi.fn().mockRejectedValue(new ApiClientError("not found", { statusCode: 404 }));
+    const state = createHistory(apiFetch, {
+      isComposeOnlyConversation: (conversationId) => conversationId === composeConversationId
+    });
+    state.activeConversationId.value = composeConversationId;
+
+    await state.history.loadConversationMessages(composeConversationId, { forceRefresh: true });
+
+    expect(state.activeConversationId.value).toBe(composeConversationId);
+    expect(state.visibleMessagesConversationId.value).toBe(composeConversationId);
+    expect(state.messages.value).toEqual([]);
+    expect(state.conversations.value).toEqual([]);
+    state.scope.stop();
+  });
+
   it("concatena paginas sem duplicar e preserva a conversa ativa", async () => {
     const active = buildConversation("active", "2026-07-21T10:00:00.000Z");
     const first = buildConversation("first", "2026-07-21T09:00:00.000Z");
@@ -274,5 +306,191 @@ describe("useOmnichannelInboxHistory E1-R1", () => {
     expect(state.messages.value.map((entry) => entry.id)).toEqual(["second-message"]);
     expect(state.messagesError.value).toBe("");
     state.scope.stop();
+  });
+
+  it("descarta uma resposta iniciada antes da invalidacao de escopo", async () => {
+    let scopeGeneration = 0;
+    const response = deferred<ConversationsPageResponse>();
+    const state = createHistory(() => response.promise, {
+      getScopeGeneration: () => scopeGeneration
+    });
+    state.conversations.value = [
+      buildConversation("safe", "2026-08-27T11:00:00.000Z")
+    ];
+
+    const request = state.history.loadConversations({ skipOpenSync: true });
+    scopeGeneration += 1;
+    response.resolve({
+      conversations: [buildConversation("old", "2026-08-27T12:00:00.000Z")],
+      hasMore: false
+    });
+    await request;
+
+    expect(state.conversations.value.map((entry) => entry.id)).toEqual(["safe"]);
+    state.scope.stop();
+  });
+
+  it("bloqueia merge de mensagem enquanto o fetch autorizado esta em andamento", () => {
+    const isScopeRefetching = ref(true);
+    const state = createHistory(vi.fn(), { isScopeRefetching });
+    state.activeConversationId.value = "conversation-a";
+    state.visibleMessagesConversationId.value = "conversation-a";
+    state.messages.value = [
+      buildMessage("current", "conversation-a", "2026-08-27T11:00:00.000Z")
+    ];
+    const incoming = buildMessage(
+      "old-realtime",
+      "conversation-a",
+      "2026-08-27T11:30:00.000Z"
+    );
+
+    state.history.updateConversationCacheFromMessage(incoming);
+    expect(state.messages.value.map((entry) => entry.id)).toEqual(["current"]);
+
+    isScopeRefetching.value = false;
+    state.history.updateConversationCacheFromMessage(incoming);
+    expect(state.messages.value.map((entry) => entry.id)).toEqual([
+      "current",
+      "old-realtime"
+    ]);
+    state.scope.stop();
+  });
+
+  it("nao ressuscita cache de uma conversa fora da lista depois do reset local", async () => {
+    let requestCount = 0;
+    const apiFetch = vi.fn(async () => {
+      requestCount += 1;
+      const messageId = requestCount === 1 ? "before-reset" : "after-reset";
+      return {
+        conversationId: "conversation-a",
+        messages: [
+          buildMessage(messageId, "conversation-a", `2026-08-27T1${requestCount}:00:00.000Z`)
+        ],
+        hasMore: false
+      } satisfies MessagesPageResponse;
+    });
+    const state = createHistory(apiFetch);
+    state.conversations.value = [
+      buildConversation("conversation-a", "2026-08-27T11:00:00.000Z")
+    ];
+    state.activeConversationId.value = "conversation-a";
+
+    await state.history.loadConversationMessages("conversation-a");
+    expect(state.messages.value.map((entry) => entry.id)).toEqual(["before-reset"]);
+
+    state.conversations.value = [];
+    state.activeConversationId.value = null;
+    state.visibleMessagesConversationId.value = null;
+    state.messages.value = [];
+    const { applyLocalHistoryResetInvalidation } = await import("./useOmnichannelInbox");
+    expect(applyLocalHistoryResetInvalidation({
+      eventId: "local-history-reset:instance-1:2",
+      reason: "history_reset",
+      occurredAt: "2026-08-27T12:00:00.000Z",
+      accountId: "account-a",
+      source: "local",
+      instanceId: "instance-1",
+      instanceScopeKey: "instance-1",
+      resetRevision: 2
+    }, {
+      clearInstanceProjection: vi.fn(),
+      clearAllMessageCaches: state.history.clearAllConversationCaches
+    })).toBe(true);
+
+    state.conversations.value = [
+      buildConversation("conversation-a", "2026-08-27T12:00:00.000Z")
+    ];
+    state.activeConversationId.value = "conversation-a";
+    await state.history.loadConversationMessages("conversation-a");
+
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+    expect(state.messages.value.map((entry) => entry.id)).toEqual(["after-reset"]);
+    state.scope.stop();
+  });
+});
+
+describe("authorized active conversation bootstrap", () => {
+  it("prioritizes the previously active authorized conversation over an auto-selected first item", async () => {
+    const activeConversationId = ref<string | null>("conversation-b");
+    const refreshConversationMessages = vi.fn().mockResolvedValue(undefined);
+
+    await expect(refreshAuthorizedActiveConversation({
+      preferredConversationId: "conversation-a",
+      conversations: ref([
+        buildConversation("conversation-b", "2026-08-27T12:01:00.000Z"),
+        buildConversation("conversation-a", "2026-08-27T12:00:00.000Z")
+      ]),
+      activeConversationId,
+      refreshConversationMessages
+    })).resolves.toBe(true);
+
+    expect(activeConversationId.value).toBe("conversation-a");
+    expect(refreshConversationMessages).toHaveBeenCalledWith("conversation-a", {
+      silent: true,
+      syncHistory: false,
+      ensureUnreadBoundary: true,
+      replace: true
+    });
+  });
+
+  it("falls back to the current authorized conversation when the preferred one lost access", async () => {
+    const activeConversationId = ref<string | null>("conversation-b");
+    const refreshConversationMessages = vi.fn().mockResolvedValue(undefined);
+
+    await expect(refreshAuthorizedActiveConversation({
+      preferredConversationId: "conversation-old",
+      conversations: ref([
+        buildConversation("conversation-b", "2026-08-27T12:00:00.000Z")
+      ]),
+      activeConversationId,
+      refreshConversationMessages
+    })).resolves.toBe(true);
+
+    expect(activeConversationId.value).toBe("conversation-b");
+    expect(refreshConversationMessages).toHaveBeenCalledWith("conversation-b", {
+      silent: true,
+      syncHistory: false,
+      ensureUnreadBoundary: true,
+      replace: true
+    });
+  });
+
+  it("rehydrates the active conversation from REST after the authorized list", async () => {
+    const activeConversationId = ref<string | null>(null);
+    const refreshConversationMessages = vi.fn().mockResolvedValue(undefined);
+
+    await expect(refreshAuthorizedActiveConversation({
+      preferredConversationId: "conversation-a",
+      conversations: ref([
+        buildConversation("conversation-a", "2026-08-27T12:00:00.000Z")
+      ]),
+      activeConversationId,
+      refreshConversationMessages
+    })).resolves.toBe(true);
+
+    expect(activeConversationId.value).toBe("conversation-a");
+    expect(refreshConversationMessages).toHaveBeenCalledWith("conversation-a", {
+      silent: true,
+      syncHistory: false,
+      ensureUnreadBoundary: true,
+      replace: true
+    });
+  });
+
+  it("does not fetch or restore a conversation absent from the authorized list", async () => {
+    const activeConversationId = ref<string | null>(null);
+    const refreshConversationMessages = vi.fn();
+
+    await expect(refreshAuthorizedActiveConversation({
+      preferredConversationId: "conversation-old",
+      conversations: ref([
+        buildConversation("conversation-b", "2026-08-27T12:00:00.000Z")
+      ]),
+      activeConversationId,
+      refreshConversationMessages
+    })).resolves.toBe(false);
+
+    expect(activeConversationId.value).toBeNull();
+    expect(refreshConversationMessages).not.toHaveBeenCalled();
   });
 });

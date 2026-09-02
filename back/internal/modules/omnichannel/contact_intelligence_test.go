@@ -61,3 +61,47 @@ func TestUserPromptUsesOnlySafeName(t *testing.T) {
 		t.Fatalf("nome confiavel ausente: %s", prompt)
 	}
 }
+
+func TestSuppressedOperationalMemoryNeverEntersPromptOrBrain(t *testing.T) {
+	t.Parallel()
+	name := "Contato Seguro"
+	intelligence := ContactIntelligenceView{
+		PreferredName:           &name,
+		NameSource:              "contact",
+		RelationshipStatus:      "customer",
+		Tags:                    json.RawMessage(`["vip-safe"]`),
+		Summary:                 "old-derived-sentinel",
+		Facts:                   json.RawMessage(`{"sentinel":"old-derived-sentinel"}`),
+		Preferences:             json.RawMessage(`{"secret":"old-derived-sentinel"}`),
+		InteractionCount:        8,
+		AIReplyCount:            5,
+		HandoffCount:            2,
+		LastIntent:              "old-derived-sentinel",
+		LastSentiment:           "positive",
+		LastOutcome:             "old-derived-sentinel",
+		DerivedMemorySuppressed: true,
+	}
+	prompt := buildUserPromptWithContactIntelligence(nil, name, nil, nil, &intelligence)
+	if strings.Contains(prompt, "old-derived-sentinel") || strings.Contains(prompt, "Memoria autoritativa do contato") {
+		t.Fatalf("prompt reintroduziu memoria derivada suprimida: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Nome pessoal confiavel para saudacao: "+name) {
+		t.Fatalf("prompt perdeu nome CRM seguro: %s", prompt)
+	}
+
+	conversationID := "conversation-safe"
+	request := buildBrainRequestV2(triageParams{
+		AccountID:           "account-safe",
+		ConversationID:      &conversationID,
+		ContactID:           "contact-safe",
+		ContactName:         name,
+		ContactIntelligence: &intelligence,
+		Agent:               agentRow{ID: "agent-safe"},
+		Version:             versionRow{ID: "version-safe", Model: "test"},
+	}, nil)
+	if request.Contact.Summary != nil || request.Contact.RelationshipStatus != "customer" ||
+		len(request.Contact.Tags) != 1 || request.Contact.Tags[0] != "vip-safe" ||
+		request.Contact.Name == nil || *request.Contact.Name != name {
+		t.Fatalf("brain context nao preservou somente CRM seguro: %+v", request.Contact)
+	}
+}

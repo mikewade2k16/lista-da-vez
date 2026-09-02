@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -38,6 +39,14 @@ func (s *ChannelClientBindingService) requireManage(ctx context.Context, account
 		return ErrForbidden
 	}
 	return s.permissions.requirePermission(ctx, accountID, p, channelBindingManagePermission)
+}
+
+func (s *ChannelClientBindingService) requireResourceManage(ctx context.Context, accountID string, p auth.Principal, channel, resourceID string) error {
+	if !strings.EqualFold(strings.TrimSpace(channel), "WHATSAPP") {
+		return nil
+	}
+	return s.permissions.requireInstanceAccess(ctx, accountID, p.UserID, resourceID,
+		channelBindingManagePermission, InstanceGrantManage)
 }
 
 func (s *ChannelClientBindingService) accessibleClient(
@@ -119,9 +128,16 @@ func (s *ChannelClientBindingService) List(
 	}
 	filtered := make([]ChannelClientBindingView, 0, len(rows))
 	for _, row := range rows {
-		if _, ok := accessible[row.ClientAccountID]; ok {
-			filtered = append(filtered, row)
+		if _, ok := accessible[row.ClientAccountID]; !ok {
+			continue
 		}
+		if err := s.requireResourceManage(ctx, accountID, p, row.Channel, row.ChannelResource.ID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			return ChannelClientBindingPage{}, err
+		}
+		filtered = append(filtered, row)
 	}
 	hasMore := len(filtered) > requestedLimit
 	if hasMore {
@@ -178,6 +194,9 @@ func (s *ChannelClientBindingService) Create(
 		in.Channel, in.ChannelResourceID, in.Reason, in.IdempotencyKey,
 	)
 	if err != nil {
+		return ChannelClientBindingView{}, err
+	}
+	if err := s.requireResourceManage(ctx, accountID, p, channel, resourceID); err != nil {
 		return ChannelClientBindingView{}, err
 	}
 	exists, active, err := s.repo.ChannelBindingResourceExists(ctx, accountID, channel, resourceID)
@@ -237,6 +256,9 @@ func (s *ChannelClientBindingService) Reassign(
 	if err != nil {
 		return ChannelClientBindingView{}, err
 	}
+	if err := s.requireResourceManage(ctx, accountID, p, current.Channel, current.ChannelResource.ID); err != nil {
+		return ChannelClientBindingView{}, err
+	}
 	if _, err = s.accessibleClient(ctx, accountID, p, current.ClientAccountID); err != nil {
 		return ChannelClientBindingView{}, err
 	}
@@ -282,6 +304,9 @@ func (s *ChannelClientBindingService) End(
 	}
 	current, err := s.repo.GetChannelClientBinding(ctx, accountID, bindingID)
 	if err != nil {
+		return ChannelClientBindingView{}, err
+	}
+	if err := s.requireResourceManage(ctx, accountID, p, current.Channel, current.ChannelResource.ID); err != nil {
 		return ChannelClientBindingView{}, err
 	}
 	if _, err = s.accessibleClient(ctx, accountID, p, current.ClientAccountID); err != nil {

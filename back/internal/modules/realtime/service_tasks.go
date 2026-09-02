@@ -722,6 +722,7 @@ func (service *Service) serveSubscriptionSocket(
 	onConnected func() []Event,
 	onClose func(),
 	readPump func(*websocket.Conn, chan<- struct{}),
+	writeGuards ...func(context.Context) error,
 ) {
 	connection, err := service.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -747,12 +748,32 @@ func (service *Service) serveSubscriptionSocket(
 		readPump = service.readPumpWithRateLimit
 	}
 	go readPump(connection, done)
+	authorizeWrite := func() bool {
+		for _, guard := range writeGuards {
+			if guard == nil {
+				continue
+			}
+			if err := guard(r.Context()); err != nil {
+				deadline := time.Now().Add(writeWait)
+				_ = connection.WriteControl(websocket.CloseMessage,
+					websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "access_changed"), deadline)
+				return false
+			}
+		}
+		return true
+	}
 
+	if !authorizeWrite() {
+		return
+	}
 	if err := service.writeEvent(connection, connected); err != nil {
 		return
 	}
 	if onConnected != nil {
 		for _, event := range onConnected() {
+			if !authorizeWrite() {
+				return
+			}
 			if err := service.writeEvent(connection, event); err != nil {
 				return
 			}
@@ -769,6 +790,9 @@ func (service *Service) serveSubscriptionSocket(
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
+			if !authorizeWrite() {
+				return
+			}
 			connection.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := connection.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
@@ -778,6 +802,9 @@ func (service *Service) serveSubscriptionSocket(
 				return
 			}
 
+			if !authorizeWrite() {
+				return
+			}
 			if err := service.writeEvent(connection, event); err != nil {
 				return
 			}

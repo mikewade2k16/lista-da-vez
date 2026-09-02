@@ -39,6 +39,9 @@ type CustomerIntelligenceInteractionRequest struct {
 	RoutingCatalog      json.RawMessage
 	ChannelCapabilities json.RawMessage
 	OccurredAt          time.Time
+	// DerivedMemorySuppressed e calculado pelo Store no mesmo snapshot da
+	// conversa/cutoff e nunca e controlado pelo payload HTTP.
+	DerivedMemorySuppressed bool `json:"-"`
 }
 
 type CustomerIntelligenceDecision struct {

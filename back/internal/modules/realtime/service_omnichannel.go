@@ -2,55 +2,136 @@ package realtime
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	omnichannelmodule "github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel"
 )
 
-// omnichannelViewPermission e a permissao efetiva exigida para assinar o canal do atendimento
-// (espelho de calendarViewPermission). platform_admin tem bypass apos a conta existir.
-const omnichannelViewPermission = "omnichannel.conversations.view"
+const (
+	// omnichannelViewPermission e a permissao efetiva exigida para assinar o canal do atendimento
+	// (espelho de calendarViewPermission). A fonte autoritativa e o RBAC atual no PostgreSQL.
+	omnichannelViewPermission = "omnichannel.conversations.view"
 
-// PublishOmnichannelEvent implementa omnichannel.Publisher (spec F5): repassa o evento ja montado
-// pelo call-site (shape completo, camelCase) para o Event do transporte e publica no canal da
-// conta. O modulo omnichannel seta o Type (message.*/conversation.*); aqui so entregamos. Sem
-// hub / Type vazio / AccountID vazio => no-op (espelho de PublishCalendarEvent).
-//
-// Cinto e suspensorio (spec F5 §Sanitizacao): mesmo o call-site ja sanitizando, um payload com
-// mediaUrl data: e zerado aqui — NUNCA base64 no WS. O front busca a midia por GET .../media.
+	// O topico omnichannel e account-wide. Portanto, ele transporta apenas uma invalidacao opaca;
+	// dados da mensagem/conversa sao obtidos novamente pela REST, que aplica o escopo do usuario.
+	omnichannelInvalidateEventType = "omnichannel.invalidate"
+
+	omnichannelInvalidateReasonMessageChanged     = "message_changed"
+	omnichannelInvalidateReasonHistoryReset       = "history_reset"
+	omnichannelInvalidateReasonAccessScopeChanged = "access_scope_changed"
+)
+
+// PublishOmnichannelEvent implementa omnichannel.Publisher no boundary do transporte account-wide.
+// Produtores legados ainda podem emitir message.*/conversation.*, mas nenhum campo deles atravessa
+// o boundary: o evento publicado possui type fixo, ResourceID vazio e payload estritamente limitado
+// a eventId/reason/occurredAt. Tipo ou motivo desconhecido e descartado (fail-closed).
 func (service *Service) PublishOmnichannelEvent(_ context.Context, evt omnichannelmodule.RealtimeEvent) {
 	if service.hub == nil {
 		return
 	}
 
-	eventType := strings.TrimSpace(evt.Type)
 	accountID := strings.TrimSpace(evt.AccountID)
-	if eventType == "" || accountID == "" {
+	reason, ok := omnichannelInvalidationReason(strings.TrimSpace(evt.Type), evt.Payload)
+	if accountID == "" || !ok {
 		return
 	}
 
-	payload := evt.Payload
-	if payload != nil {
-		if raw, ok := payload["mediaUrl"].(string); ok && strings.HasPrefix(strings.TrimSpace(raw), "data:") {
-			payload["mediaUrl"] = nil
+	eventID, ok := omnichannelOpaqueEventID()
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	occurredAt := omnichannelOccurredAt(evt.Payload, now)
+
+	service.hub.Publish(omnichannelAccountTopic(accountID), Event{
+		Type:       omnichannelInvalidateEventType,
+		AccountID:  accountID,
+		ResourceID: "",
+		Payload: map[string]any{
+			"eventId":    eventID,
+			"reason":     reason,
+			"occurredAt": occurredAt.Format(time.RFC3339Nano),
+		},
+		SavedAt: now,
+	})
+}
+
+// omnichannelInvalidationReason converte os tres tipos ricos legados em invalidacao e aceita o
+// contrato novo somente com um motivo fechado. Qualquer outro valor nao publica nada.
+func omnichannelInvalidationReason(eventType string, payload map[string]any) (string, bool) {
+	switch eventType {
+	case omnichannelmodule.RealtimeEventMessageCreated,
+		omnichannelmodule.RealtimeEventMessageUpdated,
+		omnichannelmodule.RealtimeEventConversationUpdated:
+		return omnichannelInvalidateReasonMessageChanged, true
+	case omnichannelInvalidateEventType:
+		reason, ok := payload["reason"].(string)
+		reason = strings.TrimSpace(reason)
+		if !ok || !isAllowedOmnichannelInvalidationReason(reason) {
+			return "", false
+		}
+		return reason, true
+	default:
+		return "", false
+	}
+}
+
+func isAllowedOmnichannelInvalidationReason(reason string) bool {
+	switch reason {
+	case omnichannelInvalidateReasonMessageChanged,
+		omnichannelInvalidateReasonHistoryReset,
+		omnichannelInvalidateReasonAccessScopeChanged:
+		return true
+	default:
+		return false
+	}
+}
+
+// omnichannelOpaqueEventID cria uma chave aleatoria por publicacao. Ela e compartilhada por todos
+// os assinantes que recebem aquele mesmo Event, mas nao deriva de telefone, conteudo ou IDs do
+// dominio — nem mesmo por hash, evitando correlacao/dicionario sobre dados sensiveis conhecidos.
+func omnichannelOpaqueEventID() (string, bool) {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", false
+	}
+	return "omi_" + hex.EncodeToString(random[:]), true
+}
+
+// omnichannelOccurredAt reaproveita somente timestamps validos e os normaliza; qualquer outro
+// valor e ignorado para impedir que texto arbitrario atravesse o payload opaco.
+func omnichannelOccurredAt(payload map[string]any, fallback time.Time) time.Time {
+	for _, key := range []string{"occurredAt", "updatedAt", "createdAt"} {
+		raw, exists := payload[key]
+		if !exists {
+			continue
+		}
+		switch value := raw.(type) {
+		case time.Time:
+			if !value.IsZero() {
+				return value.UTC()
+			}
+		case string:
+			parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+			if err == nil {
+				return parsed.UTC()
+			}
 		}
 	}
 
-	service.hub.Publish(omnichannelAccountTopic(accountID), Event{
-		Type:       eventType,
-		AccountID:  accountID,
-		ResourceID: strings.TrimSpace(evt.ResourceID),
-		Payload:    payload,
-		SavedAt:    time.Now().UTC(),
-	})
+	return fallback.UTC()
 }
 
 // HandleOmnichannelSocket serve o canal do atendimento (GET /v1/realtime/omnichannel
 // ?scope=account&accountId=...). Autoriza a conta antes do upgrade (conta ativa + membership +
-// omnichannel.conversations.view; platform_admin bypass) e reusa serveSubscriptionSocket.
+// modulo + omnichannel.conversations.view) e revalida antes de cada escrita no socket.
 func (service *Service) HandleOmnichannelSocket(w http.ResponseWriter, r *http.Request) {
 	principal, ok := service.authenticateRealtimeRequest(w, r)
 	if !ok {
@@ -67,7 +148,9 @@ func (service *Service) HandleOmnichannelSocket(w http.ResponseWriter, r *http.R
 		Type:      EventTypeConnected,
 		AccountID: accountID,
 		SavedAt:   time.Now().UTC(),
-	}, nil, nil, service.readPumpWithRateLimit)
+	}, nil, nil, service.readPumpWithRateLimit, func(ctx context.Context) error {
+		return service.authorizeOmnichannelAccount(ctx, principal, accountID)
+	})
 }
 
 // resolveOmnichannelAccount resolve o accountId do canal a partir da query (scope=account) e o
@@ -95,7 +178,7 @@ func (service *Service) resolveOmnichannelAccount(ctx context.Context, principal
 }
 
 // authorizeOmnichannelAccount valida o acesso da conta ao canal: conta ativa + membership +
-// permissao efetiva. platform_admin bypass apos a conta existir.
+// permissao efetiva. Nenhum papel cria bypass de membership, modulo ou permissao.
 //
 // DIVERGENCIA DELIBERADA de authorizeCalendarAccount (spec F5 §Autorizacao, canonico §10): NAO
 // membro => errRealtimeNotFound (404, escopo — enumeration), NUNCA 403. Copiar o calendar cego
@@ -110,34 +193,28 @@ func (service *Service) authorizeOmnichannelAccount(ctx context.Context, princip
 		return errRealtimeUnavailable
 	}
 
-	var exists bool
+	var exists, member, moduleEnabled bool
 	if err := service.pool.QueryRow(ctx, `
-		select exists (
-			select 1 from core.accounts where id = $1::uuid and is_active = true
-		)
-	`, accountID).Scan(&exists); err != nil {
+		select a.is_active,
+			exists(select 1 from core.account_users au
+				where au.account_id=a.id and au.user_id=$2::uuid and au.is_active),
+			exists(select 1 from core.account_modules am
+				where am.account_id=a.id and am.module_id='omnichannel' and am.enabled)
+		from core.accounts a where a.id=$1::uuid
+	`, accountID, principal.UserID).Scan(&exists, &member, &moduleEnabled); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errRealtimeNotFound
+		}
 		return err
 	}
 	if !exists {
 		return errRealtimeNotFound
 	}
-
-	if principal.Role == auth.RolePlatformAdmin {
-		return nil
-	}
-
-	var member bool
-	if err := service.pool.QueryRow(ctx, `
-		select exists (
-			select 1
-			from core.account_users
-			where account_id = $1::uuid and user_id = $2::uuid and is_active = true
-		)
-	`, accountID, principal.UserID).Scan(&member); err != nil {
-		return err
-	}
 	if !member {
 		return errRealtimeNotFound
+	}
+	if !moduleEnabled {
+		return errRealtimeForbidden
 	}
 
 	hasPermission, err := service.hasAnyCoreTaskPermission(ctx, accountID, principal.UserID, []string{omnichannelViewPermission})
@@ -147,10 +224,5 @@ func (service *Service) authorizeOmnichannelAccount(ctx context.Context, princip
 	if hasPermission {
 		return nil
 	}
-
-	if principal.PermissionsResolved && hasAnyString(principal.Permissions, omnichannelViewPermission) {
-		return nil
-	}
-
 	return errRealtimeForbidden
 }

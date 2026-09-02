@@ -20,11 +20,15 @@ func (s *AIService) ListAIToolRuns(ctx context.Context, accountID string, p auth
 	if _, err := s.assertAgentScope(ctx, accountID, agentID); err != nil {
 		return nil, err
 	}
+	visibility, err := s.conversationVisibility(ctx, accountID, p.UserID, "omnichannel.audit.view", InstanceGrantView)
+	if err != nil {
+		return nil, err
+	}
 	status = strings.ToLower(strings.TrimSpace(status))
 	if status != "" && !validAIToolRunStatus(status) {
 		return nil, ErrValidation
 	}
-	return s.store.ListAIToolRuns(ctx, accountID, agentID, status, strings.TrimSpace(beforeID), normalizeRunLimit(limit))
+	return s.store.ListAIToolRuns(ctx, accountID, agentID, status, strings.TrimSpace(beforeID), normalizeRunLimit(limit), visibility)
 }
 
 // ListAIToolApprovals exposes the human approval queue without exposing
@@ -44,7 +48,11 @@ func (s *AIService) ListAIToolApprovals(ctx context.Context, accountID string, p
 	if _, err := s.assertAgentScope(ctx, accountID, agentID); err != nil {
 		return nil, err
 	}
-	return s.store.ListAIToolApprovals(ctx, accountID, agentID, normalizeRunLimit(limit), strings.TrimSpace(beforeID))
+	visibility, err := s.conversationVisibility(ctx, accountID, p.UserID, "omnichannel.audit.view", InstanceGrantView)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListAIToolApprovals(ctx, accountID, agentID, normalizeRunLimit(limit), strings.TrimSpace(beforeID), visibility)
 }
 
 func (s *AIService) DecideAIToolApproval(ctx context.Context, accountID string, p auth.Principal, agentID, approvalID string, approved bool, reason string) (AIToolApprovalView, error) {
@@ -57,6 +65,20 @@ func (s *AIService) DecideAIToolApproval(ctx context.Context, accountID string, 
 	}
 	if _, err := s.assertAgentScope(ctx, accountID, agentID); err != nil {
 		return AIToolApprovalView{}, err
+	}
+	visibility, err := s.conversationVisibility(ctx, accountID, p.UserID, "omnichannel.agents.manage", InstanceGrantManage)
+	if err != nil {
+		return AIToolApprovalView{}, err
+	}
+	approval, err := s.store.ApprovalView(ctx, accountID, agentID, approvalID)
+	if err != nil {
+		return AIToolApprovalView{}, err
+	}
+	if approval.ConversationID == nil {
+		return AIToolApprovalView{}, ErrNotFound
+	}
+	if _, err := s.store.GetVisibleConversation(ctx, accountID, visibility, *approval.ConversationID); err != nil {
+		return AIToolApprovalView{}, translate(err)
 	}
 	if len([]rune(strings.TrimSpace(reason))) > 500 {
 		return AIToolApprovalView{}, ErrValidation

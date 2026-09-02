@@ -209,6 +209,20 @@ func TestOutboundHandlerInvalidAILeaseNeverCallsProviderOrDuplicatesAudit(t *tes
 	}
 }
 
+func TestOutboundHandlerHistoryResetClaimedJobNeverCallsProvider(t *testing.T) {
+	store := &fakeOutboundStore{data: baseSendData(), getErr: ErrHistoryResetInvalidated}
+	provider := &stubProvider{}
+	h := NewOutboundHandler(store, channel.NewRegistry(provider), nil, &capturePublisher{}, nil)
+
+	err := h.Handle(context.Background(), newJob(t, 1))
+	if err == nil || !jobs.Classify(err).Unrecoverable || !errors.Is(err, ErrHistoryResetInvalidated) {
+		t.Fatalf("Handle err=%v, want history reset unrecoverable", err)
+	}
+	if provider.calls != 0 || store.failedID != "" || len(store.auditKind) != 0 {
+		t.Fatalf("calls=%d failed=%q audit=%v", provider.calls, store.failedID, store.auditKind)
+	}
+}
+
 func TestOutboundHandlerTerminalMarksFailed(t *testing.T) {
 	// provider sem adapter (Provider="") => unrecoverable => terminal na 1a tentativa.
 	data := baseSendData()

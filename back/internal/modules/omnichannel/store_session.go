@@ -66,13 +66,15 @@ func (s *Store) GetSessionInstanceByRef(ctx context.Context, accountID, instance
 // CreateInstance cadastra uma nova instancia. O par (account_id, instance_name) tem indice
 // unico (0200) — nome repetido na conta volta violacao de unicidade. Devolve o id.
 func (s *Store) CreateInstance(ctx context.Context, accountID, instanceName, displayName, provider, createdByUserID string) (string, error) {
-	var id string
-	err := s.pool.QueryRow(ctx, `insert into messaging.whatsapp_instances
-		(account_id, instance_name, display_name, provider, created_by_user_id, responsible_user_id)
-		values ($1::uuid, $2, nullif($3,''), $4, nullif($5,'')::uuid, nullif($5,'')::uuid)
-		returning id::text`,
-		accountID, instanceName, displayName, provider, createdByUserID).Scan(&id)
-	return id, err
+	var display *string
+	if value := strings.TrimSpace(displayName); value != "" {
+		display = &value
+	}
+	manager := strings.TrimSpace(createdByUserID)
+	return s.CreateRestrictedInstanceWithManager(ctx, accountID, instanceWrite{
+		InstanceName: instanceName, DisplayName: display, ResponsibleUserID: &manager,
+		IsActive: true, UserScopePolicy: userScopePolicyMultiInstance, Provider: provider,
+	}, createdByUserID)
 }
 
 // PromoteDefault torna a instancia a default da conta (e desmarca as demais), numa

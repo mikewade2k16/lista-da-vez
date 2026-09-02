@@ -233,52 +233,48 @@ calendar.plan_updated       (resourceId=planId, payload.status)
 `service_omnichannel.go` adiciona o canal do atendimento WhatsApp sem mexer nos canais existentes:
 
 ```
-omnichannel:account:{accountId}   eventos do inbox da conta (message.*/conversation.*)
+omnichannel:account:{accountId}   invalidacoes opacas do inbox da conta
 ```
 
 - `GET /v1/realtime/omnichannel?scope=account&accountId=...` → `HandleOmnichannelSocket` reusa
   `serveSubscriptionSocket` (buffer 16, rate limit 30 msg/s, close 1008). Ticket efemero como
   todo canal. Rota FORA do `moduleGatingRules()` (app.go) — `/v1/realtime/*` nunca e gateado por
   modulo; o sinal de `module_disabled` vem da camada REST, nao do WS.
-- **Autorizacao** (`authorizeOmnichannelAccount`): conta ativa + membership + permissao efetiva
-  `omnichannel.conversations.view`; `platform_admin` bypass apos a conta existir.
+- **Autorizacao** (`authorizeOmnichannelAccount`): conta ativa + membership + modulo habilitado e
+  permissao efetiva `omnichannel.conversations.view`; papel `platform_admin` nao substitui essas
+  relacoes nem a permissao.
   **DIVERGENCIA DELIBERADA do calendar** (canonico §10, enumeration): NAO membro → **404**
   (`errRealtimeNotFound`), NUNCA 403. `authorizeCalendarAccount` devolve 403 para nao-membro;
   copiar cego reintroduz o vazamento. Permissao FALTANDO (membro sem a key) → **403**
   (`errRealtimeForbidden`) — permissao gateia feature. Conta diferente nunca recebe eventos.
-- **Eventos publicados — exatamente 3, com o payload COMPLETO por CALL-SITE (nao unificar):**
+- **Contrato account-wide seguro:** o transporte publica somente `omnichannel.invalidate`, com
+  `ResourceID` vazio e `Payload` contendo exatamente:
 
 ```
-message.created         resourceId=messageId  (webhook: subconjunto do Message; envio HTTP: Message completo — F6)
-message.updated         resourceId=messageId  (3 shapes: worker minimo / webhook subconjunto / rehidratacao completa — F6)
-conversation.updated    resourceId=conversationId  (webhook: sem instanceName; status/contacts: com — F6/F7)
+eventId      identificador aleatorio opaco da publicacao
+reason       message_changed | history_reset | access_scope_changed
+occurredAt   timestamp RFC3339Nano normalizado
 ```
 
-  Na **F5 o unico produtor e o webhook inbound**, que publica **`message.created`** (id interno +
-  conversationId + direction/messageType/content/status/createdAt + mediaUrl sanitizada). O front
-  `message.created` nao ramifica por shape: com conversationId ele faz patch local na thread aberta
-  e, para conversa nova nao-cacheada, dispara refresh REST do sidebar. `message.updated` /
-  `conversation.updated` do webhook ficam para a F6 (onde a view completa da conversa ja e lida) —
-  evita empurrar um card parcial (regressao do `upsertConversation`, que e merge raso).
+- Produtores legados `message.created`, `message.updated` e `conversation.updated` são aceitos no
+  boundary somente para compatibilidade e convertidos em `message_changed`. Nenhum ID de recurso,
+  telefone, texto, preview, mídia ou payload rico atravessa o tópico account-wide.
+- Tipo/reason desconhecido falha fechado. `eventId` nunca deriva, nem por hash, de conteúdo ou IDs
+  do domínio. Todos os assinantes da mesma publicação recebem o mesmo ID e podem deduplicá-la.
+- O frontend sempre reidrata pela REST autorizada. Durante o fetch, bloqueia merge de eventos; em
+  reconnect faz bootstrap REST completo. O autor de um reset pode limpar otimisticamente somente a
+  instância indicada pela resposta HTTP, sem depender de ID no socket.
 
-- **DIVERGENCIA CONSCIENTE do padrao da casa (principio 4):** os demais canais mandam payload
-  **lean de invalidacao** (o front refaz fetch). O omnichannel carrega o **payload completo** em
-  `Event.Payload` porque o front e **verbatim (D-B)** e faz **patch local** (`mergeMessages`,
-  `upsertConversation`). Excecao deliberada, alvo de reavaliacao na F14.
-
-- **Sanitizacao de midia (obrigatoria):** `mediaUrl` que comeca com `data:` vira `null` no WS —
-  NUNCA base64 no socket. Feito no **call-site** (`omnichannel/realtime.go`,
-  `sanitizeMediaURLForRealtime`) e **repetido** no publisher (`PublishOmnichannelEvent` zera
-  `payload["mediaUrl"]` data:) como cinto e suspensorio. O front busca a midia por
-  `GET /v1/omnichannel/conversations/{cid}/messages/{mid}/media` (F6).
+- O ticket prova apenas o handshake inicial. Antes de cada escrita, o socket rele conta ativa,
+  membership, modulo e permissao no PostgreSQL; revogacao ou `access_scope_changed` em voo fecha
+  com codigo 1008 e nao entrega a invalidacao pendente. O proximo acesso exige ticket novo.
 
 - **Publisher (direcao realtime → omnichannel):** o modulo `omnichannel` define a interface
   `omnichannel.Publisher` + o tipo `omnichannel.RealtimeEvent` (`omnichannel/publisher.go`); o
   `realtime` a implementa em `PublishOmnichannelEvent`. O app injeta
-  `omnichannel.WithPublisher(realtimeService)`. Constantes espelhadas em `model.go`
-  (`EventTypeOmnichannel*`) e em `omnichannel/publisher.go` (`RealtimeEvent*`) — os dois lados
-  concordam. `noopPublisher` = default (canal desligado; testes de service dispensam o realtime).
-  **Nao publicar dentro da transacao** do webhook: persiste → commita → publica.
+  `omnichannel.WithPublisher(realtimeService)`. `noopPublisher` = default (canal desligado; testes
+  de service dispensam o realtime). **Nunca publicar dentro de transação:** persiste → commita →
+  publica uma invalidação opaca.
 
 ## Evolucao esperada
 

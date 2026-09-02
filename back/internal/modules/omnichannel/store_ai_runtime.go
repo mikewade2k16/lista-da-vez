@@ -82,14 +82,11 @@ func (s *Store) CountRunsThisMonth(ctx context.Context, accountID string) (int64
 func (s *Store) CountAIOutboundTurns(ctx context.Context, accountID, conversationID string) (int, error) {
 	var n int
 	err := s.pool.QueryRow(ctx, `select count(*) from messaging.messages message
-		where account_id = $1::uuid and conversation_id = $2::uuid
+		join messaging.conversations conversation
+		  on conversation.account_id=message.account_id and conversation.id=message.conversation_id
+		where message.account_id = $1::uuid and message.conversation_id = $2::uuid
 		  and direction = 'OUTBOUND' and origin = 'ai' and status <> 'FAILED'
-		  and message.created_at > coalesce((select suppression.history_cleared_at
-		      from messaging.conversations conversation
-		      join messaging.contact_suppressions suppression
-		        on suppression.account_id=conversation.account_id and suppression.contact_id=conversation.contact_id
-		      where conversation.account_id=message.account_id and conversation.id=message.conversation_id),
-		      '-infinity'::timestamptz)`,
+		`+s.historyVisibleMessagePredicate("message", "conversation"),
 		accountID, conversationID).Scan(&n)
 	return n, err
 }
@@ -115,43 +112,47 @@ func (s *Store) ActiveAgent(ctx context.Context, accountID string) (agentRow, bo
 // convTriage e o minimo que o dispatch precisa da conversa: o state (gate 1) e os campos que
 // alimentam o RoutingContext do motor (contact_phone, instance_scope_key).
 type convTriage struct {
-	State              string
-	AIGeneration       int64
-	InstanceID         *string
-	ContactID          *string
-	ContactPhone       *string
-	ContactName        *string
-	ContactExternalID  *string
-	ClientAccountID    *string
-	ClientBindingID    *string
-	ClientBindingState string
-	Channel            string
-	ExternalID         string
-	InstanceScopeKey   string
-	ExtractedFields    json.RawMessage
-	Found              bool
+	State                   string
+	AIGeneration            int64
+	InstanceID              *string
+	ContactID               *string
+	ContactPhone            *string
+	ContactName             *string
+	ContactExternalID       *string
+	ClientAccountID         *string
+	ClientBindingID         *string
+	ClientBindingState      string
+	Channel                 string
+	ExternalID              string
+	InstanceScopeKey        string
+	ExtractedFields         json.RawMessage
+	DerivedMemorySuppressed bool
+	Found                   bool
 }
 
 // ConvTriageContext le o contexto da conversa para o dispatch. Fora de escopo => Found=false.
 func (s *Store) ConvTriageContext(ctx context.Context, accountID, convID string) (convTriage, error) {
 	var c convTriage
-	err := s.pool.QueryRow(ctx, `select state, ai_generation, instance_id::text, contact_id::text, contact_phone, contact_name,
+	err := s.pool.QueryRow(ctx, `select c.state, c.ai_generation, c.instance_id::text, c.contact_id::text, c.contact_phone, c.contact_name,
 		(select identity.external_id
 		 from messaging.contact_identities identity
-		 where identity.account_id = conversations.account_id
-		   and identity.contact_id = conversations.contact_id
-		   and identity.channel = conversations.channel
-		   and identity.instance_scope_key = conversations.instance_scope_key
+		 where identity.account_id = c.account_id
+		   and identity.contact_id = c.contact_id
+		   and identity.channel = c.channel
+		   and identity.instance_scope_key = c.instance_scope_key
 		 order by identity.last_seen_at desc, identity.id desc
 		 limit 1),
-		client_account_id::text, channel_client_binding_id::text, client_binding_state,
-		channel, external_id, instance_scope_key, coalesce(extracted_fields, '{}'::jsonb)
-		from messaging.conversations
-		where account_id = $1::uuid and id = $2::uuid`, accountID, convID).
+		c.client_account_id::text, c.channel_client_binding_id::text, c.client_binding_state,
+		c.channel, c.external_id, c.instance_scope_key, coalesce(c.extracted_fields, '{}'::jsonb),
+		`+s.effectiveHistoryCutoffExpression("c")+` > '-infinity'::timestamptz
+		from messaging.conversations c
+		where c.account_id = $1::uuid and c.id = $2::uuid`+
+		visibleConversationFilter+s.historyVisibleConversationPredicate("c"), accountID, convID).
 		Scan(&c.State, &c.AIGeneration, &c.InstanceID, &c.ContactID, &c.ContactPhone, &c.ContactName,
 			&c.ContactExternalID,
 			&c.ClientAccountID, &c.ClientBindingID, &c.ClientBindingState,
-			&c.Channel, &c.ExternalID, &c.InstanceScopeKey, &c.ExtractedFields)
+			&c.Channel, &c.ExternalID, &c.InstanceScopeKey, &c.ExtractedFields,
+			&c.DerivedMemorySuppressed)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return convTriage{Found: false}, nil
@@ -186,13 +187,10 @@ func (s *Store) RecentMessages(ctx context.Context, accountID, convID string, li
 			  and analysis.status='completed'
 			  and coalesce((version.media_config->>'includeInReply')::boolean,true)), '') as media_context
 		from messaging.messages message
-		where message.account_id = $1::uuid and message.conversation_id = $2::uuid
-		  and message.created_at > coalesce((select suppression.history_cleared_at
-		      from messaging.conversations conversation
-		      join messaging.contact_suppressions suppression
-		        on suppression.account_id=conversation.account_id and suppression.contact_id=conversation.contact_id
-		      where conversation.account_id=message.account_id and conversation.id=message.conversation_id),
-		      '-infinity'::timestamptz)
+		join messaging.conversations conversation
+		  on conversation.account_id=message.account_id and conversation.id=message.conversation_id
+		where message.account_id = $1::uuid and message.conversation_id = $2::uuid`+
+		s.historyVisibleMessagePredicate("message", "conversation")+`
 		order by created_at desc, id desc limit $3
 	) recent order by created_at asc, id asc`, accountID, convID, limit)
 	if err != nil {
@@ -371,6 +369,68 @@ func (s *Store) GetContactIntelligence(ctx context.Context, accountID, contactID
 	if err != nil {
 		return ContactIntelligenceView{}, err
 	}
+	return finalizeContactIntelligence(out, contactName, phone, identityName), nil
+}
+
+// GetOperationalContactIntelligence devolve a memoria apropriada para uma
+// conversa. Quando ha cutoff efetivo (reset da instancia WhatsApp ou privacidade
+// do contato), os dados derivados seguem preservados no CRM, mas deixam de
+// alimentar prompts e novas decisoes operacionais. Contato, conversa e cutoff
+// sao resolvidos no mesmo snapshot, incluindo o vinculo legado por scope key.
+func (s *Store) GetOperationalContactIntelligence(
+	ctx context.Context,
+	accountID, contactID, conversationID string,
+) (ContactIntelligenceView, error) {
+	var out ContactIntelligenceView
+	var contactName, phone string
+	var identityName *string
+	var suppressDerived bool
+	err := s.pool.QueryRow(ctx, `select contact.name, coalesce(contact.phone,''), contact.relationship_status,
+			contact.tags, identity.display_name,
+			coalesce(intelligence.summary,''), coalesce(intelligence.facts,'{}'::jsonb),
+			coalesce(intelligence.preferences,'{}'::jsonb),
+			coalesce(intelligence.interaction_count,0), coalesce(intelligence.ai_reply_count,0),
+			coalesce(intelligence.handoff_count,0), coalesce(intelligence.last_intent,''),
+			coalesce(intelligence.last_sentiment,'unknown'), intelligence.last_confidence::float8,
+			coalesce(intelligence.last_outcome,''), intelligence.last_conversation_id::text,
+			intelligence.last_learned_at, intelligence.updated_at,
+			`+s.effectiveHistoryCutoffExpression("operational_conversation")+` > '-infinity'::timestamptz
+		from messaging.conversations operational_conversation
+		join messaging.contacts contact
+		  on contact.account_id=operational_conversation.account_id
+		 and contact.id=operational_conversation.contact_id
+		left join messaging.contact_intelligence intelligence
+		  on intelligence.account_id=contact.account_id and intelligence.contact_id=contact.id
+		left join lateral (
+			select display_name from messaging.contact_identities
+			where account_id=contact.account_id and contact_id=contact.id and display_name is not null
+			order by last_seen_at desc, id desc limit 1
+		) identity on true
+		where operational_conversation.account_id=$1::uuid
+		  and operational_conversation.id=$3::uuid
+		  and contact.id=$2::uuid
+		  and contact.archived_at is null`, accountID, contactID, conversationID).Scan(
+		&contactName, &phone, &out.RelationshipStatus, &out.Tags, &identityName,
+		&out.Summary, &out.Facts, &out.Preferences, &out.InteractionCount,
+		&out.AIReplyCount, &out.HandoffCount, &out.LastIntent, &out.LastSentiment,
+		&out.LastConfidence, &out.LastOutcome, &out.LastConversationID,
+		&out.LastLearnedAt, &out.UpdatedAt, &suppressDerived,
+	)
+	if err != nil {
+		return ContactIntelligenceView{}, err
+	}
+	out = finalizeContactIntelligence(out, contactName, phone, identityName)
+	if suppressDerived {
+		suppressDerivedContactIntelligence(&out)
+	}
+	return out, nil
+}
+
+func finalizeContactIntelligence(
+	out ContactIntelligenceView,
+	contactName, phone string,
+	identityName *string,
+) ContactIntelligenceView {
 	identity := ""
 	if identityName != nil {
 		identity = *identityName
@@ -390,7 +450,24 @@ func (s *Store) GetContactIntelligence(ctx context.Context, accountID, contactID
 		out.Tags = json.RawMessage(`[]`)
 	}
 	out.RelationshipStatus = crmStatus(out.RelationshipStatus)
-	return out, nil
+	return out
+}
+
+func suppressDerivedContactIntelligence(out *ContactIntelligenceView) {
+	out.Summary = ""
+	out.Facts = json.RawMessage(`{}`)
+	out.Preferences = json.RawMessage(`{}`)
+	out.InteractionCount = 0
+	out.AIReplyCount = 0
+	out.HandoffCount = 0
+	out.LastIntent = ""
+	out.LastSentiment = ""
+	out.LastConfidence = nil
+	out.LastOutcome = ""
+	out.LastConversationID = nil
+	out.LastLearnedAt = nil
+	out.UpdatedAt = nil
+	out.DerivedMemorySuppressed = true
 }
 
 // RuleSummary devolve nome/prioridade de uma regra (para o traco do simulate: matchedRule).

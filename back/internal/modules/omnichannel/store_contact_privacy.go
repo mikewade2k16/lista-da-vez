@@ -59,6 +59,14 @@ func (s *Store) HideContactByConversation(ctx context.Context, accountID, conver
 	if err != nil {
 		return contactPrivacyRow{}, err
 	}
+	if _, err := tx.Exec(ctx, `update messaging.ai_reply_drafts draft
+		set status='expired',decision_reason='contact_hidden',decided_at=now(),updated_at=now()
+		from messaging.conversations conversation
+		where draft.account_id=$1::uuid and draft.account_id=conversation.account_id
+		  and draft.conversation_id=conversation.id and draft.status='pending'
+		  and conversation.contact_id=$2::uuid`, accountID, contactID); err != nil {
+		return contactPrivacyRow{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return contactPrivacyRow{}, err
 	}
@@ -215,6 +223,14 @@ func (s *Store) SetContactAIRestriction(ctx context.Context, accountID, conversa
 			from messaging.conversations c
 			where d.account_id=$1::uuid and c.account_id=$1::uuid and c.contact_id=$2::uuid
 			  and d.conversation_id=c.id and d.status in ('buffering','queued','processing')`, accountID, contactID); err != nil {
+			return ContactAIRestrictionView{}, err
+		}
+		if _, err := tx.Exec(ctx, `update messaging.ai_reply_drafts draft
+			set status='expired',decision_reason='ai_contact_blocked',decided_at=now(),updated_at=now()
+			from messaging.conversations conversation
+			where draft.account_id=$1::uuid and draft.account_id=conversation.account_id
+			  and draft.conversation_id=conversation.id and draft.status='pending'
+			  and conversation.contact_id=$2::uuid`, accountID, contactID); err != nil {
 			return ContactAIRestrictionView{}, err
 		}
 	}

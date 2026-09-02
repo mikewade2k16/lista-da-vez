@@ -36,6 +36,49 @@ superado: o modulo Go e o schema `messaging.*` estao implementados. Qualquer bad
 descrever apenas a condicao real do ambiente (por exemplo piloto Evolution/mock), nunca
 "SEM BACKEND". Contratos pendentes ficam em `docs/omnichannel/ESTADO.md`.
 
+### P0 — reset lógico por conexão (2026-08-27)
+
+- O card do número e `OmnichannelWhatsAppSessionModal.vue` usam a mesma função de domínio para
+  “Limpar histórico visível desta conexão”. A ação só existe quando
+  `instance.myCapabilities.resetHistory === true`; `legacyRole` e papel visual não autorizam.
+- A confirmação mostra conta ativa, `instanceName`, `displayName`, telefone e provider, explica que
+  sessão/contatos permanecem e exige o `instanceName` exato após trim. O lock começa antes de abrir
+  o prompt, portanto clique duplo não abre duas confirmações nem dispara duas mutations.
+- A API recebe somente o ID selecionado, confirmação e `expectedRevision`. `409` recarrega a
+  instância e nunca repete a mutation automaticamente. Falha não limpa projeções locais.
+- No sucesso HTTP, a invalidação local carrega `instanceId`, `hiddenBefore` e `resetRevision` e
+  remove imediatamente somente conversas/caches daquela instância. O evento account-wide recebido
+  pelo WS nunca carrega esses campos: aceita somente `omnichannel.invalidate` com payload exato
+  `{eventId, reason, occurredAt}`, deduplica `eventId` e refaz o bootstrap pela REST autorizada.
+- Durante reidratação, a geração de escopo invalida respostas antigas e bloqueia merge. Reconnect
+  limpa a projeção e faz bootstrap REST completo, incluindo as mensagens da conversa ativa ainda
+  autorizada; payload rico do WebSocket nunca é aplicado ao estado.
+
+### P1B — acesso fail-closed por conexão (2026-08-28)
+
+- `/tenant/whatsapp/instances/access` possui quatro estados explícitos: `loading`,
+  `resolved-empty`, `resolved-nonempty` e `error`. Falha limpa instâncias/seleção antigas e nunca
+  reutiliza o último acesso conhecido.
+- `all` significa todas as conexões retornadas pela API para o usuário atual. Com lista vazia ou
+  erro, o inbox não envia filtro WhatsApp amplo: canal WhatsApp mostra zero e a visão combinada
+  consulta somente Instagram, que degrada de forma independente.
+- Troca de conta, reconnect e `access_scope_changed` avançam a geração, abortam/descartam respostas
+  antigas, limpam caches e reidratam instâncias antes de conversas. Conversa WhatsApp residual,
+  unread e compose são ocultados enquanto o acesso não estiver `resolved-nonempty`.
+- O frontend apenas projeta `myCapabilities`; papel legado, quantidade de conexões e estado local
+  não fabricam acesso. Lifecycle e dados continuam autorizados pelo Go/PostgreSQL.
+
+### E10/P8 — draft humano do modo assist (2026-08-28)
+
+- `useOmnichannelAIReplyDraft` consulta somente a conversa ativa pelo `apiFetch` account-scoped.
+  Sem `conversations.reply`, conversa ou grant de reply, o backend não devolve a sugestão.
+- `InboxAIReplyDraft.vue` exibe texto escapado e avisa que nada será enviado automaticamente. A
+  ação “Usar e revisar” nunca sobrescreve composer existente; editar continua permitido.
+- O `aiReplyDraftId` só acompanha POST textual depois da escolha explícita. O Go marca uso/edição
+  no mesmo commit da mensagem+outbox. Descartar chama a rota dedicada; o browser nunca cria outbox.
+- Realtime continua opaco: `message_changed` provoca reidratação REST do draft. Troca de conversa,
+  conta, perda de permissão e envio humano limpam a projeção local sem fabricar estado.
+
 ## Estrutura
 
 | Caminho                                     | Papel                                                                                               |
@@ -45,7 +88,7 @@ descrever apenas a condicao real do ambiente (por exemplo piloto Evolution/mock)
 | `inbox/InboxConversationsSidebar.vue`       | Coluna esquerda: lista de conversas, filtros, busca                                                 |
 | `inbox/InboxChatPanel.vue`                  | Coluna central: cabecalho, corpo, composer, acoes de mensagem                                       |
 | `inbox/InboxDetailsSidebar.vue`             | Coluna direita: detalhes do contato, atribuicao, notas                                              |
-| `inbox/OmnichannelWhatsAppSessionModal.vue` | Modal de conexao do WhatsApp (QR, status, limpar historico)                                         |
+| `inbox/OmnichannelWhatsAppSessionModal.vue` | Modal de conexão do WhatsApp (QR/status + reset lógico permissionado por conexão)                   |
 | `inbox/types.ts`                            | Tipos locais dos componentes do inbox                                                               |
 | `~/composables/omnichannel/*`               | 49 composables (logica do inbox)                                                                    |
 | `~/pages/omnichannel/index.vue`             | A pagina. `layout: 'dashboard'` + `workspaceId: 'omnichannel'`                                      |
@@ -215,13 +258,13 @@ traduz, sem tocar nos arquivos portados:
 
 ## Os 5 arquivos que NAO sao verbatim (repontados na F1)
 
-| Arquivo                                  | O que mudou                                                                                                                                               |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `useOmnichannelInboxRealtime.ts`         | socket.io **nao e dependencia do web** e o Go fala WS nativo com ticket → transporte **inerte**; a logica dos 3 eventos esta preservada. **F5 reescreve** |
-| `useInboxChatGifAssets.ts`               | `/api/gif/*` (Nitro) → `/v1/omnichannel/gif/*` via `apiFetch`                                                                                             |
-| `useAvatarProxy.ts`                      | `/api/avatar/whatsapp` (Nitro) → `/v1/omnichannel/avatar`, URL absoluta                                                                                   |
-| `useInboxChatMediaActions.ts`            | URL literal do BFF → `apiFetch` (fetch cru nao recebe o `X-Account-Id`)                                                                                   |
-| `useOmnichannelInboxOutboundPipeline.ts` | Removido o bypass que falava direto com o `:4000`                                                                                                         |
+| Arquivo                                  | O que mudou                                                                                                                                           |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useOmnichannelInboxRealtime.ts`         | WS nativo com ticket; recebe somente `omnichannel.invalidate`, deduplica e reidrata pela REST. A antiga lógica de 3 payloads ricos foi removida no P0 |
+| `useInboxChatGifAssets.ts`               | `/api/gif/*` (Nitro) → `/v1/omnichannel/gif/*` via `apiFetch`                                                                                         |
+| `useAvatarProxy.ts`                      | `/api/avatar/whatsapp` (Nitro) → `/v1/omnichannel/avatar`, URL absoluta                                                                               |
+| `useInboxChatMediaActions.ts`            | URL literal do BFF → `apiFetch` (fetch cru nao recebe o `X-Account-Id`)                                                                               |
+| `useOmnichannelInboxOutboundPipeline.ts` | Removido o bypass que falava direto com o `:4000`                                                                                                     |
 
 ## Dividas conscientes (registradas, alvo F14)
 

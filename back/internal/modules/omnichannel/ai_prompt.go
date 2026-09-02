@@ -191,7 +191,7 @@ func buildUserPromptWithContactIntelligence(history []SimMessage, contactName st
 			b.WriteString("Contexto estrategico autoritativo do cliente atendido: " + string(raw) + "\n")
 		}
 	}
-	if intelligence != nil {
+	if intelligence != nil && !intelligence.DerivedMemorySuppressed {
 		context := map[string]any{
 			"summary":          intelligence.Summary,
 			"facts":            rawJSONMap(intelligence.Facts),

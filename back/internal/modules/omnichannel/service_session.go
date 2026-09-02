@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -47,18 +48,23 @@ type SessionService struct {
 	secretBox *secretbox.Box
 	qr        *qrCache
 	limits    *modules.LimitReader
+	publisher Publisher
 	logger    *slog.Logger
 }
 
 // NewSessionService monta o service de sessao. O qrCache e INJETADO (compartilhado com o
 // InboundService no module.go) para o QR que a Evolution empurra por webhook chegar ao mesmo
 // cache que o /qrcode le. nil => cria um proprio (nunca em prod; conveniencia de teste).
-func NewSessionService(store *Store, registry *channel.Registry, box *secretbox.Box, limits *modules.LimitReader, qr *qrCache, logger *slog.Logger) *SessionService {
+func NewSessionService(store *Store, registry *channel.Registry, box *secretbox.Box, limits *modules.LimitReader, qr *qrCache, logger *slog.Logger, publishers ...Publisher) *SessionService {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if qr == nil {
 		qr = newQRCache()
+	}
+	publisher := Publisher(noopPublisher{})
+	if len(publishers) > 0 && publishers[0] != nil {
+		publisher = publishers[0]
 	}
 	return &SessionService{
 		store:     store,
@@ -66,6 +72,7 @@ func NewSessionService(store *Store, registry *channel.Registry, box *secretbox.
 		secretBox: box,
 		qr:        qr,
 		limits:    limits,
+		publisher: publisher,
 		logger:    logger,
 	}
 }
@@ -113,7 +120,18 @@ type CredentialInput struct {
 // Bootstrap garante a instancia da conta: cria quando nao existe (validando o limite de
 // canais -> 409), promove a default quando e a primeira. Idempotente pelo nome.
 func (s *SessionService) Bootstrap(ctx context.Context, accountID string, caller Caller, in SessionBootstrapInput) (SessionView, error) {
-	if !caller.IsAdmin {
+	ready, err := s.store.HasActiveOmnichannelMembership(ctx, accountID, caller.UserID)
+	if err != nil {
+		return SessionView{}, err
+	}
+	if !ready {
+		return SessionView{}, ErrForbidden
+	}
+	canManage, err := s.store.hasEffectivePermission(ctx, accountID, caller.UserID, "omnichannel.instances.manage")
+	if err != nil {
+		return SessionView{}, err
+	}
+	if !canManage {
 		return SessionView{}, ErrForbidden
 	}
 	provider := strings.TrimSpace(in.Provider)
@@ -133,6 +151,10 @@ func (s *SessionService) Bootstrap(ctx context.Context, accountID string, caller
 	existing, err := s.store.GetSessionInstance(ctx, accountID, name)
 	switch {
 	case err == nil:
+		if _, accessErr := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, existing.ID,
+			"omnichannel.instances.manage", InstanceGrantManage); accessErr != nil {
+			return SessionView{}, accessErr
+		}
 		return s.viewFor(ctx, accountID, existing, nil), nil
 	case !errors.Is(err, pgx.ErrNoRows):
 		return SessionView{}, err
@@ -160,6 +182,8 @@ func (s *SessionService) Bootstrap(ctx context.Context, accountID string, caller
 		}
 		return SessionView{}, err
 	}
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
 	// Primeira instancia ativa da conta -> promove a default.
 	if current == 0 {
 		if err := s.store.PromoteDefault(ctx, accountID, id); err != nil {
@@ -278,7 +302,11 @@ func (s *SessionService) SetCredentials(ctx context.Context, accountID string, c
 // (canonico §12 risco 2): sem esta rota, todo numero mostra "capacidades indisponiveis". E
 // metadado do provider, nao dado sensivel — basta ser membro da conta (o middleware ja garante),
 // sem exigir admin. Instancia fora de escopo / conta sem instancia -> 404.
-func (s *SessionService) InstanceCapabilities(ctx context.Context, accountID, instanceID string) (channel.Capabilities, error) {
+func (s *SessionService) InstanceCapabilities(ctx context.Context, accountID string, caller Caller, instanceID string) (channel.Capabilities, error) {
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
+		return channel.Capabilities{}, err
+	}
 	inst, err := s.store.ResolveInstanceForOps(ctx, accountID, instanceID, "")
 	if errors.Is(err, pgx.ErrNoRows) {
 		return channel.Capabilities{}, ErrSessionUnavailable
@@ -298,24 +326,20 @@ func (s *SessionService) InstanceCapabilities(ctx context.Context, accountID, in
 // quando nao ha historico (senao apagaria conversas em cascata sem intencao). So admin. Fora de
 // escopo / inexistente -> 404.
 func (s *SessionService) DeleteInstance(ctx context.Context, accountID string, caller Caller, instanceID string) error {
-	if !caller.IsAdmin {
-		return ErrForbidden
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
+		return err
 	}
-	inst, err := s.store.ResolveInstanceForOps(ctx, accountID, instanceID, "")
+	err := s.store.DeleteInstance(ctx, accountID, instanceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrSessionUnavailable
 	}
 	if err != nil {
 		return err
 	}
-	count, err := s.store.CountInstanceConversations(ctx, accountID, inst.ID)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return ErrInstanceHasConversations
-	}
-	return s.store.DeleteInstance(ctx, accountID, inst.ID)
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
+	return nil
 }
 
 // UpdateChannelLimit altera o teto de numeros ativos da conta. E configuracao
@@ -370,14 +394,15 @@ func (s *SessionService) resolveForSession(ctx context.Context, accountID string
 // ambos vazios => a default/1a ativa (o /status e /qrcode do inbox nao mandam nome). Fora de
 // escopo / conta sem instancia -> 404.
 func (s *SessionService) assertInstance(ctx context.Context, accountID string, caller Caller, instanceID, instanceName string) (sessionInstance, error) {
-	if !caller.IsAdmin {
-		return sessionInstance{}, ErrForbidden
-	}
 	inst, err := s.store.GetSessionInstanceByRef(ctx, accountID, instanceID, instanceName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return sessionInstance{}, ErrSessionUnavailable
 	}
 	if err != nil {
+		return sessionInstance{}, err
+	}
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, inst.ID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
 		return sessionInstance{}, err
 	}
 	return inst, nil

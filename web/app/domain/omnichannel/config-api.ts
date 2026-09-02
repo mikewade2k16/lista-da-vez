@@ -24,6 +24,8 @@ import type {
   OmniDepartment,
   OmniDepartmentInput,
   OmniInstance,
+  OmniInstanceAccessAdmin,
+  OmniInstanceAccessWrite,
   OmniInstanceManagement,
   OmniInstanceWriteInput,
   OmniHandoffPolicy,
@@ -73,15 +75,21 @@ export function updateInstance(
   }) as Promise<OmniInstance>
 }
 
-export function setInstanceUsers(
+export function fetchInstanceAccess(api: ApiRequest, id: string): Promise<OmniInstanceAccessAdmin> {
+  return api(`${WA}/instances/${encodeURIComponent(id)}/users`, {
+    dedupe: false,
+  }) as Promise<OmniInstanceAccessAdmin>
+}
+
+export function putInstanceAccess(
   api: ApiRequest,
   id: string,
-  userIds: string[],
-): Promise<OmniInstance> {
+  input: OmniInstanceAccessWrite,
+): Promise<OmniInstanceAccessAdmin> {
   return api(`${WA}/instances/${encodeURIComponent(id)}/users`, {
     method: 'PUT',
-    body: { userIds },
-  }) as Promise<OmniInstance>
+    body: input,
+  }) as Promise<OmniInstanceAccessAdmin>
 }
 
 // Credencial write-only. Vazio nao e permitido pelo back (apiKey obrigatorio); a tela

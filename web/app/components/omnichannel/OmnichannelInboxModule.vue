@@ -168,6 +168,10 @@ const {
   stickyDateLabel,
   showStickyDate,
   draft,
+  aiReplyDraft,
+  loadingAIReplyDraft,
+  dismissingAIReplyDraft,
+  aiReplyDraftError,
   hasAttachment,
   attachmentType,
   attachmentName,
@@ -215,6 +219,8 @@ const {
   setReplyTarget,
   clearReplyTarget,
   updateDraft,
+  useAIReplyDraft,
+  dismissAIReplyDraft,
   updateAttachment,
   clearAttachment,
   updateSearch,
@@ -247,7 +253,6 @@ const {
   updateConversationAssignee,
   takeConversation,
   releaseConversation,
-  refreshAfterConversationHistoryClear,
   openMentionConversation,
   switchTenant,
   switchingTenant,
@@ -668,10 +673,6 @@ async function handleSidebarTenantSwitch(clientId: string) {
   await handleSwitchTenant(parsedClientId);
 }
 
-async function handleConversationHistoryCleared() {
-  await refreshAfterConversationHistoryClear();
-}
-
 async function handleHideActiveContact() {
   const conversation = activeConversation.value;
   if (!conversation?.id || !conversation.contactId || hidingContact.value) {
@@ -731,7 +732,6 @@ async function handleUpdateAIRestriction(input: ContactAIRestrictionInput) {
   <div class="chat-page">
     <OmnichannelWhatsAppSessionModal
       v-model:open="whatsappSessionModalOpen"
-      @history-cleared="handleConversationHistoryCleared"
     />
 
     <InboxSaveContactModal
@@ -920,6 +920,10 @@ async function handleUpdateAIRestriction(input: ContactAIRestrictionInput) {
         :group-participants="activeGroupParticipants"
         :loading-group-participants="loadingGroupParticipants"
         :draft="draft"
+        :ai-reply-draft="aiReplyDraft"
+        :loading-ai-reply-draft="loadingAIReplyDraft"
+        :dismissing-ai-reply-draft="dismissingAIReplyDraft"
+        :ai-reply-draft-error="aiReplyDraftError"
         :has-attachment="hasAttachment"
         :attachment-type="attachmentType"
         :attachment-name="attachmentName"
@@ -953,6 +957,8 @@ async function handleUpdateAIRestriction(input: ContactAIRestrictionInput) {
         @set-reply="setReplyTarget"
         @clear-reply="clearReplyTarget"
         @update:draft="updateDraft"
+        @use-ai-reply-draft="useAIReplyDraft"
+        @dismiss-ai-reply-draft="dismissAIReplyDraft()"
         @pick-attachment="updateAttachment"
         @clear-attachment="clearAttachment"
         @set-reaction="reactToMessage"

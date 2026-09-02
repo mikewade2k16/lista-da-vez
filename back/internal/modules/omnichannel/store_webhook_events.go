@@ -44,6 +44,7 @@ type inboundWrite struct {
 type inboundResult struct {
 	Duplicate         bool
 	MessageCreated    bool
+	HistorySuppressed bool
 	ConversationID    string
 	MessageID         string
 	StatusChanged     bool
@@ -142,12 +143,18 @@ func (s *Store) persistInbound(ctx context.Context, w inboundWrite,
 
 	var result inboundResult
 	if w.Message != nil {
-		result.ConversationID, result.MessageID, err = s.writeInboundMessage(ctx, tx, w)
+		instanceVisible, lockErr := s.lockInboundInstanceHistory(ctx, tx, w)
+		if lockErr != nil {
+			return inboundResult{}, lockErr
+		}
+		var historyVisible bool
+		result.ConversationID, result.MessageID, historyVisible, err = s.writeInboundMessage(ctx, tx, w, instanceVisible)
 		if err != nil {
 			return inboundResult{}, err
 		}
 		result.MessageCreated = result.MessageID != ""
-		if result.MessageCreated && decide != nil {
+		result.HistorySuppressed = result.MessageCreated && !historyVisible
+		if result.MessageCreated && historyVisible && decide != nil {
 			snap, lockErr := lockConversationSnapshotTx(ctx, tx, w.AccountID, result.ConversationID)
 			if lockErr != nil {
 				return inboundResult{}, lockErr
@@ -163,7 +170,7 @@ func (s *Store) persistInbound(ctx context.Context, w inboundWrite,
 				return inboundResult{}, decisionErr
 			}
 		}
-		if result.MessageCreated && !w.Message.FromMe && w.EnqueueAutomation {
+		if result.MessageCreated && historyVisible && !w.Message.FromMe && w.EnqueueAutomation {
 			if err := enqueueAIInboundJobTx(
 				ctx, tx, w.AccountID, result.ConversationID, result.MessageID,
 			); err != nil {
@@ -190,15 +197,34 @@ func (s *Store) persistInbound(ctx context.Context, w inboundWrite,
 	return result, nil
 }
 
+// lockInboundInstanceHistory serializa WhatsApp inbound e reset na mesma ordem
+// instance -> conversation. Se o reset venceu a corrida, o timestamp do provider decide se
+// o evento e historico; a linha ainda e persistida, mas nao produz efeitos operacionais.
+func (s *Store) lockInboundInstanceHistory(ctx context.Context, tx pgx.Tx, w inboundWrite) (bool, error) {
+	if w.Message == nil || w.Message.Channel != "WHATSAPP" || strings.TrimSpace(w.InstanceID) == "" ||
+		!s.HistoryCutoffEnforced() {
+		return true, nil
+	}
+	var cutoff *time.Time
+	err := tx.QueryRow(ctx, `select history_visible_from
+		from messaging.whatsapp_instances
+		where account_id=$1::uuid and id=$2::uuid
+		for share`, w.AccountID, w.InstanceID).Scan(&cutoff)
+	if err != nil {
+		return false, err
+	}
+	return cutoff == nil || w.Message.OccurredAt.After(*cutoff), nil
+}
+
 // writeInboundMessage faz o upsert da conversa (chave natural do canonico) e grava a
 // mensagem inbound com created_at = timestamp DO PROVIDER e status=SENT (spec armadilha 5).
 // Devolve os ids INTERNOS (conversa + mensagem) para o realtime do webhook (F5).
-func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWrite) (string, string, error) {
+func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWrite, instanceVisible bool) (string, string, bool, error) {
 	m := w.Message
 	isGroup := m.Channel == "WHATSAPP" && isWhatsAppGroupExternalID(m.ContactExternalID)
 	contactID, knownContact, err := s.upsertInboundContact(ctx, tx, w)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	contactStatus := "new_contact"
 	if knownContact {
@@ -211,7 +237,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 	}
 	bindingSnapshot, err := s.resolveInboundChannelClientBindingTx(ctx, tx, w)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 
 	var conversationID, conversationClientID, conversationBindingID, conversationBindingState string
@@ -225,6 +251,8 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 		        nullif($14,'')::uuid, nullif($15,'')::uuid, $16, $17)
 		on conflict (account_id, external_id, channel, instance_scope_key) do update
 			set last_message_at = greatest(conversations.last_message_at, excluded.last_message_at),
+				instance_id = case when conversations.channel='WHATSAPP' and excluded.instance_id is not null
+					then excluded.instance_id else conversations.instance_id end,
 				contact_id = case when excluded.extracted_fields->>'source_kind'='group_message'
 					then null else coalesce(excluded.contact_id, conversations.contact_id) end,
 				contact_name = coalesce(nullif(excluded.contact_name, ''), conversations.contact_name),
@@ -248,7 +276,20 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 		&conversationBindingState,
 	)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
+	}
+	historyVisible := instanceVisible
+	if contactID != "" {
+		var contactCutoff *time.Time
+		cutoffErr := tx.QueryRow(ctx, `select history_cleared_at
+			from messaging.contact_suppressions
+			where account_id=$1::uuid and contact_id=$2::uuid`, w.AccountID, contactID).Scan(&contactCutoff)
+		if cutoffErr != nil && !errors.Is(cutoffErr, pgx.ErrNoRows) {
+			return "", "", false, cutoffErr
+		}
+		if cutoffErr == nil && contactCutoff != nil && !m.OccurredAt.After(*contactCutoff) {
+			historyVisible = false
+		}
 	}
 
 	// fromMe = enviada pelo aparelho pareado (ou eco do proprio envio da plataforma). Grava como
@@ -270,7 +311,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 			limit 1`, w.AccountID, conversationID, w.InstanceName,
 			strings.TrimSpace(m.Reply.ExternalMessageID)).Scan(&replyToMessageID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
 
@@ -302,7 +343,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 	if len(metadata) > 0 {
 		metadataJSON, err = json.Marshal(metadata)
 		if err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
 	replyExternalID := ""
@@ -330,10 +371,13 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 		mediaSourceKind, metadataJSON,
 	).Scan(&messageID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return conversationID, "", nil
+		return conversationID, "", historyVisible, nil
 	}
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
+	}
+	if !historyVisible {
+		return conversationID, messageID, false, nil
 	}
 	if w.Provider == "meta_whatsapp_cloud" && !m.FromMe {
 		// The 24-hour customer-service window is opened only by a real inbound
@@ -346,7 +390,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 				expires_at = greatest(channel_windows.expires_at, excluded.expires_at),
 				source_message_id = case when excluded.opened_at >= channel_windows.opened_at then excluded.source_message_id else channel_windows.source_message_id end,
 				updated_at = now()`, w.AccountID, conversationID, w.Provider, m.OccurredAt, messageID); err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
 	if w.Provider == "instagram" && !m.FromMe && (m.SocialEventKind == "comment" || m.SocialEventKind == "mention") {
@@ -364,7 +408,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 			firstNonEmpty(m.ContactName, m.ContactExternalID), m.Content, m.SocialEventKind, m.SocialIsLive,
 			m.OccurredAt, w.InstanceName).Scan(&commentID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return "", "", err
+			return "", "", false, err
 		}
 		if commentID != "" {
 			expires := m.SocialReplyExpiresAt
@@ -373,7 +417,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 				values ($1::uuid,$2::uuid,'public_reply','pending_review',$3,$4)
 				on conflict (account_id,idempotency_key) do nothing`, w.AccountID, commentID, "instagram-review:"+commentID, expires)
 			if err != nil {
-				return "", "", err
+				return "", "", false, err
 			}
 		}
 	}
@@ -385,7 +429,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 			  and instance_scope_key = $3 and reply_to_message_id is null
 			  and reply_to_external_message_id = $5`,
 			w.AccountID, conversationID, w.InstanceName, messageID, m.ExternalMessageID); err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
 	if m.MessageType != "TEXT" {
@@ -393,7 +437,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 			set media_url = $3, updated_at = now()
 			where account_id = $1::uuid and id = $2::uuid`,
 			w.AccountID, messageID, mediaEndpointPath(conversationID, messageID)); err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 		if _, err := tx.Exec(ctx, `insert into messaging.outbox
 			(account_id, ordering_key, idempotency_key, kind, payload, max_attempts)
@@ -401,7 +445,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 				jsonb_build_object('messageId', $5::text, 'conversationId', $2::text), 5)
 			on conflict (account_id, idempotency_key) do nothing`,
 			w.AccountID, conversationID, "media-fetch:"+messageID, MediaFetchJobKind, messageID); err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
 	if contactID != "" && !m.FromMe {
@@ -423,7 +467,7 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 			w.ExternalEventID, touchpointKind, m.OccurredAt, conversationClientID,
 			conversationBindingID, conversationBindingState)
 		if err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
 	if err := s.insertCustomerDataInboundEventTx(ctx, tx, customerDataInboundSnapshot{
@@ -439,14 +483,15 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 		BindingState:           conversationBindingState,
 		FromMe:                 m.FromMe,
 	}); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
-	return conversationID, messageID, nil
+	return conversationID, messageID, true, nil
 }
 
 // writeProviderStatus aplica ACKs de forma atomica e monotona. O timestamp do provider
 // impede regressao por reentrega fora de ordem; FAILED nunca substitui DELIVERED/READ e
-// DELETED e terminal.
+// DELETED e terminal. Uma mensagem IA terminalizada por history_reset tambem permanece
+// terminal na projecao; o ACK tardio continua preservado em webhook_events.
 func (s *Store) writeProviderStatus(ctx context.Context, tx pgx.Tx, w inboundWrite, result inboundResult) (inboundResult, error) {
 	st := w.Status
 	if st == nil || strings.TrimSpace(st.ExternalMessageID) == "" {
@@ -503,6 +548,8 @@ func (s *Store) applyProviderStatus(ctx context.Context, tx pgx.Tx, accountID, i
 		  and m.instance_scope_key = $2
 		  and m.external_message_id = $3
 		  and m.status <> 'DELETED'
+		  and not (m.origin='ai' and m.status='FAILED'
+		    and m.provider_error_code='history_reset')
 		  and (m.provider_status_at is null or $5 >= m.provider_status_at)
 		  and (
 			$4 = 'DELETED'

@@ -11,6 +11,7 @@ import ConfigHandoffPolicies from '~/components/omnichannel/config/ConfigHandoff
 import ConfigAiToolsKnowledge from '~/components/omnichannel/config/ConfigAiToolsKnowledge.vue'
 import ConfigInstagram from '~/components/omnichannel/config/ConfigInstagram.vue'
 import ConfigChannelClientBindings from '~/components/omnichannel/config/ConfigChannelClientBindings.vue'
+import ConfigOperations from '~/components/omnichannel/config/ConfigOperations.vue'
 import AutomationProfileConfig from './AutomationProfileConfig.vue'
 import type { AutomationProfile, AutomationProfileInput } from '~/domain/omnichannel/automation-api'
 import type { OmniAgent, OmniInstance } from '~/domain/omnichannel/config-types'
@@ -49,6 +50,7 @@ type ConfigTab =
   | 'tools'
   | 'instagram'
   | 'clientes'
+  | 'operacao'
 
 const mode = ref<DrawerMode>('side')
 const activeTab = ref<ConfigTab>('atendimento')
@@ -61,6 +63,12 @@ const clients = computed(() => {
 
 const tabs = computed(() =>
   [
+    {
+      key: 'operacao' as const,
+      label: 'Saúde e rollout',
+      icon: 'i-lucide-activity',
+      allowed: props.canManageSettings || Boolean(props.canAudit),
+    },
     {
       key: 'credenciais' as const,
       label: 'Chaves de IA',
@@ -260,6 +268,10 @@ watch(
 
           <div v-if="visited.has('instagram')" v-show="activeTab === 'instagram'">
             <ConfigInstagram :can-manage="canManageInstances" />
+          </div>
+
+          <div v-if="visited.has('operacao')" v-show="activeTab === 'operacao'">
+            <ConfigOperations :instances="instances" :can-manage="canManageSettings" />
           </div>
         </template>
       </div>

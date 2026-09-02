@@ -64,7 +64,23 @@ func scanAIToolApprovalView(row rowScanner) (AIToolApprovalView, error) {
 	return out, err
 }
 
-func (s *Store) ListAIToolApprovals(ctx context.Context, accountID, agentID string, limit int, beforeID string) ([]AIToolApprovalView, error) {
+func (s *Store) aiToolApprovalOperationalPredicate() string {
+	return s.historyVisibleConversationPredicate("c") + `
+		and a.requested_at > ` + s.effectiveHistoryCutoffExpression("c") + `
+		and d.generation=c.ai_generation and cardinality(d.message_ids)>0
+		and not exists (
+			select 1 from unnest(d.message_ids) captured(message_id)
+			where not exists (
+				select 1 from messaging.messages history_message
+				where history_message.account_id=d.account_id
+				  and history_message.conversation_id=d.conversation_id
+				  and history_message.id=captured.message_id` +
+		s.historyVisibleMessagePredicate("history_message", "c") + `
+			)
+		)`
+}
+
+func (s *Store) ListAIToolApprovals(ctx context.Context, accountID, agentID string, limit int, beforeID string, scopes ...VisibilityScope) ([]AIToolApprovalView, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -74,12 +90,26 @@ func (s *Store) ListAIToolApprovals(ctx context.Context, accountID, agentID stri
 	query := `select ` + aiToolApprovalViewCols + ` from messaging.ai_tool_approvals a
 		join messaging.ai_tool_runs r on r.account_id=a.account_id and r.id=a.tool_run_id
 		join messaging.ai_tool_bindings b on b.account_id=a.account_id and b.id=a.binding_id
-		where a.account_id=$1::uuid and a.agent_id=$2::uuid`
+		join messaging.ai_dispatches d on d.account_id=r.account_id and d.id=r.dispatch_id
+		join messaging.conversations c on c.account_id=d.account_id and c.id=d.conversation_id
+		where a.account_id=$1::uuid and a.agent_id=$2::uuid` + s.aiToolApprovalOperationalPredicate()
 	args := []any{accountID, agentID}
+	if len(scopes) > 0 {
+		query, args = appendConversationVisibility(query, args, "c", scopes[0])
+	}
 	if strings.TrimSpace(beforeID) != "" {
 		var before time.Time
-		err := s.pool.QueryRow(ctx, `select requested_at from messaging.ai_tool_approvals
-			where account_id=$1::uuid and agent_id=$2::uuid and id=$3::uuid`, accountID, agentID, beforeID).Scan(&before)
+		cursorQuery := `select a.requested_at from messaging.ai_tool_approvals a
+			join messaging.ai_tool_runs r on r.account_id=a.account_id and r.id=a.tool_run_id
+			join messaging.ai_dispatches d on d.account_id=r.account_id and d.id=r.dispatch_id
+			join messaging.conversations c on c.account_id=d.account_id and c.id=d.conversation_id
+			where a.account_id=$1::uuid and a.agent_id=$2::uuid and a.id=$3::uuid` +
+			s.aiToolApprovalOperationalPredicate()
+		cursorArgs := []any{accountID, agentID, beforeID}
+		if len(scopes) > 0 {
+			cursorQuery, cursorArgs = appendConversationVisibility(cursorQuery, cursorArgs, "c", scopes[0])
+		}
+		err := s.pool.QueryRow(ctx, cursorQuery, cursorArgs...).Scan(&before)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return []AIToolApprovalView{}, nil
 		}
@@ -119,6 +149,29 @@ func (s *Store) DecideAIToolApproval(ctx context.Context, accountID, agentID, ap
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var scopeConversationID *string
+	err = tx.QueryRow(ctx, `select r.conversation_id::text
+		from messaging.ai_tool_approvals a
+		join messaging.ai_tool_runs r on r.account_id=a.account_id and r.id=a.tool_run_id
+		join messaging.ai_dispatches d on d.account_id=r.account_id and d.id=r.dispatch_id
+		join messaging.conversations c on c.account_id=d.account_id and c.id=d.conversation_id
+		where a.account_id=$1::uuid and a.agent_id=$2::uuid and a.id=$3::uuid`+
+		s.aiToolApprovalOperationalPredicate(),
+		accountID, agentID, approvalID).Scan(&scopeConversationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if scopeConversationID != nil {
+		if err := lockHistoryExternalEffectScope(ctx, tx, accountID, *scopeConversationID, "none"); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrHistoryResetInvalidated) {
+				return ErrNotFound
+			}
+			return err
+		}
+	}
 	var runID, runStatus, approvalStatus string
 	var expiresAt time.Time
 	var conversationID *string
@@ -128,7 +181,10 @@ func (s *Store) DecideAIToolApproval(ctx context.Context, accountID, agentID, ap
 		from messaging.ai_tool_approvals a
 		join messaging.ai_tool_runs r on r.account_id=a.account_id and r.id=a.tool_run_id
 		join messaging.ai_tool_bindings b on b.account_id=a.account_id and b.id=a.binding_id
+		join messaging.ai_dispatches d on d.account_id=r.account_id and d.id=r.dispatch_id
+		join messaging.conversations c on c.account_id=d.account_id and c.id=d.conversation_id
 		where a.account_id=$1::uuid and a.agent_id=$2::uuid and a.id=$3::uuid
+		  `+s.aiToolApprovalOperationalPredicate()+`
 		for update of a,r`, accountID, agentID, approvalID).Scan(&runID, &runStatus, &approvalStatus, &expiresAt,
 		&conversationID, &bindingID, &toolID, &callID, &operation)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -167,7 +223,7 @@ func (s *Store) DecideAIToolApproval(ctx context.Context, accountID, agentID, ap
 	if _, err := tx.Exec(ctx, `insert into messaging.audit_events
 		(account_id,actor_user_id,conversation_id,event_type,payload_json)
 		values ($1::uuid,nullif($2,'')::uuid,nullif($3,'')::uuid,$4,$5::jsonb)`, accountID, actorID,
-		nullableString(conversationID), eventType, payload); err != nil {
+		nullableString(conversationID), eventType, string(payload)); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -180,7 +236,10 @@ func (s *Store) ApprovalView(ctx context.Context, accountID, agentID, approvalID
 	return scanAIToolApprovalView(s.pool.QueryRow(ctx, `select `+aiToolApprovalViewCols+` from messaging.ai_tool_approvals a
 		join messaging.ai_tool_runs r on r.account_id=a.account_id and r.id=a.tool_run_id
 		join messaging.ai_tool_bindings b on b.account_id=a.account_id and b.id=a.binding_id
-		where a.account_id=$1::uuid and a.agent_id=$2::uuid and a.id=$3::uuid`, accountID, agentID, approvalID))
+		join messaging.ai_dispatches d on d.account_id=r.account_id and d.id=r.dispatch_id
+		join messaging.conversations c on c.account_id=d.account_id and c.id=d.conversation_id
+		where a.account_id=$1::uuid and a.agent_id=$2::uuid and a.id=$3::uuid`+
+		s.aiToolApprovalOperationalPredicate(), accountID, agentID, approvalID))
 }
 
 func nullableString(value *string) string {

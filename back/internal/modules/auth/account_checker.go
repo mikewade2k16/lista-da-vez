@@ -18,7 +18,7 @@ func NewPostgresAccountMemberChecker(pool *pgxpool.Pool) *PostgresAccountMemberC
 	return &PostgresAccountMemberChecker{pool: pool}
 }
 
-// accountAccessibleQuery resolve a visibilidade org-aware da account. $1=accountID,
+// accountAccessibleQuery resolve a visibilidade autoritativa da account. $1=accountID,
 // $2=userID. Mantido em const de pacote para teste de contrato (account_checker_test).
 const accountAccessibleQuery = `
 		select 1
@@ -29,12 +29,6 @@ const accountAccessibleQuery = `
 		      exists (
 		          select 1 from core.users u
 		          where u.id = $2::uuid and u.is_active = true and u.is_platform_admin = true
-		      )
-		      or exists (
-		          select 1 from core.organization_users ou
-		          where ou.user_id = $2::uuid
-		            and ou.org_role = 'agency_owner'
-		            and ou.organization_id = a.organization_id
 		      )
 		      or exists (
 		          select 1 from core.account_users au
@@ -74,17 +68,16 @@ const accountPermissionsQuery = `
 	order by permission_key
 `
 
-// IsMember retorna true se userID PODE acessar a account (org-aware).
+// IsMember retorna true se userID PODE acessar a account.
 // Espelha a visibilidade de core.ListAccountsForUser/FindAccountIfMember para
 // o portao do middleware nao divergir do que /v2/me/accounts lista. A account
-// e acessivel quando esta ativa E qualquer um vale:
+// e acessivel quando esta ativa E um dos caminhos vale:
 //
 //	(a) o user e platform_admin -> acessa todas;
-//	(b) o user e agency_owner em core.organization_users da org da account;
-//	(c) o user tem membership ativa em core.account_users (caso comum cliente).
+//	(b) o user tem membership ativa em core.account_users.
 //
-// Sem isso, um login-agencia veria a conta no switcher mas levaria 403 ao usar
-// o modulo dela (ex.: board Tasks movido para a conta-agencia Crow).
+// Membership de organizacao, inclusive agency_owner, nao concede contexto de cliente.
+// A agencia precisa de account_users explicito na conta que vai operar.
 // Retorna false (sem erro) quando nao acessivel — o caller trata como 403.
 func (c *PostgresAccountMemberChecker) IsMember(ctx context.Context, accountID, userID string) (bool, error) {
 	var dummy int

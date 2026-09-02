@@ -134,6 +134,7 @@ func (s *Service) ExecuteInteraction(
 		ProcessKeys: []string{"conversation.triage", "conversation.reply"},
 		Purpose:     request.Purpose, SourceKeys: request.SourceKeys,
 		MaxItems: request.MaxItems, MaxTokens: request.MaxTokens,
+		SuppressStoredContext: request.SuppressStoredContext,
 	})
 	if err != nil {
 		return InteractionDecision{}, newRuntimeFailure(

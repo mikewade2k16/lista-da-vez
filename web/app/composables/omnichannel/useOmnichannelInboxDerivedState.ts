@@ -6,16 +6,15 @@ import type {
   GroupParticipant,
   Message,
   TenantUser,
-  UserRole,
   WhatsAppInstanceRecord,
   WhatsAppStatusResponse
 } from "~/types";
 import {
   type OutboundAttachment,
   type ReadStateEntry,
+  type WhatsAppInstanceAccessState,
   UNASSIGNED_VALUE,
   buildDateKey,
-  canWriteInboxByRole,
   formatDateHeader,
   normalizePhoneDigits,
   toArrayOrEmpty
@@ -24,12 +23,14 @@ import {
 export function useOmnichannelInboxDerivedState(options: {
   user: Ref<{
     id?: string | null;
-    role?: UserRole | null;
     tenantId?: string | null;
   } | null>;
+  effectivePermissionKeys: Ref<string[]>;
   users: Ref<TenantUser[]>;
   whatsappInstances: Ref<WhatsAppInstanceRecord[]>;
+  whatsappInstanceAccessState: Ref<WhatsAppInstanceAccessState>;
   conversations: Ref<Conversation[]>;
+  composeConversation?: Ref<Conversation | null>;
   contacts: Ref<Contact[]>;
   messages: Ref<Message[]>;
   activeConversationId: Ref<string | null>;
@@ -113,7 +114,17 @@ export function useOmnichannelInboxDerivedState(options: {
     }
 
     const conversationsList = toArrayOrEmpty<Conversation>(options.conversations.value);
-    return conversationsList.find((conversationEntry) => conversationEntry.id === options.activeConversationId.value) ?? null;
+    const resolved = conversationsList.find((conversationEntry) => conversationEntry.id === options.activeConversationId.value) ??
+      (options.composeConversation?.value?.id === options.activeConversationId.value
+        ? options.composeConversation.value
+        : null);
+    if (
+      resolved?.channel === "WHATSAPP" &&
+      options.whatsappInstanceAccessState.value !== "resolved-nonempty"
+    ) {
+      return null;
+    }
+    return resolved;
   });
 
   const activeConversationLabel = computed(() => {
@@ -143,7 +154,17 @@ export function useOmnichannelInboxDerivedState(options: {
     return Boolean(activeConversation.value?.externalId?.endsWith("@g.us"));
   });
 
-  const canManageConversation = computed(() => canWriteInboxByRole(options.user.value?.role));
+  const canManageConversation = computed(() => {
+    if (!options.effectivePermissionKeys.value.includes("omnichannel.conversations.reply")) {
+      return false;
+    }
+    const conversation = activeConversation.value;
+    if (!conversation || conversation.channel !== "WHATSAPP") return Boolean(conversation);
+    const instance = options.whatsappInstances.value.find(
+      (entry) => entry.id === conversation.instanceId
+    );
+    return instance?.myCapabilities?.reply === true;
+  });
   const canSaveActiveContact = computed(() => {
     if (!activeConversation.value || isGroupConversation.value) {
       return false;
@@ -193,6 +214,18 @@ export function useOmnichannelInboxDerivedState(options: {
   });
 
   const whatsappBannerMessage = computed(() => {
+    if (options.whatsappInstanceAccessState.value === "loading") {
+      return "";
+    }
+
+    if (options.whatsappInstanceAccessState.value === "error") {
+      return "Nao foi possivel sincronizar as conexoes WhatsApp autorizadas. O canal foi ocultado por seguranca.";
+    }
+
+    if (options.whatsappInstanceAccessState.value === "resolved-empty") {
+      return "Nenhuma conexao de WhatsApp acessivel para este usuario.";
+    }
+
     if (options.loadingWhatsAppStatus.value) {
       return "";
     }
@@ -251,6 +284,13 @@ export function useOmnichannelInboxDerivedState(options: {
     const conversationsList = toArrayOrEmpty<Conversation>(options.conversations.value);
 
     return conversationsList.filter((conversationEntry) => {
+      if (
+        conversationEntry.channel === "WHATSAPP" &&
+        options.whatsappInstanceAccessState.value !== "resolved-nonempty"
+      ) {
+        return false;
+      }
+
       if (options.channel.value !== "all" && conversationEntry.channel !== options.channel.value) {
         return false;
       }
@@ -283,6 +323,10 @@ export function useOmnichannelInboxDerivedState(options: {
   const unreadConversationIds = computed(() => {
     const conversationsList = toArrayOrEmpty<Conversation>(options.conversations.value);
     return conversationsList
+      .filter((conversationEntry) => (
+        conversationEntry.channel !== "WHATSAPP" ||
+        options.whatsappInstanceAccessState.value === "resolved-nonempty"
+      ))
       .filter((conversationEntry) => options.isConversationUnread(conversationEntry))
       .map((conversationEntry) => conversationEntry.id);
   });

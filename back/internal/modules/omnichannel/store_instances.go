@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -45,23 +46,33 @@ type instanceWrite struct {
 // instance_name) tem indice unico (0200) e (account_id, phone_number) tem indice parcial
 // unico (0201) — quem chama trata a violacao (nome vs numero) via mapInstanceWriteError.
 func (s *Store) InsertInstance(ctx context.Context, accountID string, w instanceWrite, createdByUserID string) (string, error) {
-	var id string
-	err := s.pool.QueryRow(ctx, `insert into messaging.whatsapp_instances
-		(account_id, instance_name, display_name, phone_number, queue_label,
-		 responsible_user_id, is_active, provider, provider_config, created_by_user_id)
-		values ($1::uuid, $2, $3, $4, $5, nullif($6,'')::uuid, $7, $8,
-			jsonb_build_object('userScopePolicy', $9::text), nullif($10,'')::uuid)
-		returning id::text`,
-		accountID, w.InstanceName, w.DisplayName, w.PhoneNumber, w.QueueLabel,
-		deref(w.ResponsibleUserID), w.IsActive, w.Provider, w.UserScopePolicy, createdByUserID).Scan(&id)
-	return id, err
+	return s.CreateRestrictedInstanceWithManager(ctx, accountID, w, createdByUserID)
 }
 
 // UpdateInstance aplica o PATCH das colunas gravaveis (full-replace do formulario, menos
 // is_default e a credencial, que tem semantica propria no service). O merge do provider_config
 // preserva as demais chaves (ex.: baseURL) e so sobrescreve userScopePolicy.
 func (s *Store) UpdateInstance(ctx context.Context, accountID, id string, w instanceWrite) error {
-	_, err := s.pool.Exec(ctx, `update messaging.whatsapp_instances
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var previousName string
+	if err := tx.QueryRow(ctx, `select instance_name from messaging.whatsapp_instances
+		where account_id=$1::uuid and id=$2::uuid for update`, accountID, id).Scan(&previousName); err != nil {
+		return err
+	}
+	// 0200 permitia conversation.instance_id NULL e usava instance_scope_key como chave real.
+	// Repare o vínculo pela chave ANTIGA antes do rename para o cutoff não poder ressuscitar.
+	if _, err := tx.Exec(ctx, `update messaging.conversations
+		set instance_id=$2::uuid, updated_at=now()
+		where account_id=$1::uuid and channel='WHATSAPP' and instance_id is null
+		  and instance_scope_key=$3`, accountID, id, previousName); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.whatsapp_instances
 		set instance_name = $3,
 			display_name = $4,
 			phone_number = $5,
@@ -72,8 +83,10 @@ func (s *Store) UpdateInstance(ctx context.Context, accountID, id string, w inst
 			updated_at = now()
 		where account_id = $1::uuid and id = $2::uuid`,
 		accountID, id, w.InstanceName, w.DisplayName, w.PhoneNumber, w.QueueLabel,
-		deref(w.ResponsibleUserID), w.IsActive, w.UserScopePolicy)
-	return err
+		deref(w.ResponsibleUserID), w.IsActive, w.UserScopePolicy); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // SetInstanceNotDefault desmarca a instancia como default (o oposto de PromoteDefault).
@@ -82,25 +95,6 @@ func (s *Store) SetInstanceNotDefault(ctx context.Context, accountID, id string)
 	_, err := s.pool.Exec(ctx, `update messaging.whatsapp_instances
 		set is_default = false, updated_at = now()
 		where account_id = $1::uuid and id = $2::uuid`, accountID, id)
-	return err
-}
-
-// SetInstanceAssignedUsers grava os usuarios atribuidos em provider_config.assignedUserIds
-// (PUT .../users). userIDs ja chega filtrado (so membros da conta) e desduplicado no service.
-// Merge preserva as demais chaves do jsonb.
-func (s *Store) SetInstanceAssignedUsers(ctx context.Context, accountID, id string, userIDs []string) error {
-	if userIDs == nil {
-		userIDs = []string{}
-	}
-	idsJSON, err := json.Marshal(userIDs)
-	if err != nil {
-		return err
-	}
-	_, err = s.pool.Exec(ctx, `update messaging.whatsapp_instances
-		set provider_config = provider_config || jsonb_build_object('assignedUserIds', $3::jsonb),
-			updated_at = now()
-		where account_id = $1::uuid and id = $2::uuid`,
-		accountID, id, string(idsJSON))
 	return err
 }
 
@@ -151,17 +145,47 @@ func (s *Store) ResolveInstanceForOps(ctx context.Context, accountID, instanceID
 // Account-scoped: instancia/conversa de outra conta nunca entra na contagem.
 func (s *Store) CountInstanceConversations(ctx context.Context, accountID, instanceID string) (int64, error) {
 	var n int64
-	err := s.pool.QueryRow(ctx, `select count(*) from messaging.conversations
-		where account_id = $1::uuid and instance_id = $2::uuid`, accountID, instanceID).Scan(&n)
+	err := s.pool.QueryRow(ctx, `select count(*)
+		from messaging.conversations conversation
+		join messaging.whatsapp_instances history_instance
+		  on history_instance.account_id=conversation.account_id and history_instance.id=$2::uuid
+		where conversation.account_id=$1::uuid and conversation.channel='WHATSAPP'
+		  and (conversation.instance_id=history_instance.id
+		    or (conversation.instance_id is null
+		      and conversation.instance_scope_key=history_instance.instance_name))`,
+		accountID, instanceID).Scan(&n)
 	return n, err
 }
 
 // DeleteInstance remove a instancia da conta. Account-scoped — instancia de outra conta nunca
 // casa (isolamento). O guard de conversas atreladas fica no service (DeleteInstance).
 func (s *Store) DeleteInstance(ctx context.Context, accountID, instanceID string) error {
-	_, err := s.pool.Exec(ctx, `delete from messaging.whatsapp_instances
-		where account_id = $1::uuid and id = $2::uuid`, accountID, instanceID)
-	return err
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var instanceName string
+	if err := tx.QueryRow(ctx, `select instance_name from messaging.whatsapp_instances
+		where account_id=$1::uuid and id=$2::uuid for update`, accountID, instanceID).
+		Scan(&instanceName); err != nil {
+		return err
+	}
+	var count int64
+	if err := tx.QueryRow(ctx, `select count(*) from messaging.conversations
+		where account_id=$1::uuid and channel='WHATSAPP'
+		  and (instance_id=$2::uuid or (instance_id is null and instance_scope_key=$3))`,
+		accountID, instanceID, instanceName).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrInstanceHasConversations
+	}
+	if _, err := tx.Exec(ctx, `delete from messaging.whatsapp_instances
+		where account_id=$1::uuid and id=$2::uuid`, accountID, instanceID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // IsAccountMember diz se o usuario e membro ATIVO da conta (isolamento: responsavel/
@@ -174,83 +198,225 @@ func (s *Store) IsAccountMember(ctx context.Context, accountID, userID string) (
 	return ok, err
 }
 
-// FilterAccountMemberIDs devolve, na ordem da entrada e sem repetir, os ids que sao membros
-// ATIVOS da conta. Ids de fora da conta sao descartados (isolamento: nunca persistir um
-// usuario de outro tenant em assignedUserIds).
-func (s *Store) FilterAccountMemberIDs(ctx context.Context, accountID string, ids []string) ([]string, error) {
-	out := make([]string, 0, len(ids))
-	if len(ids) == 0 {
-		return out, nil
-	}
-	rows, err := s.pool.Query(ctx, `select user_id::text from core.account_users
-		where account_id = $1::uuid and is_active = true and user_id = any($2::uuid[])`,
-		accountID, dedupeStrings(ids))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	valid := map[string]bool{}
-	for rows.Next() {
-		var uid string
-		if err := rows.Scan(&uid); err != nil {
-			return nil, err
-		}
-		valid[uid] = true
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	// Reconstroi na ordem da entrada, sem repetir, so os validos.
-	seen := map[string]bool{}
-	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if id == "" || seen[id] || !valid[id] {
-			continue
-		}
-		seen[id] = true
-		out = append(out, id)
-	}
-	return out, nil
+// O reset de historico e estritamente por instancia e logico. Nao existe mais operacao de
+// limpeza tenant-wide nem DELETE de mensagens/conversas/auditoria neste caminho.
+type historyResetWrite struct {
+	AccountID        string
+	InstanceID       string
+	ActorUserID      string
+	Confirmation     string
+	Reason           string
+	ExpectedRevision int64
 }
 
-// ClearConversations apaga o historico de conversas da conta (escopo tenant) ou de UMA
-// instancia (escopo instancia, instanceID nao vazio), numa transacao. Devolve as contagens.
-//
-// Ordem deliberada: audit_events -> messages -> conversations. Apagar as folhas ANTES da
-// conversa da contagem exata (o DELETE da conversa cascatearia messages e anularia
-// audit_events, escondendo os numeros). hidden_messages/routing_decisions cascateiam.
-// O predicado usa ($2::uuid is null or ...) — tenant quando instanceID e nil.
-func (s *Store) ClearConversations(ctx context.Context, accountID string, instanceID *string) (deletedAudit, deletedMessages, deletedConversations int64, err error) {
+type historyResetResult struct {
+	InstanceID string
+	Cutoff     time.Time
+	Revision   int64
+}
+
+// ResetInstanceHistory avanca o cutoff de UMA instancia e invalida somente efeitos operacionais
+// antigos. Mensagens, conversas, handoffs, auditoria e analises permanecem fisicamente intactos.
+func (s *Store) ResetInstanceHistory(ctx context.Context, in historyResetWrite) (historyResetResult, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return 0, 0, 0, err
+		return historyResetResult{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	convScope := `($2::uuid is null or conversation_id in (
-		select c.id from messaging.conversations c
-		where c.account_id = $1::uuid and c.instance_id = $2::uuid))`
+	var instanceName string
+	var previousCutoff *time.Time
+	var currentRevision int64
+	err = tx.QueryRow(ctx, `select instance_name, history_visible_from, history_reset_revision
+		from messaging.whatsapp_instances
+		where account_id=$1::uuid and id=$2::uuid
+		for update`, in.AccountID, in.InstanceID).Scan(&instanceName, &previousCutoff, &currentRevision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return historyResetResult{}, ErrNotFound
+	}
+	if err != nil {
+		return historyResetResult{}, err
+	}
+	if strings.TrimSpace(in.Confirmation) != strings.TrimSpace(instanceName) {
+		return historyResetResult{}, ErrHistoryResetConfirmationMismatch
+	}
+	if currentRevision != in.ExpectedRevision {
+		return historyResetResult{}, ErrHistoryResetRevisionConflict
+	}
 
-	auditTag, err := tx.Exec(ctx, `delete from messaging.audit_events
-		where account_id = $1::uuid and `+convScope, accountID, instanceID)
+	result := historyResetResult{InstanceID: in.InstanceID}
+	err = tx.QueryRow(ctx, `update messaging.whatsapp_instances
+		set history_visible_from=statement_timestamp(),
+			history_reset_revision=history_reset_revision+1,
+			updated_at=now()
+		where account_id=$1::uuid and id=$2::uuid
+		returning history_visible_from, history_reset_revision`, in.AccountID, in.InstanceID).
+		Scan(&result.Cutoff, &result.Revision)
 	if err != nil {
-		return 0, 0, 0, err
+		return historyResetResult{}, err
 	}
-	msgTag, err := tx.Exec(ctx, `delete from messaging.messages
-		where account_id = $1::uuid and `+convScope, accountID, instanceID)
-	if err != nil {
-		return 0, 0, 0, err
+	result.Cutoff = result.Cutoff.UTC()
+
+	auditPayload := map[string]any{
+		"actorUserId": in.ActorUserID, "accountId": in.AccountID,
+		"instanceId": in.InstanceID, "instanceName": instanceName,
+		"previousCutoff": previousCutoff, "newCutoff": result.Cutoff,
+		"previousRevision": currentRevision, "newRevision": result.Revision,
 	}
-	convTag, err := tx.Exec(ctx, `delete from messaging.conversations
-		where account_id = $1::uuid and ($2::uuid is null or instance_id = $2::uuid)`,
-		accountID, instanceID)
+	if in.Reason != "" {
+		auditPayload["reason"] = in.Reason
+	}
+	rawAudit, err := json.Marshal(auditPayload)
 	if err != nil {
-		return 0, 0, 0, err
+		return historyResetResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `insert into messaging.audit_events
+		(account_id,actor_user_id,event_type,payload_json)
+		values ($1::uuid,$2::uuid,'WHATSAPP_INSTANCE_HISTORY_RESET',$3::jsonb)`,
+		in.AccountID, in.ActorUserID, string(rawAudit)); err != nil {
+		return historyResetResult{}, err
+	}
+
+	if _, err := tx.Exec(ctx, `update messaging.conversations
+		set instance_id=coalesce(instance_id,$2::uuid), ai_generation=ai_generation+1,
+		    extracted_fields='{}'::jsonb, updated_at=now()
+		where account_id=$1::uuid and channel='WHATSAPP'
+		  and (instance_id=$2::uuid or (instance_id is null and instance_scope_key=$3))`,
+		in.AccountID, in.InstanceID, instanceName); err != nil {
+		return historyResetResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.ai_dispatches dispatch
+		set status='cancelled', last_error='history_reset', locked_at=null, updated_at=now()
+		from messaging.conversations conversation
+		where dispatch.account_id=$1::uuid
+		  and conversation.account_id=dispatch.account_id
+		  and conversation.id=dispatch.conversation_id
+		  and conversation.channel='WHATSAPP'
+		  and (conversation.instance_id=$2::uuid
+		    or (conversation.instance_id is null and conversation.instance_scope_key=$3))
+		  and dispatch.generation < conversation.ai_generation
+		  and dispatch.status in ('buffering','queued','processing')`,
+		in.AccountID, in.InstanceID, instanceName); err != nil {
+		return historyResetResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.ai_reply_drafts draft
+		set status='expired',decision_reason='history_reset',decided_at=now(),updated_at=now()
+		from messaging.conversations conversation
+		where draft.account_id=$1::uuid and draft.account_id=conversation.account_id
+		  and draft.conversation_id=conversation.id and draft.status='pending'
+		  and conversation.channel='WHATSAPP'
+		  and (conversation.instance_id=$2::uuid
+		    or (conversation.instance_id is null and conversation.instance_scope_key=$3))`,
+		in.AccountID, in.InstanceID, instanceName); err != nil {
+		return historyResetResult{}, err
+	}
+
+	// Jobs de dispatch usam dispatchId; outbound e media usam messageId. As linhas sao
+	// preservadas e apenas levadas ao estado terminal ja suportado.
+	if _, err := tx.Exec(ctx, `update messaging.outbox job
+		set status='dead', last_error='history_reset', locked_at=null, locked_by='', updated_at=now()
+		where job.account_id=$1::uuid and job.status='pending' and (
+			exists (select 1 from messaging.ai_dispatches dispatch
+				join messaging.conversations conversation
+				  on conversation.account_id=dispatch.account_id and conversation.id=dispatch.conversation_id
+				where dispatch.account_id=job.account_id and conversation.channel='WHATSAPP'
+				  and (conversation.instance_id=$2::uuid
+				    or (conversation.instance_id is null and conversation.instance_scope_key=$3))
+				  and dispatch.status='cancelled' and dispatch.last_error='history_reset'
+				  and job.payload->>'dispatchId'=dispatch.id::text)
+			or exists (select 1 from messaging.messages message
+				join messaging.conversations conversation
+				  on conversation.account_id=message.account_id and conversation.id=message.conversation_id
+				where message.account_id=job.account_id and conversation.channel='WHATSAPP'
+				  and (conversation.instance_id=$2::uuid
+				    or (conversation.instance_id is null and conversation.instance_scope_key=$3))
+				  and (message.created_at <= $4 or (message.origin='ai' and message.status='PENDING'
+				    and coalesce(case when message.metadata_json->>'aiGeneration' ~ '^[0-9]+$'
+				      then (message.metadata_json->>'aiGeneration')::bigint end,-1) < conversation.ai_generation))
+				  and job.payload->>'messageId'=message.id::text)
+		)`, in.AccountID, in.InstanceID, instanceName, result.Cutoff); err != nil {
+		return historyResetResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.intelligence_outbox job
+		set status='dead', last_error='history_reset', locked_at=null, locked_by='', updated_at=now()
+		where job.account_id=$1::uuid and job.status='pending'
+		  and exists (select 1 from messaging.ai_dispatches dispatch
+			join messaging.conversations conversation
+			  on conversation.account_id=dispatch.account_id and conversation.id=dispatch.conversation_id
+			where dispatch.account_id=job.account_id
+			  and conversation.channel='WHATSAPP'
+			  and (conversation.instance_id=$2::uuid
+			    or (conversation.instance_id is null and conversation.instance_scope_key=$3))
+			  and dispatch.generation < conversation.ai_generation
+			  and job.payload->>'dispatchId'=dispatch.id::text)`,
+		in.AccountID, in.InstanceID, instanceName); err != nil {
+		return historyResetResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.customer_data_outbox job
+		set status='dead', last_error='history_reset', locked_at=null, locked_by='', updated_at=now()
+		where job.account_id=$1::uuid and job.status='pending'
+		  and exists (select 1 from messaging.messages message
+			join messaging.conversations conversation
+			  on conversation.account_id=message.account_id and conversation.id=message.conversation_id
+			where message.account_id=job.account_id
+			  and conversation.channel='WHATSAPP'
+			  and (conversation.instance_id=$2::uuid
+			    or (conversation.instance_id is null and conversation.instance_scope_key=$3))
+			  and message.created_at <= $4
+			  and job.payload->>'messageId'=message.id::text)`,
+		in.AccountID, in.InstanceID, instanceName, result.Cutoff); err != nil {
+		return historyResetResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.ai_tool_approvals approval
+		set status='expired', reason='history_reset', decided_at=now(), decided_by=null
+		from messaging.ai_tool_runs tool_run
+		join messaging.ai_dispatches dispatch
+		  on dispatch.account_id=tool_run.account_id and dispatch.id=tool_run.dispatch_id
+		join messaging.conversations conversation
+		  on conversation.account_id=dispatch.account_id and conversation.id=dispatch.conversation_id
+		where approval.account_id=$1::uuid and approval.account_id=tool_run.account_id
+		  and approval.tool_run_id=tool_run.id and approval.status='pending'
+		  and conversation.channel='WHATSAPP'
+		  and (conversation.instance_id=$2::uuid
+		    or (conversation.instance_id is null and conversation.instance_scope_key=$3))
+		  and dispatch.generation < conversation.ai_generation`,
+		in.AccountID, in.InstanceID, instanceName); err != nil {
+		return historyResetResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.ai_tool_runs tool_run
+		set status='failed', error='history_reset', completed_at=now()
+		from messaging.ai_dispatches dispatch
+		join messaging.conversations conversation
+		  on conversation.account_id=dispatch.account_id and conversation.id=dispatch.conversation_id
+		where tool_run.account_id=$1::uuid and tool_run.account_id=dispatch.account_id
+		  and tool_run.dispatch_id=dispatch.id
+		  and tool_run.status in ('requested','approved','running')
+		  and conversation.channel='WHATSAPP'
+		  and (conversation.instance_id=$2::uuid
+		    or (conversation.instance_id is null and conversation.instance_scope_key=$3))
+		  and dispatch.generation < conversation.ai_generation`,
+		in.AccountID, in.InstanceID, instanceName); err != nil {
+		return historyResetResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.messages message
+		set status='FAILED', provider_error_code='history_reset', updated_at=now()
+		from messaging.conversations conversation
+		where message.account_id=$1::uuid
+		  and conversation.account_id=message.account_id and conversation.id=message.conversation_id
+		  and conversation.channel='WHATSAPP'
+		  and (conversation.instance_id=$2::uuid
+		    or (conversation.instance_id is null and conversation.instance_scope_key=$3))
+		  and (message.created_at <= $4 or (message.origin='ai'
+		    and coalesce(case when message.metadata_json->>'aiGeneration' ~ '^[0-9]+$'
+		      then (message.metadata_json->>'aiGeneration')::bigint end,-1) < conversation.ai_generation))
+		  and message.direction='OUTBOUND' and message.status='PENDING'`,
+		in.AccountID, in.InstanceID, instanceName, result.Cutoff); err != nil {
+		return historyResetResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, 0, 0, err
+		return historyResetResult{}, err
 	}
-	return auditTag.RowsAffected(), msgTag.RowsAffected(), convTag.RowsAffected(), nil
+	return result, nil
 }
 
 // ============================================================================
@@ -294,21 +460,6 @@ func mapInstanceWriteError(err error) error {
 		return &NumberInUseError{InstanceName: "outra instancia"}
 	}
 	return ErrInstanceNameConflict
-}
-
-// dedupeStrings remove repetidos e vazios preservando a ordem (para o any($2::uuid[])).
-func dedupeStrings(in []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		v = strings.TrimSpace(v)
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		out = append(out, v)
-	}
-	return out
 }
 
 // noRows normaliza pgx.ErrNoRows para o service (validate/clear resolvem instancia por id/nome).

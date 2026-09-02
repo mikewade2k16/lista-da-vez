@@ -90,6 +90,50 @@ func (s *Store) ListContacts(ctx context.Context, accountID string) ([]contactRo
 	return out, rows.Err()
 }
 
+// ListVisibleContacts deriva o CRM exclusivamente de conversas visiveis ao ator.
+func (s *Store) ListVisibleContacts(ctx context.Context, accountID string, scope VisibilityScope) ([]contactRow, error) {
+	join := ` left join lateral (select cv.id,cv.last_message_at,cv.channel,cv.state
+		from messaging.conversations cv where cv.contact_id=ct.id and cv.account_id=ct.account_id`
+	args := []any{accountID}
+	join, args = appendConversationVisibility(join, args, "cv", scope)
+	join += s.historyVisibleConversationPredicate("cv")
+	join += ` order by cv.last_message_at desc limit 1) lc on true`
+	query := `select ` + contactCols + lastConversationCols + ` from messaging.contacts ct` + join + `
+		where ct.account_id=$1::uuid and lc.id is not null
+		and not exists (select 1 from messaging.contact_suppressions suppression
+			where suppression.account_id=ct.account_id and suppression.contact_id=ct.id and suppression.is_hidden=true)
+		order by ct.updated_at desc,ct.created_at desc`
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]contactRow, 0)
+	for rows.Next() {
+		row, scanErr := scanContact(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetVisibleContact(ctx context.Context, accountID, contactID string, scope VisibilityScope) (contactRow, error) {
+	join := ` left join lateral (select cv.id,cv.last_message_at,cv.channel,cv.state
+		from messaging.conversations cv where cv.contact_id=ct.id and cv.account_id=ct.account_id`
+	args := []any{accountID}
+	join, args = appendConversationVisibility(join, args, "cv", scope)
+	join += s.historyVisibleConversationPredicate("cv")
+	join += ` order by cv.last_message_at desc limit 1) lc on true`
+	args = append(args, contactID)
+	query := `select ` + contactCols + lastConversationCols + ` from messaging.contacts ct` + join +
+		` where ct.account_id=$1::uuid and ct.id=$` + strconv.Itoa(len(args)) + `::uuid and lc.id is not null
+		and not exists (select 1 from messaging.contact_suppressions suppression
+			where suppression.account_id=ct.account_id and suppression.contact_id=ct.id and suppression.is_hidden=true)`
+	return scanContact(s.pool.QueryRow(ctx, query, args...))
+}
+
 // GetContact devolve um contato da account. Contato de outra conta -> pgx.ErrNoRows -> 404.
 func (s *Store) GetContact(ctx context.Context, accountID, id string) (contactRow, error) {
 	query := `select ` + contactCols + lastConversationCols + `
@@ -129,6 +173,15 @@ func (s *Store) LinkConversationsByPhone(ctx context.Context, accountID, phone, 
 	return err
 }
 
+func (s *Store) LinkVisibleConversationsByPhone(ctx context.Context, accountID, phone, contactID string, scope VisibilityScope) error {
+	query := `update messaging.conversations c set contact_id=$3::uuid,updated_at=now()
+		where c.account_id=$1::uuid and c.contact_phone=$2`
+	args := []any{accountID, phone, contactID}
+	query, args = appendConversationVisibility(query, args, "c", scope)
+	_, err := s.pool.Exec(ctx, query, args...)
+	return err
+}
+
 // UpdateConversationContact carimba os dados do contato na conversa indicada
 // (contacts.ts:932-946). Filtra por account TAMBEM — defesa em profundidade.
 func (s *Store) UpdateConversationContact(ctx context.Context, accountID, conversationID, contactID, name, phone string, avatarURL *string) error {
@@ -138,6 +191,22 @@ func (s *Store) UpdateConversationContact(ctx context.Context, accountID, conver
 		where account_id = $1::uuid and id = $2::uuid`,
 		accountID, conversationID, contactID, name, phone, avatarURL)
 	return err
+}
+
+func (s *Store) UpdateVisibleConversationContact(ctx context.Context, accountID, conversationID, contactID, name, phone string, avatarURL *string, scope VisibilityScope) error {
+	query := `update messaging.conversations c
+		set contact_id=$3::uuid,contact_name=$4,contact_phone=$5,contact_avatar_url=$6,updated_at=now()
+		where c.account_id=$1::uuid and c.id=$2::uuid`
+	args := []any{accountID, conversationID, contactID, name, phone, avatarURL}
+	query, args = appendConversationVisibility(query, args, "c", scope)
+	command, err := s.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if command.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 // UpdateContact aplica o PATCH. Os tres campos ja chegam resolvidos do service (nome
@@ -157,6 +226,15 @@ func (s *Store) SyncConversationPhone(ctx context.Context, accountID, contactID,
 		set contact_phone = $3, updated_at = now()
 		where account_id = $1::uuid and contact_id = $2::uuid`,
 		accountID, contactID, phone)
+	return err
+}
+
+func (s *Store) SyncVisibleConversationPhone(ctx context.Context, accountID, contactID, phone string, scope VisibilityScope) error {
+	query := `update messaging.conversations c set contact_phone=$3,updated_at=now()
+		where c.account_id=$1::uuid and c.contact_id=$2::uuid`
+	args := []any{accountID, contactID, phone}
+	query, args = appendConversationVisibility(query, args, "c", scope)
+	_, err := s.pool.Exec(ctx, query, args...)
 	return err
 }
 
@@ -331,16 +409,20 @@ func (s *Store) ListAssignableUsers(ctx context.Context, accountID string) ([]As
 // (chaves proprias do jsonb) pela gestao de instancia — o front tem controles reais para
 // os dois (seletor de politica + PUT .../users), entao nao sao mais constantes fixas.
 const instanceCols = `wi.id::text, wi.account_id::text, wi.instance_name, wi.provider, wi.display_name,
+	wi.access_policy, wi.access_revision,
 	wi.phone_number, wi.queue_label, wi.responsible_user_id::text, ru.display_name, ru.email,
 	wi.is_default, wi.is_active, (wi.credentials_ciphertext is not null),
+	wi.history_visible_from, wi.history_reset_revision,
 	wi.created_at, wi.updated_at, wi.provider_config`
 
 func scanInstance(row rowScanner) (InstanceView, error) {
 	var i InstanceView
 	var config []byte
-	err := row.Scan(&i.ID, &i.TenantID, &i.InstanceName, &i.Provider, &i.DisplayName, &i.PhoneNumber,
-		&i.QueueLabel, &i.ResponsibleUserID, &i.ResponsibleUserName, &i.ResponsibleUserMail,
-		&i.IsDefault, &i.IsActive, &i.HasEvolutionAPIKey, &i.CreatedAt, &i.UpdatedAt, &config)
+	err := row.Scan(&i.ID, &i.TenantID, &i.InstanceName, &i.Provider, &i.DisplayName,
+		&i.AccessPolicy, &i.AccessRevision, &i.PhoneNumber, &i.QueueLabel,
+		&i.ResponsibleUserID, &i.ResponsibleUserName, &i.ResponsibleUserMail,
+		&i.IsDefault, &i.IsActive, &i.HasEvolutionAPIKey, &i.HistoryVisibleFrom,
+		&i.HistoryResetRevision, &i.CreatedAt, &i.UpdatedAt, &config)
 	// userScopePolicy/assignedUserIds saem de provider_config (chaves proprias), com
 	// fallback para os defaults do legado quando ausentes. Ver parseInstanceScope.
 	i.UserScopePolicy, i.AssignedUserIDs = parseInstanceScope(config)
@@ -355,6 +437,9 @@ type InstanceFilter struct {
 	// instancias sem responsavel ou cujo responsavel e este usuario. Vazio = sem filtro
 	// (admin ve todas).
 	ResponsibleUserID string
+	// IDs restringe a leitura ao conjunto autorizado pelo resolver P1B. Slice vazio
+	// significa nenhuma instancia; nil mantem o uso interno sem filtro.
+	IDs []string
 }
 
 // ListInstances devolve as instancias da account.
@@ -367,6 +452,10 @@ func (s *Store) ListInstances(ctx context.Context, accountID string, f InstanceF
 
 	if f.ActiveOnly {
 		query += " and wi.is_active = true"
+	}
+	if f.IDs != nil {
+		args = append(args, f.IDs)
+		query += " and wi.id=any($" + strconv.Itoa(len(args)) + "::uuid[])"
 	}
 	if strings.TrimSpace(f.ResponsibleUserID) != "" {
 		args = append(args, strings.TrimSpace(f.ResponsibleUserID))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
@@ -21,6 +22,14 @@ import (
 // notas da matriz. Transicao invalida => ErrInvalidTransition (409). Conversa fora da conta
 // => ErrNotFound (404).
 func (s *Service) Transition(ctx context.Context, p auth.Principal, convID string, ev Event, payload TransitionPayload) (ConversationView, error) {
+	visibility, err := s.resolveConversationVisibility(ctx, p.AccountID, p.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
+	if err != nil {
+		return ConversationView{}, err
+	}
+	if _, err := s.store.GetVisibleConversation(ctx, p.AccountID, visibility, convID); err != nil {
+		return ConversationView{}, translate(err)
+	}
 	row, err := s.applyTransition(ctx, strings.TrimSpace(p.AccountID), convID, ev, payload)
 	if err != nil {
 		return ConversationView{}, err
@@ -297,14 +306,19 @@ func (s *Service) TransferQueue(ctx context.Context, p auth.Principal, convID, q
 	if err := s.requirePermission(ctx, p.AccountID, p, "omnichannel.conversations.assign"); err != nil {
 		return ConversationView{}, err
 	}
-	return s.Transition(ctx, p, convID, EventQueueTransfer, TransitionPayload{TargetQueueID: queueID})
+	view, err := s.Transition(ctx, p, convID, EventQueueTransfer, TransitionPayload{TargetQueueID: queueID})
+	if err != nil {
+		return ConversationView{}, err
+	}
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		p.AccountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
+	return view, nil
 }
 
-// ListRoutingDecisions devolve a auditoria de roteamento de uma conversa. Exige
-// `omnichannel.conversations.view` (feature) + visibilidade (gate de dado). Conversa fora
-// do gate => 404.
+// ListRoutingDecisions devolve a auditoria de roteamento de uma conversa. Exige audit.view,
+// conversations.view e o mesmo gate de dado da conversa; fora do gate retorna 404.
 func (s *Service) ListRoutingDecisions(ctx context.Context, p auth.Principal, convID string) ([]RoutingDecisionView, error) {
-	if err := s.requirePermission(ctx, p.AccountID, p, "omnichannel.conversations.view"); err != nil {
+	if err := s.requirePermission(ctx, p.AccountID, p, "omnichannel.audit.view"); err != nil {
 		return nil, err
 	}
 	scope, err := s.resolveVisibility(ctx, p.AccountID, p)
@@ -326,9 +340,8 @@ func (s *Service) requireSettingsManage(ctx context.Context, accountID string, p
 	return s.requirePermission(ctx, accountID, p, "omnichannel.settings.manage")
 }
 
-// requirePermission resolve a permissao efetiva NA CONTA e devolve ErrForbidden (403) se
-// faltar. platform_admin passa (has()=false no front, mas e admin de fato). Cai tambem no
-// principal.Permissions global quando resolvido.
+// requirePermission resolve a permissao efetiva atual na conta e devolve 403 se faltar.
+// Claims do token nao substituem o RBAC autoritativo, pois podem estar obsoletos apos revogacao.
 func (s *Service) requirePermission(ctx context.Context, accountID string, p auth.Principal, key string) error {
 	ok, err := s.hasPermission(ctx, accountID, p, key)
 	if err != nil {
@@ -344,9 +357,6 @@ func (s *Service) hasPermission(ctx context.Context, accountID string, p auth.Pr
 	if strings.TrimSpace(accountID) == "" {
 		return false, nil
 	}
-	if p.Role == auth.RolePlatformAdmin {
-		return true, nil
-	}
 	ok, err := s.store.hasEffectivePermission(ctx, accountID, p.UserID, key)
 	if err != nil {
 		return false, err
@@ -354,21 +364,13 @@ func (s *Service) hasPermission(ctx context.Context, accountID string, p auth.Pr
 	if ok {
 		return true, nil
 	}
-	if p.PermissionsResolved && containsPermission(p.Permissions, key) {
-		return true, nil
-	}
 	return false, nil
 }
 
-// resolveVisibility monta o escopo de dado (Contrato 5): amplo = platform_admin OU
-// settings.manage (ve inclusive conversa unrouted); caso contrario, so as filas onde e
-// membro ativo + as atribuidas a ele.
+// resolveVisibility usa o resolver canonico; configuracao nao concede conteudo de conversa.
 func (s *Service) resolveVisibility(ctx context.Context, accountID string, p auth.Principal) (VisibilityScope, error) {
-	broad, err := s.hasPermission(ctx, accountID, p, "omnichannel.settings.manage")
-	if err != nil {
-		return VisibilityScope{}, err
-	}
-	return VisibilityScope{UserID: p.UserID, IsBroad: broad}, nil
+	return s.resolveConversationVisibility(ctx, accountID, p.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
 }
 
 // assertAssignable e a guarda da nota 8: o usuario destino e queue_member ATIVO da fila da
@@ -391,14 +393,4 @@ func (s *Service) assertAssignable(ctx context.Context, accountID string, queueI
 		return nil
 	}
 	return ErrNotFound
-}
-
-// containsPermission responde se a key esta na lista de permissoes global do Principal.
-func containsPermission(values []string, key string) bool {
-	for _, v := range values {
-		if strings.TrimSpace(v) == key {
-			return true
-		}
-	}
-	return false
 }

@@ -23,8 +23,12 @@ func NewWhatsAppCloudService(store *Store, registry *channel.Registry, box *secr
 }
 
 func (s *WhatsAppCloudService) Configure(ctx context.Context, accountID string, caller Caller, instanceID string, in MetaCloudConfigInput) (MetaCloudConfigView, error) {
-	if !caller.IsAdmin || !omnichannelUUIDPattern.MatchString(strings.TrimSpace(instanceID)) {
+	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(instanceID)) {
 		return MetaCloudConfigView{}, ErrForbidden
+	}
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
+		return MetaCloudConfigView{}, err
 	}
 	if strings.TrimSpace(in.WABAID) == "" || strings.TrimSpace(in.PhoneNumberID) == "" ||
 		strings.TrimSpace(in.AppID) == "" || !meta_whatsapp.ValidateGraphVersion(in.GraphVersion) ||
@@ -66,22 +70,34 @@ func (s *WhatsAppCloudService) Configure(ctx context.Context, accountID string, 
 }
 
 func (s *WhatsAppCloudService) GetConfig(ctx context.Context, accountID string, caller Caller, instanceID string) (MetaCloudConfigView, error) {
-	if !caller.IsAdmin || !omnichannelUUIDPattern.MatchString(strings.TrimSpace(instanceID)) {
+	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(instanceID)) {
 		return MetaCloudConfigView{}, ErrForbidden
+	}
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
+		return MetaCloudConfigView{}, err
 	}
 	return s.store.GetMetaCloudConfigSafe(ctx, accountID, instanceID)
 }
 
 func (s *WhatsAppCloudService) Templates(ctx context.Context, accountID string, caller Caller, instanceID string) ([]WhatsAppTemplateView, error) {
-	if !caller.IsAdmin || !omnichannelUUIDPattern.MatchString(strings.TrimSpace(instanceID)) {
+	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(instanceID)) {
 		return nil, ErrForbidden
+	}
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
+		return nil, err
 	}
 	return s.store.ListWhatsAppTemplates(ctx, accountID, instanceID)
 }
 
 func (s *WhatsAppCloudService) SyncTemplates(ctx context.Context, accountID string, caller Caller, instanceID string) ([]WhatsAppTemplateView, error) {
-	if !caller.IsAdmin || !omnichannelUUIDPattern.MatchString(strings.TrimSpace(instanceID)) {
+	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(instanceID)) {
 		return nil, ErrForbidden
+	}
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
+		return nil, err
 	}
 	provider, config, ciphertext, err := s.loadCredential(ctx, accountID, instanceID)
 	if err != nil {

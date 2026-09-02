@@ -164,6 +164,7 @@ services:
       # (platform/secretbox). OBRIGATORIA a partir da F3.5: sem ela a api NAO SOBE
       # (fail-fast no boot, sem default). Perder a chave = perder os segredos cifrados.
       OMNI_SECRETS_KEY: ${OMNI_SECRETS_KEY:-}
+      OMNICHANNEL_HISTORY_CUTOFF_ENFORCED: ${OMNICHANNEL_HISTORY_CUTOFF_ENFORCED:-true}
       CUSTOMER_DATA_ENCRYPTION_KEY: ${CUSTOMER_DATA_ENCRYPTION_KEY:-}
       CUSTOMER_DATA_HMAC_KEY: ${CUSTOMER_DATA_HMAC_KEY:-}
       # Storage privado do inbox. Fica fora de /uploads e so e servido por rota autenticada.
@@ -343,7 +344,8 @@ services:
         condition: service_healthy
 
   # Automacao WhatsApp/IA (n8n + WAHA + Redis) — modulo automation/.
-  # Sobe so com `docker compose --profile automation up -d` (fica fora do dev normal).
+  # `npm run dev` ativa todos os profiles. Para subir somente este conjunto, use
+  # `docker compose --profile automation up -d`.
   # Mesma rede do projeto: WAHA fala com o n8n por http://n8n:5678; o n8n alcanca
   # o postgres do Omni por postgres:5432 (integracao CRM/Etapa 2, ainda futura).
   # Runbook completo em docs/automation/SETUP.md.
@@ -510,8 +512,9 @@ services:
 
   # Provider Evolution API (modulo omnichannel — Atendimento WhatsApp, F4).
   # 1o adapter real do canal (a decisao D-A do canonico e multi-provider; o `mock`
-  # roda sem este container). Sobe SO com `docker compose --profile omnichannel up -d`
-  # (fica fora do dev normal). Guia de subida/pareamento: docs/omnichannel/EVOLUTION_SETUP.md.
+  # roda sem este container). `npm run dev` ativa este profile; para subi-lo
+  # isoladamente, use `docker compose --profile omnichannel up -d`.
+  # Guia de subida/pareamento: docs/omnichannel/EVOLUTION_SETUP.md.
   #
   # ATENCAO VERSAO: confirmar a tag da imagem oficial antes de subir em prod
   # (o projeto publica em atendai/evolution-api e, mais recente, evoapicloud/evolution-api).

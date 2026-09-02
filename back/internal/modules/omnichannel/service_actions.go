@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel/channel"
@@ -188,7 +189,7 @@ func (a *ActionsService) Assign(ctx context.Context, accountID string, p auth.Pr
 	if err := a.store.SyncAssignedToID(ctx, accountID, convID); err != nil {
 		return ConversationView{}, err
 	}
-	finalRow, err := a.store.GetConversation(ctx, accountID, convID)
+	finalRow, err := a.resolveConversation(ctx, accountID, p, convID)
 	if err != nil {
 		return ConversationView{}, translate(err)
 	}
@@ -201,6 +202,8 @@ func (a *ActionsService) Assign(ctx context.Context, accountID string, p auth.Pr
 			before.AssignedToID, after.AssignedToID)
 	}
 	a.publishConversationUpdated(ctx, accountID, after)
+	a.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
 	return after, nil
 }
 
@@ -235,6 +238,8 @@ func (a *ActionsService) TakeConversation(ctx context.Context, accountID string,
 		return ConversationView{}, err
 	}
 	a.publishConversationUpdated(ctx, accountID, view)
+	a.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
 	return view, nil
 }
 
@@ -273,21 +278,32 @@ func (a *ActionsService) OpenContactConversation(ctx context.Context, accountID 
 	if err := a.svc.requirePermission(ctx, accountID, p, "omnichannel.contacts.manage"); err != nil {
 		return ConversationView{}, err
 	}
-	contact, err := a.store.GetContact(ctx, accountID, contactID)
+	visibility, err := a.svc.resolveConversationVisibility(ctx, accountID, p.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
 	if err != nil {
-		return ConversationView{}, translate(err)
+		return ConversationView{}, err
 	}
-	if convID, found, err := a.store.FindContactConversationID(ctx, accountID, contactID); err != nil {
+	if convID, found, err := a.store.FindAuthorizedContactConversationForComposeID(ctx, accountID, contactID, visibility); err != nil {
 		return ConversationView{}, err
 	} else if found {
-		row, gerr := a.store.GetConversation(ctx, accountID, convID)
+		row, gerr := a.store.GetConversationForCompose(ctx, accountID, convID)
 		if gerr != nil {
 			return ConversationView{}, translate(gerr)
 		}
+		if err := a.assertComposeInstanceScope(ctx, accountID, p, row); err != nil {
+			return ConversationView{}, err
+		}
 		return conversationView(row)
+	}
+	contact, err := a.store.GetVisibleContact(ctx, accountID, contactID, visibility)
+	if err != nil {
+		return ConversationView{}, translate(err)
 	}
 	row, err := a.store.CreateContactConversation(ctx, accountID, contactID, contact.Phone, contact.Name, contact.AvatarURL)
 	if err != nil {
+		return ConversationView{}, err
+	}
+	if err := a.assertComposeInstanceScope(ctx, accountID, p, row); err != nil {
 		return ConversationView{}, err
 	}
 	view, err := conversationView(row)
@@ -298,6 +314,21 @@ func (a *ActionsService) OpenContactConversation(ctx context.Context, accountID 
 	return view, nil
 }
 
+// assertComposeInstanceScope aplica o mesmo limite por numero das demais acoes sem depender
+// da existencia de uma mensagem visivel. Assim o compose pode reutilizar uma conversa resetada,
+// mas nunca confirma a existencia de uma instancia fora do escopo do ator.
+func (a *ActionsService) assertComposeInstanceScope(ctx context.Context, accountID string, p auth.Principal, row conversationRow) error {
+	visibility, err := a.svc.resolveConversationVisibility(ctx, accountID, p.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
+	if err != nil {
+		return err
+	}
+	if err := a.store.RequireVisibleConversationForCompose(ctx, accountID, row.ID, visibility); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
 // ============================================================================
 // Nucleo compartilhado: escopo, capability, realtime, auditoria
 // ============================================================================
@@ -306,20 +337,21 @@ func (a *ActionsService) OpenContactConversation(ctx context.Context, accountID 
 // E instancia (F7 corrigido, AccessibleScopeKeys). Fora de qualquer um => ErrNotFound (404,
 // nunca 403 — enumeration). O mais restritivo vence; unir com OR reabriria o furo.
 func (a *ActionsService) resolveConversation(ctx context.Context, accountID string, p auth.Principal, convID string) (conversationRow, error) {
-	vis, err := a.svc.resolveVisibility(ctx, accountID, p)
+	return a.resolveConversationWithGrant(ctx, accountID, p, convID, InstanceGrantView)
+}
+
+func (a *ActionsService) resolveConversationWithGrant(ctx context.Context, accountID string, p auth.Principal, convID string, required InstanceGrantLevel) (conversationRow, error) {
+	permission := "omnichannel.conversations.view"
+	if required == InstanceGrantReply {
+		permission = "omnichannel.conversations.reply"
+	}
+	vis, err := a.svc.resolveConversationVisibility(ctx, accountID, p.UserID, permission, required)
 	if err != nil {
 		return conversationRow{}, err
 	}
 	row, err := a.store.GetVisibleConversation(ctx, accountID, vis, convID)
 	if err != nil {
 		return conversationRow{}, translate(err)
-	}
-	keys, unrestricted, err := a.store.AccessibleScopeKeys(ctx, accountID, p.UserID, isAdminPrincipal(p))
-	if err != nil {
-		return conversationRow{}, err
-	}
-	if !unrestricted && !containsString(keys, row.InstanceScopeKey) {
-		return conversationRow{}, ErrNotFound
 	}
 	return row, nil
 }
@@ -394,10 +426,6 @@ func (a *ActionsService) auditConversation(ctx context.Context, accountID, actor
 
 // isAdminPrincipal responde se o Principal e admin da conta (papeis administrativos do Omni),
 // o que torna o escopo de instancia irrestrito (spec C3).
-func isAdminPrincipal(p auth.Principal) bool {
-	return legacyRole(p.Role) == legacyRoleAdmin
-}
-
 // sameAssignee compara dois responsaveis (*string): ambos nil = igual; um nil = mudou.
 func sameAssignee(a, b *string) bool {
 	if a == nil || b == nil {

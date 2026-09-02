@@ -43,13 +43,8 @@ const (
 	EventTypeCalendarPlanUpdated   = "calendar.plan_updated"
 	// WAVE 10: perfil estrategico do cliente mudou (PutClientProfile); resourceId=clientId.
 	EventTypeCalendarClientProfileUpdated = "calendar.client_profile_updated"
-	// Canal omnichannel (F5). Eventos publicados em omnichannel:account:{id} com o payload
-	// COMPLETO do call-site (o front e verbatim e faz patch local — divergencia consciente do
-	// canal calendar, ver realtime/AGENT.md). Os literais sao espelhados como constantes
-	// exportadas em omnichannel/publisher.go (RealtimeEvent*) — os dois lados precisam concordar.
-	EventTypeOmnichannelMessageCreated      = "message.created"
-	EventTypeOmnichannelMessageUpdated      = "message.updated"
-	EventTypeOmnichannelConversationUpdated = "conversation.updated"
+	// O canal omnichannel publica somente `omnichannel.invalidate`; o boundary converte eventos
+	// internos legados e descarta todo payload rico antes de publicar no topico account-wide.
 )
 
 type Event struct {

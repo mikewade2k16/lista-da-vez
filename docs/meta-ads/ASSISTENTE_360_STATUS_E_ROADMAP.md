@@ -1,6 +1,6 @@
 # Assistente 360 + Meta Ads — estado real e roadmap
 
-> **Documento canônico vigente**, atualizado em 2026-08-24. O
+> **Documento canônico vigente**, atualizado em 2026-08-27. O
 > [plano anterior](./PLANO_INTEGRACAO_META_ADS.md) é um arquivo histórico e não
 > deve orientar implementação ou deploy. Nenhum item é considerado concluído
 > apenas porque existe em prompt, mock, arquivo local ou roadmap: é preciso haver
@@ -72,6 +72,13 @@ listados abaixo.
   conferidos. Somente o PostgreSQL foi ligado durante a operação e voltou a ficar
   desligado; API/web não foram implantadas. Dois backups pré-migration ficaram em
   `/home/deploy/lista-atendimento-staging/backups/`.
+- Em 2026-08-27, o gate P0 local foi endurecido. O criativo de post passou a usar
+  `object_id` para a Page, junto de `instagram_user_id` e
+  `source_instagram_media_id`, conforme o codegen atual do Business SDK oficial;
+  `page_id` top-level foi removido. Testes HTTP agora comprovam targeting somente
+  Instagram, árvore pausada, timeout pós-request como `unknown`, `429` sem repetir
+  campaign/ad set, replay terminal sem segunda execução e reconciliação pelos
+  recibos parciais. A suíte completa do pacote Meta Ads passou.
 
 ### Decisão de prontidão
 
@@ -91,6 +98,8 @@ listados abaixo.
   as entidades veiculáveis nascem `PAUSED`; cada etapa da árvore possui recibo
   at-most-once. **Ainda não está 100% homologado** porque o kill switch continua
   desligado e nenhuma escrita real foi executada contra uma conta Meta de staging.
+  O gate P0 local de falhas e payload foi fechado em 2026-08-27; o gate externo
+  continua separado e não foi reclassificado como concluído.
 - **Prontidão para produção do Calendário:** aprovada no código e no banco, sujeita
   ao smoke autenticado com chave rotacionada e ao build de imagem no pipeline com
   memória suficiente. Isso não aprova Meta Ads para produção nem liga writes Meta.
@@ -338,6 +347,12 @@ continuar desligado mesmo que a surface esteja configurada com `meta_ads=write`.
 - **Migration concluída em staging em 2026-08-24.** Ainda falta homologar
   concorrência, timeout, reconciliação e retry contra uma conta Meta real de
   staging; nenhum teste local substitui esse E2E.
+- **Gate de implementação local concluído em 2026-08-27.** Timeout real após o
+  envio vira `unknown`; confirmação repetida não chama o executor novamente; `429`
+  no ad set preserva o recibo da campaign e não repete nenhuma das duas etapas; a
+  reconciliação devolve os IDs parciais. O formulário do criativo usa
+  `object_id` + `instagram_user_id` + `source_instagram_media_id`, e o ad set
+  restringe `publisher_platforms` a `instagram`.
 - Manter o kill switch desligado até o fluxo acima e os caps de budget serem
   validados em moeda real.
 - Homologar em uma conta de teste as seis ações first-party, inclusive retorno

@@ -190,6 +190,29 @@ func TestAIInboundHandlerDoesNotUndoLaterHumanState(t *testing.T) {
 	}
 }
 
+func TestAIInboundHandlerHistoryResetNeverRoutesOrRetries(t *testing.T) {
+	instanceID := "instance-1"
+	versionID := "version-1"
+	store := &aiInboundStoreFake{
+		conv:          convTriage{Found: true, State: string(StateAIActive), InstanceID: &instanceID},
+		agent:         agentRow{ActiveVersionID: &versionID},
+		agentEnabled:  true,
+		config:        aiDispatchConfig{DebounceMS: 1},
+		schemaEnabled: true,
+		upsertErr:     ErrHistoryResetInvalidated,
+	}
+	domain := &aiInboundDomainFake{}
+	err := newAIInboundHandler(store, domain, nil).Handle(context.Background(), validAIInboundJob(t))
+	var statusErr *jobs.StatusError
+	if !errors.As(err, &statusErr) || !statusErr.Unrecoverable || statusErr.StatusCode != 409 ||
+		!errors.Is(statusErr, ErrHistoryResetInvalidated) {
+		t.Fatalf("error=%v, want unrecoverable history reset", err)
+	}
+	if len(domain.events) != 0 || domain.routeCalls != 0 {
+		t.Fatalf("history reset mutated FSM: events=%v routes=%d", domain.events, domain.routeCalls)
+	}
+}
+
 func TestAIInboundHandlerRetriesThenFailsOpenOnTerminalError(t *testing.T) {
 	instanceID := "instance-1"
 	versionID := "version-1"

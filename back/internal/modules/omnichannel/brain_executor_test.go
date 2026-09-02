@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,15 @@ type brainFakeLLM struct {
 	response llm.Response
 	err      error
 	request  llm.Request
+}
+
+type countingBrainExecutor struct {
+	calls int
+}
+
+func (f *countingBrainExecutor) CompleteBrain(context.Context, BrainRequestV2, BrainExecutionV2) (BrainResultV2, llm.Usage, int, error) {
+	f.calls++
+	return BrainResultV2{}, llm.Usage{}, 1, nil
 }
 
 func (f *brainFakeLLM) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
@@ -54,6 +64,22 @@ func testBrainRequest() BrainRequestV2 {
 }
 
 func stringPtr(value string) *string { return &value }
+
+func TestCompleteBrainWithLeaseResetFirstNeverPostsN8N(t *testing.T) {
+	executor := &countingBrainExecutor{}
+	service := &AIService{
+		brain: executor,
+		externalEffectLease: func(context.Context, string, string, int64, func() error) (bool, error) {
+			return false, nil
+		},
+	}
+	_, _, _, err := service.completeBrainWithLease(context.Background(), triageParams{
+		AccountID: "account", DispatchID: "dispatch", AIGeneration: 7,
+	}, testBrainRequest(), BrainExecutionV2{})
+	if !errors.Is(err, ErrHistoryResetInvalidated) || executor.calls != 0 {
+		t.Fatalf("CompleteBrain err=%v calls=%d, want reset invalidation before POST", err, executor.calls)
+	}
+}
 
 func TestN8NBrainExecutorSealsProviderKeyOutsidePayload(t *testing.T) {
 	box := testBrainBox(t)
@@ -108,7 +134,7 @@ func TestBrainGatewayRejectsExpiredToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gateway := newBrainGateway(box, &brainFakeLLM{})
+	gateway := allowBrainGatewayForTest(newBrainGateway(box, &brainFakeLLM{}))
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/runtime/omnichannel/llm-gateway", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
@@ -124,7 +150,7 @@ func TestBrainGatewayUsesClaimsForProviderRequest(t *testing.T) {
 		DispatchID: "dispatch-1", Generation: 2, Provider: "openai", Model: "model", APIKey: "secret"})
 	token, _ := box.Encrypt(string(claims))
 	fake := &brainFakeLLM{response: llm.Response{JSON: json.RawMessage(`{"intent":"sales"}`), Model: "model"}}
-	gateway := newBrainGateway(box, fake)
+	gateway := allowBrainGatewayForTest(newBrainGateway(box, fake))
 	payload := `{"request":{"schemaVersion":"brain.request.v2","dispatchId":"dispatch-1","generation":2,"tenant":{"accountId":"account-1","timezone":"America/Sao_Paulo"}},"execution":{"provider":"openai","model":"model","temperature":0.2,"systemPrompt":"s","userPrompt":"u"}}`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/runtime/omnichannel/llm-gateway", strings.NewReader(payload))
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -149,7 +175,7 @@ func TestBrainGatewayAcceptsSupportedRequestSchemas(t *testing.T) {
 				DispatchID: "dispatch-1", Generation: 2, Provider: "openai", Model: "model", APIKey: "secret"})
 			token, _ := box.Encrypt(string(claims))
 			fake := &brainFakeLLM{response: llm.Response{JSON: json.RawMessage(`{"intent":"sales"}`), Model: "model"}}
-			gateway := newBrainGateway(box, fake)
+			gateway := allowBrainGatewayForTest(newBrainGateway(box, fake))
 			payload := `{"request":{"schemaVersion":"` + schema + `","dispatchId":"dispatch-1","generation":2,"tenant":{"accountId":"account-1","timezone":"America/Sao_Paulo"}},"execution":{"provider":"openai","model":"model","temperature":0.2,"systemPrompt":"s","userPrompt":"u"}}`
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/runtime/omnichannel/llm-gateway", strings.NewReader(payload))
 			req.Header.Set("Authorization", "Bearer "+token)
@@ -166,6 +192,16 @@ func TestBrainGatewayRejectsUnsupportedRequestSchema(t *testing.T) {
 	if supportedBrainRequestSchema("brain.request.v4") {
 		t.Fatal("unknown brain request schema must fail closed")
 	}
+}
+
+func allowBrainGatewayForTest(gateway *BrainGateway) *BrainGateway {
+	gateway.externalEffectLease = func(_ context.Context, _, _ string, _ int64, effect func() error) (bool, error) {
+		if effect != nil {
+			return true, effect()
+		}
+		return true, nil
+	}
+	return gateway
 }
 
 func TestBrainGatewayTokenDoesNotUsePlainBase64AsCiphertext(t *testing.T) {

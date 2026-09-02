@@ -35,6 +35,7 @@ export function useOmnichannelInboxOutboundPipeline(options: {
   isGroupConversation: ComputedRef<boolean>;
   activeConversationId: Ref<string | null>;
   draft: Ref<string>;
+  selectedAIReplyDraftId: Ref<string | null>;
   attachment: Ref<OutboundAttachment | null>;
   replyTarget: Ref<Message | null>;
   pendingSendCount: Ref<number>;
@@ -53,6 +54,8 @@ export function useOmnichannelInboxOutboundPipeline(options: {
   markConversationAsRead: (messageEntry?: Message) => void;
   scheduleStickyDateRefresh: () => void;
   reconcilePendingMessageStatus: (conversationId: string, messageId: string) => Promise<void>;
+  onAuthoritativeMessageCreated?: (conversationId: string) => Promise<void> | void;
+  onAIReplyDraftSent?: (draftId: string | null) => void;
 }) {
   function buildOutboundMetadataJson(params: {
     reply: Message | null;
@@ -271,6 +274,9 @@ export function useOmnichannelInboxOutboundPipeline(options: {
       }
       : null;
     const currentReply = options.replyTarget.value;
+    const currentAIReplyDraftId = currentAttachment
+      ? null
+      : options.selectedAIReplyDraftId.value;
 
     if (!text && !currentAttachment) {
       return;
@@ -310,6 +316,9 @@ export function useOmnichannelInboxOutboundPipeline(options: {
       if (currentReply) {
         body.replyToMessageId = currentReply.id;
       }
+      if (currentAIReplyDraftId) {
+        body.aiReplyDraftId = currentAIReplyDraftId;
+      }
       const directTimeoutMs = resolveDirectTimeoutMs(currentAttachment);
 
       const created = await sendConversationMessage(
@@ -324,6 +333,12 @@ export function useOmnichannelInboxOutboundPipeline(options: {
         [created]
       );
       options.updateConversationPreviewFromMessage(created);
+      options.onAIReplyDraftSent?.(currentAIReplyDraftId);
+      try {
+        await options.onAuthoritativeMessageCreated?.(conversationId);
+      } catch {
+        // O envio ja foi confirmado; falha ao atualizar a lista nao pode marca-lo como FAILED.
+      }
 
       await nextTick();
       options.scrollToBottom();

@@ -12,6 +12,18 @@ import (
 
 const realtimeMediaDataURLPrefix = "data:"
 
+func newInvalidationSignal(accountID, reason string, occurredAt time.Time) RealtimeEvent {
+	occurredAt = occurredAt.UTC()
+	return RealtimeEvent{
+		Type:      RealtimeEventInvalidate,
+		AccountID: accountID,
+		Payload: map[string]any{
+			"reason":     reason,
+			"occurredAt": occurredAt.Format(time.RFC3339Nano),
+		},
+	}
+}
+
 // sanitizeMediaURLForRealtime zera data URLs (base64): NUNCA trafegar midia embutida no WS
 // (spec F5 §Sanitizacao). Retorna "" quando a URL e um data:, senao a URL como esta — o front
 // busca a midia por GET .../messages/{mid}/media (F6). O publisher do realtime repete a checagem

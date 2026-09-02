@@ -89,6 +89,14 @@ Instagram e bloqueio cross-org. Ela também protege o cast explícito do owner U
 em `ListAssistantAdAccounts`; remover o cast volta a quebrar o primeiro contexto
 Meta conectado com `operator does not exist: uuid = text`.
 
+Checkpoint P0 local 2026-08-27: o criativo de `promote_instagram_post` usa os
+campos aceitos pelo codegen atual do Business SDK oficial: `object_id` para a Page,
+`instagram_user_id` e `source_instagram_media_id`. `page_id` top-level foi removido.
+Os testes do executor/HTTP cobrem targeting somente Instagram, árvore pausada,
+timeout pós-request como `unknown`, `429` sem repetir etapa, replay terminal sem
+nova execução e reconciliação pelos recibos parciais. Isso endurece o contrato
+local, mas não substitui o aceite desses campos por um asset Graph real.
+
 Tokens ficam cifrados com pgcrypto, nunca são devolvidos ou logados. Toda reconexão
 gera nova `connections.revision`; token/expiry e snapshot de ad accounts são gravados
 na mesma transação.

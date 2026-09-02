@@ -106,7 +106,8 @@ function handleProfileChange(value) {
             <DashboardThemeSwitcher />
             <SystemNotificationsDropdown v-if="isAuthenticated" />
             <CoreAccountSwitcher
-              v-if="isAuthenticated && hasMultipleAccounts && role === 'platform_admin'"
+              v-if="isAuthenticated && hasMultipleAccounts"
+              :can-enter-platform-view="role === 'platform_admin'"
             />
             <DashboardHeaderProfileMenu v-if="isAuthenticated" />
           </div>

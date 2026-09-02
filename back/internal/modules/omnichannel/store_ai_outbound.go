@@ -18,6 +18,15 @@ func (s *Store) CreateAIOutboundMessage(ctx context.Context, accountID, conversa
 		return MessageView{}, false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockHistoryExternalEffectScope(ctx, tx, accountID, conversationID, "update"); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MessageView{}, false, ErrNotFound
+		}
+		if errors.Is(err, ErrHistoryResetInvalidated) {
+			return MessageView{}, false, ErrAILeaseInvalid
+		}
+		return MessageView{}, false, err
+	}
 
 	var instanceID *string
 	var instanceScopeKey, state string
@@ -67,6 +76,15 @@ func (s *Store) CreateAIOutboundMessageWithIntelligence(
 		return MessageView{}, false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockHistoryExternalEffectScope(ctx, tx, accountID, conversationID, "update"); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MessageView{}, false, ErrNotFound
+		}
+		if errors.Is(err, ErrHistoryResetInvalidated) {
+			return MessageView{}, false, ErrAILeaseInvalid
+		}
+		return MessageView{}, false, err
+	}
 
 	var instanceID *string
 	var instanceScopeKey, state string
@@ -119,7 +137,7 @@ func createAIOutboundMessageLockedTx(ctx context.Context, tx pgx.Tx, accountID, 
 	err := tx.QueryRow(ctx, `select payload->>'messageId' from messaging.outbox
 		where account_id = $1::uuid and idempotency_key = $2`, accountID, idempotencyKey).Scan(&existingMessageID)
 	if err == nil && existingMessageID != "" {
-		view, scanErr := scanMessage(tx.QueryRow(ctx, `select `+messageCols+` from messaging.messages m
+		view, scanErr := scanMessage(tx.QueryRow(ctx, `select `+messageColsNoReply+` from messaging.messages m
 			where m.account_id = $1::uuid and m.id = $2::uuid`, accountID, existingMessageID))
 		if scanErr != nil {
 			return MessageView{}, false, scanErr
@@ -156,7 +174,7 @@ func createAIOutboundMessageLockedTx(ctx context.Context, tx pgx.Tx, accountID, 
 		where account_id = $1::uuid and id = $2::uuid`, accountID, conversationID); err != nil {
 		return MessageView{}, false, err
 	}
-	view, err := scanMessage(tx.QueryRow(ctx, `select `+messageCols+` from messaging.messages m
+	view, err := scanMessage(tx.QueryRow(ctx, `select `+messageColsNoReply+` from messaging.messages m
 		where m.account_id = $1::uuid and m.id = $2::uuid`, accountID, messageID))
 	if err != nil {
 		return MessageView{}, false, err

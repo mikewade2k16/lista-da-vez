@@ -5,12 +5,9 @@ import (
 	"testing"
 )
 
-// TestAccountAccessibleQueryCoversThreePaths garante que o portao de membership
-// do middleware (IsMember) permanece org-aware: platform_admin, agency_owner e
-// membership explicita. Se alguem reduzir a query para so core.account_users, o
-// login-agencia volta a levar 403 ao usar a conta-agencia (board Tasks). Espelha
-// a visibilidade de core.ListAccountsForUser (Etapa 3 do AGENCY_TENANT plan).
-func TestAccountAccessibleQueryCoversThreePaths(t *testing.T) {
+// TestAccountAccessibleQueryMatchesCoreVisibility garante que o portao do middleware
+// nao aceite account que /v2/me/accounts nao lista: platform_admin ou membership explicita.
+func TestAccountAccessibleQueryMatchesCoreVisibility(t *testing.T) {
 	q := accountAccessibleQuery
 
 	checks := []struct {
@@ -19,14 +16,15 @@ func TestAccountAccessibleQueryCoversThreePaths(t *testing.T) {
 	}{
 		{"account ativa", "a.is_active = true"},
 		{"platform_admin", "u.is_platform_admin = true"},
-		{"agency_owner", "ou.org_role = 'agency_owner'"},
-		{"agency_owner casa a org da account", "ou.organization_id = a.organization_id"},
 		{"membership ativa", "au.account_id = a.id and au.is_active = true"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(q, c.want) {
 			t.Errorf("accountAccessibleQuery sem o caminho %q (esperava conter %q)", c.name, c.want)
 		}
+	}
+	if strings.Contains(q, "core.organization_users") || strings.Contains(q, "agency_owner") {
+		t.Fatalf("membership de organizacao nao pode conceder contexto de cliente:\n%s", q)
 	}
 }
 

@@ -1,29 +1,78 @@
 package omnichannel
 
 import (
+	"context"
+	"crypto/sha256"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// rateLimiter e um limitador por (escopo, ip) em memoria, janela deslizante. Padrao da casa
-// para rota PUBLICA sem JWT (precedente cardapio/rate_limit.go) — o RateLimit global do
-// httpapi e por identidade/JWT e nao cobre o webhook. Em memoria: nao serve multi-instancia
-// sem broker (registrado em docs/LEGADO.md); hoje a api e um container so.
+// rateLimiter protege rotas publicas sem JWT por (escopo, ip). O construtor usado pelo modulo
+// persiste um bucket de janela fixa no PostgreSQL, compartilhado entre replicas e fail-closed.
+// newRateLimiter preserva a implementacao local de janela deslizante somente para testes/fallbacks
+// explicitamente montados sem pool; o RateLimit global do httpapi e por identidade/JWT e nao cobre
+// webhook, avatar ou captura publica.
 type rateLimiter struct {
 	mu      sync.Mutex
 	buckets map[string][]time.Time
 	now     func() time.Time
+	pool    *pgxpool.Pool
+	ops     atomic.Uint64
 }
 
 func newRateLimiter() *rateLimiter {
 	return &rateLimiter{buckets: make(map[string][]time.Time), now: time.Now}
 }
 
+func newSharedRateLimiter(pool *pgxpool.Pool) *rateLimiter {
+	limiter := newRateLimiter()
+	limiter.pool = pool
+	return limiter
+}
+
 // allow consome um slot para (scope, ip): no maximo limit eventos por window. false = 429.
 func (l *rateLimiter) allow(scope, ip string, limit int, window time.Duration) bool {
+	if l.pool != nil {
+		return l.allowShared(scope, ip, limit, window)
+	}
+	return l.allowLocal(scope, ip, limit, window)
+}
+
+func (l *rateLimiter) allowShared(scope, ip string, limit int, window time.Duration) bool {
+	key := sha256.Sum256([]byte(scope + "|" + ip))
+	now := l.now().UTC()
+	expiresAt := now.Add(window)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var allowed bool
+	err := l.pool.QueryRow(ctx, `insert into messaging.runtime_rate_limit_buckets
+		(bucket_key,hits,window_started,expires_at) values ($1,1,$2,$3)
+		on conflict(bucket_key) do update set
+		 hits=case when messaging.runtime_rate_limit_buckets.expires_at <= $2
+		           then 1 else messaging.runtime_rate_limit_buckets.hits+1 end,
+		 window_started=case when messaging.runtime_rate_limit_buckets.expires_at <= $2
+		                     then $2 else messaging.runtime_rate_limit_buckets.window_started end,
+		 expires_at=case when messaging.runtime_rate_limit_buckets.expires_at <= $2
+		                 then $3 else messaging.runtime_rate_limit_buckets.expires_at end
+		returning hits <= $4`, key[:], now, expiresAt, limit).Scan(&allowed)
+	if err != nil {
+		return false
+	}
+	if l.ops.Add(1)%128 == 0 {
+		_, _ = l.pool.Exec(ctx, `delete from messaging.runtime_rate_limit_buckets
+			where bucket_key in (select bucket_key from messaging.runtime_rate_limit_buckets
+			 where expires_at <= $1 limit 500)`, now)
+	}
+	return allowed
+}
+
+func (l *rateLimiter) allowLocal(scope, ip string, limit int, window time.Duration) bool {
 	key := scope + "|" + ip
 	now := l.now()
 	cutoff := now.Add(-window)

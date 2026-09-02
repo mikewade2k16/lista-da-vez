@@ -11,6 +11,7 @@ import (
 
 var (
 	ErrAutomationNotReady          = errors.New("omnichannel: automation profile not ready")
+	ErrAutomationBindingMismatch   = errors.New("omnichannel: automation profile binding mismatch")
 	ErrAutomationNoUnansweredInput = errors.New("omnichannel: no unanswered inbound message")
 )
 
@@ -240,6 +241,7 @@ type automationProfileRow struct {
 	AgentEnabled               bool
 	AgentActiveVersionID       *string
 	AgentReady                 bool
+	BindingReady               bool
 }
 
 type automationBindingReadiness struct {
@@ -247,6 +249,7 @@ type automationBindingReadiness struct {
 	AgentFound    bool
 	InstanceReady bool
 	AgentReady    bool
+	BindingReady  bool
 }
 
 type automationProfileWrite struct {
@@ -264,7 +267,7 @@ type automationProfileRepository interface {
 	ListAutomationProfiles(context.Context, string) ([]automationProfileRow, error)
 	GetAutomationProfile(context.Context, string, string) (automationProfileRow, error)
 	UpsertAutomationProfile(context.Context, string, string, string, automationProfileWrite) (automationProfileRow, error)
-	AutomationBindingReadiness(context.Context, string, string, string) (automationBindingReadiness, error)
+	AutomationBindingReadiness(context.Context, string, string, string, string) (automationBindingReadiness, error)
 	ListAutomationInterventions(context.Context, string, string, int) ([]automationInterventionRow, error)
 	ListAutomationAttendances(context.Context, string, string, int) ([]automationAttendanceRow, error)
 	AutomationConversationScope(context.Context, string, string) (automationConversationScope, error)

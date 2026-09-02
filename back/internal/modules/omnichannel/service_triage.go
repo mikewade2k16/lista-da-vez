@@ -31,13 +31,14 @@ const historyWindow = 20
 // AIService concentra as regras de IA (triagem + management). Dependencias por construtor
 // (sem globais). box cifra/decifra a chave do provider; limits le monthly_ai_runs (F3).
 type AIService struct {
-	store           *Store
-	llm             llm.Client
-	brain           brainExecutor
-	box             *secretbox.Box
-	limits          *modules.LimitReader
-	logger          *slog.Logger
-	businessContext AutomationBusinessContextProvider
+	store               *Store
+	llm                 llm.Client
+	brain               brainExecutor
+	box                 *secretbox.Box
+	limits              *modules.LimitReader
+	logger              *slog.Logger
+	businessContext     AutomationBusinessContextProvider
+	externalEffectLease func(context.Context, string, string, int64, func() error) (bool, error)
 }
 
 type AIServiceOption func(*AIService)
@@ -57,6 +58,9 @@ func NewAIService(store *Store, client llm.Client, box *secretbox.Box, limits *m
 		logger = slog.Default()
 	}
 	svc := &AIService{store: store, llm: client, box: box, limits: limits, logger: logger}
+	if store != nil {
+		svc.externalEffectLease = store.WithAIDispatchExternalEffectLease
+	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(svc)
@@ -219,7 +223,9 @@ func (s *AIService) Dispatch(ctx context.Context, in TriageInput) (DispatchResul
 	var contactIntelligence *ContactIntelligenceView
 	safeContactName := ""
 	if conv.ContactID != nil {
-		loaded, loadErr := s.store.GetContactIntelligence(ctx, in.AccountID, *conv.ContactID)
+		loaded, loadErr := s.store.GetOperationalContactIntelligence(
+			ctx, in.AccountID, *conv.ContactID, in.ConversationID,
+		)
 		if loadErr != nil {
 			return DispatchResult{}, loadErr
 		}
@@ -379,10 +385,19 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 			SystemPrompt: executionSystemPrompt, UserPrompt: req.UserPrompt, OutputSchema: executionSchema,
 			ToolBindings: toolBindings, APIKey: apiKey,
 		}
-		result, usage, latency, brainErr := s.brain.CompleteBrain(ctx, brainRequest, execution)
+		// O lease exterior impede que prompt/PII antigo seja entregue ao n8n depois de um
+		// reset. Gateways chamados pelo workflow usam a variante NOWAIT: um reset que entrou
+		// entre o POST e o callback interno falha fechado sem formar ciclo distribuido.
+		result, usage, latency, brainErr := s.completeBrainWithLease(ctx, p, brainRequest, execution)
+		if errors.Is(brainErr, ErrHistoryResetInvalidated) {
+			return triageExec{}, brainErr
+		}
 		if errors.Is(brainErr, ErrBrainSchemaInvalid) {
 			// The workflow/model gets one deterministic retry, matching the native path.
-			result, usage, latency, brainErr = s.brain.CompleteBrain(ctx, brainRequest, execution)
+			result, usage, latency, brainErr = s.completeBrainWithLease(ctx, p, brainRequest, execution)
+			if errors.Is(brainErr, ErrHistoryResetInvalidated) {
+				return triageExec{}, brainErr
+			}
 		}
 		if errors.Is(brainErr, ErrBrainSchemaInvalid) {
 			run := s.persistRun(ctx, p, runSchemaInvalid, maskedInput, empty, usage, latency, 0, "brain.result.v2 invalido")
@@ -408,10 +423,22 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 			Usage: usage, CostUSD: cost, RunID: run}, nil
 	}
 
-	resp, callErr := s.llm.Complete(ctx, req)
+	var resp llm.Response
+	var callErr error
+	if err := s.withAIDispatchExternalEffectLease(ctx, p, func() error {
+		resp, callErr = s.llm.Complete(ctx, req)
+		return nil
+	}); err != nil {
+		return triageExec{}, err
+	}
 	if errors.Is(callErr, llm.ErrSchemaViolation) {
 		// 1 retry (C9.3): o modelo pode acertar o formato na segunda.
-		resp, callErr = s.llm.Complete(ctx, req)
+		if err := s.withAIDispatchExternalEffectLease(ctx, p, func() error {
+			resp, callErr = s.llm.Complete(ctx, req)
+			return nil
+		}); err != nil {
+			return triageExec{}, err
+		}
 	}
 
 	switch {
@@ -449,6 +476,39 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 		Outcome: dispatchTriaged, Output: out, OutputJSON: resp.JSON, Valid: true,
 		Usage: resp.Usage, CostUSD: cost, RunID: run,
 	}, nil
+}
+
+func (s *AIService) withAIDispatchExternalEffectLease(ctx context.Context, p triageParams, effect func() error) error {
+	if strings.TrimSpace(p.DispatchID) == "" {
+		return effect()
+	}
+	if s.externalEffectLease == nil {
+		return ErrHistoryResetInvalidated
+	}
+	allowed, err := s.externalEffectLease(ctx, p.AccountID, p.DispatchID, p.AIGeneration, effect)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrHistoryResetInvalidated
+	}
+	return nil
+}
+
+func (s *AIService) completeBrainWithLease(ctx context.Context, p triageParams, request BrainRequestV2,
+	execution BrainExecutionV2) (BrainResultV2, llm.Usage, int, error) {
+	var result BrainResultV2
+	var usage llm.Usage
+	var latency int
+	var brainErr error
+	err := s.withAIDispatchExternalEffectLease(ctx, p, func() error {
+		result, usage, latency, brainErr = s.brain.CompleteBrain(ctx, request, execution)
+		return nil
+	})
+	if err != nil {
+		return BrainResultV2{}, llm.Usage{}, 0, err
+	}
+	return result, usage, latency, brainErr
 }
 
 // applyExtracted funde os campos na conversa quando o inbound pede (MergeToConv). O simulate

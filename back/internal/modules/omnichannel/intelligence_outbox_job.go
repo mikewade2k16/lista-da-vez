@@ -9,7 +9,8 @@ import (
 )
 
 type intelligenceAcceptedHandler struct {
-	bridge CustomerIntelligenceBridge
+	bridge          CustomerIntelligenceBridge
+	acceptanceLease func(context.Context, string, string, int64, func() error) (bool, error)
 }
 
 func (h intelligenceAcceptedHandler) Handle(ctx context.Context, job jobs.Job) error {
@@ -24,14 +25,29 @@ func (h intelligenceAcceptedHandler) Handle(ctx context.Context, job jobs.Job) e
 	if json.Unmarshal(job.Payload, &event) != nil ||
 		event.AccountID != job.AccountID ||
 		event.EventID == "" ||
-		event.DecisionID == "" {
+		event.DecisionID == "" || event.ConversationID == "" ||
+		event.DispatchID == "" || event.Generation < 0 {
 		return &jobs.StatusError{
 			StatusCode:    422,
 			Unrecoverable: true,
 			Err:           errors.New("omnichannel: invalid intelligence accepted event"),
 		}
 	}
-	return h.bridge.RecordAcceptedOutcome(ctx, event)
+	if h.acceptanceLease == nil {
+		return &jobs.StatusError{StatusCode: 503, Err: errors.New("omnichannel: intelligence lease unavailable")}
+	}
+	var bridgeErr error
+	allowed, err := h.acceptanceLease(ctx, event.AccountID, event.DispatchID, event.Generation, func() error {
+		bridgeErr = h.bridge.RecordAcceptedOutcome(ctx, event)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+	}
+	return bridgeErr
 }
 
 var _ jobs.Handler = intelligenceAcceptedHandler{}

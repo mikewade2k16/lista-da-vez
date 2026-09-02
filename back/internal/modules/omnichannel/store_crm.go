@@ -57,6 +57,21 @@ const crmContactJoin = `
 		limit 1
 	) lc on true`
 
+func (s *Store) crmContactJoinForScope(args []any, scopes []VisibilityScope) (string, []any, bool) {
+	if len(scopes) == 0 {
+		return crmContactJoin, args, false
+	}
+	join := ` left join lateral (
+		select cv.id,cv.last_message_at,cv.channel,cv.state
+		from messaging.conversations cv
+		where cv.contact_id=ct.id and cv.account_id=ct.account_id`
+	join, args = appendConversationVisibility(join, args, "cv", scopes[0])
+	join += s.historyVisibleConversationPredicate("cv") + `
+		order by cv.last_message_at desc,cv.id desc limit 1
+	) lc on true`
+	return join, args, true
+}
+
 func scanCRMContact(row rowScanner) (crmContactRow, error) {
 	var out crmContactRow
 	err := row.Scan(
@@ -97,13 +112,17 @@ func decodeCRMContactCursor(raw string) (crmContactCursor, error) {
 	return crmContactCursor{UpdatedAt: t, ID: parts[1]}, nil
 }
 
-func (s *Store) ListCRMContacts(ctx context.Context, accountID string, f CRMContactFilter) ([]crmContactRow, error) {
-	query := `select ` + crmContactColumns + ` from messaging.contacts ct` + crmContactJoin +
+func (s *Store) ListCRMContacts(ctx context.Context, accountID string, f CRMContactFilter, scopes ...VisibilityScope) ([]crmContactRow, error) {
+	args := []any{accountID}
+	join, args, scoped := s.crmContactJoinForScope(args, scopes)
+	query := `select ` + crmContactColumns + ` from messaging.contacts ct` + join +
 		` where ct.account_id = $1::uuid and ct.archived_at is null
 		  and not exists (select 1 from messaging.contact_suppressions suppression
 		      where suppression.account_id=ct.account_id and suppression.contact_id=ct.id
 		        and suppression.is_hidden=true)`
-	args := []any{accountID}
+	if scoped {
+		query += ` and lc.id is not null`
+	}
 	if f.Search != "" {
 		args = append(args, "%"+escapeLike(strings.ToLower(f.Search))+"%")
 		pos := strconv.Itoa(len(args))
@@ -219,9 +238,16 @@ func (s *Store) UpdateContactSegment(ctx context.Context, accountID, id string, 
 	return row, err
 }
 
-func (s *Store) GetCRMContact(ctx context.Context, accountID, contactID string) (crmContactRow, error) {
-	row, err := scanCRMContact(s.pool.QueryRow(ctx, `select `+crmContactColumns+` from messaging.contacts ct`+crmContactJoin+
-		` where ct.account_id = $1::uuid and ct.id = $2::uuid`, accountID, contactID))
+func (s *Store) GetCRMContact(ctx context.Context, accountID, contactID string, scopes ...VisibilityScope) (crmContactRow, error) {
+	args := []any{accountID}
+	join, args, scoped := s.crmContactJoinForScope(args, scopes)
+	args = append(args, contactID)
+	query := `select ` + crmContactColumns + ` from messaging.contacts ct` + join +
+		` where ct.account_id=$1::uuid and ct.id=$` + strconv.Itoa(len(args)) + `::uuid`
+	if scoped {
+		query += ` and lc.id is not null`
+	}
+	row, err := scanCRMContact(s.pool.QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return crmContactRow{}, ErrNotFound
 	}
@@ -358,10 +384,17 @@ func (s *Store) ListContactNotes(ctx context.Context, accountID, contactID, befo
 	return out, hasMore, next, nil
 }
 
-func (s *Store) ListContactConversations(ctx context.Context, accountID, contactID string, limit int) ([]ContactConversationRefView, error) {
-	rows, err := s.pool.Query(ctx, `select id::text, channel, state, external_id, last_message_at
-		from messaging.conversations where account_id = $1::uuid and contact_id = $2::uuid
-		order by last_message_at desc, id desc limit $3`, accountID, contactID, limit)
+func (s *Store) ListContactConversations(ctx context.Context, accountID, contactID string, limit int, scopes ...VisibilityScope) ([]ContactConversationRefView, error) {
+	query := `select c.id::text,c.channel,c.state,c.external_id,c.last_message_at
+		from messaging.conversations c where c.account_id=$1::uuid and c.contact_id=$2::uuid`
+	args := []any{accountID, contactID}
+	if len(scopes) > 0 {
+		query, args = appendConversationVisibility(query, args, "c", scopes[0])
+		query += s.historyVisibleConversationPredicate("c")
+	}
+	args = append(args, limit)
+	query += ` order by c.last_message_at desc,c.id desc limit $` + strconv.Itoa(len(args))
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -143,6 +143,11 @@ type ContactIntelligenceView struct {
 	LastConversationID *string         `json:"lastConversationId"`
 	LastLearnedAt      *time.Time      `json:"lastLearnedAt"`
 	UpdatedAt          *time.Time      `json:"updatedAt"`
+	// DerivedMemorySuppressed diferencia uma memoria realmente vazia de uma
+	// projecao operacional sanitizada por cutoff. O marcador nunca sai na API
+	// CRM; serve apenas para impedir que o prompt materialize campos derivados
+	// como um bloco vazio depois de um reset de historico.
+	DerivedMemorySuppressed bool `json:"-"`
 }
 
 type CRMContactPatch struct {

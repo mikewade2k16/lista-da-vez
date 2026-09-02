@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
 )
@@ -37,15 +38,39 @@ type InstanceWriteInput struct {
 	IsActive          *bool   `json:"isActive"`
 }
 
-// SetInstanceUsersInput e o body de PUT /tenant/whatsapp/instances/{id}/users. O front manda
-// `userIds` (nao `assignedUserIds`) — ver useOmnichannelAdmin.ts:293.
-type SetInstanceUsersInput struct {
-	UserIDs []string `json:"userIds"`
+// InstanceAccessRequest aceita o contrato relacional do P2 e, temporariamente, o
+// formato legado userIds. Os ponteiros distinguem campo ausente de lista vazia.
+type InstanceAccessRequest struct {
+	AccessRevision    *int64                `json:"accessRevision"`
+	AccessPolicy      *InstanceAccessPolicy `json:"accessPolicy"`
+	ResponsibleUserID *string               `json:"responsibleUserId"`
+	Grants            *[]InstanceGrantInput `json:"grants"`
+	UserIDs           *[]string             `json:"userIds"`
+}
+
+// InstanceAccessUpdateInput e o contrato de service preparado para a API administrativa do P2.
+// Account/instance/actor nunca vêm do body; o handler futuro deve obtê-los do path/Principal.
+type InstanceAccessUpdateInput struct {
+	AccessPolicy      InstanceAccessPolicy
+	ExpectedRevision  int64
+	ResponsibleUserID string
+	Grants            []InstanceGrantInput
 }
 
 // CreateInstance cria uma instancia gerenciada e devolve o registro (WhatsAppInstanceRecord).
 func (s *SessionService) CreateInstance(ctx context.Context, accountID string, caller Caller, in InstanceWriteInput) (InstanceView, error) {
-	if !caller.IsAdmin {
+	ready, err := s.store.HasActiveOmnichannelMembership(ctx, accountID, caller.UserID)
+	if err != nil {
+		return InstanceView{}, err
+	}
+	if !ready {
+		return InstanceView{}, ErrForbidden
+	}
+	canManage, err := s.store.hasEffectivePermission(ctx, accountID, caller.UserID, "omnichannel.instances.manage")
+	if err != nil {
+		return InstanceView{}, err
+	}
+	if !canManage {
 		return InstanceView{}, ErrForbidden
 	}
 	name := strings.TrimSpace(deref(in.InstanceName))
@@ -104,6 +129,10 @@ func (s *SessionService) CreateInstance(ctx context.Context, accountID string, c
 	if err != nil {
 		return InstanceView{}, mapInstanceWriteError(err)
 	}
+	// InsertInstance so retorna depois do commit da instancia + primeiro manage. A
+	// invalidacao de escopo jamais e publicada de dentro da transacao.
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
 
 	// Primeira instancia ativa da conta vira default (paridade com o bootstrap); alem disso
 	// o front controla isDefault explicitamente.
@@ -115,14 +144,15 @@ func (s *SessionService) CreateInstance(ctx context.Context, accountID string, c
 	if err := s.applyCredential(ctx, accountID, id, in.EvolutionAPIKey); err != nil {
 		return InstanceView{}, err
 	}
-	return s.store.GetInstanceView(ctx, accountID, id)
+	return s.instanceViewForCaller(ctx, accountID, id, caller)
 }
 
 // UpdateInstance aplica o PATCH e devolve o registro atualizado. Instancia de outra conta ->
 // 404. Full-replace do formulario (menos a credencial, so-se-presente).
 func (s *SessionService) UpdateInstance(ctx context.Context, accountID string, caller Caller, id string, in InstanceWriteInput) (InstanceView, error) {
-	if !caller.IsAdmin {
-		return InstanceView{}, ErrForbidden
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, id,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
+		return InstanceView{}, err
 	}
 	existing, err := s.store.GetInstanceView(ctx, accountID, id)
 	if err != nil {
@@ -192,34 +222,186 @@ func (s *SessionService) UpdateInstance(ctx context.Context, accountID string, c
 	if err := s.applyCredential(ctx, accountID, id, in.EvolutionAPIKey); err != nil {
 		return InstanceView{}, err
 	}
-	return s.store.GetInstanceView(ctx, accountID, id)
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
+	return s.instanceViewForCaller(ctx, accountID, id, caller)
 }
 
-// SetInstanceUsers grava os usuarios atribuidos (PUT .../users). Filtra a lista para membros
-// ativos da conta (isolamento) e devolve o registro atualizado.
-func (s *SessionService) SetInstanceUsers(ctx context.Context, accountID string, caller Caller, id string, in SetInstanceUsersInput) (InstanceView, error) {
-	if !caller.IsAdmin {
-		return InstanceView{}, ErrForbidden
-	}
-	if _, err := s.store.GetInstanceView(ctx, accountID, id); err != nil {
-		if noRows(err) {
-			return InstanceView{}, ErrSessionUnavailable
-		}
-		return InstanceView{}, err
-	}
-	valid, err := s.store.FilterAccountMemberIDs(ctx, accountID, in.UserIDs)
+// ReplaceInstanceAccess aplica policy/grants pelo gate efetivo e publica a invalidação somente
+// depois que o repository confirma o commit. O endpoint HTTP correspondente pertence ao P2.
+func (s *SessionService) ReplaceInstanceAccess(ctx context.Context, accountID, instanceID string, caller Caller, in InstanceAccessUpdateInput) (InstanceAccessWriteResult, error) {
+	ready, err := s.store.HasActiveOmnichannelMembership(ctx, accountID, caller.UserID)
 	if err != nil {
-		return InstanceView{}, err
+		return InstanceAccessWriteResult{}, err
 	}
-	if err := s.store.SetInstanceAssignedUsers(ctx, accountID, id, valid); err != nil {
-		return InstanceView{}, err
+	if !ready {
+		return InstanceAccessWriteResult{}, ErrForbidden
 	}
-	return s.store.GetInstanceView(ctx, accountID, id)
+	canManage, err := s.store.hasEffectivePermission(ctx, accountID, caller.UserID, "omnichannel.instances.manage")
+	if err != nil {
+		return InstanceAccessWriteResult{}, err
+	}
+	if !canManage {
+		return InstanceAccessWriteResult{}, ErrForbidden
+	}
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
+		return InstanceAccessWriteResult{}, err
+	}
+	result, err := s.store.ReplaceInstanceAccess(ctx, InstanceAccessWrite{
+		AccountID: accountID, InstanceID: instanceID, ActorUserID: caller.UserID,
+		ResponsibleUserID: in.ResponsibleUserID, AccessPolicy: in.AccessPolicy,
+		ExpectedRevision: in.ExpectedRevision, Grants: in.Grants,
+	})
+	if err != nil {
+		return InstanceAccessWriteResult{}, err
+	}
+	if result.Changed {
+		s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+			accountID, RealtimeInvalidationReasonAccessScopeChanged, time.Now().UTC()))
+	}
+	return result, nil
+}
+
+// GetInstanceAccess devolve o estado relacional autoritativo para o card administrativo.
+// A propria permissao de feature nao basta: o chamador tambem precisa de grant manage na
+// instancia solicitada.
+func (s *SessionService) GetInstanceAccess(ctx context.Context, accountID, instanceID string, caller Caller) (InstanceAccessAdminView, error) {
+	decision, err := s.requireInstanceAccessAdministration(ctx, accountID, instanceID, caller)
+	if err != nil {
+		return InstanceAccessAdminView{}, err
+	}
+	return s.instanceAccessAdminView(ctx, accountID, instanceID, decision.Capabilities)
+}
+
+// PutInstanceAccess aplica o contrato novo ou traduz temporariamente userIds para grants
+// reply. A resposta sempre e relida do PostgreSQL depois do commit; o frontend nunca precisa
+// completar revision/capabilities localmente.
+func (s *SessionService) PutInstanceAccess(ctx context.Context, accountID, instanceID string, caller Caller, in InstanceAccessRequest) (InstanceAccessAdminView, error) {
+	decision, err := s.requireInstanceAccessAdministration(ctx, accountID, instanceID, caller)
+	if err != nil {
+		return InstanceAccessAdminView{}, err
+	}
+
+	current, err := s.store.GetInstanceAccessState(ctx, accountID, instanceID)
+	if err != nil {
+		return InstanceAccessAdminView{}, err
+	}
+	update, err := normalizeInstanceAccessRequest(in, current)
+	if err != nil {
+		return InstanceAccessAdminView{}, err
+	}
+	result, err := s.ReplaceInstanceAccess(ctx, accountID, instanceID, caller, update)
+	if err != nil {
+		return InstanceAccessAdminView{}, err
+	}
+	if result.Changed {
+		var scope ConversationAccessScope
+		scope, err = s.store.LoadConversationAccessScope(ctx, accountID, caller.UserID)
+		if err != nil {
+			return InstanceAccessAdminView{}, err
+		}
+		decision, _ = scope.instanceDecision(instanceID)
+	}
+	return s.instanceAccessAdminView(ctx, accountID, instanceID, decision.Capabilities)
+}
+
+func (s *SessionService) requireInstanceAccessAdministration(ctx context.Context, accountID, instanceID string, caller Caller) (InstanceAccessDecision, error) {
+	ready, err := s.store.HasActiveOmnichannelMembership(ctx, accountID, caller.UserID)
+	if err != nil {
+		return InstanceAccessDecision{}, err
+	}
+	if !ready {
+		return InstanceAccessDecision{}, ErrForbidden
+	}
+	return s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage)
+}
+
+func (s *SessionService) instanceAccessAdminView(ctx context.Context, accountID, instanceID string, capabilities InstanceCapabilities) (InstanceAccessAdminView, error) {
+	state, err := s.store.GetInstanceAccessState(ctx, accountID, instanceID)
+	if err != nil {
+		return InstanceAccessAdminView{}, err
+	}
+	grants := make([]InstanceUserGrantView, 0, len(state.Grants))
+	for _, grant := range state.Grants {
+		grants = append(grants, InstanceUserGrantView{
+			UserID: grant.UserID, AccessLevel: string(grant.AccessLevel),
+			IsActive: grant.IsActive, Revision: grant.Revision,
+		})
+	}
+	return InstanceAccessAdminView{
+		AccessRevision: state.AccessRevision, AccessPolicy: string(state.AccessPolicy),
+		ResponsibleUserID: state.ResponsibleUserID, Grants: grants,
+		MyCapabilities: capabilities,
+	}, nil
+}
+
+func normalizeInstanceAccessRequest(in InstanceAccessRequest, current storedInstanceAccess) (InstanceAccessUpdateInput, error) {
+	if in.UserIDs != nil && (in.AccessRevision != nil || in.AccessPolicy != nil || in.ResponsibleUserID != nil || in.Grants != nil) {
+		return InstanceAccessUpdateInput{}, ErrInvalidBody
+	}
+	if in.UserIDs != nil {
+		grants := make([]InstanceGrantInput, 0, len(*in.UserIDs)+1)
+		levels := make(map[string]InstanceGrantLevel, len(current.Grants)+len(*in.UserIDs))
+		for _, grant := range current.Grants {
+			if grant.IsActive && grant.AccessLevel == InstanceGrantManage {
+				levels[grant.UserID] = InstanceGrantManage
+			}
+		}
+		for _, rawUserID := range *in.UserIDs {
+			userID := strings.TrimSpace(rawUserID)
+			if userID != "" {
+				if levels[userID] != InstanceGrantManage {
+					levels[userID] = InstanceGrantReply
+				}
+			}
+		}
+		for userID, level := range levels {
+			grants = append(grants, InstanceGrantInput{UserID: userID, AccessLevel: level})
+		}
+		responsible := ""
+		if current.ResponsibleUserID != nil {
+			responsible = *current.ResponsibleUserID
+		}
+		return InstanceAccessUpdateInput{
+			AccessPolicy: current.AccessPolicy, ExpectedRevision: current.AccessRevision,
+			ResponsibleUserID: responsible, Grants: grants,
+		}, nil
+	}
+	if in.AccessRevision == nil || in.AccessPolicy == nil || in.Grants == nil {
+		return InstanceAccessUpdateInput{}, ErrInvalidBody
+	}
+	responsible := ""
+	if in.ResponsibleUserID != nil {
+		responsible = strings.TrimSpace(*in.ResponsibleUserID)
+	}
+	return InstanceAccessUpdateInput{
+		AccessPolicy: *in.AccessPolicy, ExpectedRevision: *in.AccessRevision,
+		ResponsibleUserID: responsible, Grants: *in.Grants,
+	}, nil
 }
 
 // ============================================================================
 // Helpers
 // ============================================================================
+
+func (s *SessionService) instanceViewForCaller(ctx context.Context, accountID, id string, caller Caller) (InstanceView, error) {
+	view, err := s.store.GetInstanceView(ctx, accountID, id)
+	if err != nil {
+		return InstanceView{}, err
+	}
+	scope, err := s.store.LoadConversationAccessScope(ctx, accountID, caller.UserID)
+	if err != nil {
+		return InstanceView{}, err
+	}
+	decision, ok := scope.instanceDecision(id)
+	if !ok {
+		return InstanceView{}, ErrNotFound
+	}
+	view.MyCapabilities = decision.Capabilities
+	return view, nil
+}
 
 // resolveResponsible valida o responsible_user_id contra a membership da conta (isolamento).
 // Vazio => sem responsavel (nil). Nao-membro => body invalido (nunca grava um usuario de

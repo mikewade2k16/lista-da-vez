@@ -50,15 +50,6 @@ $composeDev = Join-Path $repoDir "docker-compose.yml"
 $composeEnvGuard = Join-Path $scriptDir "assert-compose-api-env.ps1"
 $composeServiceParityGuard = Join-Path $scriptDir "assert-compose-service-parity.ps1"
 
-if (-not (Test-Path -LiteralPath $composeEnvGuard -PathType Leaf)) {
-  throw "Preflight de env do Compose nao encontrado: $composeEnvGuard"
-}
-& $composeEnvGuard -ComposePath $composeLocal
-if (-not (Test-Path -LiteralPath $composeServiceParityGuard -PathType Leaf)) {
-  throw "Preflight de paridade dos servicos Compose nao encontrado: $composeServiceParityGuard"
-}
-& $composeServiceParityGuard -DevComposePath $composeDev -ProdComposePath $composeLocal
-
 # Ownership preflight must finish before any docker login/ps/build. DeployAutomation is
 # explicit platform scope downstream, but its local runtime sync is always one exact owner/key.
 $workflowSelection = @()
@@ -74,7 +65,7 @@ if ($DeployAutomation) {
 
   if (-not $SkipWorkflowExport) {
     if ([string]::IsNullOrWhiteSpace($WorkflowOwner) -or [string]::IsNullOrWhiteSpace($WorkflowOnly)) {
-      throw "Sync do n8n exige -WorkflowOwner e -WorkflowOnly. Use -SkipWorkflowExport para deployar os JSONs versionados."
+      throw "-DeployAutomation exige -WorkflowOwner e -WorkflowOnly para sync do n8n. Use -SkipWorkflowExport para deployar os JSONs versionados."
     }
     if (-not (Test-Path -LiteralPath $n8nExportScript -PathType Leaf)) {
       throw "Script de export owner-scoped nao encontrado: $n8nExportScript"
@@ -92,8 +83,24 @@ elseif ($ForceAutomationWorkflowImport -or $SkipWorkflowExport -or
   throw "WorkflowOwner/WorkflowOnly/SkipWorkflowExport/ForceAutomationWorkflowImport exigem -DeployAutomation explicito."
 }
 
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+  throw "docker nao encontrado no PATH. Instale ou abra o Docker Desktop antes do deploy."
+}
+& docker info --format '{{.ServerVersion}}' *> $null
+if ($LASTEXITCODE -ne 0) {
+  throw "Docker engine local indisponivel. Inicie o Docker Desktop e aguarde o engine Linux ficar pronto antes de executar npm run deploy."
+}
+
+if (-not (Test-Path -LiteralPath $composeEnvGuard -PathType Leaf)) {
+  throw "Preflight de env do Compose nao encontrado: $composeEnvGuard"
+}
+& $composeEnvGuard -ComposePath $composeLocal
+if (-not (Test-Path -LiteralPath $composeServiceParityGuard -PathType Leaf)) {
+  throw "Preflight de paridade dos servicos Compose nao encontrado: $composeServiceParityGuard"
+}
+& $composeServiceParityGuard -DevComposePath $composeDev -ProdComposePath $composeLocal
+
 if (-not (Test-Path $deployPull)) { throw "deploy-pull.ps1 nao encontrado em $scriptDir" }
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "docker nao encontrado no PATH (Docker Desktop precisa estar rodando)." }
 
 function Get-LocalDockerRegistryCredential {
   param([Parameter(Mandatory = $true)][string]$Registry)

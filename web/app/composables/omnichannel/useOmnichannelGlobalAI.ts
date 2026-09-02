@@ -22,13 +22,10 @@ export function useOmnichannelGlobalAI() {
   const error = ref("");
 
   const canManageAutomation = computed(
-    () =>
-      auth.role === "platform_admin" ||
-      auth.effectivePermissionKeys.includes("omnichannel.settings.manage"),
+    () => auth.effectivePermissionKeys.includes("omnichannel.settings.manage"),
   );
   const canConfigure = computed(
     () =>
-      auth.role === "platform_admin" ||
       [
         "omnichannel.instances.manage",
         "omnichannel.settings.manage",

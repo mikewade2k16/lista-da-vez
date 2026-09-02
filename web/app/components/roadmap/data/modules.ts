@@ -14,7 +14,8 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
       "Local: Facebook Login seguro, token cifrado, paginação/snapshots e dashboard de 90 dias",
       "Local: chat compartilhado com voz, memória, KPIs e cards escopados por surface/RBAC",
       "Local: vínculos ad account e Page/Instagram→cliente com UI e filtros fail-closed",
-      "Parcial: proposta durável e pause/update; create/duplicate/resume, ad sets/ads/criativos e E2E Graph permanecem pendentes"
+      "Local: seis ações first-party com proposta durável, caps, confirmação, árvore PAUSED e recibos at-most-once",
+      "Pendente externo: Meta App/OAuth/assets reais e E2E Graph em staging antes de habilitar writes"
     ],
     dependsOn: []
   },

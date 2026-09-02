@@ -10,6 +10,7 @@ import type {
 import {
   DEFAULT_MAX_UPLOAD_MB,
   normalizeTenantUploadLimitMb,
+  type WhatsAppInstanceAccessState,
   toArrayOrEmpty
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
 
@@ -19,16 +20,22 @@ export function useOmnichannelInboxBootstrapLoaders(options: {
   users: Ref<TenantUser[]>;
   contacts: Ref<Contact[]>;
   whatsappInstances: Ref<WhatsAppInstanceRecord[]>;
+  whatsappInstanceAccessState: Ref<WhatsAppInstanceAccessState>;
   selectedInstanceId: Ref<string>;
   loadingWhatsAppStatus: Ref<boolean>;
   loadingUsers: Ref<boolean>;
   loadingContacts: Ref<boolean>;
   apiFetch: <T = unknown>(path: string, init?: Record<string, unknown>) => Promise<T>;
   sortContacts: () => void;
+  getScopeIdentity: () => string;
 }) {
   const STATUS_CACHE_TTL_MS = 12_000;
-  let statusRequestInFlight: Promise<void> | null = null;
-  let lastStatusFetchedAt = 0;
+  const statusRequestsInFlight = new Map<string, Promise<void>>();
+  const lastStatusFetchedAtByScope = new Map<string, number>();
+
+  function isCurrentScope(scopeIdentity: string) {
+    return options.getScopeIdentity() === scopeIdentity;
+  }
 
   function buildProviderUnavailableState() {
     return {
@@ -39,10 +46,13 @@ export function useOmnichannelInboxBootstrapLoaders(options: {
   }
 
   async function loadTenantUploadLimit() {
+    const scopeIdentity = options.getScopeIdentity();
     try {
       const tenantSettings = await options.apiFetch<TenantSettings>("/tenant");
+      if (!isCurrentScope(scopeIdentity)) return;
       options.tenantMaxUploadMb.value = normalizeTenantUploadLimitMb(tenantSettings.maxUploadMb);
     } catch {
+      if (!isCurrentScope(scopeIdentity)) return;
       options.tenantMaxUploadMb.value = DEFAULT_MAX_UPLOAD_MB;
     }
   }
@@ -50,6 +60,12 @@ export function useOmnichannelInboxBootstrapLoaders(options: {
   async function loadWhatsAppStatus(optionsArg: { force?: boolean } = {}) {
     const force = optionsArg.force ?? false;
     const now = Date.now();
+    const scopeIdentity = options.getScopeIdentity();
+    if (options.whatsappInstanceAccessState.value === "error") {
+      options.whatsappStatus.value = null;
+      return;
+    }
+    const statusRequestInFlight = statusRequestsInFlight.get(scopeIdentity);
 
     if (statusRequestInFlight) {
       await statusRequestInFlight;
@@ -59,7 +75,7 @@ export function useOmnichannelInboxBootstrapLoaders(options: {
     if (
       !force &&
       options.whatsappStatus.value &&
-      now - lastStatusFetchedAt < STATUS_CACHE_TTL_MS
+      now - (lastStatusFetchedAtByScope.get(scopeIdentity) ?? 0) < STATUS_CACHE_TTL_MS
     ) {
       return;
     }
@@ -74,8 +90,10 @@ export function useOmnichannelInboxBootstrapLoaders(options: {
         const statusResponse = await options.apiFetch<WhatsAppStatusResponse>(
           `/tenant/whatsapp/status${query.size ? `?${query.toString()}` : ""}`
         );
+        if (!isCurrentScope(scopeIdentity)) return;
         options.whatsappStatus.value = statusResponse;
       } catch {
+        if (!isCurrentScope(scopeIdentity)) return;
         const hasKnownInstance =
           options.whatsappInstances.value.length > 0 ||
           (options.selectedInstanceId.value.trim().length > 0 && options.selectedInstanceId.value !== "all");
@@ -103,45 +121,65 @@ export function useOmnichannelInboxBootstrapLoaders(options: {
           };
         }
       } finally {
-        lastStatusFetchedAt = Date.now();
-        options.loadingWhatsAppStatus.value = false;
+        lastStatusFetchedAtByScope.set(scopeIdentity, Date.now());
+        if (isCurrentScope(scopeIdentity)) {
+          options.loadingWhatsAppStatus.value = false;
+        }
       }
     })();
 
-    statusRequestInFlight = request;
+    statusRequestsInFlight.set(scopeIdentity, request);
     try {
       await request;
     } finally {
-      if (statusRequestInFlight === request) {
-        statusRequestInFlight = null;
+      if (statusRequestsInFlight.get(scopeIdentity) === request) {
+        statusRequestsInFlight.delete(scopeIdentity);
       }
     }
   }
 
   async function loadUsers() {
+    const scopeIdentity = options.getScopeIdentity();
     options.loadingUsers.value = true;
     try {
       const response = await options.apiFetch<unknown>("/users");
+      if (!isCurrentScope(scopeIdentity)) return;
       options.users.value = toArrayOrEmpty<TenantUser>(response);
     } finally {
-      options.loadingUsers.value = false;
+      if (isCurrentScope(scopeIdentity)) options.loadingUsers.value = false;
     }
   }
 
   async function loadContacts() {
+    const scopeIdentity = options.getScopeIdentity();
     options.loadingContacts.value = true;
     try {
       const response = await options.apiFetch<unknown>("/contacts");
+      if (!isCurrentScope(scopeIdentity)) return;
       options.contacts.value = toArrayOrEmpty<Contact>(response);
       options.sortContacts();
     } finally {
-      options.loadingContacts.value = false;
+      if (isCurrentScope(scopeIdentity)) options.loadingContacts.value = false;
     }
   }
 
   async function loadAccessibleWhatsAppInstances() {
-    const response = await options.apiFetch<WhatsAppInstanceAccessResponse>("/tenant/whatsapp/instances/access");
-    options.whatsappInstances.value = Array.isArray(response.instances) ? response.instances : [];
+    const scopeIdentity = options.getScopeIdentity();
+    options.whatsappInstanceAccessState.value = "loading";
+    try {
+      const response = await options.apiFetch<WhatsAppInstanceAccessResponse>("/tenant/whatsapp/instances/access");
+      if (!isCurrentScope(scopeIdentity)) return;
+      const instances = Array.isArray(response.instances) ? response.instances : [];
+      options.whatsappInstances.value = instances;
+      options.whatsappInstanceAccessState.value = instances.length > 0
+        ? "resolved-nonempty"
+        : "resolved-empty";
+    } catch (error) {
+      if (!isCurrentScope(scopeIdentity)) return;
+      options.whatsappInstances.value = [];
+      options.whatsappInstanceAccessState.value = "error";
+      throw error;
+    }
   }
 
   return {

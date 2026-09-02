@@ -27,8 +27,14 @@ O fluxo padrao do projeto agora e Docker-first.
 Suba a stack completa pela raiz com:
 
 ```bash
-npm run dev        # docker compose up --build --watch
+npm run dev        # sobe todos os profiles em background e anexa somente o watch
 ```
+
+O `up` deve sempre usar `-d` antes de iniciar o watch. Nunca deixe um
+`docker compose up` anexado ao processo do agente: ao interromper a execucao,
+o sinal tambem para a stack. O processo anexado permitido e somente
+`docker compose watch --no-up`, cuja interrupcao encerra o sync sem parar os
+containers.
 
 O `web` roda em modo dev dentro do container SEM bind mount (2026-07-03): o
 codigo e copiado no build e o `docker compose watch` sincroniza as edicoes do
@@ -47,7 +53,7 @@ NOTA: os scripts `npm run dev*` da raiz sao SO ATALHOS para `docker compose`
 do container). Sem npm, os equivalentes diretos sao:
 
 ```bash
-docker compose up --build --watch                                  # = npm run dev
+docker compose --profile "*" up -d --build && docker compose --profile "*" watch --no-up  # = npm run dev
 docker compose up -d --build --force-recreate --no-deps web && docker compose watch --no-up web  # = npm run dev:watch
 ```
 
@@ -55,15 +61,24 @@ Dar "play" no container web pelo Docker Desktop sobe o painel para USO, mas
 NAO liga o watch — edicoes de codigo nao entram ate rodar um dos comandos
 acima num terminal (o watch nao existe na UI do Docker Desktop).
 
-Isso sobe:
+Isso sobe a stack completa:
 
 - `postgres` em `localhost:5432`
 - `api` em `localhost:8080`
 - `web` em `localhost:3003`
 
+O comando tambem ativa todos os profiles declarados no Compose:
+
+- `docker compose --profile automation up -d`: Redis, n8n, WAHA e Whisper;
+- `docker compose --profile omnichannel up -d`: Evolution e seu PostgreSQL;
+- `docker compose --profile meta-ads-assistant up -d`: assistente de Meta Ads.
+
+Os profiles `automation` e `omnichannel` incluem providers diferentes e ambos
+sobem no ambiente dev. Nunca configure os dois para o mesmo numero de WhatsApp.
+
 Comandos principais:
 
-- `npm run dev` (stack completa + watch/sync do web)
+- `npm run dev` (stack completa, todos os profiles + watch/sync do web)
 - `npm run dev:watch` (so reconcilia o web + liga o watch; stack ja de pe)
 - `npm run dev:detach` (sobe SEM watch — edicoes no web nao chegam!)
 - `npm run dev:build`

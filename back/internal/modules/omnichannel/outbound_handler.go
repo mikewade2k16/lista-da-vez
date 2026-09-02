@@ -87,6 +87,9 @@ func (h *OutboundHandler) Handle(ctx context.Context, job jobs.Job) error {
 		// o worker de sobrescrever o job com done e nao duplica audit/FAILED.
 		return &jobs.StatusError{Unrecoverable: true, Err: ErrAILeaseInvalid}
 	}
+	if errors.Is(sendErr, ErrHistoryResetInvalidated) {
+		return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+	}
 	if isTerminalJobError(sendErr, job) {
 		h.settleFailed(ctx, job.AccountID, result.MessageID, result.ConversationID)
 	}

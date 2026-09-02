@@ -135,7 +135,7 @@ Metodos do resolver: `CanManageAccount`, `CanManageUser`, `CanManageOrganization
 | POST | `/v1/admin/users/{id}/memberships` | `AdminMembershipsResponse` (201) | **adiciona** vinculo de cliente SEM remover os outros. Body `{accountId, role}` (role default `owner`, em {owner,director,marketing}). Escopo `CanManageAccount(accountId)` senao 404. Account destino existe+ativa (senao 404) e NAO-agencia (senao 400 `account_is_agency`). Reusa `enrollUserInAccount` (upsert reativa/nao duplica). |
 | PATCH | `/v1/admin/users/{id}/memberships/{accountId}` | `AdminMembershipsResponse` | troca o papel do user naquela conta. **Escopo `CanManageAccount`** (404 senao); **se a conta for `is_agency=true`, exige autoridade de organizacao (M2)**: platform_admin OU agency_owner daquela org — `core.users.manage` account-scoped NAO basta (404 senao, nao vaza). `role` em {owner, director, marketing}; invalido → 400 `invalid_role`; nao-membro → 404. Replace via `SetUserAccountRole`. |
 | DELETE | `/v1/admin/users/{id}/memberships/{accountId}` | `AdminMembershipsResponse` | **desativa** o vinculo de cliente (transacional: `account_users.is_active=false` preservando `joined_at` + delete `user_role_assignments`). **Escopo `CanManageAccount`** (404 senao); **conta-agencia exige autoridade de organizacao (M2)**, igual ao PATCH acima. Convive com o PATCH no mesmo path (method-aware). |
-| POST | `/v1/admin/users/{id}/organizations/{orgId}` | `AdminUserView` | **vincula agencia** a usuario existente. Retorna **`AdminUserView`** (mesmo shape do PATCH/PUT account — front aplica na linha via `applyPatch`). Body `{orgRole, confirmAgencyWideAccess}` (orgRole em {agency_owner,agency_member}, default member). **Escopo restrito: SO platform_admin OU agency_owner da PROPRIA org** (`CanManageOrganization`) — admin de cliente → 404. Virar membro de agencia da visao de TODOS os clientes da org → exige `confirmAgencyWideAccess:true` senao **422 `confirmation_required`**. Reusa `linkUserToOrganization` (DRY com `CreateUser`): cria `organization_users` + matricula na conta-agencia para o user logar. |
+| POST | `/v1/admin/users/{id}/organizations/{orgId}` | `AdminUserView` | **vincula agencia** a usuario existente. Retorna **`AdminUserView`** (mesmo shape do PATCH/PUT account — front aplica na linha via `applyPatch`). Body `{orgRole, confirmAgencyWideAccess}` (orgRole em {agency_owner,agency_member}, default member). **Escopo restrito: SO platform_admin OU agency_owner da PROPRIA org** (`CanManageOrganization`) — admin de cliente → 404. A confirmação permanece como guard-rail de vínculo organizacional, mas não concede contexto automático das contas-cliente: cada cliente exige `core.account_users` explícito. Reusa `linkUserToOrganization` (DRY com `CreateUser`): cria `organization_users` + matricula na conta-agencia para o user logar. |
 | DELETE | `/v1/admin/users/{id}/organizations/{orgId}` | `AdminUserView` | **desvincula agencia**. Retorna **`AdminUserView`** (mesmo shape do PATCH). Mesmo escopo do POST. Safeguard **409 `last_agency_owner`** (nao remove o ultimo agency_owner da org). Transacional: delete `organization_users` + desativa membership na conta-agencia da org. |
 | PUT | `/v1/admin/users/{id}/account` | `AdminUserView` | **MOVE** (destrutivo) o usuário para a conta-cliente destino — **identity-global, SO platform_admin** (403 senao). Body `{ "accountId": "<destino>", "role": "owner" }` (role opcional, default `owner`; validado em {owner, director, marketing} -> 400 `invalid_role`). **Transacional**: (1) valida o destino existe + ativo (senão 404 `account_not_found`, não vaza existência) e NÃO é agência (senão 400 `account_is_agency` — endpoint só para cliente); (2) remove os `user_role_assignments` das contas-CLIENTE não-agência atuais; (3) desativa as memberships `account_users` não-agência atuais (mantém a linha p/ preservar `joined_at`); (4) **auto-enroll** no destino reusando `enrollUserInAccount` (membership ativa + papel + perms). **NÃO toca vínculos de agência** (`account_users`/`role_assignments` de contas `is_agency=true`). Retorna o `AdminUserView` atualizado (mesmo shape do PATCH) para o front atualizar a linha sem refetch. **O painel admin (`/manage/users`) tambem usa este endpoint para ATRIBUIR o primeiro cliente a um usuario sem vinculo** (0 memberships → o move apenas matricula); o `<select>` da coluna "Cliente" agora aparece tambem para usuario sem cliente (2026-06-25). |
 
@@ -294,21 +294,22 @@ de `core.accounts` nos 3 SELECTs que usam `scanAdminAccount` (List/Find/Update r
 contra spoofing de `accountId`). Resposta `account_not_found` cobre tanto "nao existe" quanto
 "nao e membership" para nao vazar existencia.
 
-### Visibilidade org-aware de accounts (Trilho B — Etapa 3, AGENCY_TENANT_ARCHITECTURE)
+### Visibilidade autoritativa de accounts (revisada no P3 Omnichannel em 2026-08-28)
 
 `ListAccountsForUser` e `FindAccountIfMember` (`store_postgres.go`) decidem o escopo
 de accounts 100% no banco, via a clausula `accountVisibilityWhere` (parametrizada por
-`$1` = userID). Uma account ativa e visivel quando QUALQUER um dos tres caminhos vale:
+`$1` = userID). Uma account ativa e visivel quando um dos dois caminhos vale:
 
 1. **platform_admin** — `core.users.is_platform_admin = true` (user ativo) → ve TODAS
    as accounts ativas da plataforma.
-2. **agency_owner** — existe linha em `core.organization_users` com
-   `org_role = 'agency_owner'` cujo `organization_id = a.organization_id` → o dono da
-   agencia ve TODAS as accounts da SUA organization.
-3. **membership** — existe membership ativa em `core.account_users`
+2. **membership** — existe membership ativa em `core.account_users`
    (`is_active = true`) → comportamento legado, inalterado, para os demais users.
 
-Os tres ramos sao `exists(...)` unidos por `OR` num unico predicado (sem JOIN que
+Membership apenas em `core.organization_users`, inclusive `agency_owner`, nao concede contexto
+de uma account cliente. A agencia precisa receber `core.account_users` explicito em cada cliente
+que opera; no Omnichannel, permissao efetiva e grant de instancia continuam gates adicionais.
+
+Os dois ramos sao `exists(...)` unidos por `OR` num unico predicado (sem JOIN que
 multiplique linhas), entao cada account aparece no maximo uma vez — `DISTINCT`
 desnecessario. `FindAccountIfMember` aplica a MESMA regra filtrando por `$2` (accountID);
 se nada bate, `pgx.ErrNoRows` → `ErrAccountNotMember` (nao distingue "nao existe" de
@@ -352,7 +353,7 @@ Teste de contrato + traducao de erro em `store_postgres_test.go`.
 
 - `model.go` — structs (Account, Organization, User), DTOs (Summary, Context), interface `Repository`.
 - `errors.go` — erros padronizados: identidade, account, RBAC, admin.
-- `store_postgres.go` — `PostgresRepository` implementando `Repository`. `ListAccountsForUser`/`FindAccountIfMember` usam a regra org-aware (`accountVisibilityWhere`): platform_admin vê todas, agency_owner vê as da org, demais via membership. As duas queries também selecionam `a.is_agency` + `coalesce(o.name,'')` (via `left join core.organizations`) e `scanAccount` os mapeia para `Account.IsAgency`/`Account.OrganizationName` (switcher). Ver "Visibilidade org-aware de accounts" acima. `ListEnabledModuleIDsForAccounts` (batch): resolve modulos de N accounts em uma unica query (`WHERE account_id = ANY($1::uuid[])`), retorna `map[accountID][]moduleID`; implementa `batchModuleLoader` (OPT-2/F-22).
+- `store_postgres.go` — `PostgresRepository` implementando `Repository`. `ListAccountsForUser`/`FindAccountIfMember` usam `accountVisibilityWhere`: platform_admin vê todas; os demais veem somente memberships explícitas ativas. Organização/agência, isoladamente, não concede contexto de cliente. As duas queries também selecionam `a.is_agency` + `coalesce(o.name,'')` (via `left join core.organizations`) e `scanAccount` os mapeia para `Account.IsAgency`/`Account.OrganizationName` (switcher). Ver "Visibilidade autoritativa de accounts" acima. `ListEnabledModuleIDsForAccounts` (batch): resolve modulos de N accounts em uma unica query (`WHERE account_id = ANY($1::uuid[])`), retorna `map[accountID][]moduleID`; implementa `batchModuleLoader` (OPT-2/F-22).
 - `service.go` — orquestra leituras de /me, valida acessibilidade (org-aware).
 - `http.go` — handlers /v2/me/accounts e /v2/me/context. Aliases v1 removidos pós-C9 (conflito de rota com legacy + shape diferente).
 - `rbac_model.go` — structs `Role`, `RoleSummary`.

@@ -86,6 +86,7 @@ services:
       # AES-256-GCM para credenciais do omnichannel em repouso. Obrigatoria e sem
       # default: perder/trocar a chave invalida os ciphertexts ja persistidos.
       OMNI_SECRETS_KEY: ${OMNI_SECRETS_KEY:-}
+      OMNICHANNEL_HISTORY_CUTOFF_ENFORCED: ${OMNICHANNEL_HISTORY_CUTOFF_ENFORCED:-true}
       CUSTOMER_DATA_ENCRYPTION_KEY: ${CUSTOMER_DATA_ENCRYPTION_KEY:-}
       CUSTOMER_DATA_HMAC_KEY: ${CUSTOMER_DATA_HMAC_KEY:-}
       # Storage privado do inbox. Nao compartilhar com /uploads (servido publicamente).

@@ -359,6 +359,14 @@ func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey s
 	if !res.MessageCreated {
 		return inboundDuplicate, nil
 	}
+	if res.HistorySuppressed {
+		// O evento atrasado permanece na trilha duravel, mas nao pode transportar o
+		// conteudo oculto no realtime nem acionar FSM, IA ou midia.
+		s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+			accountID, RealtimeInvalidationReasonMessageChanged, time.Now(),
+		))
+		return inboundAccepted, nil
+	}
 	// Realtime (F5): fora da transacao (persiste -> commita -> publica). O call-site monta o
 	// subconjunto `message.created` do webhook com o id INTERNO persistido; a midia data: e
 	// sanitizada (nunca base64 no WS). Publisher no-op quando o canal esta desligado. Vale tambem

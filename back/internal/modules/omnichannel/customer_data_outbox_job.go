@@ -10,7 +10,8 @@ import (
 )
 
 type customerDataInboundHandler struct {
-	bridge CustomerDataInboundBridge
+	bridge       CustomerDataInboundBridge
+	historyLease func(context.Context, string, string, string, func() error) (bool, error)
 }
 
 func (h customerDataInboundHandler) Handle(ctx context.Context, job jobs.Job) error {
@@ -43,7 +44,21 @@ func (h customerDataInboundHandler) Handle(ctx context.Context, job jobs.Job) er
 			Err:           errors.New("omnichannel: invalid customer data inbound event"),
 		}
 	}
-	return h.bridge.ResolveInboundRelationship(ctx, event)
+	if h.historyLease == nil {
+		return &jobs.StatusError{StatusCode: 503, Err: errors.New("omnichannel: customer data history lease unavailable")}
+	}
+	var bridgeErr error
+	allowed, err := h.historyLease(ctx, event.AccountID, event.ConversationID, event.MessageID, func() error {
+		bridgeErr = h.bridge.ResolveInboundRelationship(ctx, event)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+	}
+	return bridgeErr
 }
 
 var _ jobs.Handler = customerDataInboundHandler{}

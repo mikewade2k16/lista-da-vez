@@ -6,12 +6,53 @@ import type {
   GroupParticipantsResponse,
   MessagesPageResponse,
   SyncConversationHistoryResponse,
-  SyncOpenConversationsResponse
+  SyncOpenConversationsResponse,
+  WhatsAppInstanceAccessState
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
 import {
   MESSAGE_PAGE_SIZE,
   toArrayOrEmpty
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
+
+export async function refreshAuthorizedActiveConversation(options: {
+  preferredConversationId: string | null;
+  conversations: Ref<Conversation[]>;
+  activeConversationId: Ref<string | null>;
+  isComposeOnlyConversation?: (conversationId: string) => boolean;
+  refreshConversationMessages: (
+    conversationId: string,
+    refreshOptions: {
+      silent?: boolean;
+      syncHistory?: boolean;
+      ensureUnreadBoundary?: boolean;
+      replace?: boolean;
+    }
+  ) => Promise<void>;
+}) {
+  const candidates = [
+    options.preferredConversationId,
+    options.activeConversationId.value
+  ].filter((entry, index, entries): entry is string => {
+    return Boolean(entry) && entries.indexOf(entry) === index;
+  });
+  const authorizedConversationId = candidates.find((conversationId) => {
+    return options.conversations.value.some((entry) => entry.id === conversationId);
+  });
+
+  if (!authorizedConversationId) {
+    options.activeConversationId.value = null;
+    return false;
+  }
+
+  options.activeConversationId.value = authorizedConversationId;
+  await options.refreshConversationMessages(authorizedConversationId, {
+    silent: true,
+    syncHistory: false,
+    ensureUnreadBoundary: true,
+    replace: true
+  });
+  return true;
+}
 
 export function useOmnichannelInboxHistory(options: {
   apiFetch: <T = unknown>(path: string, init?: Record<string, unknown>) => Promise<T>;
@@ -20,6 +61,7 @@ export function useOmnichannelInboxHistory(options: {
   visibleMessagesConversationId: Ref<string | null>;
   activeConversationId: Ref<string | null>;
   selectedInstanceId: Ref<string>;
+  whatsappInstanceAccessState: Ref<WhatsAppInstanceAccessState>;
   search: Ref<string>;
   channel: Ref<string>;
   status: Ref<string>;
@@ -52,6 +94,9 @@ export function useOmnichannelInboxHistory(options: {
   mergeMessages: (...chunks: Message[][]) => Message[];
   updateConversationPreviewFromMessage: (messageEntry: Message) => void;
   messageNeedsMediaHydration: (messageEntry: Message) => boolean;
+  getScopeGeneration?: () => number;
+  isScopeRefetching?: Ref<boolean>;
+  isComposeOnlyConversation?: (conversationId: string) => boolean;
 }) {
   const HISTORY_SYNC_COOLDOWN_MS = 120_000;
   const OPEN_CONVERSATIONS_SYNC_COOLDOWN_MS = 90_000;
@@ -68,6 +113,14 @@ export function useOmnichannelInboxHistory(options: {
     hasMore: boolean;
     lastLoadedAt: number;
   }>();
+
+  function currentScopeGeneration() {
+    return options.getScopeGeneration?.() ?? 0;
+  }
+
+  function scopeChangedSince(generation: number) {
+    return currentScopeGeneration() !== generation;
+  }
 
   function canRunProviderSync() {
     if (options.loadingWhatsAppStatus.value) {
@@ -229,6 +282,18 @@ export function useOmnichannelInboxHistory(options: {
   async function handleConversationNotFound(conversationId: string) {
     conversationMessagesCache.delete(conversationId);
 
+    if (options.isComposeOnlyConversation?.(conversationId)) {
+      if (options.activeConversationId.value === conversationId) {
+        options.messages.value = [];
+        options.visibleMessagesConversationId.value = conversationId;
+        options.hasMoreMessages.value = false;
+        options.loadingMessages.value = false;
+        options.messagesError.value = "";
+      }
+      options.conversations.value = options.conversations.value.filter((entry) => entry.id !== conversationId);
+      return;
+    }
+
     if (options.activeConversationId.value === conversationId) {
       options.activeConversationId.value = null;
       options.messages.value = [];
@@ -257,8 +322,10 @@ export function useOmnichannelInboxHistory(options: {
       silent?: boolean;
       syncHistory?: boolean;
       ensureUnreadBoundary?: boolean;
+      replace?: boolean;
     } = {}
   ) {
+    const scopeGeneration = currentScopeGeneration();
     const cached = getConversationCache(conversationId);
     const shouldShowLoader =
       options.activeConversationId.value === conversationId &&
@@ -274,21 +341,26 @@ export function useOmnichannelInboxHistory(options: {
 
     try {
       const response = await fetchMessagesPage(conversationId);
-      const baseMessages =
-        options.visibleMessagesConversationId.value === conversationId
+      if (scopeChangedSince(scopeGeneration)) {
+        return;
+      }
+      const baseMessages = refreshOptions.replace
+        ? []
+        : options.visibleMessagesConversationId.value === conversationId
           ? options.messages.value
           : cached?.messages ?? [];
       const nextMessages = baseMessages.length > 0
         ? options.mergeMessages(baseMessages, response.messages)
         : options.mergeMessages(response.messages);
-      const nextHasMore =
-        response.hasMore ||
-        cached?.hasMore ||
-        (
-          options.visibleMessagesConversationId.value === conversationId &&
-          options.hasMoreMessages.value
-        ) ||
-        false;
+      const nextHasMore = refreshOptions.replace
+        ? response.hasMore
+        : response.hasMore ||
+          cached?.hasMore ||
+          (
+            options.visibleMessagesConversationId.value === conversationId &&
+            options.hasMoreMessages.value
+          ) ||
+          false;
 
       if (options.activeConversationId.value === conversationId) {
         options.visibleMessagesConversationId.value = conversationId;
@@ -308,6 +380,9 @@ export function useOmnichannelInboxHistory(options: {
         void syncConversationHistoryInBackground(conversationId);
       }
     } catch (error) {
+      if (scopeChangedSince(scopeGeneration)) {
+        return;
+      }
       if (error instanceof ApiClientError && error.statusCode === 404) {
         await handleConversationNotFound(conversationId);
         return;
@@ -328,6 +403,10 @@ export function useOmnichannelInboxHistory(options: {
   }
 
   function updateConversationCacheFromMessage(messageEntry: Message) {
+    if (options.isScopeRefetching?.value) {
+      return;
+    }
+
     const conversationId = messageEntry.conversationId;
     const cached = getConversationCache(conversationId);
     const isVisibleConversation = options.visibleMessagesConversationId.value === conversationId;
@@ -353,6 +432,11 @@ export function useOmnichannelInboxHistory(options: {
   }
 
   async function hydrateRealtimeMediaMessage(conversationId: string, messageId: string) {
+    if (options.isScopeRefetching?.value) {
+      return;
+    }
+
+    const scopeGeneration = currentScopeGeneration();
     const key = `${conversationId}:${messageId}`;
     if (options.realtimeMessageHydrationLocks.has(key)) {
       return;
@@ -371,6 +455,9 @@ export function useOmnichannelInboxHistory(options: {
 
         try {
           const messageEntry = options.normalizeMessage(await fetchMessageById(conversationId, messageId));
+          if (scopeChangedSince(scopeGeneration)) {
+            return;
+          }
           updateConversationCacheFromMessage(messageEntry);
           options.updateConversationPreviewFromMessage(messageEntry);
 
@@ -400,10 +487,11 @@ export function useOmnichannelInboxHistory(options: {
       return openConversationsSyncRequestInFlight;
     }
 
+    const scopeGeneration = currentScopeGeneration();
     const request = (async () => {
       openConversationsLastAttemptAt = Date.now();
       try {
-        return await options.apiFetch<SyncOpenConversationsResponse>("/conversations/sync-open", {
+        const result = await options.apiFetch<SyncOpenConversationsResponse>("/conversations/sync-open", {
           method: "POST",
           timeout: 120_000,
           body: {
@@ -411,6 +499,7 @@ export function useOmnichannelInboxHistory(options: {
             includeGroups: true
           }
         });
+        return scopeChangedSince(scopeGeneration) ? null : result;
       } catch (error) {
         if (
           error instanceof ApiClientError &&
@@ -453,7 +542,14 @@ export function useOmnichannelInboxHistory(options: {
     await loadConversations({ skipOpenSync: true });
   }
 
-  async function loadConversations(loadOptions: { skipOpenSync?: boolean; append?: boolean } = {}) {
+  async function loadConversations(loadOptions: {
+    skipOpenSync?: boolean;
+    append?: boolean;
+    preserveActive?: boolean;
+    autoSelect?: boolean;
+  } = {}) {
+    const scopeGeneration = currentScopeGeneration();
+    const whatsappAccessResolved = options.whatsappInstanceAccessState.value === "resolved-nonempty";
     const append = loadOptions.append === true;
     const cursor = append ? options.nextConversationsCursor.value : null;
     if (append && (!options.hasMoreConversations.value || !cursor)) {
@@ -465,13 +561,22 @@ export function useOmnichannelInboxHistory(options: {
     if (normalizedSearch) {
       query.set("search", normalizedSearch);
     }
-    if (options.channel.value !== "all") {
+    if (options.channel.value === "WHATSAPP" && !whatsappAccessResolved) {
+      options.conversations.value = [];
+      options.hasMoreConversations.value = false;
+      options.nextConversationsCursor.value = null;
+      options.conversationsError.value = "";
+      return;
+    }
+    if (options.channel.value === "all" && !whatsappAccessResolved) {
+      query.set("channel", "INSTAGRAM");
+    } else if (options.channel.value !== "all") {
       query.set("channel", options.channel.value);
     }
     if (options.status.value !== "all") {
       query.set("status", options.status.value);
     }
-    if (options.selectedInstanceId.value !== "all") {
+    if (whatsappAccessResolved && options.selectedInstanceId.value !== "all") {
       query.set("instanceId", options.selectedInstanceId.value);
     }
     if (cursor) {
@@ -535,7 +640,8 @@ export function useOmnichannelInboxHistory(options: {
 
         if (
           requestController.signal.aborted ||
-          conversationsRequestController !== requestController
+          conversationsRequestController !== requestController ||
+          scopeChangedSince(scopeGeneration)
         ) {
           return;
         }
@@ -556,9 +662,11 @@ export function useOmnichannelInboxHistory(options: {
             receivedConversations
           );
         } else {
-          const activeConversation = options.conversations.value.find((entry) => {
-            return entry.id === options.activeConversationId.value;
-          });
+          const activeConversation = loadOptions.preserveActive === false
+            ? undefined
+            : options.conversations.value.find((entry) => {
+                return entry.id === options.activeConversationId.value;
+              });
           options.conversations.value = mergeConversationsById(
             activeConversation ? [activeConversation] : [],
             receivedConversations
@@ -578,7 +686,12 @@ export function useOmnichannelInboxHistory(options: {
         options.sortConversations();
         options.bootstrapReadState();
 
-        if (!append && !options.activeConversationId.value && options.conversations.value.length > 0) {
+        if (
+          !append &&
+          loadOptions.autoSelect !== false &&
+          !options.activeConversationId.value &&
+          options.conversations.value.length > 0
+        ) {
           const firstConversation = options.conversations.value[0];
           const selectConversation = options.getSelectConversation();
           if (firstConversation && selectConversation) {
@@ -632,6 +745,7 @@ export function useOmnichannelInboxHistory(options: {
   }
 
   async function ensureUnreadBoundaryLoaded(conversationId: string) {
+    const scopeGeneration = currentScopeGeneration();
     const readAt = options.getReadAt(conversationId);
     if (!readAt) {
       return;
@@ -653,7 +767,10 @@ export function useOmnichannelInboxHistory(options: {
 
       const oldestId = oldestMessage.id;
       const response = await fetchMessagesPage(conversationId, oldestId);
-      if (options.activeConversationId.value !== conversationId) {
+      if (
+        options.activeConversationId.value !== conversationId ||
+        scopeChangedSince(scopeGeneration)
+      ) {
         return;
       }
       options.messages.value = options.mergeMessages(response.messages, options.messages.value);
@@ -675,6 +792,7 @@ export function useOmnichannelInboxHistory(options: {
     }
 
     const request = (async () => {
+      const scopeGeneration = currentScopeGeneration();
       const cached = getConversationCache(conversationId);
       const canUseCache = !loadOptions.forceRefresh && cached && cached.messages.length > 0;
       if (options.activeConversationId.value === conversationId) {
@@ -721,6 +839,9 @@ export function useOmnichannelInboxHistory(options: {
       options.loadingMessages.value = true;
       try {
         const response = await fetchMessagesPage(conversationId);
+        if (scopeChangedSince(scopeGeneration)) {
+          return;
+        }
         const nextMessages = options.mergeMessages(response.messages);
         if (options.activeConversationId.value !== conversationId) {
           persistConversationCache(conversationId, nextMessages, response.hasMore);
@@ -735,6 +856,9 @@ export function useOmnichannelInboxHistory(options: {
         persistConversationCache(conversationId, options.messages.value, options.hasMoreMessages.value);
         void syncConversationHistoryInBackground(conversationId);
       } catch (error) {
+        if (scopeChangedSince(scopeGeneration)) {
+          return;
+        }
         if (error instanceof ApiClientError && error.statusCode === 404) {
           await handleConversationNotFound(conversationId);
           return;
@@ -784,11 +908,12 @@ export function useOmnichannelInboxHistory(options: {
       return null;
     }
 
+    const scopeGeneration = currentScopeGeneration();
     options.historySyncAttemptAtByConversation.set(conversationId, now);
     options.historySyncInFlightByConversation.add(conversationId);
 
     try {
-      return await options.apiFetch<SyncConversationHistoryResponse>(
+      const result = await options.apiFetch<SyncConversationHistoryResponse>(
         `/conversations/${conversationId}/messages/sync-history`,
         {
           method: "POST",
@@ -798,6 +923,7 @@ export function useOmnichannelInboxHistory(options: {
           }
         }
       );
+      return scopeChangedSince(scopeGeneration) ? null : result;
     } catch {
       return null;
     } finally {
@@ -907,6 +1033,7 @@ export function useOmnichannelInboxHistory(options: {
       return;
     }
 
+    const scopeGeneration = currentScopeGeneration();
     options.loadingOlderMessages.value = true;
     options.messagesError.value = "";
 
@@ -921,7 +1048,10 @@ export function useOmnichannelInboxHistory(options: {
       const oldestMessageId = oldestMessage.id;
 
       const response = await fetchMessagesPage(conversationId, oldestMessageId);
-      if (options.activeConversationId.value !== conversationId) {
+      if (
+        options.activeConversationId.value !== conversationId ||
+        scopeChangedSince(scopeGeneration)
+      ) {
         return;
       }
       options.messages.value = options.mergeMessages(response.messages, options.messages.value);
@@ -944,6 +1074,47 @@ export function useOmnichannelInboxHistory(options: {
     }
   }
 
+  function clearConversationCaches(conversationIds: string[]) {
+    const ids = new Set(conversationIds);
+    for (const conversationId of ids) {
+      conversationMessagesCache.delete(conversationId);
+      messagesRequestInFlightByConversation.delete(conversationId);
+      options.groupParticipantsByConversation[conversationId] = [];
+      options.groupParticipantsRefreshAtByConversation.delete(conversationId);
+      options.groupParticipantsInFlightByConversation.delete(conversationId);
+      options.historySyncAttemptAtByConversation.delete(conversationId);
+      options.historySyncInFlightByConversation.delete(conversationId);
+    }
+
+    for (const key of options.realtimeMessageHydrationLocks) {
+      const separatorIndex = key.indexOf(":");
+      const conversationId = separatorIndex >= 0 ? key.slice(0, separatorIndex) : key;
+      if (ids.has(conversationId)) {
+        options.realtimeMessageHydrationLocks.delete(key);
+      }
+    }
+  }
+
+  function clearAllConversationCaches() {
+    conversationsRequestController?.abort();
+    conversationsRequestController = null;
+    conversationsRequestInFlight = null;
+    conversationsRequestKey = "";
+    openConversationsSyncRequestInFlight = null;
+    openConversationsLastAttemptAt = 0;
+    openConversationsBootstrapCompleted = false;
+    conversationMessagesCache.clear();
+    messagesRequestInFlightByConversation.clear();
+    options.realtimeMessageHydrationLocks.clear();
+    options.groupParticipantsRefreshAtByConversation.clear();
+    options.groupParticipantsInFlightByConversation.clear();
+    options.historySyncAttemptAtByConversation.clear();
+    options.historySyncInFlightByConversation.clear();
+    for (const conversationId of Object.keys(options.groupParticipantsByConversation)) {
+      options.groupParticipantsByConversation[conversationId] = [];
+    }
+  }
+
   return {
     fetchMessagesPage,
     hydrateRealtimeMediaMessage,
@@ -955,6 +1126,8 @@ export function useOmnichannelInboxHistory(options: {
     loadGroupParticipants,
     loadOlderMessages,
     scheduleGroupParticipantsRefresh,
-    updateConversationCacheFromMessage
+    updateConversationCacheFromMessage,
+    clearConversationCaches,
+    clearAllConversationCaches
   };
 }

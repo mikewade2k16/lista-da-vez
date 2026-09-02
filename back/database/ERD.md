@@ -853,6 +853,17 @@ erDiagram
 
 ## Omnichannel — CRM e identidades de canal
 
+- `messaging.whatsapp_instances`: `history_visible_from` é o cutoff lógico por conexão e
+  `history_reset_revision` serializa confirmações concorrentes. O reset nunca remove mensagens,
+  conversas, contatos ou auditoria; uma mensagem WhatsApp só integra projeções operacionais quando
+  `created_at` é estritamente posterior ao maior cutoff aplicável entre instância e privacidade do
+  contato. Instâncias Instagram não usam esse cutoff. A migration `0298` acrescenta
+  `access_policy` (`RESTRICTED|ACCOUNT_SHARED`) e `access_revision`; novas instâncias e o backfill
+  nascem restritos.
+- `messaging.whatsapp_instance_user_grants`: fonte relacional tenant-scoped de acesso a cada
+  conexão. A PK/FK composta `(account_id, instance_id, user_id)` impede associação entre contas;
+  `access_level` é `view|reply|manage`, `revision` é otimista e revogação mantém a linha com ator e
+  timestamp. `provider_config.assignedUserIds` permanece temporariamente apenas para compatibilidade.
 - `messaging.conversations`: estado autoritativo do atendimento, instância, fila e responsável.
   `ai_generation` é um lease monotônico: assumir, atribuir ou encerrar incrementa o valor sob lock;
   qualquer resultado de IA capturado numa geração anterior é descartado antes de merge,
@@ -876,6 +887,9 @@ erDiagram
   permanecerem estáveis em empates.
 - `messaging.audit_events.event_type` inclui, desde 0214, o ciclo de mídia E1:
   `MESSAGE_MEDIA_READY`, `MESSAGE_MEDIA_FAILED` e `MESSAGE_MEDIA_RETRY`.
+  A migration `0297` acrescenta `WHATSAPP_INSTANCE_HISTORY_RESET`; seu payload registra ator,
+  conta, instância, cutoffs e revisões, sem copiar a confirmação digitada. A `0298` acrescenta
+  `WHATSAPP_INSTANCE_ACCESS_CHANGED`, com before/after de política, revisão, responsável e grants.
 - `messaging.contacts`: entidade CRM única por conta; telefone é opcional para suportar
   identidades de Instagram, e continua único quando preenchido. Guarda primeira/última
   interação, lifecycle (`lead|prospect|customer|inactive`), tags e campos customizados.

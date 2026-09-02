@@ -63,22 +63,16 @@ const {
 
 const showWhatsAppHeader = computed(() => canManageChannel.value && !loadingInstances.value)
 
-const canManageAgents = computed(
-  () =>
-    auth.role === 'platform_admin' ||
-    auth.effectivePermissionKeys.includes('omnichannel.agents.manage'),
+const canManageAgents = computed(() =>
+  auth.effectivePermissionKeys.includes('omnichannel.agents.manage'),
 )
 
-const canManageInstances = computed(
-  () =>
-    auth.role === 'platform_admin' ||
-    auth.effectivePermissionKeys.includes('omnichannel.instances.manage'),
+const canManageInstances = computed(() =>
+  auth.effectivePermissionKeys.includes('omnichannel.instances.manage'),
 )
 
-const canManageSettings = computed(
-  () =>
-    auth.role === 'platform_admin' ||
-    auth.effectivePermissionKeys.includes('omnichannel.settings.manage'),
+const canManageSettings = computed(() =>
+  auth.effectivePermissionKeys.includes('omnichannel.settings.manage'),
 )
 
 const canConfigure = computed(
@@ -89,11 +83,7 @@ const canManagePrivacy = computed(() =>
   auth.effectivePermissionKeys.includes(CONVERSATION_PRIVACY_PERMISSION),
 )
 
-const canAudit = computed(
-  () =>
-    auth.role === 'platform_admin' ||
-    auth.effectivePermissionKeys.includes('omnichannel.audit.view'),
-)
+const canAudit = computed(() => auth.effectivePermissionKeys.includes('omnichannel.audit.view'))
 
 const tabs: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'overview', label: 'Visão geral', icon: 'i-lucide-layout-dashboard' },

@@ -36,6 +36,15 @@ var (
 	// ErrInstanceHasConversations: DELETE de instancia com conversas atreladas. 409 — o front
 	// usa "Desativar" (PATCH isActive:false) no caso comum; o delete duro so sem historico.
 	ErrInstanceHasConversations = errors.New("omnichannel: instance has conversations")
+	// ErrHistoryResetConfirmationMismatch preserva a distincao HTTP 422: o recurso existe
+	// e a revisao pode estar atual, mas o nome digitado nao confirma a operacao sensivel.
+	ErrHistoryResetConfirmationMismatch = errors.New("omnichannel: history reset confirmation mismatch")
+	// ErrHistoryResetRevisionConflict protege resets concorrentes com optimistic locking.
+	ErrHistoryResetRevisionConflict = errors.New("omnichannel: history reset revision conflict")
+	// ErrHistoryResetMoved torna o endpoint destrutivo legado permanentemente inofensivo.
+	ErrHistoryResetMoved = errors.New("omnichannel: history reset moved")
+	// ErrHistoryResetInvalidated interrompe trabalho antigo antes de qualquer efeito externo.
+	ErrHistoryResetInvalidated = errors.New("omnichannel: history reset invalidated work")
 )
 
 // ============================================================================
@@ -210,28 +219,62 @@ type ContactView struct {
 
 // InstanceView espelha `WhatsAppInstanceRecord` (types/index.ts:39).
 //
-// UserScopePolicy e AssignedUserIDs NAO tem fonte: no legado sao CONSTANTES hardcoded
-// ("MULTI_INSTANCE" e []) — nao ha tabela por tras (routes-whatsapp-instances.ts:41,48).
-// Emitidos com os mesmos valores fixos porque o front os tipa; registrados em
-// docs/LEGADO.md como vestigio. Nao inventar tabela para eles nesta fase (armadilha A3).
+// UserScopePolicy e AssignedUserIDs continuam como metadados de compatibilidade no
+// provider_config. Desde a migration 0298, autorizacao por usuario vem da tabela relacional
+// whatsapp_instance_user_grants; depois do enforcement P1B, o JSON legado nunca volta a ser
+// fonte de seguranca.
 type InstanceView struct {
-	ID                  string    `json:"id"`
-	TenantID            string    `json:"tenantId"`
-	InstanceName        string    `json:"instanceName"`
-	Provider            string    `json:"provider"`
-	DisplayName         *string   `json:"displayName"`
-	PhoneNumber         *string   `json:"phoneNumber"`
-	QueueLabel          *string   `json:"queueLabel"`
-	UserScopePolicy     string    `json:"userScopePolicy"`
-	ResponsibleUserID   *string   `json:"responsibleUserId"`
-	ResponsibleUserName *string   `json:"responsibleUserName"`
-	ResponsibleUserMail *string   `json:"responsibleUserEmail"`
-	IsDefault           bool      `json:"isDefault"`
-	IsActive            bool      `json:"isActive"`
-	HasEvolutionAPIKey  bool      `json:"hasEvolutionApiKey"`
-	AssignedUserIDs     []string  `json:"assignedUserIds"`
-	CreatedAt           time.Time `json:"createdAt"`
-	UpdatedAt           time.Time `json:"updatedAt"`
+	ID                   string               `json:"id"`
+	TenantID             string               `json:"tenantId"`
+	InstanceName         string               `json:"instanceName"`
+	Provider             string               `json:"provider"`
+	AccessPolicy         string               `json:"accessPolicy"`
+	AccessRevision       int64                `json:"accessRevision"`
+	DisplayName          *string              `json:"displayName"`
+	PhoneNumber          *string              `json:"phoneNumber"`
+	QueueLabel           *string              `json:"queueLabel"`
+	UserScopePolicy      string               `json:"userScopePolicy"`
+	ResponsibleUserID    *string              `json:"responsibleUserId"`
+	ResponsibleUserName  *string              `json:"responsibleUserName"`
+	ResponsibleUserMail  *string              `json:"responsibleUserEmail"`
+	IsDefault            bool                 `json:"isDefault"`
+	IsActive             bool                 `json:"isActive"`
+	HasEvolutionAPIKey   bool                 `json:"hasEvolutionApiKey"`
+	AssignedUserIDs      []string             `json:"assignedUserIds"`
+	HistoryVisibleFrom   *time.Time           `json:"historyVisibleFrom"`
+	HistoryResetRevision int64                `json:"historyResetRevision"`
+	MyCapabilities       InstanceCapabilities `json:"myCapabilities"`
+	CreatedAt            time.Time            `json:"createdAt"`
+	UpdatedAt            time.Time            `json:"updatedAt"`
+}
+
+// InstanceCapabilities e a autorizacao efetiva do chamador para o card/modal da instancia.
+// Em P0 ela e account-wide; P1 acrescentara grants por instancia sem mudar o contrato JSON.
+type InstanceCapabilities struct {
+	View         bool `json:"view"`
+	Reply        bool `json:"reply"`
+	Manage       bool `json:"manage"`
+	ResetHistory bool `json:"resetHistory"`
+}
+
+// InstanceUserGrantView e a representacao autoritativa de um grant da conexao. Grants
+// revogados permanecem visiveis para auditoria administrativa, com isActive=false e
+// revision monotona; eles nunca autorizam leitura ou escrita.
+type InstanceUserGrantView struct {
+	UserID      string `json:"userId"`
+	AccessLevel string `json:"accessLevel"`
+	IsActive    bool   `json:"isActive"`
+	Revision    int64  `json:"revision"`
+}
+
+// InstanceAccessAdminView e o contrato de GET/PUT .../instances/{id}/users.
+// Account, instance e actor sao sempre derivados do Principal/path, nunca do body.
+type InstanceAccessAdminView struct {
+	AccessRevision    int64                   `json:"accessRevision"`
+	AccessPolicy      string                  `json:"accessPolicy"`
+	ResponsibleUserID *string                 `json:"responsibleUserId"`
+	Grants            []InstanceUserGrantView `json:"grants"`
+	MyCapabilities    InstanceCapabilities    `json:"myCapabilities"`
 }
 
 // AssignableUserView espelha `WhatsAppInstanceAssignableUser` (types/index.ts:57).

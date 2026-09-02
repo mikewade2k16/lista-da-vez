@@ -199,15 +199,16 @@ type RelationshipProfileView struct {
 }
 
 type ContextRequest struct {
-	AccountID       string   `json:"accountId"`
-	ClientAccountID string   `json:"clientAccountId"`
-	SubjectID       string   `json:"subjectId,omitempty"`
-	RelationshipID  string   `json:"relationshipId"`
-	ProcessKeys     []string `json:"processKeys"`
-	Purpose         string   `json:"purpose"`
-	SourceKeys      []string `json:"sourceKeys,omitempty"`
-	MaxItems        int      `json:"maxItems,omitempty"`
-	MaxTokens       int      `json:"maxTokens,omitempty"`
+	AccountID             string   `json:"accountId"`
+	ClientAccountID       string   `json:"clientAccountId"`
+	SubjectID             string   `json:"subjectId,omitempty"`
+	RelationshipID        string   `json:"relationshipId"`
+	ProcessKeys           []string `json:"processKeys"`
+	Purpose               string   `json:"purpose"`
+	SourceKeys            []string `json:"sourceKeys,omitempty"`
+	MaxItems              int      `json:"maxItems,omitempty"`
+	MaxTokens             int      `json:"maxTokens,omitempty"`
+	SuppressStoredContext bool     `json:"-"`
 }
 
 type ContextEnvelope struct {
@@ -238,29 +239,30 @@ type ContextBudget struct {
 }
 
 type InteractionRequest struct {
-	SchemaVersion       string          `json:"schemaVersion"`
-	RequestID           string          `json:"requestId"`
-	InteractionID       string          `json:"interactionId,omitempty"`
-	AccountID           string          `json:"accountId"`
-	ClientAccountID     string          `json:"clientAccountId"`
-	SubjectID           string          `json:"subjectId,omitempty"`
-	RelationshipID      string          `json:"relationshipId"`
-	ConversationID      string          `json:"conversationId,omitempty"`
-	PipelineKey         string          `json:"pipelineKey,omitempty"`
-	AIGeneration        int64           `json:"aiGeneration"`
-	Message             json.RawMessage `json:"message"`
-	OperationalState    json.RawMessage `json:"operationalState,omitempty"`
-	RoutingCatalog      json.RawMessage `json:"routingCatalog,omitempty"`
-	ChannelCapabilities json.RawMessage `json:"channelCapabilities,omitempty"`
-	Purpose             string          `json:"purpose"`
-	Locale              string          `json:"locale,omitempty"`
-	Channel             string          `json:"channel,omitempty"`
-	AsOf                time.Time       `json:"asOf,omitempty"`
-	DeadlineAt          time.Time       `json:"deadlineAt,omitempty"`
-	SourceKeys          []string        `json:"sourceKeys,omitempty"`
-	MaxItems            int             `json:"maxItems,omitempty"`
-	MaxTokens           int             `json:"maxTokens,omitempty"`
-	CorrelationID       string          `json:"correlationId,omitempty"`
+	SchemaVersion         string          `json:"schemaVersion"`
+	RequestID             string          `json:"requestId"`
+	InteractionID         string          `json:"interactionId,omitempty"`
+	AccountID             string          `json:"accountId"`
+	ClientAccountID       string          `json:"clientAccountId"`
+	SubjectID             string          `json:"subjectId,omitempty"`
+	RelationshipID        string          `json:"relationshipId"`
+	ConversationID        string          `json:"conversationId,omitempty"`
+	PipelineKey           string          `json:"pipelineKey,omitempty"`
+	AIGeneration          int64           `json:"aiGeneration"`
+	Message               json.RawMessage `json:"message"`
+	OperationalState      json.RawMessage `json:"operationalState,omitempty"`
+	RoutingCatalog        json.RawMessage `json:"routingCatalog,omitempty"`
+	ChannelCapabilities   json.RawMessage `json:"channelCapabilities,omitempty"`
+	Purpose               string          `json:"purpose"`
+	Locale                string          `json:"locale,omitempty"`
+	Channel               string          `json:"channel,omitempty"`
+	AsOf                  time.Time       `json:"asOf,omitempty"`
+	DeadlineAt            time.Time       `json:"deadlineAt,omitempty"`
+	SourceKeys            []string        `json:"sourceKeys,omitempty"`
+	MaxItems              int             `json:"maxItems,omitempty"`
+	MaxTokens             int             `json:"maxTokens,omitempty"`
+	CorrelationID         string          `json:"correlationId,omitempty"`
+	SuppressStoredContext bool            `json:"-"`
 }
 
 type ProcessRunRef struct {

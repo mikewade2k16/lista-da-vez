@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel/channel"
+	platformdb "github.com/mikewade2k16/lista-da-vez/back/internal/platform/database"
 )
 
 // TestStoreDeliveryE1 usa somente um banco descartavel cujo nome comece por
@@ -44,8 +45,8 @@ func TestStoreDeliveryE1(t *testing.T) {
 		instanceA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 		instanceB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 	)
-	if _, err := pool.Exec(ctx, `insert into core.accounts(id,slug) values
-		($1::uuid,'a'),($2::uuid,'b')`, accountA, accountB); err != nil {
+	if _, err := pool.Exec(ctx, `insert into core.accounts(id,slug,name) values
+		($1::uuid,'a','Account A'),($2::uuid,'b','Account B')`, accountA, accountB); err != nil {
 		t.Fatalf("seed accounts: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `insert into messaging.whatsapp_instances
@@ -53,6 +54,81 @@ func TestStoreDeliveryE1(t *testing.T) {
 		($3::uuid,$1::uuid,'main','evolution'),($4::uuid,$2::uuid,'main','evolution')`,
 		accountA, accountB, instanceA, instanceB); err != nil {
 		t.Fatalf("seed instances: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into core.users(id,email,display_name) values
+		('44444444-4444-4444-8444-444444444444','delivery-view@example.invalid','Delivery View'),
+		('55555555-5555-4555-8555-555555555555','delivery-reply@example.invalid','Delivery Reply'),
+		('66666666-6666-4666-8666-666666666666','delivery-denied@example.invalid','Delivery Denied')`); err != nil {
+		t.Fatalf("seed canonical users: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into core.account_users(account_id,user_id) values
+		($1::uuid,'44444444-4444-4444-8444-444444444444'::uuid),
+		($2::uuid,'44444444-4444-4444-8444-444444444444'::uuid),
+		($1::uuid,'55555555-5555-4555-8555-555555555555'::uuid),
+		($1::uuid,'66666666-6666-4666-8666-666666666666'::uuid)`, accountA, accountB); err != nil {
+		t.Fatalf("seed canonical memberships: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into core.account_modules(account_id,module_id,enabled) values
+		($1::uuid,'omnichannel',true),($2::uuid,'omnichannel',true)
+		on conflict(account_id,module_id) do update set enabled=true`, accountA, accountB); err != nil {
+		t.Fatalf("seed canonical modules: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into core.permissions(key,module_id,label,scope) values
+		('omnichannel.conversations.view','omnichannel','View conversations','account'),
+		('omnichannel.conversations.reply','omnichannel','Reply conversations','account')
+		on conflict(key) do update set module_id=excluded.module_id,label=excluded.label,scope=excluded.scope`); err != nil {
+		t.Fatalf("seed canonical permission catalog: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into core.user_permission_overrides(account_id,user_id,permission_key,effect,is_active) values
+		($1::uuid,'44444444-4444-4444-8444-444444444444'::uuid,'omnichannel.conversations.view','allow',true),
+		($2::uuid,'44444444-4444-4444-8444-444444444444'::uuid,'omnichannel.conversations.view','allow',true),
+		($1::uuid,'55555555-5555-4555-8555-555555555555'::uuid,'omnichannel.conversations.view','allow',true),
+		($1::uuid,'55555555-5555-4555-8555-555555555555'::uuid,'omnichannel.conversations.reply','allow',true)`, accountA, accountB); err != nil {
+		t.Fatalf("seed canonical permissions: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into messaging.whatsapp_instance_user_grants
+		(account_id,instance_id,user_id,access_level,is_active) values
+		($1::uuid,$3::uuid,'44444444-4444-4444-8444-444444444444'::uuid,'view',true),
+		($2::uuid,$4::uuid,'44444444-4444-4444-8444-444444444444'::uuid,'view',true),
+		($1::uuid,$3::uuid,'55555555-5555-4555-8555-555555555555'::uuid,'manage',true)`,
+		accountA, accountB, instanceA, instanceB); err != nil {
+		t.Fatalf("seed canonical access: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into messaging.departments
+		(id,account_id,slug,name) values
+		('34343434-3434-4434-8434-343434343434'::uuid,$1::uuid,'delivery','Delivery')`, accountA); err != nil {
+		t.Fatalf("seed canonical department: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into messaging.queues(id,account_id,department_id,slug,name) values
+		('33333333-3333-4333-8333-333333333333'::uuid,$1::uuid,
+		 '34343434-3434-4434-8434-343434343434'::uuid,'delivery','Delivery')`, accountA); err != nil {
+		t.Fatalf("seed canonical queue: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into messaging.ai_agents
+		(id,account_id,slug,name,enabled) values
+		('77777777-7777-4777-8777-777777777777'::uuid,$1::uuid,'delivery','Delivery',true)`, accountA); err != nil {
+		t.Fatalf("seed canonical ai agent: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into messaging.ai_agent_versions
+		(id,account_id,agent_id,version,status,provider,model) values
+		('88888888-8888-4888-8888-888888888888'::uuid,$1::uuid,
+		 '77777777-7777-4777-8777-777777777777'::uuid,1,'published','mock','mock')`, accountA); err != nil {
+		t.Fatalf("seed canonical ai version: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `update messaging.ai_agents
+		set active_version_id='88888888-8888-4888-8888-888888888888'::uuid
+		where account_id=$1::uuid and id='77777777-7777-4777-8777-777777777777'::uuid`, accountA); err != nil {
+		t.Fatalf("seed canonical active ai version: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into messaging.automation_profiles
+		(account_id,client_account_id,whatsapp_instance_id,ai_agent_id,enabled)
+		values ($1::uuid,$1::uuid,$2::uuid,'77777777-7777-4777-8777-777777777777'::uuid,true)`, accountA, instanceA); err != nil {
+		t.Fatalf("seed canonical automation profile: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into messaging.channel_client_bindings
+		(account_id,client_account_id,channel,whatsapp_instance_id,source,reason)
+		values ($1::uuid,$1::uuid,'WHATSAPP',$2::uuid,'manual','delivery integration fixture')`, accountA, instanceA); err != nil {
+		t.Fatalf("seed canonical channel binding: %v", err)
 	}
 
 	t.Run("dedupe fromMe e isolamento de tenant", func(t *testing.T) {
@@ -88,9 +164,9 @@ func TestStoreDeliveryE1(t *testing.T) {
 		const externalConversationID = "device-takeover@s.whatsapp.net"
 		var conversationID string
 		if err := pool.QueryRow(ctx, `insert into messaging.conversations
-			(account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
+			(account_id,client_account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
 			 contact_phone,last_message_at,created_at)
-			values ($1::uuid,$2::uuid,'main','WHATSAPP',$3,'Device Takeover','ai_active',
+			values ($1::uuid,$1::uuid,$2::uuid,'main','WHATSAPP',$3,'Device Takeover','ai_active',
 			 '5511888880000',$4,$4) returning id::text`,
 			accountA, instanceA, externalConversationID, base).Scan(&conversationID); err != nil {
 			t.Fatal(err)
@@ -215,6 +291,7 @@ func TestStoreDeliveryE1(t *testing.T) {
 			res, err := store.PersistInbound(ctx, inboundWrite{
 				AccountID: accountA, Provider: "evolution", ExternalEventID: eventID,
 				EventKind: "message_status", InstanceName: "main", InstanceID: instanceA,
+				PayloadMasked: []byte(`{}`),
 				Status: &inboundStatusWrite{ExternalMessageID: "EXT-ACK", Status: status,
 					ErrorCode: "SAFE_CODE", OccurredAt: at},
 			})
@@ -254,6 +331,7 @@ func TestStoreDeliveryE1(t *testing.T) {
 		early := inboundWrite{
 			AccountID: accountA, Provider: "evolution", ExternalEventID: "evt-ack-early",
 			EventKind: "message_status", InstanceName: "main", InstanceID: instanceA,
+			PayloadMasked: []byte(`{}`),
 			Status: &inboundStatusWrite{ExternalMessageID: "EXT-EARLY", Status: "READ",
 				OccurredAt: base.Add(2 * time.Minute)},
 		}
@@ -341,6 +419,7 @@ func TestStoreDeliveryE1(t *testing.T) {
 		if _, err := store.PersistInbound(ctx, inboundWrite{
 			AccountID: accountA, Provider: "evolution", ExternalEventID: "evt-race-read",
 			EventKind: "message_status", InstanceName: "main", InstanceID: instanceA,
+			PayloadMasked: []byte(`{}`),
 			Status: &inboundStatusWrite{ExternalMessageID: "EXT-RACE", Status: "READ",
 				OccurredAt: base.Add(3 * time.Second)},
 		}); err != nil {
@@ -382,6 +461,7 @@ func TestStoreDeliveryE1(t *testing.T) {
 		if _, err := store.PersistInbound(ctx, inboundWrite{
 			AccountID: accountA, Provider: "evolution", ExternalEventID: "evt-echo-failed-status",
 			EventKind: "message_status", InstanceName: "main", InstanceID: instanceA,
+			PayloadMasked: []byte(`{}`),
 			Status: &inboundStatusWrite{ExternalMessageID: "EXT-FAILED-ECHO", Status: "FAILED",
 				ErrorCode: "SAFE_FAILURE", OccurredAt: base.Add(time.Second)},
 		}); err != nil {
@@ -493,9 +573,9 @@ func TestStoreDeliveryE1(t *testing.T) {
 			t.Helper()
 			var conversationID string
 			if err := pool.QueryRow(ctx, `insert into messaging.conversations
-				(account_id,instance_id,instance_scope_key,assigned_to_id,channel,external_id,
+				(account_id,client_account_id,instance_id,instance_scope_key,assigned_to_id,channel,external_id,
 				 contact_name,state,queue_id,assigned_user_id,last_message_at,created_at)
-				values ($1::uuid,$2::uuid,'main',$3::text,'WHATSAPP',$4,$5,'human_active',$6::uuid,$3::uuid,$7,$7)
+				values ($1::uuid,$1::uuid,$2::uuid,'main',$3::text,'WHATSAPP',$4,$5,'human_active',$6::uuid,$3::uuid,$7,$7)
 				returning id::text`, accountID, instanceID, userID, externalID, name, queueID, at).Scan(&conversationID); err != nil {
 				t.Fatalf("insert conversation: %v", err)
 			}
@@ -515,7 +595,7 @@ func TestStoreDeliveryE1(t *testing.T) {
 		svc := NewService(store)
 		filter := ConversationPageFilter{Limit: 1, Search: "  Needle  ", Channel: "WHATSAPP",
 			Status: "OPEN", QueueID: queueID, ResponsibleID: userID}
-		first, err := svc.ListConversations(ctx, accountA, Caller{IsAdmin: true}, filter)
+		first, err := svc.ListConversations(ctx, accountA, Caller{UserID: userID}, filter)
 		if err != nil {
 			t.Fatalf("first page: %v", err)
 		}
@@ -523,14 +603,14 @@ func TestStoreDeliveryE1(t *testing.T) {
 			t.Fatalf("first page = %+v", first)
 		}
 		filter.BeforeCursor = first.NextCursor
-		second, err := svc.ListConversations(ctx, accountA, Caller{IsAdmin: true}, filter)
+		second, err := svc.ListConversations(ctx, accountA, Caller{UserID: userID}, filter)
 		if err != nil {
 			t.Fatalf("second page: %v", err)
 		}
 		if len(second.Conversations) != 1 || second.Conversations[0].ID != olderID || second.HasMore {
 			t.Fatalf("second page = %+v", second)
 		}
-		other, err := svc.ListConversations(ctx, accountB, Caller{IsAdmin: true}, ConversationPageFilter{
+		other, err := svc.ListConversations(ctx, accountB, Caller{UserID: userID}, ConversationPageFilter{
 			Limit: 10, Search: "needle", QueueID: queueID, ResponsibleID: userID,
 		})
 		if err != nil || len(other.Conversations) != 1 || other.Conversations[0].ID == newerID || other.Conversations[0].ID == olderID {
@@ -542,9 +622,9 @@ func TestStoreDeliveryE1(t *testing.T) {
 		base := time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC)
 		var conversationID string
 		if err := pool.QueryRow(ctx, `insert into messaging.conversations
-			(account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
+			(account_id,client_account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
 			 last_message_at,created_at)
-			values ($1::uuid,$2::uuid,'main','WHATSAPP','ai-lease','AI Lease','ai_active',$3,$3)
+			values ($1::uuid,$1::uuid,$2::uuid,'main','WHATSAPP','ai-lease','AI Lease','ai_active',$3,$3)
 			returning id::text`, accountA, instanceA, base).Scan(&conversationID); err != nil {
 			t.Fatalf("seed ai conversation: %v", err)
 		}
@@ -620,9 +700,9 @@ func TestStoreDeliveryE1(t *testing.T) {
 		base := time.Date(2026, 7, 20, 16, 30, 0, 0, time.UTC)
 		var conversationID string
 		if err := pool.QueryRow(ctx, `insert into messaging.conversations
-			(account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
+			(account_id,client_account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
 			 last_message_at,created_at)
-			values ($1::uuid,$2::uuid,'main','WHATSAPP','ai-lock','AI Lock','ai_active',$3,$3)
+			values ($1::uuid,$1::uuid,$2::uuid,'main','WHATSAPP','ai-lock','AI Lock','ai_active',$3,$3)
 			returning id::text`, accountA, instanceA, base).Scan(&conversationID); err != nil {
 			t.Fatal(err)
 		}
@@ -686,9 +766,9 @@ func TestStoreDeliveryE1(t *testing.T) {
 		base := time.Date(2026, 7, 20, 16, 45, 0, 0, time.UTC)
 		var conversationID, messageID string
 		if err := pool.QueryRow(ctx, `insert into messaging.conversations
-			(account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
+			(account_id,client_account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
 			 contact_phone,last_message_at,created_at)
-			values ($1::uuid,$2::uuid,'main','WHATSAPP','provider-error','Provider Error','human_active',
+			values ($1::uuid,$1::uuid,$2::uuid,'main','WHATSAPP','provider-error','Provider Error','human_active',
 			 '5511999999999',$3,$3) returning id::text`, accountA, instanceA, base).Scan(&conversationID); err != nil {
 			t.Fatal(err)
 		}
@@ -720,9 +800,9 @@ func TestStoreDeliveryE1(t *testing.T) {
 		const userID = "55555555-5555-4555-8555-555555555555"
 		var conversationID string
 		if err := pool.QueryRow(ctx, `insert into messaging.conversations
-			(account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
+			(account_id,client_account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
 			 contact_phone,last_message_at,created_at)
-			values ($1::uuid,$2::uuid,'main','WHATSAPP','human-send','Human Send','ai_active',
+			values ($1::uuid,$1::uuid,$2::uuid,'main','WHATSAPP','human-send','Human Send','ai_active',
 			 '5511999999999',$3,$3) returning id::text`, accountA, instanceA, base).Scan(&conversationID); err != nil {
 			t.Fatal(err)
 		}
@@ -750,7 +830,7 @@ func TestStoreDeliveryE1(t *testing.T) {
 
 		// Owner tem escopo administrativo de dados, mas nao bypassa o RBAC canonico como
 		// platform_admin. Sem grant efetivo, a feature reply deve responder 403.
-		denied := auth.Principal{UserID: userID, Role: auth.RoleOwner, AccountID: accountA}
+		denied := auth.Principal{UserID: "66666666-6666-4666-8666-666666666666", Role: auth.RoleOwner, AccountID: accountA}
 		if _, _, err := send.SendMessage(ctx, accountA, denied, conversationID,
 			SendMessageInput{Type: "TEXT", Content: "sem permissao"}); !errors.Is(err, ErrForbidden) {
 			t.Fatalf("permission err=%v, want ErrForbidden", err)
@@ -759,7 +839,7 @@ func TestStoreDeliveryE1(t *testing.T) {
 		if _, err := media.RetryMedia(ctx, accountA, denied, conversationID, first.ID); !errors.Is(err, ErrForbidden) {
 			t.Fatalf("media retry permission err=%v, want ErrForbidden", err)
 		}
-		if _, _, err := send.SendMessage(ctx, accountA, denied,
+		if _, _, err := send.SendMessage(ctx, accountA, principal,
 			"00000000-0000-4000-8000-000000000001",
 			SendMessageInput{Type: "TEXT", Content: "fora do tenant"}); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("cross-account err=%v, want ErrNotFound", err)
@@ -771,9 +851,9 @@ func TestStoreDeliveryE1(t *testing.T) {
 		const userID = "55555555-5555-4555-8555-555555555555"
 		var conversationID string
 		if err := pool.QueryRow(ctx, `insert into messaging.conversations
-			(account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
+			(account_id,client_account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
 			 contact_phone,last_message_at,created_at)
-			values ($1::uuid,$2::uuid,'main','WHATSAPP','human-send-concurrent',
+			values ($1::uuid,$1::uuid,$2::uuid,'main','WHATSAPP','human-send-concurrent',
 			 'Human Send Concurrent','ai_active','5511888888888',$3,$3) returning id::text`,
 			accountA, instanceA, base).Scan(&conversationID); err != nil {
 			t.Fatal(err)
@@ -854,9 +934,9 @@ func TestStoreDeliveryE1(t *testing.T) {
 		const userID = "55555555-5555-4555-8555-555555555555"
 		var conversationID string
 		if err := pool.QueryRow(ctx, `insert into messaging.conversations
-			(account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
+			(account_id,client_account_id,instance_id,instance_scope_key,channel,external_id,contact_name,state,
 			 contact_phone,last_message_at,created_at)
-			values ($1::uuid,$2::uuid,'main','WHATSAPP','human-send-failpoint',
+			values ($1::uuid,$1::uuid,$2::uuid,'main','WHATSAPP','human-send-failpoint',
 			 'Human Send Failpoint','ai_active','5511777777777',$3,$3) returning id::text`,
 			accountA, instanceA, base).Scan(&conversationID); err != nil {
 			t.Fatal(err)
@@ -981,95 +1061,22 @@ func inboundTextWrite(accountID, instanceID, eventID, externalID string, at time
 func setupDeliveryTestSchema(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
-	ddl := `
-		create extension if not exists pgcrypto;
-		drop schema if exists messaging cascade;
-		drop schema if exists core cascade;
-		create schema core;
-		create schema messaging;
-		create table core.accounts(id uuid primary key, slug text not null);
-		create table core.permissions(key text primary key, deprecated_at timestamptz);
-		create table core.user_role_assignments(account_id uuid not null,user_id uuid not null,role_id uuid not null);
-		create table core.role_permissions(role_id uuid not null,permission_key text not null);
-		create table core.user_permission_overrides(account_id uuid not null,user_id uuid not null,
-			permission_key text not null,effect text not null,is_active boolean not null default true);
-		create table messaging.whatsapp_instances(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null,
-			instance_name text not null, provider text not null, provider_config jsonb not null default '{}',
-			display_name text, credentials_ciphertext text, is_active boolean not null default true,
-			unique(account_id,instance_name));
-		create table messaging.account_config(
-			account_id uuid primary key, max_upload_mb int not null default 500);
-		create table messaging.contacts(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null, name text not null,
-			phone text, avatar_url text, source text not null, first_seen_at timestamptz not null,
-			last_seen_at timestamptz not null, first_channel text not null, last_channel text not null,
-			relationship_status text not null, classification_source text not null default 'backfill',
-			classification_confidence numeric(4,3), archived_at timestamptz, merged_into_contact_id uuid,
-			updated_at timestamptz not null default now());
-		create unique index contacts_phone_uq on messaging.contacts(account_id,phone)
-			where phone is not null and phone <> '';
-		create table messaging.contact_identities(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null, contact_id uuid not null,
-			channel text not null, provider text not null, instance_scope_key text not null,
-			external_id text not null, display_name text, avatar_url text, first_seen_at timestamptz not null,
-			last_seen_at timestamptz not null, updated_at timestamptz not null default now(),
-			unique(account_id,channel,provider,instance_scope_key,external_id));
-		create table messaging.conversations(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null, instance_id uuid,
-			instance_scope_key text not null, assigned_to_id text, contact_id uuid, channel text not null, external_id text not null,
-			contact_name text, contact_phone text, contact_avatar_url text, state text not null,
-			queue_id uuid, department_id uuid, assigned_user_id uuid,
-			ai_generation bigint not null default 0, extracted_fields jsonb not null default '{}',
-			last_message_at timestamptz not null, created_at timestamptz not null default now(),
-			updated_at timestamptz not null default now(),
-			unique(account_id,external_id,channel,instance_scope_key));
-		create table messaging.messages(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null,
-			conversation_id uuid not null references messaging.conversations(id) on delete cascade,
-			instance_id uuid, instance_scope_key text not null, sender_user_id uuid,
-			direction text not null, message_type text not null, sender_name text, sender_avatar_url text,
-			content text not null, media_url text, media_mime_type text, media_file_name text,
-			media_file_size_bytes int, media_caption text, media_duration_seconds int,
-			media_storage_key text, media_source_kind text, metadata_json jsonb,
-			external_message_id text, status text not null, origin text not null,
-			reply_to_message_id uuid references messaging.messages(id) on delete set null,
-			reply_to_external_message_id text, provider_status_at timestamptz,
-			provider_error_code text not null default '', created_at timestamptz not null default now(),
-			updated_at timestamptz not null default now());
-		create unique index messages_external_uq on messaging.messages
-			(account_id,instance_scope_key,external_message_id)
-			where external_message_id is not null and btrim(external_message_id) <> '';
-		create table messaging.webhook_events(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null, provider text not null,
-			external_event_id text not null, event_kind text not null, instance_name text not null,
-			payload_masked jsonb, external_message_id text, provider_status text,
-			provider_status_at timestamptz, provider_error_code text not null default '',
-			unique(account_id,provider,external_event_id));
-		create table messaging.contact_touchpoints(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null, contact_id uuid not null,
-			conversation_id uuid, message_id uuid, channel text not null, provider text not null,
-			external_event_id text, source_kind text not null, occurred_at timestamptz not null);
-		create unique index touchpoints_event_uq on messaging.contact_touchpoints(account_id,provider,external_event_id)
-			where external_event_id is not null and external_event_id <> '';
-		create table messaging.audit_events(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null,
-			actor_user_id uuid, conversation_id uuid, message_id uuid, event_type text not null,
-			payload_json jsonb, created_at timestamptz not null default now(),
-			constraint messaging_audit_events_event_type_e1_check check (event_type in (
-				'MESSAGE_OUTBOUND_QUEUED','MESSAGE_OUTBOUND_SENT','MESSAGE_OUTBOUND_FAILED',
-				'CONVERSATION_STATUS_CHANGED','CONVERSATION_ASSIGNED',
-				'MESSAGE_FORWARDED','MESSAGE_DELETED_FOR_ALL',
-				'MESSAGE_MEDIA_READY','MESSAGE_MEDIA_FAILED','MESSAGE_MEDIA_RETRY')));
-		create table messaging.outbox(
-			id uuid primary key default gen_random_uuid(), account_id uuid not null, ordering_key text not null,
-			idempotency_key text not null, kind text not null, payload jsonb not null,
-			status text not null default 'pending', attempts int not null default 0,
-			max_attempts int not null default 3, run_after timestamptz not null default now(),
-			locked_at timestamptz, locked_by text not null default '', last_error text not null default '',
-			created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
-			unique(account_id,idempotency_key));`
-	if _, err := pool.Exec(ctx, ddl); err != nil {
-		t.Fatalf("fixture schema: %v", err)
+	if _, err := pool.Exec(ctx, `do $fixture$
+		declare item record;
+		begin
+			for item in select schema_name from information_schema.schemata
+				where schema_name <> 'public'
+				  and schema_name <> 'information_schema'
+				  and schema_name not like 'pg_%'
+			loop
+				execute format('drop schema %I cascade', item.schema_name);
+			end loop;
+		end $fixture$;
+		drop schema if exists public cascade;
+		create schema public`); err != nil {
+		t.Fatalf("reset canonical fixture: %v", err)
+	}
+	if err := platformdb.ApplyMigrationsWithOptions(ctx, pool, platformdb.MigrationOptions{SkipDataSeeds: true}); err != nil {
+		t.Fatalf("apply canonical migrations: %v", err)
 	}
 }

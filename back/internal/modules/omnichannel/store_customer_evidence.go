@@ -30,6 +30,7 @@ func (s *Store) ListCustomerMessageEvidence(
 		  and c.client_account_id = $2::uuid
 		  and c.contact_id::text = any($3::text[])
 		  and m.created_at >= now() - ($4::int * interval '1 day')
+		`+s.historyVisibleMessagePredicate("m", "c")+`
 		order by m.created_at desc, m.id desc
 		limit $5
 	`,

@@ -23,6 +23,8 @@ type automationDomainController interface {
 
 type automationPermissionChecker interface {
 	requirePermission(context.Context, string, auth.Principal, string) error
+	requireInstanceAccess(context.Context, string, string, string, string, InstanceGrantLevel) error
+	assertConversationAccess(context.Context, string, string, string, string, InstanceGrantLevel) error
 }
 
 func NewAutomationService(store automationProfileRepository, permissions automationPermissionChecker, clients AutomationClientCatalog, businessContext AutomationBusinessContextProvider, domain ...automationDomainController) *AutomationService {
@@ -56,6 +58,13 @@ func (s *AutomationService) ListProfiles(ctx context.Context, accountID string, 
 			out = append(out, emptyAutomationProfile(client))
 			continue
 		}
+		if err := s.requireInstanceManage(ctx, accountID, p, row.WhatsAppInstanceID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				out = append(out, emptyAutomationProfile(client))
+				continue
+			}
+			return nil, err
+		}
 		out = append(out, automationProfileView(row, client))
 	}
 	return out, nil
@@ -77,6 +86,9 @@ func (s *AutomationService) GetProfile(ctx context.Context, accountID string, p 
 	case err != nil:
 		return AutomationProfileView{}, err
 	default:
+		if err := s.requireInstanceManage(ctx, accountID, p, row.WhatsAppInstanceID); err != nil {
+			return AutomationProfileView{}, err
+		}
 		out = automationProfileView(row, client)
 	}
 	contextView, err := s.loadBusinessContext(ctx, accountID, client.ID)
@@ -100,12 +112,25 @@ func (s *AutomationService) PutProfile(ctx context.Context, accountID string, p 
 	if !omnichannelUUIDPattern.MatchString(instanceID) || !omnichannelUUIDPattern.MatchString(agentID) {
 		return AutomationProfileView{}, ErrValidation
 	}
-	readiness, err := s.store.AutomationBindingReadiness(ctx, accountID, instanceID, agentID)
+	if previous, previousErr := s.store.GetAutomationProfile(ctx, accountID, client.ID); previousErr == nil {
+		if err := s.requireInstanceManage(ctx, accountID, p, previous.WhatsAppInstanceID); err != nil {
+			return AutomationProfileView{}, err
+		}
+	} else if !errors.Is(previousErr, pgx.ErrNoRows) {
+		return AutomationProfileView{}, previousErr
+	}
+	if err := s.requireInstanceManage(ctx, accountID, p, instanceID); err != nil {
+		return AutomationProfileView{}, err
+	}
+	readiness, err := s.store.AutomationBindingReadiness(ctx, accountID, client.ID, instanceID, agentID)
 	if err != nil {
 		return AutomationProfileView{}, err
 	}
 	if !readiness.InstanceFound || !readiness.AgentFound {
 		return AutomationProfileView{}, ErrNotFound
+	}
+	if in.Enabled && !readiness.BindingReady {
+		return AutomationProfileView{}, ErrAutomationBindingMismatch
 	}
 	if in.Enabled && (!readiness.InstanceReady || !readiness.AgentReady) {
 		return AutomationProfileView{}, ErrAutomationNotReady
@@ -140,7 +165,15 @@ func (s *AutomationService) requireManage(ctx context.Context, accountID string,
 	if s.permissions == nil {
 		return ErrForbidden
 	}
-	return s.permissions.requirePermission(ctx, accountID, p, "omnichannel.settings.manage")
+	return s.permissions.requirePermission(ctx, accountID, p, "omnichannel.agents.manage")
+}
+
+func (s *AutomationService) requireInstanceManage(ctx context.Context, accountID string, p auth.Principal, instanceID string) error {
+	if s.permissions == nil {
+		return ErrForbidden
+	}
+	return s.permissions.requireInstanceAccess(ctx, accountID, p.UserID, instanceID,
+		"omnichannel.agents.manage", InstanceGrantManage)
 }
 
 func (s *AutomationService) accessibleClients(ctx context.Context, p auth.Principal) ([]AutomationClientRef, error) {
@@ -233,7 +266,7 @@ func emptyAutomationProfile(client AutomationClientRef) AutomationProfileView {
 }
 
 func automationProfileView(row automationProfileRow, client AutomationClientRef) AutomationProfileView {
-	issues := make([]string, 0, 3)
+	issues := make([]string, 0, 4)
 	if !row.Enabled {
 		issues = append(issues, "automation_disabled")
 	}
@@ -243,10 +276,13 @@ func automationProfileView(row automationProfileRow, client AutomationClientRef)
 	if !row.AgentReady {
 		issues = append(issues, "agent_not_ready")
 	}
+	if !row.BindingReady {
+		issues = append(issues, "channel_binding_mismatch")
+	}
 	createdAt, updatedAt := row.CreatedAt, row.UpdatedAt
 	return AutomationProfileView{
 		ID: row.ID, Configured: true, Client: client, Enabled: row.Enabled,
-		Ready: row.Enabled && row.InstanceActive && row.AgentReady, ReadinessIssues: issues,
+		Ready: row.Enabled && row.InstanceActive && row.AgentReady && row.BindingReady, ReadinessIssues: issues,
 		WhatsAppInstance: &AutomationInstanceView{ID: row.WhatsAppInstanceID, InstanceName: row.InstanceName,
 			Provider: row.InstanceProvider, DisplayName: row.InstanceDisplayName,
 			PhoneNumber: row.InstancePhoneNumber, Active: row.InstanceActive},

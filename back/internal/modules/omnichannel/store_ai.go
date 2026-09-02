@@ -466,6 +466,10 @@ const aiRunCols = `id::text, conversation_id::text, agent_id::text, agent_versio
 	message_id::text, status, provider, model, schema_version, input, output,
 	prompt_tokens, completion_tokens, total_tokens, cost_usd::float8, latency_ms, error, created_at`
 
+const aiRunColsScoped = `r.id::text,r.conversation_id::text,r.agent_id::text,r.agent_version_id::text,
+	r.message_id::text,r.status,r.provider,r.model,r.schema_version,r.input,r.output,
+	r.prompt_tokens,r.completion_tokens,r.total_tokens,r.cost_usd::float8,r.latency_ms,r.error,r.created_at`
+
 func scanAIRun(row rowScanner) (AIRunView, error) {
 	var r AIRunView
 	err := row.Scan(&r.ID, &r.ConversationID, &r.AgentID, &r.AgentVersionID, &r.MessageID,
@@ -477,13 +481,20 @@ func scanAIRun(row rowScanner) (AIRunView, error) {
 
 // ListRuns devolve os runs do agente, mais recente primeiro, com paginacao limit + beforeId
 // (mesmo padrao do historico da F2: resolve beforeId -> created_at e filtra por data).
-func (s *Store) ListRuns(ctx context.Context, accountID, agentID string, limit int, beforeID string) ([]AIRunView, error) {
+func (s *Store) ListRuns(ctx context.Context, accountID, agentID string, limit int, beforeID string, scopes ...VisibilityScope) ([]AIRunView, error) {
 	query := `select ` + aiRunCols + ` from messaging.ai_runs
 		where account_id = $1::uuid and agent_id = $2::uuid`
 	args := []any{accountID, agentID}
+	if len(scopes) > 0 {
+		query = `select ` + aiRunColsScoped + ` from messaging.ai_runs r
+			join messaging.conversations c on c.account_id=r.account_id and c.id=r.conversation_id
+			where r.account_id=$1::uuid and r.agent_id=$2::uuid`
+		query, args = appendConversationVisibility(query, args, "c", scopes[0])
+		query += s.historyVisibleConversationPredicate("c")
+	}
 
 	if strings.TrimSpace(beforeID) != "" {
-		before, err := s.runCreatedAt(ctx, accountID, agentID, beforeID)
+		before, err := s.runCreatedAt(ctx, accountID, agentID, beforeID, scopes...)
 		if err != nil {
 			return nil, err
 		}
@@ -514,11 +525,19 @@ func (s *Store) ListRuns(ctx context.Context, accountID, agentID string, limit i
 
 // runCreatedAt traduz beforeId -> created_at (paginacao por data). Amarrado a account+agente:
 // beforeId de outro escopo nao resolve e a pagina volta como se nao houvesse cursor.
-func (s *Store) runCreatedAt(ctx context.Context, accountID, agentID, beforeID string) (*time.Time, error) {
+func (s *Store) runCreatedAt(ctx context.Context, accountID, agentID, beforeID string, scopes ...VisibilityScope) (*time.Time, error) {
 	var createdAt time.Time
-	err := s.pool.QueryRow(ctx, `select created_at from messaging.ai_runs
-		where account_id = $1::uuid and agent_id = $2::uuid and id = $3::uuid`,
-		accountID, agentID, beforeID).Scan(&createdAt)
+	query := `select r.created_at from messaging.ai_runs r
+		where r.account_id=$1::uuid and r.agent_id=$2::uuid and r.id=$3::uuid`
+	args := []any{accountID, agentID, beforeID}
+	if len(scopes) > 0 {
+		query = `select r.created_at from messaging.ai_runs r
+			join messaging.conversations c on c.account_id=r.account_id and c.id=r.conversation_id
+			where r.account_id=$1::uuid and r.agent_id=$2::uuid and r.id=$3::uuid`
+		query, args = appendConversationVisibility(query, args, "c", scopes[0])
+		query += s.historyVisibleConversationPredicate("c")
+	}
+	err := s.pool.QueryRow(ctx, query, args...).Scan(&createdAt)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, nil

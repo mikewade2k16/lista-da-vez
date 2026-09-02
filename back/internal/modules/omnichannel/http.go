@@ -27,8 +27,8 @@ const maxJSONBody = 1 << 20 // 1 MiB
 // contratou o modulo, nunca se o usuario pertence a ela — e um usuario autenticado de
 // qualquer conta leria conversas, mensagens e contatos de OUTRA conta so trocando o
 // header. Conversa de WhatsApp e dado pessoal de cliente final (LGPD). Mesmo gate dos
-// secrets/chat do calendario; o checker cobre platform_admin e agency_owner
-// (auth/account_checker.go:23).
+// secrets/chat do calendario; o checker cobre platform_admin e membership explicita em
+// core.account_users. Vinculo apenas com a organizacao/agencia nao concede contexto de cliente.
 //
 // O accountID vem do Principal, NUNCA do body e nunca do header cru.
 func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
@@ -139,11 +139,11 @@ func handleGetMessage(svc *Service) http.HandlerFunc {
 
 func handleListContacts(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, ok := scope(w, r)
+		accountID, caller, ok := scope(w, r)
 		if !ok {
 			return
 		}
-		contacts, err := svc.ListContacts(r.Context(), accountID)
+		contacts, err := svc.ListContacts(r.Context(), accountID, caller)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -154,7 +154,7 @@ func handleListContacts(svc *Service) http.HandlerFunc {
 
 func handleCreateContact(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, ok := scope(w, r)
+		accountID, caller, ok := scope(w, r)
 		if !ok {
 			return
 		}
@@ -163,7 +163,7 @@ func handleCreateContact(svc *Service) http.HandlerFunc {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
 		}
-		contact, err := svc.CreateContact(r.Context(), accountID, in)
+		contact, err := svc.CreateContact(r.Context(), accountID, caller, in)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -174,7 +174,7 @@ func handleCreateContact(svc *Service) http.HandlerFunc {
 
 func handleUpdateContact(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, ok := scope(w, r)
+		accountID, caller, ok := scope(w, r)
 		if !ok {
 			return
 		}
@@ -183,7 +183,7 @@ func handleUpdateContact(svc *Service) http.HandlerFunc {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
 		}
-		contact, err := svc.UpdateContact(r.Context(), accountID, r.PathValue("id"), patch)
+		contact, err := svc.UpdateContact(r.Context(), accountID, caller, r.PathValue("id"), patch)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -198,11 +198,11 @@ func handleUpdateContact(svc *Service) http.HandlerFunc {
 
 func handleListTenantUsers(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, ok := scope(w, r)
+		accountID, caller, ok := scope(w, r)
 		if !ok {
 			return
 		}
-		users, err := svc.ListTenantUsers(r.Context(), accountID)
+		users, err := svc.ListTenantUsers(r.Context(), accountID, caller)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -302,7 +302,7 @@ func scope(w http.ResponseWriter, r *http.Request) (string, Caller, bool) {
 // em vez de deixar o middleware devolver 400 missing_account_id.
 //
 // O modulo e sempre escopado por account, inclusive para admin (que opera na account do
-// switcher; o checker cobre platform_admin e agency_owner).
+// switcher; o checker cobre platform_admin e membership explicita).
 func accountScope(r *http.Request) (string, bool) {
 	principal, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {

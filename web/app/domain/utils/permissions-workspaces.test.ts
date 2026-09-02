@@ -110,6 +110,17 @@ describe('getAllowedWorkspaces — module workspace by permission prefix', () =>
   it('exposes tasks for a custom role holding any tasks.* permission', () => {
     expect(getAllowedWorkspaces('consultant', ['tasks.boards.manage'], true)).toContain('tasks')
   })
+
+  it('exposes omnichannel for a custom role with an effective module permission', () => {
+    expect(getAllowedWorkspaces('consultant', ['omnichannel.conversations.view'], true)).toContain(
+      'omnichannel',
+    )
+    expect(getAllowedWorkspaces('consultant', [], true)).not.toContain('omnichannel')
+  })
+
+  it('preserves the owner default shell while feature actions remain permission-gated', () => {
+    expect(getAllowedWorkspaces('owner', [], true)).toContain('omnichannel')
+  })
 })
 
 describe('getAllowedWorkspaces — role aliases and defaults', () => {

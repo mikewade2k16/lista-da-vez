@@ -18,6 +18,8 @@ type mediaFetchJobPayload struct {
 
 type mediaFetchStore interface {
 	GetMediaFetchData(ctx context.Context, accountID, messageID string) (mediaFetchData, error)
+	IsMessageHistoryVisible(ctx context.Context, accountID, conversationID, messageID string) (bool, error)
+	WithMessageExternalEffectLease(ctx context.Context, accountID, conversationID, messageID string, effect func() error) (bool, error)
 	UpdateFetchedMedia(ctx context.Context, accountID, conversationID, messageID string, media StoredMedia) (MessageView, error)
 	MarkMediaFetchFailed(ctx context.Context, accountID, conversationID, messageID, code string) (MessageView, error)
 	InsertAudit(ctx context.Context, accountID, actorUserID, conversationID, messageID, eventType string, payload json.RawMessage) error
@@ -68,6 +70,9 @@ func (h *MediaFetchHandler) Handle(ctx context.Context, job jobs.Job) error {
 	}
 	if data.StorageKey != "" && data.SourceKind == "disk" {
 		if h.analyzer != nil {
+			if err := h.ensureHistoryVisible(ctx, job.AccountID, data); err != nil {
+				return err
+			}
 			return h.analyzer.AnalyzeMessage(ctx, job.AccountID, data.MessageID)
 		}
 		return nil
@@ -87,38 +92,68 @@ func (h *MediaFetchHandler) Handle(ctx context.Context, job jobs.Job) error {
 	if err != nil {
 		return h.fail(ctx, job, data, err, "configuration_error")
 	}
-
-	reader, meta, err := provider.DownloadMedia(ctx, credentials, channel.MediaRef{
-		InstanceName:      data.InstanceScopeKey,
-		ExternalMessageID: data.ExternalMessageID,
-		MediaURL:          data.MediaURL,
+	var providerErr, storageErr, persistErr error
+	allowed, leaseErr := h.store.WithMessageExternalEffectLease(ctx, job.AccountID, data.ConversationID, data.MessageID, func() error {
+		reader, meta, downloadErr := provider.DownloadMedia(ctx, credentials, channel.MediaRef{
+			InstanceName:      data.InstanceScopeKey,
+			ExternalMessageID: data.ExternalMessageID,
+			MediaURL:          data.MediaURL,
+		})
+		if downloadErr != nil {
+			providerErr = downloadErr
+			return nil
+		}
+		defer func() { _ = reader.Close() }()
+		mimeType := firstNonEmpty(meta.MimeType, data.MimeType)
+		fileName := firstNonEmpty(meta.FileName, data.FileName)
+		maxBytes := mediaFetchLimit(data.MaxBytes, provider.Capabilities().MaxMediaBytes)
+		stored, saveErr := h.media.SaveInboundReader(job.AccountID, data.ConversationID, data.MessageID,
+			mimeType, fileName, reader, maxBytes)
+		if saveErr != nil {
+			storageErr = saveErr
+			return nil
+		}
+		view, updateErr := h.store.UpdateFetchedMedia(ctx, job.AccountID, data.ConversationID, data.MessageID, stored)
+		if updateErr != nil {
+			persistErr = updateErr
+			return nil
+		}
+		h.publish(ctx, job.AccountID, view)
+		if auditErr := h.store.InsertAudit(ctx, job.AccountID, "", data.ConversationID, data.MessageID, "MESSAGE_MEDIA_READY", nil); auditErr != nil {
+			h.logger.Error("omnichannel_media_audit", "account_id", job.AccountID, "event", "MESSAGE_MEDIA_READY")
+		}
+		return nil
 	})
-	if err != nil {
-		code, classified := classifyMediaProviderError(err)
+	if leaseErr != nil {
+		return leaseErr
+	}
+	if !allowed {
+		return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+	}
+	if providerErr != nil {
+		code, classified := classifyMediaProviderError(providerErr)
 		return h.fail(ctx, job, data, classified, code)
 	}
-	defer func() { _ = reader.Close() }()
-
-	mimeType := firstNonEmpty(meta.MimeType, data.MimeType)
-	fileName := firstNonEmpty(meta.FileName, data.FileName)
-	maxBytes := mediaFetchLimit(data.MaxBytes, provider.Capabilities().MaxMediaBytes)
-	stored, err := h.media.SaveInboundReader(job.AccountID, data.ConversationID, data.MessageID,
-		mimeType, fileName, reader, maxBytes)
-	if err != nil {
-		code, classified := classifyMediaStorageError(err)
+	if storageErr != nil {
+		code, classified := classifyMediaStorageError(storageErr)
 		return h.fail(ctx, job, data, classified, code)
 	}
-
-	view, err := h.store.UpdateFetchedMedia(ctx, job.AccountID, data.ConversationID, data.MessageID, stored)
-	if err != nil {
-		return err
-	}
-	h.publish(ctx, job.AccountID, view)
-	if err := h.store.InsertAudit(ctx, job.AccountID, "", data.ConversationID, data.MessageID, "MESSAGE_MEDIA_READY", nil); err != nil {
-		h.logger.Error("omnichannel_media_audit", "account_id", job.AccountID, "event", "MESSAGE_MEDIA_READY")
+	if persistErr != nil {
+		return persistErr
 	}
 	if h.analyzer != nil {
 		return h.analyzer.AnalyzeMessage(ctx, job.AccountID, data.MessageID)
+	}
+	return nil
+}
+
+func (h *MediaFetchHandler) ensureHistoryVisible(ctx context.Context, accountID string, data mediaFetchData) error {
+	visible, err := h.store.IsMessageHistoryVisible(ctx, accountID, data.ConversationID, data.MessageID)
+	if err != nil {
+		return err
+	}
+	if !visible {
+		return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
 	}
 	return nil
 }
@@ -140,6 +175,9 @@ func (h *MediaFetchHandler) credentials(data mediaFetchData) (channel.Credential
 func (h *MediaFetchHandler) fail(ctx context.Context, job jobs.Job, data mediaFetchData, jobErr error, code string) error {
 	if !isTerminalJobError(jobErr, job) {
 		return jobErr
+	}
+	if visibilityErr := h.ensureHistoryVisible(ctx, job.AccountID, data); visibilityErr != nil {
+		return visibilityErr
 	}
 	view, err := h.store.MarkMediaFetchFailed(ctx, job.AccountID, data.ConversationID, data.MessageID, code)
 	if err != nil {

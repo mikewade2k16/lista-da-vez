@@ -39,7 +39,7 @@ const form = reactive({
 })
 
 const isPlatformAdmin = computed(() => auth.role === 'platform_admin')
-const atLimit = computed(() => maxChannels.value > 0 && currentChannels.value >= maxChannels.value)
+const atLimit = computed(() => currentChannels.value >= maxChannels.value)
 const createBlockedReason = computed(() => {
   if (!form.instanceName.trim()) return 'Informe um identificador único.'
   if (atLimit.value)
@@ -48,7 +48,7 @@ const createBlockedReason = computed(() => {
 })
 const canCreate = computed(() => props.canManage && !creating.value && !createBlockedReason.value)
 
-async function load(): Promise<void> {
+async function load(options: { showError?: boolean; throwOnError?: boolean } = {}): Promise<void> {
   loading.value = true
   try {
     const view = await fetchInstances(api)
@@ -59,10 +59,19 @@ async function load(): Promise<void> {
     limitDraft.value = Math.max(1, view.maxChannels || 1)
     emit('changed')
   } catch (error) {
-    ui.error(getApiErrorMessage(error, 'Não foi possível carregar os números.'))
+    if (options.showError !== false) {
+      ui.error(getApiErrorMessage(error, 'Não foi possível carregar os números.'))
+    }
+    if (options.throwOnError) {
+      throw error
+    }
   } finally {
     loading.value = false
   }
+}
+
+async function reloadInstancesForReset(): Promise<void> {
+  await load({ showError: false, throwOnError: true })
 }
 
 async function submitCreate(): Promise<void> {
@@ -162,7 +171,7 @@ onMounted(() => void load())
   <div class="cfg-tab">
     <div class="cfg-tab__lead">
       <span>Conecte o WhatsApp usado no primeiro atendimento.</span>
-      <strong>{{ currentChannels }}/{{ maxChannels || '∞' }} ativos</strong>
+      <strong>{{ currentChannels }}/{{ maxChannels }} ativos</strong>
     </div>
 
     <details v-if="isPlatformAdmin" class="calendar-config__collapse">
@@ -298,6 +307,7 @@ onMounted(() => void load())
           <ConfigNumberCard
             :instance="instance"
             :users="users"
+            :reload-instances="reloadInstancesForReset"
             :disabled="!canManage"
             @changed="load"
           />

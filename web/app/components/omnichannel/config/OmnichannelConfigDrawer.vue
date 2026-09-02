@@ -10,9 +10,7 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
 const auth = useAuthStore()
 const accountStore = useCoreAccountStore()
-const isPlatformAdmin = computed(() => auth.role === 'platform_admin')
-const canManage = (permission: string) =>
-  isPlatformAdmin.value || auth.effectivePermissionKeys.includes(permission)
+const canManage = (permission: string) => auth.effectivePermissionKeys.includes(permission)
 
 const { profiles, profile, instances, agents, loadingProfile, saving, load, selectClient, save } =
   useOmnichannelAutomationMvp()

@@ -131,6 +131,9 @@ func (h aiInboundHandler) Handle(ctx context.Context, job jobs.Job) error {
 	if _, err := h.store.UpsertAIDispatch(
 		ctx, accountID, conversationID, versionID, messageID, runAfter,
 	); err != nil {
+		if errors.Is(err, ErrHistoryResetInvalidated) {
+			return &jobs.StatusError{StatusCode: 409, Unrecoverable: true, Err: err}
+		}
 		if errors.Is(err, ErrAILeaseInvalid) || errors.Is(err, ErrNotFound) ||
 			errors.Is(err, ErrAIDispatchInvalidInput) {
 			return h.routeToHuman(ctx, accountID, conversationID)

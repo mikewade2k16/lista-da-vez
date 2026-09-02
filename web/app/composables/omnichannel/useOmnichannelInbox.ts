@@ -7,8 +7,12 @@ import type {
   MessageType,
 } from "~/types";
 import { useOmnichannelInboxRealtime } from "~/composables/omnichannel/useOmnichannelInboxRealtime";
-import { useOmnichannelInboxHistory } from "~/composables/omnichannel/useOmnichannelInboxHistory";
+import {
+  refreshAuthorizedActiveConversation,
+  useOmnichannelInboxHistory
+} from "~/composables/omnichannel/useOmnichannelInboxHistory";
 import { useOmnichannelInboxOutboundPipeline } from "~/composables/omnichannel/useOmnichannelInboxOutboundPipeline";
+import { useOmnichannelAIReplyDraft } from "~/composables/omnichannel/useOmnichannelAIReplyDraft";
 import { useOmnichannelInboxReadState } from "~/composables/omnichannel/useOmnichannelInboxReadState";
 import { useOmnichannelInboxMentionAlerts } from "~/composables/omnichannel/useOmnichannelInboxMentionAlerts";
 import { useOmnichannelInboxMessageReactions } from "~/composables/omnichannel/useOmnichannelInboxMessageReactions";
@@ -20,26 +24,29 @@ import { useOmnichannelInboxPendingStatus } from "~/composables/omnichannel/useO
 import { useOmnichannelInboxScroll } from "~/composables/omnichannel/useOmnichannelInboxScroll";
 import { useOmnichannelInboxState } from "~/composables/omnichannel/useOmnichannelInboxState";
 import { useOmnichannelInboxStateMutators } from "~/composables/omnichannel/useOmnichannelInboxStateMutators";
+import {
+  useOmnichannelScopeInvalidation,
+  type OmnichannelScopeInvalidationEvent
+} from "~/composables/omnichannel/useOmnichannelScopeInvalidation";
 import { useOmnichannelInboxMessageActions } from "~/composables/omnichannel/useOmnichannelInboxMessageActions";
 import { useInboxSyncGuard } from "~/composables/omnichannel/useInboxSyncGuard";
-import { useInboxMessageWindow } from "~/composables/omnichannel/useInboxMessageWindow";
 import { usePageBootstrapLoading } from "~/composables/usePageBootstrapLoading";
 import { useAdminSession } from "~/composables/useAdminSession";
 import { useApi } from "~/composables/useApi";
 import { useSessionSimulationStore } from "~/stores/session-simulation";
+import { useAuthStore } from "~/stores/auth";
+import { useCoreAccountStore } from "../../../layers/core/stores/account";
 import {
   type AttachmentPickerMode,
   asRecord,
   formatSendError,
   isMediaMessageType,
-  MEDIA_MESSAGE_TYPES,
   mediaPlaceholderByType,
   type MentionOpenPayload,
   normalizeComparableJid,
   normalizeMentionJid,
   normalizePhoneDigits,
   type OptimisticMessageOptions,
-  type OutboundAttachment,
   resolveAttachmentType,
   resolveMessageType,
   toArrayOrEmpty,
@@ -47,11 +54,53 @@ import {
   extractFirstOutboundLinkUrl
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
 
+export function createOmnichannelActiveAccountChangeHandler(dependencies: {
+  advanceScopeGeneration: () => void;
+  clearScope: () => void;
+  bootstrapRest: () => Promise<void>;
+}) {
+  return async function handleActiveAccountChange(
+    nextAccountId: string,
+    previousAccountId: string,
+  ): Promise<boolean> {
+    if (!previousAccountId || nextAccountId === previousAccountId) {
+      return false;
+    }
+
+    dependencies.advanceScopeGeneration();
+    dependencies.clearScope();
+    if (nextAccountId) {
+      await dependencies.bootstrapRest();
+    }
+    return true;
+  };
+}
+
+export function applyLocalHistoryResetInvalidation(
+  event: OmnichannelScopeInvalidationEvent | null,
+  dependencies: {
+    clearInstanceProjection: (instanceId: string, instanceScopeKey: string) => void;
+    clearAllMessageCaches: () => void;
+  },
+): boolean {
+  if (event?.source !== "local" || !event.instanceId || !event.instanceScopeKey) {
+    return false;
+  }
+
+  dependencies.clearInstanceProjection(event.instanceId, event.instanceScopeKey);
+  dependencies.clearAllMessageCaches();
+  return true;
+}
+
 export function useOmnichannelInbox() {
   const config = useRuntimeConfig();
+  const auth = useAuthStore();
   const { user, token, tenantSlug, logout: performLogout, syncSessionFromToken } = useAdminSession();
   const sessionSimulation = useSessionSimulationStore();
+  const accountStore = useCoreAccountStore();
   const { apiFetch } = useApi();
+  const scopeInvalidation = useOmnichannelScopeInvalidation();
+  const composeConversation = ref<Conversation | null>(null);
   let conversationFilterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   const shellClientId = computed(() => {
     if (!sessionSimulation.canSimulate) {
@@ -67,6 +116,7 @@ export function useOmnichannelInbox() {
     contacts,
     users,
     whatsappInstances,
+    whatsappInstanceAccessState,
     messages,
     visibleMessagesConversationId,
     activeConversationId,
@@ -670,11 +720,7 @@ export function useOmnichannelInbox() {
     });
   }
 
-  const {
-    incrementMentionAlert,
-    clearMentionAlert,
-    shouldFlagMentionAlert
-  } = useOmnichannelInboxMentionAlerts({
+  const { clearMentionAlert } = useOmnichannelInboxMentionAlerts({
     conversations,
     mentionAlertState
   });
@@ -682,7 +728,6 @@ export function useOmnichannelInbox() {
   const {
     getReadAt,
     loadReadState,
-    saveReadState,
     bootstrapReadState,
     markConversationAsRead,
     isConversationUnread
@@ -726,9 +771,12 @@ export function useOmnichannelInbox() {
     messageRenderItems
   } = useOmnichannelInboxDerivedState({
     user,
+    effectivePermissionKeys: computed(() => auth.effectivePermissionKeys),
     users,
     whatsappInstances,
+    whatsappInstanceAccessState,
     conversations,
+    composeConversation,
     contacts,
     messages,
     activeConversationId,
@@ -745,6 +793,23 @@ export function useOmnichannelInbox() {
     readState,
     mentionAlertState,
     isConversationUnread
+  });
+
+  const {
+    aiReplyDraft,
+    selectedAIReplyDraftId,
+    loadingAIReplyDraft,
+    dismissingAIReplyDraft,
+    aiReplyDraftError,
+    loadAIReplyDraft,
+    useAIReplyDraft,
+    dismissAIReplyDraft,
+    markAIReplyDraftSent
+  } = useOmnichannelAIReplyDraft({
+    activeConversationId,
+    canManageConversation,
+    composerDraft: draft,
+    apiFetch
   });
 
   function upsertConversation(conversationEntry: Conversation) {
@@ -923,17 +988,18 @@ export function useOmnichannelInbox() {
     users,
     contacts,
     whatsappInstances,
+    whatsappInstanceAccessState,
     selectedInstanceId: instanceId,
     loadingWhatsAppStatus,
     loadingUsers,
     loadingContacts,
     apiFetch,
-    sortContacts
+    sortContacts,
+    getScopeIdentity: () => `${accountStore.activeAccountId}:${scopeInvalidation.scopeGeneration.value}`
   });
 
   const {
     fetchMessagesPage,
-    hydrateRealtimeMediaMessage,
     loadConversations,
     loadMoreConversations,
     loadConversationMessages,
@@ -941,8 +1007,8 @@ export function useOmnichannelInbox() {
     syncConversationHistory,
     loadGroupParticipants,
     loadOlderMessages,
-    scheduleGroupParticipantsRefresh,
-    updateConversationCacheFromMessage
+    updateConversationCacheFromMessage,
+    clearAllConversationCaches
   } = useOmnichannelInboxHistory({
     apiFetch,
     conversations,
@@ -950,6 +1016,7 @@ export function useOmnichannelInbox() {
     visibleMessagesConversationId,
     activeConversationId,
     selectedInstanceId: instanceId,
+    whatsappInstanceAccessState,
     search,
     channel,
     status,
@@ -981,7 +1048,10 @@ export function useOmnichannelInbox() {
     normalizeMessage,
     mergeMessages,
     updateConversationPreviewFromMessage,
-    messageNeedsMediaHydration
+    messageNeedsMediaHydration,
+    getScopeGeneration: () => scopeInvalidation.dataGeneration.value,
+    isScopeRefetching: scopeInvalidation.isScopeRefetching,
+    isComposeOnlyConversation: (conversationId) => composeConversation.value?.id === conversationId
   });
 
   async function retryConversations() {
@@ -1020,17 +1090,7 @@ export function useOmnichannelInbox() {
     updateConversationPreviewFromMessage
   });
 
-  // --- Code 1: Message Window (always max 50 messages) ---
-  const messageWindow = useInboxMessageWindow({
-    messages,
-    hasMoreMessages,
-    chatBodyRef,
-    activeConversationId,
-    apiFetch,
-    normalizeMessage
-  });
-
-  // --- Code 2: Sync Guard (freshness check + send verification) ---
+  // Sync Guard (freshness check + send verification).
   const syncGuard = useInboxSyncGuard({
     activeConversationId,
     messages,
@@ -1088,9 +1148,20 @@ export function useOmnichannelInbox() {
     updateLeftCollapsed,
     updateRightCollapsed,
     updateAssigneeModel,
-    updateInternalNotes
+    updateInternalNotes,
+    clearActiveConversationProjection,
+    clearInstanceConversationProjection,
+    clearAllConversationProjections
   } = useOmnichannelInboxStateMutators({
     replyTarget,
+    conversations,
+    messages,
+    activeConversationId,
+    visibleMessagesConversationId,
+    hasMoreMessages,
+    showLoadOlderMessagesButton,
+    showScrollToLatestButton,
+    mentionAlertState,
     draft,
     search,
     channel,
@@ -1125,20 +1196,123 @@ export function useOmnichannelInbox() {
     ]);
   }
 
-  async function refreshAfterConversationHistoryClear() {
-    activeConversationId.value = null;
-    messages.value = [];
-    visibleMessagesConversationId.value = null;
-    hasMoreMessages.value = false;
-    showLoadOlderMessagesButton.value = false;
-    showScrollToLatestButton.value = false;
-    clearReplyTarget();
+  let scopeRefreshInFlight: Promise<void> | null = null;
+  let scopeRefreshQueued = false;
 
-    await Promise.allSettled([
-      loadWhatsAppStatus({ force: true }),
-      loadConversations({ skipOpenSync: true }),
-      loadContacts()
-    ]);
+  function clearProjectionForScopeEvent(event: OmnichannelScopeInvalidationEvent | null) {
+    if (applyLocalHistoryResetInvalidation(event, {
+      clearInstanceProjection: (instanceIdValue, instanceScopeKey) => {
+        clearInstanceConversationProjection(instanceIdValue, instanceScopeKey);
+        const compose = composeConversation.value;
+        if (
+          compose?.instanceId === instanceIdValue ||
+          (!compose?.instanceId && compose?.instanceScopeKey === instanceScopeKey)
+        ) {
+          composeConversation.value = null;
+        }
+      },
+      clearAllMessageCaches: clearAllConversationCaches
+    })) {
+      return;
+    }
+
+    if (event?.reason === "message_changed") {
+      return;
+    }
+
+    clearAllConversationProjections();
+    clearAllConversationCaches();
+    if (event?.reason === "access_scope_changed") {
+      contacts.value = [];
+      users.value = [];
+      whatsappInstances.value = [];
+      whatsappInstanceAccessState.value = "loading";
+    }
+  }
+
+  async function refreshAuthorizedScope(optionsArg: {
+    event?: OmnichannelScopeInvalidationEvent | null;
+    invalidateInFlight?: boolean;
+    clearAll?: boolean;
+  } = {}) {
+    const preferredConversationId = activeConversationId.value;
+    if (optionsArg.invalidateInFlight) {
+      scopeInvalidation.advanceDataGeneration();
+    }
+    if (optionsArg.clearAll) {
+      clearAllConversationProjections();
+      clearAllConversationCaches();
+    } else if (optionsArg.event) {
+      clearProjectionForScopeEvent(optionsArg.event);
+    }
+
+    if (scopeRefreshInFlight) {
+      scopeRefreshQueued = true;
+      await scopeRefreshInFlight;
+      return;
+    }
+
+    const request = (async () => {
+      const refetchAccountId = scopeInvalidation.beginScopeRefetch();
+      try {
+        do {
+          scopeRefreshQueued = false;
+          const generation = scopeInvalidation.dataGeneration.value;
+          await Promise.allSettled([
+            loadTenantUploadLimit(),
+            loadAccessibleWhatsAppInstances()
+          ]);
+          loadInstanceFilterPreference();
+          await Promise.allSettled([
+            loadWhatsAppStatus({ force: true }),
+            loadConversations({
+              skipOpenSync: true,
+              preserveActive: false,
+              autoSelect: false
+            }),
+            loadUsers(),
+            loadContacts()
+          ]);
+
+          if (generation === scopeInvalidation.dataGeneration.value) {
+            const activeConversationRefresh = await Promise.allSettled([
+              refreshAuthorizedActiveConversation({
+                preferredConversationId,
+                conversations,
+                activeConversationId,
+                refreshConversationMessages
+              })
+            ]);
+            if (
+              activeConversationRefresh[0]?.status === "fulfilled" &&
+              activeConversationRefresh[0].value === false
+            ) {
+              clearActiveConversationProjection();
+            }
+            await loadAIReplyDraft();
+          }
+
+          if (generation !== scopeInvalidation.dataGeneration.value) {
+            contacts.value = [];
+            users.value = [];
+            whatsappInstances.value = [];
+            whatsappInstanceAccessState.value = "loading";
+            scopeRefreshQueued = true;
+          }
+        } while (scopeRefreshQueued);
+      } finally {
+        scopeInvalidation.finishScopeRefetch(refetchAccountId);
+      }
+    })();
+
+    scopeRefreshInFlight = request;
+    try {
+      await request;
+    } finally {
+      if (scopeRefreshInFlight === request) {
+        scopeRefreshInFlight = null;
+      }
+    }
   }
 
   const {
@@ -1162,6 +1336,9 @@ export function useOmnichannelInbox() {
     apiFetch,
     upsertContact,
     upsertConversation,
+    setComposeConversation: (conversationEntry) => {
+      composeConversation.value = conversationEntry;
+    },
     syncSavedContactIntoMessages,
     loadContacts,
     loadConversations,
@@ -1178,6 +1355,7 @@ export function useOmnichannelInbox() {
     isGroupConversation,
     activeConversationId,
     draft,
+    selectedAIReplyDraftId,
     attachment,
     replyTarget,
     pendingSendCount,
@@ -1195,6 +1373,17 @@ export function useOmnichannelInbox() {
     scrollToBottom,
     markConversationAsRead,
     scheduleStickyDateRefresh,
+    onAIReplyDraftSent: markAIReplyDraftSent,
+    onAuthoritativeMessageCreated: async (conversationId) => {
+      if (composeConversation.value?.id !== conversationId) {
+        return;
+      }
+
+      await loadConversations({ skipOpenSync: true, preserveActive: true });
+      if (conversations.value.some((entry) => entry.id === conversationId)) {
+        composeConversation.value = null;
+      }
+    },
     reconcilePendingMessageStatus: (conversationId: string, messageId: string) => {
       syncGuard.verifySend(conversationId, messageId);
       return reconcilePendingMessageStatus(conversationId, messageId);
@@ -1241,33 +1430,9 @@ export function useOmnichannelInbox() {
     startWhatsAppStatusPolling,
     stopWhatsAppStatusPolling
   } = useOmnichannelInboxRealtime({
-    publicApiBase: config.public.apiBase,
     token,
-    tenantSlug: computed(() => tenantSlug.value),
-    shellClientId,
-    conversations,
-    messages,
-    activeConversationId,
-    visibleMessagesConversationId,
-    selectedInstanceId: instanceId,
-    chatBodyRef,
-    loadConversations,
-    refreshConversationMessages,
     loadWhatsAppStatus,
-    upsertConversation,
-    normalizeMessage,
-    mergeMessages,
-    updateConversationPreviewFromMessage,
-    updateConversationCacheFromMessage,
-    scheduleGroupParticipantsRefresh,
-    shouldFlagMentionAlert,
-    incrementMentionAlert,
-    scrollToBottom,
-    markConversationAsRead,
-    messageNeedsMediaHydration,
-    hydrateRealtimeMediaMessage,
-    scheduleStickyDateRefresh,
-    enforceMessageWindow: () => messageWindow.enforceWindow()
+    bootstrapAuthorizedState: refreshAuthorizedScope
   });
 
   const {
@@ -1300,6 +1465,7 @@ export function useOmnichannelInbox() {
     switchTenantError.value = "";
     const bootstrapHandle = startPageBootstrap();
     try {
+      scopeInvalidation.advanceScopeGeneration();
       syncGuard.stopSync();
       disconnectSocket();
       stopWhatsAppStatusPolling();
@@ -1321,16 +1487,12 @@ export function useOmnichannelInbox() {
         redirectToLogin: true
       });
 
-      activeConversationId.value = null;
-      messages.value = [];
-      visibleMessagesConversationId.value = null;
-      hasMoreMessages.value = false;
-      showLoadOlderMessagesButton.value = false;
-      showScrollToLatestButton.value = false;
-      conversations.value = [];
+      clearAllConversationProjections();
+      clearAllConversationCaches();
       contacts.value = [];
       users.value = [];
       whatsappInstances.value = [];
+      whatsappInstanceAccessState.value = "loading";
 
       await Promise.allSettled([
         loadTenantUploadLimit(),
@@ -1441,6 +1603,55 @@ export function useOmnichannelInbox() {
     }
   );
 
+  watch([activeConversationId, conversations], ([activeId]) => {
+    const compose = composeConversation.value;
+    if (!compose) {
+      return;
+    }
+    if (activeId !== compose.id || conversations.value.some((entry) => entry.id === compose.id)) {
+      composeConversation.value = null;
+    }
+  }, { deep: true });
+
+  watch(
+    () => scopeInvalidation.sequence.value,
+    () => {
+      const event = scopeInvalidation.lastEvent.value;
+      if (!scopeInvalidation.isCurrentScopeEvent(event)) {
+        return;
+      }
+      void refreshAuthorizedScope({ event });
+    }
+  );
+
+  const handleActiveAccountChange = createOmnichannelActiveAccountChangeHandler({
+    advanceScopeGeneration: scopeInvalidation.advanceScopeGeneration,
+    clearScope: () => {
+      composeConversation.value = null;
+      clearAllConversationProjections();
+      clearAllConversationCaches();
+      contacts.value = [];
+      users.value = [];
+      whatsappInstances.value = [];
+      whatsappInstanceAccessState.value = "loading";
+      whatsappStatus.value = null;
+      tenantMaxUploadMb.value = 0;
+      instanceId.value = "all";
+    },
+    bootstrapRest: () => refreshAuthorizedScope({
+      invalidateInFlight: true,
+      clearAll: true
+    })
+  });
+
+  watch(
+    () => accountStore.activeAccountId,
+    (nextAccountId, previousAccountId) => {
+      void handleActiveAccountChange(nextAccountId, previousAccountId).catch(() => undefined);
+    },
+    { flush: "sync" }
+  );
+
   return {
     user,
     tenantSlug,
@@ -1453,6 +1664,7 @@ export function useOmnichannelInbox() {
     loadingContacts,
     loadingUsers,
     loadingWhatsAppStatus,
+    whatsappInstanceAccessState,
     loadingMessages,
     loadingOlderMessages,
     loadingGroupParticipants,
@@ -1485,6 +1697,10 @@ export function useOmnichannelInbox() {
     stickyDateLabel,
     showStickyDate,
     draft,
+    aiReplyDraft,
+    loadingAIReplyDraft,
+    dismissingAIReplyDraft,
+    aiReplyDraftError,
     hasAttachment,
     attachmentType,
     attachmentName,
@@ -1533,6 +1749,9 @@ export function useOmnichannelInbox() {
     setReplyTarget,
     clearReplyTarget,
     updateDraft,
+    useAIReplyDraft,
+    dismissAIReplyDraft,
+    loadAIReplyDraft,
     updateAttachment,
     clearAttachment,
     updateSearch,
@@ -1565,7 +1784,6 @@ export function useOmnichannelInbox() {
     updateConversationAssignee,
     takeConversation,
     releaseConversation,
-    refreshAfterConversationHistoryClear,
     loadContacts,
     loadGroupParticipants,
     openMentionConversation,

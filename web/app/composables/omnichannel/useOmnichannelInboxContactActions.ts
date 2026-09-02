@@ -19,6 +19,7 @@ export function useOmnichannelInboxContactActions(options: {
   apiFetch: <T = unknown>(path: string, init?: Record<string, unknown>) => Promise<T>;
   upsertContact: (contactEntry: Contact) => void;
   upsertConversation: (conversationEntry: Conversation) => void;
+  setComposeConversation: (conversationEntry: Conversation) => void;
   syncSavedContactIntoMessages: (contactEntry: Contact) => void;
   loadContacts: () => Promise<void>;
   loadConversations: () => Promise<void>;
@@ -107,7 +108,7 @@ export function useOmnichannelInboxContactActions(options: {
         }
       });
 
-      options.upsertConversation(conversation);
+      options.setComposeConversation(conversation);
       await options.loadContacts();
       options.sidebarView.value = "conversations";
       await options.selectConversation(conversation.id);
@@ -136,7 +137,7 @@ export function useOmnichannelInboxContactActions(options: {
         }
       });
 
-      options.upsertConversation(conversation);
+      options.setComposeConversation(conversation);
       await options.loadContacts();
       options.sidebarView.value = "conversations";
       await options.selectConversation(conversation.id);

@@ -77,17 +77,25 @@ type modelAgg struct {
 // CostService agrega o custo por conta. So leitura. accountID vem SEMPRE do Principal.
 type CostService struct {
 	pool   *pgxpool.Pool
+	store  *Store
 	limits *modules.LimitReader
 }
 
 // NewCostService monta o servico. limits = o leitor de teto da F3 (monthly_ai_runs).
 func NewCostService(pool *pgxpool.Pool, limits *modules.LimitReader) *CostService {
-	return &CostService{pool: pool, limits: limits}
+	return &CostService{pool: pool, store: NewStore(pool), limits: limits}
 }
 
 // Usage agrega ai_runs no periodo [from, toExclusive) da conta e monta o report. Usa o indice
 // messaging_ai_runs_account_created_idx (account_id, created_at) — sem varredura.
-func (s *CostService) Usage(ctx context.Context, accountID string, from, toExclusive time.Time) (UsageReport, error) {
+func (s *CostService) Usage(ctx context.Context, accountID, userID string, from, toExclusive time.Time) (UsageReport, error) {
+	scope, err := s.store.LoadConversationAccessScope(ctx, accountID, userID)
+	if err != nil {
+		return UsageReport{}, err
+	}
+	if !scope.Eligible || !scope.allowsPermission("omnichannel.audit.view") {
+		return UsageReport{}, ErrForbidden
+	}
 	groups, err := s.aggregate(ctx, accountID, from, toExclusive)
 	if err != nil {
 		return UsageReport{}, err

@@ -206,13 +206,24 @@ func (s *Store) CreateChannelClientBinding(ctx context.Context, accountID string
 		return "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	bindingID, err := createChannelClientBindingTx(ctx, tx, accountID, in)
+	if err != nil {
+		return "", err
+	}
+	return bindingID, tx.Commit(ctx)
+}
 
+// createChannelClientBindingTx e compartilhado pela API de bindings e pelo
+// provisionamento de uma instancia. Isso permite que a instancia, o primeiro
+// grant manage e o self-binding standalone_default nascam atomicamente.
+func createChannelClientBindingTx(ctx context.Context, tx pgx.Tx, accountID string, in channelClientBindingWrite) (string, error) {
+	var err error
 	if existingID, ok, lookupErr := existingChannelBindingEvent(
 		ctx, tx, accountID, in.IdempotencyKey, in.RequestHash,
 	); lookupErr != nil {
 		return "", lookupErr
 	} else if ok {
-		return existingID, tx.Commit(ctx)
+		return existingID, nil
 	}
 
 	var whatsappID, instagramID any
@@ -282,7 +293,7 @@ func (s *Store) CreateChannelClientBinding(ctx context.Context, accountID string
 		}
 		return "", err
 	}
-	return bindingID, tx.Commit(ctx)
+	return bindingID, nil
 }
 
 func (s *Store) ReassignChannelClientBinding(

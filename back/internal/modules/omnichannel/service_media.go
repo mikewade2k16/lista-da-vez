@@ -57,45 +57,55 @@ func NewMediaService(store *Store, media *DiskMediaStorage, registry *channel.Re
 	}
 }
 
-// OpenMedia valida escopo/permissao de leitura, resolve o descriptor (sem as hidden do usuario)
-// e devolve o arquivo em disco. Rehidrata uma unica vez quando a midia ainda nao esta no disco
-// (inbound com requiresMediaDecrypt / url_encrypted). Falha de rehidratacao => 404.
-func (s *MediaService) OpenMedia(ctx context.Context, accountID string, caller Caller, conversationID, messageID string) (openedMedia, error) {
-	if err := s.scope.assertConversationScope(ctx, accountID, caller, conversationID); err != nil {
-		return openedMedia{}, err
-	}
-	d, err := s.store.GetMediaDescriptor(ctx, accountID, caller.UserID, conversationID, messageID)
+// ServeMedia mantem o fence compartilhado da instancia durante todo o callback de streaming.
+// Um reset que venceu a corrida responde 404 sem abrir o arquivo; se o stream venceu, o reset
+// espera os bytes terminarem antes de avancar o cutoff.
+func (s *MediaService) ServeMedia(ctx context.Context, accountID string, caller Caller,
+	conversationID, messageID string, serve func(openedMedia)) error {
+	visibility, err := s.scope.resolveConversationVisibility(ctx, accountID, caller.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
 	if err != nil {
-		return openedMedia{}, translate(err) // hidden ou fora de escopo => 404
+		return err
 	}
-
-	if mediaNeedsRehydration(d) {
-		return openedMedia{}, ErrNotFound
-	}
-	if strings.TrimSpace(deref(d.StorageKey)) == "" {
-		return openedMedia{}, ErrNotFound
-	}
-
-	file, info, err := s.media.Open(deref(d.StorageKey))
+	allowed, err := s.store.WithMessageExternalEffectLease(ctx, accountID, conversationID, messageID, func() error {
+		d, descriptorErr := s.store.GetVisibleMediaDescriptor(ctx, accountID, conversationID, messageID, visibility)
+		if descriptorErr != nil {
+			return translate(descriptorErr)
+		}
+		if mediaNeedsRehydration(d) || strings.TrimSpace(deref(d.StorageKey)) == "" {
+			return ErrNotFound
+		}
+		file, info, openErr := s.media.Open(deref(d.StorageKey))
+		if openErr != nil {
+			return ErrNotFound
+		}
+		defer func() { _ = file.Close() }()
+		mime := deref(d.MimeType)
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		serve(openedMedia{File: file, MimeType: mime, FileName: deref(d.FileName), ModTime: info.ModTime(), Size: info.Size()})
+		return nil
+	})
 	if err != nil {
-		return openedMedia{}, ErrNotFound
+		return err
 	}
-	mime := deref(d.MimeType)
-	if mime == "" {
-		mime = "application/octet-stream"
+	if !allowed {
+		return ErrNotFound
 	}
-	return openedMedia{File: file, MimeType: mime, FileName: deref(d.FileName), ModTime: info.ModTime(), Size: info.Size()}, nil
+	return nil
 }
 
 // RetryMedia rearma exclusivamente o job de midia desta mensagem. Escopo e permissao sao
 // checados antes; o Store repete account_id+conversation_id no lock e no update.
 func (s *MediaService) RetryMedia(ctx context.Context, accountID string, principal auth.Principal, conversationID, messageID string) (MessageView, error) {
-	caller := Caller{UserID: principal.UserID, IsAdmin: isAdminPrincipal(principal)}
-	if err := s.scope.assertConversationScope(ctx, accountID, caller, conversationID); err != nil {
+	visibility, err := s.scope.resolveConversationVisibility(ctx, accountID, principal.UserID,
+		"omnichannel.conversations.reply", InstanceGrantReply)
+	if err != nil {
 		return MessageView{}, err
 	}
-	if err := s.scope.requirePermission(ctx, accountID, principal, "omnichannel.conversations.reply"); err != nil {
-		return MessageView{}, err
+	if _, err := s.store.GetVisibleMediaDescriptor(ctx, accountID, conversationID, messageID, visibility); err != nil {
+		return MessageView{}, translate(err)
 	}
 	view, err := s.store.RetryMediaFetch(ctx, accountID, conversationID, messageID)
 	if err != nil {
@@ -116,14 +126,12 @@ func (s *MediaService) RetryMedia(ctx context.Context, accountID string, princip
 // ListAnalyses returns only derived metadata for a message in the caller's
 // conversation scope. It never returns the signed stream token or storage path.
 func (s *MediaService) ListAnalyses(ctx context.Context, accountID string, principal auth.Principal, conversationID, messageID string) ([]MediaAnalysisView, error) {
-	caller := Caller{UserID: principal.UserID, IsAdmin: isAdminPrincipal(principal)}
-	if err := s.scope.assertConversationScope(ctx, accountID, caller, conversationID); err != nil {
+	visibility, err := s.scope.resolveConversationVisibility(ctx, accountID, principal.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
+	if err != nil {
 		return nil, err
 	}
-	if err := s.scope.requirePermission(ctx, accountID, principal, "omnichannel.conversations.view"); err != nil {
-		return nil, err
-	}
-	if _, err := s.store.GetMediaDescriptor(ctx, accountID, principal.UserID, conversationID, messageID); err != nil {
+	if _, err := s.store.GetVisibleMediaDescriptor(ctx, accountID, conversationID, messageID, visibility); err != nil {
 		return nil, translate(err)
 	}
 	rows, err := s.store.ListMediaAnalyses(ctx, accountID, messageID)
@@ -147,6 +155,13 @@ func (s *MediaService) rehydrate(ctx context.Context, accountID, conversationID,
 	cred, err := s.resolveCredentials(ctx, accountID, deref(d.Provider))
 	if err != nil {
 		return err
+	}
+	visible, err := s.store.IsMessageHistoryVisible(ctx, accountID, conversationID, messageID)
+	if err != nil {
+		return err
+	}
+	if !visible {
+		return ErrNotFound
 	}
 	rc, meta, err := provider.DownloadMedia(ctx, cred, channel.MediaRef{
 		InstanceName:      d.InstanceScopeKey,

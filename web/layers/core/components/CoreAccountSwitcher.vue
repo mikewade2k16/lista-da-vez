@@ -4,6 +4,13 @@ import { useCoreAccountStore } from '../stores/account'
 import { useCoreLoadingStore } from '../stores/loading'
 import type { AccountSummary } from '../stores/account'
 
+const props = withDefaults(
+  defineProps<{
+    canEnterPlatformView?: boolean
+  }>(),
+  { canEnterPlatformView: false },
+)
+
 const accountStore = useCoreAccountStore()
 const loading = useCoreLoadingStore()
 const open = ref(false)
@@ -75,6 +82,7 @@ async function select(id: string) {
 
 // Entra no contexto super-admin/dev (revela itens em desenvolvimento/hidden).
 async function selectPlatform() {
+  if (!props.canEnterPlatformView) return
   open.value = false
   if (!accountStore.platformView) {
     loading.push('Entrando no modo plataforma...')
@@ -139,7 +147,12 @@ onBeforeUnmount(() => {
     >
       <!-- Secao 1: ADMIN DA PLATAFORMA — contexto super-admin/dev (revela itens
            em desenvolvimento/hidden nao liberados nem para a conta-agencia) -->
-      <div class="core-account-switcher__section" role="group" aria-label="Admin da plataforma">
+      <div
+        v-if="canEnterPlatformView"
+        class="core-account-switcher__section"
+        role="group"
+        aria-label="Admin da plataforma"
+      >
         <p class="core-account-switcher__section-title">Admin da plataforma</p>
         <ul class="core-account-switcher__list">
           <li
@@ -157,7 +170,12 @@ onBeforeUnmount(() => {
         </ul>
       </div>
 
-      <div class="core-account-switcher__divider" role="separator" aria-hidden="true"></div>
+      <div
+        v-if="canEnterPlatformView"
+        class="core-account-switcher__divider"
+        role="separator"
+        aria-hidden="true"
+      ></div>
 
       <!-- Secao 2: ORGANIZACOES (contas-agencia) -->
       <div

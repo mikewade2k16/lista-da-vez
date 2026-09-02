@@ -152,23 +152,16 @@ func (s *GifService) Search(ctx context.Context, query string, limit int) GifSea
 	return resp
 }
 
-// ensureReply exige omnichannel.conversations.reply na conta (403 se faltar). platform_admin
-// passa; cai tambem no Principal.Permissions global quando resolvido. Espelha requireAgentPerm.
+// ensureReply exige a permissao efetiva atual; papel e claims antigos nao substituem o RBAC.
 func (s *GifService) ensureReply(ctx context.Context, accountID string, p auth.Principal) error {
 	if strings.TrimSpace(accountID) == "" {
 		return ErrForbidden
-	}
-	if p.Role == auth.RolePlatformAdmin {
-		return nil
 	}
 	ok, err := s.store.hasEffectivePermission(ctx, accountID, p.UserID, gifReplyPermission)
 	if err != nil {
 		return err
 	}
 	if ok {
-		return nil
-	}
-	if p.PermissionsResolved && containsPermission(p.Permissions, gifReplyPermission) {
 		return nil
 	}
 	return ErrForbidden

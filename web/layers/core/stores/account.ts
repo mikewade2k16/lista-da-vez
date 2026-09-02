@@ -34,6 +34,11 @@ export interface AccountContext {
 
 const ACTIVE_ACCOUNT_COOKIE = 'ldv_active_account_id'
 
+export function isSelectableAccountId(accounts: AccountSummary[], accountId: string): boolean {
+  const normalized = String(accountId || '').trim()
+  return Boolean(normalized && accounts.some((account) => account.id === normalized))
+}
+
 export const useCoreAccountStore = defineStore('core/account', () => {
   const runtimeConfig = useRuntimeConfig()
   const tokenCookie = useCookie(AUTH_TOKEN_COOKIE)
@@ -159,11 +164,19 @@ export const useCoreAccountStore = defineStore('core/account', () => {
   }
 
   async function switchAccount(accountId: string) {
+    const normalizedAccountId = String(accountId || '').trim()
+    if (!isSelectableAccountId(accounts.value, normalizedAccountId)) {
+      throw new Error('A conta selecionada não pertence ao contexto autorizado.')
+    }
     // Sair do modo dev ao escolher uma conta real (org ou cliente).
     platformView.value = false
-    activeAccountId.value = accountId
-    activeAccountCookie.value = accountId
-    await fetchContext(accountId)
+    // Fecha o contexto anterior antes de trocar o X-Account-Id reativo. Os
+    // consumidores do Omnichannel observam activeAccountId com flush sync e
+    // limpam projeções/caches antes de qualquer bootstrap da conta nova.
+    context.value = null
+    activeAccountId.value = normalizedAccountId
+    activeAccountCookie.value = normalizedAccountId
+    await fetchContext(normalizedAccountId)
   }
 
   // enterPlatformView ativa o contexto super-admin/dev: escopa na conta-agencia

@@ -27,6 +27,9 @@ type foundationFake struct {
 	configs       map[string]json.RawMessage
 	capabilityIDs map[string]string
 	outcomes      map[string]bool
+	factReads     int
+	summaryReads  int
+	savedContexts []ContextEnvelope
 }
 
 func (f *foundationFake) GetCapability(
@@ -51,6 +54,7 @@ func (f *foundationFake) ListFacts(
 	string,
 	int,
 ) ([]Fact, error) {
+	f.factReads++
 	return []Fact{}, nil
 }
 
@@ -59,15 +63,42 @@ func (f *foundationFake) LatestSummary(
 	Scope,
 	string,
 ) (string, Summary, error) {
+	f.summaryReads++
 	return "", Summary{}, ErrNotFound
 }
 
 func (f *foundationFake) SaveContextSnapshot(
 	_ context.Context,
-	_ ContextEnvelope,
+	envelope ContextEnvelope,
 	_, _ string,
 ) (string, error) {
+	f.savedContexts = append(f.savedContexts, envelope)
 	return "66666666-6666-4666-8666-666666666666", nil
+}
+
+type suppressedContextFoundationFake struct {
+	foundationFake
+	observationReads int
+}
+
+func (f *suppressedContextFoundationFake) ListRelationshipObservations(
+	context.Context,
+	Scope,
+	string,
+	[]string,
+	[]string,
+	int,
+) ([]StoredObservation, error) {
+	f.observationReads++
+	return []StoredObservation{{Snapshot: json.RawMessage(`{"sentinel":"historical-context-secret"}`)}}, nil
+}
+
+func (f *suppressedContextFoundationFake) GetObservation(
+	context.Context,
+	Scope,
+	string,
+) (StoredObservation, error) {
+	return StoredObservation{}, ErrNotFound
 }
 
 func (f *foundationFake) RecordOutcome(
@@ -425,6 +456,57 @@ func TestExecuteInteractionKeepsUntrustedDataOutOfSystemPrompt(t *testing.T) {
 		if !strings.Contains(call.SystemPrompt, "user_payload.context") ||
 			!strings.Contains(call.UserPrompt, injection) {
 			t.Fatalf("separacao system/user nao preservada: system=%q user=%q", call.SystemPrompt, call.UserPrompt)
+		}
+	}
+}
+
+func TestExecuteInteractionSuppressesHistoricalContextAndKeepsCurrentMessage(t *testing.T) {
+	t.Parallel()
+	const currentMessage = "current-message-after-reset"
+	const historicalSentinel = "historical-context-secret"
+	var captured []llm.Request
+	client := llmFunc(func(ctx context.Context, request llm.Request) (llm.Response, error) {
+		captured = append(captured, request)
+		return llmFake{}.Complete(ctx, request)
+	})
+	service, runs := configuredRuntimeService(t, "on", client)
+	foundation := &suppressedContextFoundationFake{foundationFake: foundationFake{
+		modes: map[string]string{CapabilityRuntime: "on", CapabilityContext: "on"},
+	}}
+	service.foundation = foundation
+	request := validInteraction()
+	request.Message = json.RawMessage(`{"type":"text","text":"` + currentMessage + `"}`)
+	request.SuppressStoredContext = true
+
+	decision, err := service.ExecuteInteraction(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Outcome != OutcomeReplyDraft || len(decision.ProcessRuns) != 2 ||
+		!strings.Contains(strings.Join(decision.Warnings, ","), "historical_context_suppressed") {
+		t.Fatalf("runtime suprimido nao concluiu normalmente: %#v", decision)
+	}
+	if foundation.factReads != 0 || foundation.summaryReads != 0 || foundation.observationReads != 0 {
+		t.Fatalf("runtime consultou memoria historica: facts=%d summaries=%d observations=%d",
+			foundation.factReads, foundation.summaryReads, foundation.observationReads)
+	}
+	if len(foundation.savedContexts) != 1 {
+		t.Fatalf("snapshots salvos=%d, want 1", len(foundation.savedContexts))
+	}
+	snapshot := foundation.savedContexts[0]
+	if len(snapshot.Facts) != 0 || len(snapshot.Observations) != 0 || snapshot.Summary != nil ||
+		len(snapshot.Provenance) != 0 || snapshot.Budget.IncludedItems != 0 ||
+		!strings.Contains(strings.Join(snapshot.Warnings, ","), "historical_context_suppressed") {
+		t.Fatalf("snapshot suprimido invalido: %#v", snapshot)
+	}
+	if len(runs.started) != 2 || runs.started[0].ContextID == "" {
+		t.Fatalf("runs nao referenciam snapshot valido: %#v", runs.started)
+	}
+	for _, call := range captured {
+		if strings.Contains(call.UserPrompt, historicalSentinel) ||
+			strings.Contains(call.SystemPrompt, historicalSentinel) ||
+			!strings.Contains(call.UserPrompt, currentMessage) {
+			t.Fatalf("contexto da chamada incorreto: system=%q user=%q", call.SystemPrompt, call.UserPrompt)
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
@@ -59,6 +60,7 @@ type SendMessageInput struct {
 	TemplateName          string          `json:"templateName"`
 	TemplateLanguage      string          `json:"templateLanguage"`
 	TemplateParameters    []string        `json:"templateParameters"`
+	AIReplyDraftID        string          `json:"aiReplyDraftId"`
 }
 
 // SendService orquestra o envio. scope reusa a validacao de escopo do Service de leitura (A2).
@@ -91,12 +93,11 @@ func NewSendService(store *Store, media *DiskMediaStorage, publisher Publisher, 
 // SendMessage executa o fluxo completo. A permissao efetiva vem do RBAC canonico da conta;
 // papel legado nunca concede reply. Devolve a MessageView criada, o desfecho e o erro.
 func (s *SendService) SendMessage(ctx context.Context, accountID string, principal auth.Principal, conversationID string, in SendMessageInput) (MessageView, sendOutcome, error) {
-	caller := Caller{UserID: principal.UserID, IsAdmin: isAdminPrincipal(principal)}
-	row, err := s.resolveConversationForSend(ctx, accountID, caller, conversationID)
-	if err != nil {
+	if err := s.scope.requirePermission(ctx, accountID, principal, "omnichannel.conversations.reply"); err != nil {
 		return MessageView{}, outcomeQueued, err
 	}
-	if err := s.scope.requirePermission(ctx, accountID, principal, "omnichannel.conversations.reply"); err != nil {
+	row, err := s.resolveConversationForSend(ctx, accountID, principal.UserID, conversationID)
+	if err != nil {
 		return MessageView{}, outcomeQueued, err
 	}
 
@@ -106,6 +107,10 @@ func (s *SendService) SendMessage(ctx context.Context, accountID string, princip
 	}
 	if err := validateSendBody(msgType, in); err != nil {
 		return MessageView{}, outcomeQueued, err
+	}
+	if strings.TrimSpace(in.AIReplyDraftID) != "" &&
+		(msgType != "TEXT" || strings.TrimSpace(in.Content) == "" || strings.TrimSpace(in.MediaURL) != "") {
+		return MessageView{}, outcomeQueued, ErrInvalidBody
 	}
 
 	replyMessageID := firstNonEmpty(in.ReplyToMessageID, in.QuotedMessageID, in.QuotedMessageIDSnake)
@@ -178,6 +183,7 @@ func (s *SendService) SendMessage(ctx context.Context, accountID string, princip
 		MediaDurationSecs: in.MediaDurationSeconds,
 		Origin:            "human",
 		Reply:             reply,
+		AIReplyDraftID:    strings.TrimSpace(in.AIReplyDraftID),
 	}, idempotencyKey, func(snap convSnapshot) (stateUpdate, *decisionRecord, error) {
 		return s.scope.decideTransition(ctx, accountID, EventMsgOutboundHuman,
 			TransitionPayload{ActorUserID: principal.UserID}, snap)
@@ -190,6 +196,49 @@ func (s *SendService) SendMessage(ctx context.Context, accountID string, princip
 		s.audit(ctx, accountID, principal.UserID, conversationID, view.ID, "MESSAGE_OUTBOUND_QUEUED")
 	}
 	return view, outcomeQueued, nil
+}
+
+// GetPendingAIReplyDraft devolve apenas a sugestao da conversa que o operador pode responder.
+// Conta/conversa/instancia fora do escopo continuam indistinguiveis de inexistentes.
+func (s *SendService) GetPendingAIReplyDraft(ctx context.Context, accountID string, principal auth.Principal, conversationID string) (AIReplyDraftEnvelope, error) {
+	if err := s.scope.requirePermission(ctx, accountID, principal, "omnichannel.conversations.reply"); err != nil {
+		return AIReplyDraftEnvelope{}, err
+	}
+	if _, err := s.resolveConversationForSend(ctx, accountID, principal.UserID, conversationID); err != nil {
+		return AIReplyDraftEnvelope{}, err
+	}
+	draft, found, err := s.store.GetPendingAIReplyDraft(ctx, accountID, conversationID)
+	if err != nil {
+		return AIReplyDraftEnvelope{}, err
+	}
+	if !found {
+		return AIReplyDraftEnvelope{Draft: nil}, nil
+	}
+	return AIReplyDraftEnvelope{Draft: &draft}, nil
+}
+
+func (s *SendService) DismissAIReplyDraft(ctx context.Context, accountID string, principal auth.Principal, conversationID, draftID, reason string) error {
+	if err := s.scope.requirePermission(ctx, accountID, principal, "omnichannel.conversations.reply"); err != nil {
+		return err
+	}
+	if _, err := s.resolveConversationForSend(ctx, accountID, principal.UserID, conversationID); err != nil {
+		return err
+	}
+	dismissed, err := s.store.DismissAIReplyDraft(ctx, accountID, conversationID, draftID, principal.UserID, reason)
+	if err != nil {
+		return err
+	}
+	if !dismissed {
+		return ErrNotFound
+	}
+	s.publishAIReplyDraftChanged(ctx, accountID)
+	return nil
+}
+
+func (s *SendService) publishAIReplyDraftChanged(ctx context.Context, accountID string) {
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(
+		accountID, RealtimeInvalidationReasonMessageChanged, time.Now(),
+	))
 }
 
 // SendAIMessage e o unico caminho de saida da IA. Mesmo quando o cerebro roda no n8n,
@@ -268,24 +317,20 @@ func (s *SendService) PublishAIHandoffResult(ctx context.Context, accountID, con
 
 // resolveConversationForSend valida escopo (A2) e devolve a linha da conversa (instancia +
 // scope key para gravar a mensagem). Fora de escopo => ErrNotFound (404, nunca 403).
-func (s *SendService) resolveConversationForSend(ctx context.Context, accountID string, caller Caller, conversationID string) (conversationRow, error) {
-	row, err := s.store.GetConversation(ctx, accountID, conversationID)
-	if err != nil {
-		return conversationRow{}, translate(err)
-	}
-	if caller.IsAdmin {
-		return row, nil
-	}
-	keys, err := s.scope.accessibleScopeKeys(ctx, accountID, caller)
+func (s *SendService) resolveConversationForSend(ctx context.Context, accountID, userID, conversationID string) (conversationRow, error) {
+	visibility, err := s.scope.resolveConversationVisibility(ctx, accountID, userID,
+		"omnichannel.conversations.reply", InstanceGrantReply)
 	if err != nil {
 		return conversationRow{}, err
 	}
-	for _, k := range keys {
-		if k == row.InstanceScopeKey {
-			return row, nil
-		}
+	if err := s.store.RequireVisibleConversationForCompose(ctx, accountID, conversationID, visibility); err != nil {
+		return conversationRow{}, translate(err)
 	}
-	return conversationRow{}, ErrNotFound
+	row, err := s.store.GetConversationForCompose(ctx, accountID, conversationID)
+	if err != nil {
+		return conversationRow{}, translate(err)
+	}
+	return row, nil
 }
 
 // validateSendBody aplica o contrato: TEXT exige content; midia exige mediaUrl; content <= 4000.

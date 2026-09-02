@@ -18,14 +18,15 @@ const (
 // ListCRMContacts is the paginated, tenant-scoped 360-degree contact view.
 // The account is always obtained from the authenticated Principal by the HTTP layer.
 func (s *Service) ListCRMContacts(ctx context.Context, accountID string, p auth.Principal, f CRMContactFilter) (CRMContactPageView, error) {
-	if err := s.requirePermission(ctx, accountID, p, crmPermissionView); err != nil {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, p.UserID, crmPermissionView, InstanceGrantView)
+	if err != nil {
 		return CRMContactPageView{}, err
 	}
 	normalized, err := normalizeCRMFilter(f)
 	if err != nil {
 		return CRMContactPageView{}, err
 	}
-	rows, err := s.store.ListCRMContacts(ctx, accountID, normalized)
+	rows, err := s.store.ListCRMContacts(ctx, accountID, normalized, visibility)
 	if err != nil {
 		return CRMContactPageView{}, translate(err)
 	}
@@ -46,13 +47,14 @@ func (s *Service) ListCRMContacts(ctx context.Context, accountID string, p auth.
 }
 
 func (s *Service) GetCRMContactProfile(ctx context.Context, accountID string, p auth.Principal, contactID, touchBefore, notesBefore string, limit int) (CRMContactProfileView, error) {
-	if err := s.requirePermission(ctx, accountID, p, crmPermissionView); err != nil {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, p.UserID, crmPermissionView, InstanceGrantView)
+	if err != nil {
 		return CRMContactProfileView{}, err
 	}
 	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(contactID)) {
 		return CRMContactProfileView{}, ErrNotFound
 	}
-	contact, err := s.store.GetCRMContact(ctx, accountID, contactID)
+	contact, err := s.store.GetCRMContact(ctx, accountID, contactID, visibility)
 	if err != nil {
 		return CRMContactProfileView{}, translate(err)
 	}
@@ -73,7 +75,7 @@ func (s *Service) GetCRMContactProfile(ctx context.Context, accountID string, p 
 	if err != nil {
 		return CRMContactProfileView{}, err
 	}
-	conversations, err := s.store.ListContactConversations(ctx, accountID, contactID, limit)
+	conversations, err := s.store.ListContactConversations(ctx, accountID, contactID, limit, visibility)
 	if err != nil {
 		return CRMContactProfileView{}, err
 	}
@@ -85,13 +87,14 @@ func (s *Service) GetCRMContactProfile(ctx context.Context, accountID string, p 
 }
 
 func (s *Service) UpdateCRMContact(ctx context.Context, accountID string, p auth.Principal, contactID string, patch CRMContactPatch) (CRMContactView, error) {
-	if err := s.requirePermission(ctx, accountID, p, crmPermissionManage); err != nil {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, p.UserID, crmPermissionManage, InstanceGrantView)
+	if err != nil {
 		return CRMContactView{}, err
 	}
 	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(contactID)) {
 		return CRMContactView{}, ErrNotFound
 	}
-	current, err := s.store.GetCRMContact(ctx, accountID, contactID)
+	current, err := s.store.GetCRMContact(ctx, accountID, contactID, visibility)
 	if err != nil {
 		return CRMContactView{}, translate(err)
 	}
@@ -129,7 +132,7 @@ func (s *Service) UpdateCRMContact(ctx context.Context, accountID string, p auth
 		tags, customFields, patch.ExpectedUpdatedAt, emailSet, ownerSet, tagsSet, customSet); err != nil {
 		return CRMContactView{}, translate(err)
 	}
-	updated, err := s.store.GetCRMContact(ctx, accountID, contactID)
+	updated, err := s.store.GetCRMContact(ctx, accountID, contactID, visibility)
 	if err != nil {
 		return CRMContactView{}, translate(err)
 	}
@@ -137,13 +140,14 @@ func (s *Service) UpdateCRMContact(ctx context.Context, accountID string, p auth
 }
 
 func (s *Service) ListCRMContactNotes(ctx context.Context, accountID string, p auth.Principal, contactID, before string, limit int) (ContactNotePageView, error) {
-	if err := s.requirePermission(ctx, accountID, p, crmPermissionView); err != nil {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, p.UserID, crmPermissionView, InstanceGrantView)
+	if err != nil {
 		return ContactNotePageView{}, err
 	}
 	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(contactID)) {
 		return ContactNotePageView{}, ErrNotFound
 	}
-	if _, err := s.store.GetCRMContact(ctx, accountID, contactID); err != nil {
+	if _, err := s.store.GetCRMContact(ctx, accountID, contactID, visibility); err != nil {
 		return ContactNotePageView{}, translate(err)
 	}
 	limit = ensureCRMLimit(limit)
@@ -155,7 +159,8 @@ func (s *Service) ListCRMContactNotes(ctx context.Context, accountID string, p a
 }
 
 func (s *Service) CreateCRMContactNote(ctx context.Context, accountID string, p auth.Principal, contactID string, in ContactNoteInput) (ContactNoteView, error) {
-	if err := s.requirePermission(ctx, accountID, p, crmPermissionManage); err != nil {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, p.UserID, crmPermissionManage, InstanceGrantView)
+	if err != nil {
 		return ContactNoteView{}, err
 	}
 	if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(contactID)) || (in.ConversationID != nil && !omnichannelUUIDPattern.MatchString(strings.TrimSpace(*in.ConversationID))) {
@@ -165,8 +170,11 @@ func (s *Service) CreateCRMContactNote(ctx context.Context, accountID string, p 
 	if in.Content == "" || len([]rune(in.Content)) > 4000 {
 		return ContactNoteView{}, ErrInvalidBody
 	}
+	if _, err := s.store.GetCRMContact(ctx, accountID, contactID, visibility); err != nil {
+		return ContactNoteView{}, translate(err)
+	}
 	if in.ConversationID != nil {
-		conversation, err := s.store.GetConversation(ctx, accountID, strings.TrimSpace(*in.ConversationID))
+		conversation, err := s.store.GetVisibleConversation(ctx, accountID, visibility, strings.TrimSpace(*in.ConversationID))
 		if err != nil || conversation.ContactID == nil || *conversation.ContactID != contactID {
 			return ContactNoteView{}, ErrNotFound
 		}

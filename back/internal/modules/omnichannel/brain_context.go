@@ -26,7 +26,8 @@ func buildBrainRequestV2(p triageParams, fields []CollectFieldView) BrainRequest
 	if p.ContactIntelligence != nil {
 		relationship = p.ContactIntelligence.RelationshipStatus
 		_ = json.Unmarshal(p.ContactIntelligence.Tags, &tags)
-		if value := strings.TrimSpace(p.ContactIntelligence.Summary); value != "" {
+		if value := strings.TrimSpace(p.ContactIntelligence.Summary); value != "" &&
+			!p.ContactIntelligence.DerivedMemorySuppressed {
 			summary = &value
 		}
 	}

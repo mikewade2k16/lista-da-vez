@@ -16,7 +16,14 @@ const automationProfileCols = `p.id::text, p.client_account_id::text,
 	wi.instance_name, wi.provider, wi.display_name, wi.phone_number, wi.is_active,
 	aa.name, aa.enabled, aa.active_version_id::text,
 	(aa.enabled and aa.active_version_id is not null
-	 and aa.provider_key_ciphertext <> '' and av.provider <> '' and av.model <> '')`
+	 and aa.provider_key_ciphertext <> '' and av.provider <> '' and av.model <> ''),
+	exists(select 1 from messaging.channel_client_bindings binding
+	 where binding.account_id=p.account_id
+	   and binding.client_account_id=p.client_account_id
+	   and binding.whatsapp_instance_id=p.whatsapp_instance_id
+	   and binding.channel='WHATSAPP'
+	   and binding.effective_from <= now()
+	   and (binding.effective_to is null or binding.effective_to > now()))`
 
 const automationProfileJoins = `
 	from messaging.automation_profiles p
@@ -39,7 +46,7 @@ func scanAutomationProfile(row rowScanner) (automationProfileRow, error) {
 		&p.AutoCloseBlockSensitive, &p.Revision, &p.CreatedAt, &p.UpdatedAt,
 		&p.InstanceName, &p.InstanceProvider, &p.InstanceDisplayName,
 		&p.InstancePhoneNumber, &p.InstanceActive, &p.AgentName, &p.AgentEnabled,
-		&p.AgentActiveVersionID, &p.AgentReady)
+		&p.AgentActiveVersionID, &p.AgentReady, &p.BindingReady)
 	return p, err
 }
 
@@ -67,19 +74,24 @@ func (s *Store) GetAutomationProfile(ctx context.Context, accountID, clientID st
 		where p.account_id = $1::uuid and p.client_account_id = $2::uuid`, accountID, clientID))
 }
 
-func (s *Store) AutomationBindingReadiness(ctx context.Context, accountID, instanceID, agentID string) (automationBindingReadiness, error) {
+func (s *Store) AutomationBindingReadiness(ctx context.Context, accountID, clientID, instanceID, agentID string) (automationBindingReadiness, error) {
 	var out automationBindingReadiness
 	err := s.pool.QueryRow(ctx, `select
-		exists(select 1 from messaging.whatsapp_instances where account_id = $1::uuid and id = $2::uuid),
-		exists(select 1 from messaging.ai_agents where account_id = $1::uuid and id = $3::uuid),
-		exists(select 1 from messaging.whatsapp_instances where account_id = $1::uuid and id = $2::uuid and is_active),
+		exists(select 1 from messaging.whatsapp_instances where account_id = $1::uuid and id = $3::uuid),
+		exists(select 1 from messaging.ai_agents where account_id = $1::uuid and id = $4::uuid),
+		exists(select 1 from messaging.whatsapp_instances where account_id = $1::uuid and id = $3::uuid and is_active),
 		exists(select 1 from messaging.ai_agents aa
 			join messaging.ai_agent_versions av on av.account_id = aa.account_id
 			 and av.agent_id = aa.id and av.id = aa.active_version_id
-			where aa.account_id = $1::uuid and aa.id = $3::uuid and aa.enabled
-			 and aa.provider_key_ciphertext <> '' and av.provider <> '' and av.model <> '')`,
-		accountID, instanceID, agentID).Scan(&out.InstanceFound, &out.AgentFound,
-		&out.InstanceReady, &out.AgentReady)
+			where aa.account_id = $1::uuid and aa.id = $4::uuid and aa.enabled
+				and aa.provider_key_ciphertext <> '' and av.provider <> '' and av.model <> ''),
+		exists(select 1 from messaging.channel_client_bindings binding
+			where binding.account_id=$1::uuid and binding.client_account_id=$2::uuid
+			  and binding.whatsapp_instance_id=$3::uuid and binding.channel='WHATSAPP'
+			  and binding.effective_from <= now()
+			  and (binding.effective_to is null or binding.effective_to > now()))`,
+		accountID, clientID, instanceID, agentID).Scan(&out.InstanceFound, &out.AgentFound,
+		&out.InstanceReady, &out.AgentReady, &out.BindingReady)
 	return out, err
 }
 
@@ -114,6 +126,13 @@ func (s *Store) UpsertAutomationProfile(ctx context.Context, accountID, clientID
 		              where account_id = $1::uuid and id = $3::uuid)
 		  and exists (select 1 from messaging.ai_agents
 		              where account_id = $1::uuid and id = $4::uuid)
+		  and (not $5 or exists (
+		      select 1 from messaging.channel_client_bindings binding
+		      where binding.account_id=$1::uuid and binding.client_account_id=$2::uuid
+		        and binding.whatsapp_instance_id=$3::uuid and binding.channel='WHATSAPP'
+		        and binding.effective_from <= now()
+		        and (binding.effective_to is null or binding.effective_to > now())
+		  ))
 		on conflict (account_id, client_account_id) do update set
 			whatsapp_instance_id = excluded.whatsapp_instance_id,
 			ai_agent_id = excluded.ai_agent_id,
@@ -133,6 +152,9 @@ func (s *Store) UpsertAutomationProfile(ctx context.Context, accountID, clientID
 		return automationProfileRow{}, err
 	}
 	if cmd.RowsAffected() == 0 {
+		if in.Enabled {
+			return automationProfileRow{}, ErrAutomationBindingMismatch
+		}
 		return automationProfileRow{}, pgx.ErrNoRows
 	}
 
@@ -169,6 +191,13 @@ func (s *Store) ActiveAgentForInstance(ctx context.Context, accountID, instanceI
 	agent, err := scanAgentWithPrefix(s.pool.QueryRow(ctx, `select p.enabled, `+automationAgentCols+`
 		from messaging.automation_profiles p
 		join messaging.whatsapp_instances wi on wi.account_id=p.account_id and wi.id=p.whatsapp_instance_id
+		join messaging.channel_client_bindings binding
+		  on binding.account_id=p.account_id
+		 and binding.client_account_id=p.client_account_id
+		 and binding.whatsapp_instance_id=p.whatsapp_instance_id
+		 and binding.channel='WHATSAPP'
+		 and binding.effective_from <= now()
+		 and (binding.effective_to is null or binding.effective_to > now())
 		join messaging.ai_agents aa on aa.account_id = p.account_id and aa.id = p.ai_agent_id
 		where p.account_id = $1::uuid and p.whatsapp_instance_id = $2::uuid and wi.is_active`,
 		accountID, instanceID), &profileEnabled)
@@ -187,9 +216,17 @@ func (s *Store) ActiveAgentForInstance(ctx context.Context, accountID, instanceI
 
 func (s *Store) AutomationClientForInstance(ctx context.Context, accountID, instanceID string) (string, bool, error) {
 	var clientID string
-	err := s.pool.QueryRow(ctx, `select client_account_id::text
-		from messaging.automation_profiles
-		where account_id=$1::uuid and whatsapp_instance_id=nullif($2,'')::uuid and enabled`,
+	err := s.pool.QueryRow(ctx, `select profile.client_account_id::text
+		from messaging.automation_profiles profile
+		join messaging.channel_client_bindings binding
+		  on binding.account_id=profile.account_id
+		 and binding.client_account_id=profile.client_account_id
+		 and binding.whatsapp_instance_id=profile.whatsapp_instance_id
+		 and binding.channel='WHATSAPP'
+		 and binding.effective_from <= now()
+		 and (binding.effective_to is null or binding.effective_to > now())
+		where profile.account_id=$1::uuid
+		  and profile.whatsapp_instance_id=nullif($2,'')::uuid and profile.enabled`,
 		accountID, strings.TrimSpace(instanceID)).Scan(&clientID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil

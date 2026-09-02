@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
-import AppSelectField from '~/components/ui/AppSelectField.vue'
 import AppToggleSwitch from '~/components/ui/AppToggleSwitch.vue'
+import ConfigNumberAccess from '~/components/omnichannel/config/ConfigNumberAccess.vue'
 import ConfigNumberCredentials from '~/components/omnichannel/config/ConfigNumberCredentials.vue'
 import ConfigNumberCapabilities from '~/components/omnichannel/config/ConfigNumberCapabilities.vue'
 import ConfigNumberConnection from '~/components/omnichannel/config/ConfigNumberConnection.vue'
+import {
+  canResetInstanceHistory,
+  useOmnichannelScopeInvalidation,
+} from '~/composables/omnichannel/useOmnichannelScopeInvalidation'
 import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
-import { setInstanceUsers, updateInstance } from '~/domain/omnichannel/config-api'
+import { updateInstance } from '~/domain/omnichannel/config-api'
 import { deleteInstance } from '~/domain/omnichannel/instance-admin-api'
 import { OMNI_PROVIDER_LABEL } from '~/domain/omnichannel/config-types'
 import type {
@@ -23,6 +27,7 @@ import type {
 const props = defineProps<{
   instance: OmniInstance
   users: OmniAssignableUser[]
+  reloadInstances: () => Promise<void>
   disabled?: boolean
 }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -31,15 +36,15 @@ const auth = useAuthStore()
 const ui = useUiStore()
 const runtimeConfig = useRuntimeConfig()
 const api = createApiRequest(runtimeConfig, () => auth.accessToken)
+const { accountLabel, isResettingInstance, requestInstanceHistoryReset } =
+  useOmnichannelScopeInvalidation()
 
 const draft = reactive({
   displayName: '',
   phoneNumber: '',
   queueLabel: '',
-  responsibleUserId: '',
   isDefault: false,
 })
-const assigned = ref<Set<string>>(new Set())
 const saving = ref(false)
 const resolvedProvider = ref(props.instance.provider || '')
 
@@ -47,10 +52,8 @@ function hydrate(): void {
   draft.displayName = props.instance.displayName || ''
   draft.phoneNumber = props.instance.phoneNumber || ''
   draft.queueLabel = props.instance.queueLabel || ''
-  draft.responsibleUserId = props.instance.responsibleUserId || ''
   draft.isDefault = props.instance.isDefault
   resolvedProvider.value = props.instance.provider || ''
-  assigned.value = new Set(props.instance.assignedUserIds || [])
 }
 
 watch(() => props.instance, hydrate, { immediate: true })
@@ -64,23 +67,9 @@ const credentialLabel = computed(() =>
   props.instance.hasEvolutionApiKey ? 'credencial configurada' : 'sem credencial própria',
 )
 
-const assignedCount = computed(() => assigned.value.size)
-
-const responsibleOptions = computed(() => [
-  { value: '', label: 'Sem responsável' },
-  ...props.users.map((user) => ({
-    value: user.id,
-    label: user.name || user.email,
-    meta: user.email,
-  })),
-])
-
-function toggleAssigned(userId: string): void {
-  const next = new Set(assigned.value)
-  if (next.has(userId)) next.delete(userId)
-  else next.add(userId)
-  assigned.value = next
-}
+const canResetHistory = computed(() => canResetInstanceHistory(props.instance))
+const historyResetting = computed(() => isResettingInstance(props.instance.id))
+const historyRiskTitleId = computed(() => `history-risk-title-${props.instance.id}`)
 
 async function save(): Promise<void> {
   saving.value = true
@@ -89,11 +78,9 @@ async function save(): Promise<void> {
       displayName: draft.displayName.trim(),
       phoneNumber: draft.phoneNumber.trim(),
       queueLabel: draft.queueLabel.trim(),
-      responsibleUserId: draft.responsibleUserId,
       userScopePolicy: props.instance.userScopePolicy,
       isDefault: draft.isDefault,
     })
-    await setInstanceUsers(api, props.instance.id, [...assigned.value])
     ui.success('Configurações do número salvas.')
     emit('changed')
   } catch (error) {
@@ -124,6 +111,12 @@ async function remove(): Promise<void> {
   } finally {
     saving.value = false
   }
+}
+
+async function resetVisibleHistory(): Promise<void> {
+  await requestInstanceHistoryReset(props.instance, {
+    rehydrate: props.reloadInstances,
+  })
 }
 </script>
 
@@ -172,14 +165,6 @@ async function remove(): Promise<void> {
             <span class="cfg-field__label">Rótulo da fila</span>
             <input v-model="draft.queueLabel" class="cfg-input" type="text" :disabled="disabled" />
           </label>
-          <AppSelectField
-            class="cfg-field"
-            label="Responsável principal"
-            :model-value="draft.responsibleUserId"
-            :options="responsibleOptions"
-            :disabled="disabled"
-            @update:model-value="draft.responsibleUserId = $event"
-          />
         </div>
 
         <AppToggleSwitch
@@ -188,26 +173,13 @@ async function remove(): Promise<void> {
           label="Usar como número padrão"
         />
 
-        <details class="cfg-card__subdetails">
-          <summary>
-            <span>Acesso dos atendentes</span>
-            <small>{{ assignedCount }} selecionado(s)</small>
-          </summary>
-          <div class="cfg-card__subdetails-body">
-            <p v-if="users.length === 0" class="cfg-empty">Nenhum atendente elegível na conta.</p>
-            <div v-else class="cfg-users">
-              <label v-for="user in users" :key="user.id" class="cfg-user">
-                <input
-                  type="checkbox"
-                  :checked="assigned.has(user.id)"
-                  :disabled="disabled"
-                  @change="toggleAssigned(user.id)"
-                />
-                <span>{{ user.name || user.email }}</span>
-              </label>
-            </div>
-          </div>
-        </details>
+        <ConfigNumberAccess
+          :instance-id="instance.id"
+          :users="users"
+          :reload-instances="reloadInstances"
+          :disabled="disabled"
+          @changed="emit('changed')"
+        />
 
         <details class="cfg-card__subdetails">
           <summary>
@@ -227,6 +199,51 @@ async function remove(): Promise<void> {
             </div>
           </div>
         </details>
+
+        <section
+          v-if="canResetHistory"
+          class="cfg-card__risk"
+          :aria-labelledby="historyRiskTitleId"
+        >
+          <div>
+            <strong :id="historyRiskTitleId">Zona de risco</strong>
+            <p>
+              Oculta o histórico anterior somente desta conexão. A sessão não será desconectada e os
+              contatos serão preservados.
+            </p>
+          </div>
+          <dl class="cfg-card__risk-details">
+            <div>
+              <dt>Conta</dt>
+              <dd>{{ accountLabel }}</dd>
+            </div>
+            <div>
+              <dt>instanceName</dt>
+              <dd>{{ instance.instanceName }}</dd>
+            </div>
+            <div>
+              <dt>Nome de exibição</dt>
+              <dd>{{ instance.displayName || 'não informado' }}</dd>
+            </div>
+            <div>
+              <dt>Telefone</dt>
+              <dd>{{ instance.phoneNumber || 'não informado' }}</dd>
+            </div>
+            <div>
+              <dt>Provider</dt>
+              <dd>{{ instance.provider }}</dd>
+            </div>
+          </dl>
+          <AppPanelButton
+            variant="danger"
+            :disabled="historyResetting"
+            @click="resetVisibleHistory"
+          >
+            {{
+              historyResetting ? 'Limpando histórico…' : 'Limpar histórico visível desta conexão'
+            }}
+          </AppPanelButton>
+        </section>
 
         <div class="cfg-card__actions">
           <AppPanelButton variant="danger" :disabled="disabled || saving" @click="remove">
@@ -345,26 +362,6 @@ async function remove(): Promise<void> {
   padding: 0 0.75rem 0.75rem;
 }
 
-.cfg-users {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.35rem;
-}
-
-.cfg-user {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: rgb(var(--text));
-  font-size: 0.8rem;
-}
-
-.cfg-empty {
-  margin: 0;
-  color: rgb(var(--muted));
-  font-size: 0.8rem;
-}
-
 .cfg-card__technical {
   display: grid;
   gap: 0.75rem;
@@ -381,6 +378,46 @@ async function remove(): Promise<void> {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+.cfg-card__risk {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.75rem;
+  border: 1px solid rgb(var(--danger) / 0.45);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--danger) / 0.06);
+}
+
+.cfg-card__risk strong,
+.cfg-card__risk dd {
+  color: rgb(var(--text));
+}
+
+.cfg-card__risk p,
+.cfg-card__risk dl {
+  margin: 0.2rem 0 0;
+  color: rgb(var(--muted));
+  font-size: 0.76rem;
+}
+
+.cfg-card__risk-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.cfg-card__risk-details div {
+  min-width: 0;
+}
+
+.cfg-card__risk dt {
+  font-weight: 700;
+}
+
+.cfg-card__risk dd {
+  margin: 0.1rem 0 0;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 640px) {

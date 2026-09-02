@@ -25,6 +25,14 @@ func (f automationPermissionFake) requirePermission(context.Context, string, aut
 	return f.err
 }
 
+func (f automationPermissionFake) requireInstanceAccess(context.Context, string, string, string, string, InstanceGrantLevel) error {
+	return f.err
+}
+
+func (f automationPermissionFake) assertConversationAccess(context.Context, string, string, string, string, InstanceGrantLevel) error {
+	return f.err
+}
+
 type automationCatalogFake struct {
 	clients []AutomationClientRef
 	err     error
@@ -94,7 +102,7 @@ func (f *automationRepositoryFake) GetAutomationProfile(context.Context, string,
 	return f.row, f.getErr
 }
 
-func (f *automationRepositoryFake) AutomationBindingReadiness(context.Context, string, string, string) (automationBindingReadiness, error) {
+func (f *automationRepositoryFake) AutomationBindingReadiness(context.Context, string, string, string, string) (automationBindingReadiness, error) {
 	return f.readiness, nil
 }
 
@@ -139,7 +147,7 @@ func TestAutomationPutRejectsClientOutsideVisibleScope(t *testing.T) {
 
 func TestAutomationPutRequiresReadyBindingWhenEnabling(t *testing.T) {
 	repo := &automationRepositoryFake{readiness: automationBindingReadiness{
-		InstanceFound: true, AgentFound: true, InstanceReady: true, AgentReady: false,
+		InstanceFound: true, AgentFound: true, InstanceReady: true, AgentReady: false, BindingReady: true,
 	}}
 	svc := NewAutomationService(repo, automationPermissionFake{}, automationCatalogFake{
 		clients: []AutomationClientRef{automationTestClientRef()},
@@ -154,16 +162,33 @@ func TestAutomationPutRequiresReadyBindingWhenEnabling(t *testing.T) {
 	}
 }
 
+func TestAutomationPutRejectsBindingFromAnotherClient(t *testing.T) {
+	repo := &automationRepositoryFake{readiness: automationBindingReadiness{
+		InstanceFound: true, AgentFound: true, InstanceReady: true, AgentReady: true, BindingReady: false,
+	}}
+	svc := NewAutomationService(repo, automationPermissionFake{}, automationCatalogFake{
+		clients: []AutomationClientRef{automationTestClientRef()},
+	}, nil)
+	_, err := svc.PutProfile(context.Background(), automationTestAccount, automationTestPrincipal(), automationTestClient,
+		AutomationProfileInput{WhatsAppInstanceID: automationTestInstance, AIAgentID: automationTestAgent, Enabled: true})
+	if !errors.Is(err, ErrAutomationBindingMismatch) {
+		t.Fatalf("err=%v, esperado binding mismatch", err)
+	}
+	if repo.putCalls != 0 {
+		t.Fatalf("perfil divergente foi persistido: %d", repo.putCalls)
+	}
+}
+
 func TestAutomationPutPersistsPolicyAndReusesStrategicContext(t *testing.T) {
 	now := time.Now()
 	repo := &automationRepositoryFake{
-		readiness: automationBindingReadiness{InstanceFound: true, AgentFound: true, InstanceReady: true, AgentReady: true},
+		readiness: automationBindingReadiness{InstanceFound: true, AgentFound: true, InstanceReady: true, AgentReady: true, BindingReady: true},
 		row: automationProfileRow{ID: "77777777-7777-4777-8777-777777777777", ClientAccountID: automationTestClient,
 			WhatsAppInstanceID: automationTestInstance, AIAgentID: automationTestAgent, Enabled: true,
 			AutoCloseMinConfidence: 0.82, AutoCloseRequireAllFields: true,
 			AutoCloseBlockHumanRequest: true, AutoCloseBlockSensitive: true,
 			InstanceName: "cliente-wa", InstanceProvider: "evolution", InstanceActive: true,
-			AgentName: "Recepcao", AgentEnabled: true, AgentReady: true, Revision: 1,
+			AgentName: "Recepcao", AgentEnabled: true, AgentReady: true, BindingReady: true, Revision: 1,
 			CreatedAt: now, UpdatedAt: now},
 	}
 	minimum := 0.82

@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, ref, watch } from "vue";
 import OmnichannelInboxLoading from "~/components/omnichannel/OmnichannelInboxLoading.vue";
 import OmnichannelConfigDrawer from "~/components/omnichannel/config/OmnichannelConfigDrawer.vue";
+import AppPanelButton from "~/components/ui/AppPanelButton.vue";
 import { useAuthStore } from "~/stores/auth";
 
 const AsyncOmnichannelInboxModule = defineAsyncComponent({
@@ -19,13 +20,14 @@ definePageMeta({
 });
 
 const auth = useAuthStore();
-const isPlatformAdmin = computed(() => auth.role === "platform_admin");
 const route = useRoute();
 const configOpen = ref(false);
 const configTab = computed(() => String(route.query.config || ""));
+const canViewInbox = computed(() =>
+  auth.effectivePermissionKeys.includes("omnichannel.conversations.view"),
+);
 const canConfigure = computed(
   () =>
-    isPlatformAdmin.value ||
     [
       "omnichannel.instances.manage",
       "omnichannel.settings.manage",
@@ -47,7 +49,14 @@ watch(
     <OmnichannelConfigDrawer v-model:open="configOpen" :initial-tab="configTab" />
 
     <ClientOnly>
-      <AsyncOmnichannelInboxModule @configure="configOpen = true" />
+      <AsyncOmnichannelInboxModule v-if="canViewInbox" @configure="configOpen = true" />
+      <div v-else class="omnichannel-inbox-page__forbidden">
+        <strong>Inbox não disponível</strong>
+        <span>Seu acesso atual não inclui a permissão para visualizar conversas.</span>
+        <AppPanelButton v-if="canConfigure" variant="secondary" @click="configOpen = true">
+          Abrir configurações permitidas
+        </AppPanelButton>
+      </div>
       <template #fallback>
         <OmnichannelInboxLoading />
       </template>
@@ -61,5 +70,23 @@ watch(
   flex-direction: column;
   min-height: 0;
   height: calc(100vh - 6.5rem);
+}
+
+.omnichannel-inbox-page__forbidden {
+  display: grid;
+  place-content: center;
+  gap: 0.6rem;
+  min-height: 18rem;
+  padding: 1.5rem;
+  color: rgb(var(--muted));
+  text-align: center;
+}
+
+.omnichannel-inbox-page__forbidden strong {
+  color: rgb(var(--text));
+}
+
+.omnichannel-inbox-page__forbidden :deep(.app-panel-button) {
+  justify-self: center;
 }
 </style>

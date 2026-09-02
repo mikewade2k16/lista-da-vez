@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -49,6 +50,9 @@ type stateUpdate struct {
 	// PreserveAIMessageID keeps one already-created final AI reply queued while
 	// close invalidates every other pending AI action for the conversation.
 	PreserveAIMessageID string
+	// PreserveAIReplyDraftID mantem a sugestao escolhida ate a mensagem humana ser criada
+	// e marca-la como used na mesma transacao.
+	PreserveAIReplyDraftID string
 }
 
 // decisionRecord e a linha de auditoria a inserir (nil = transicao sem decisao de roteamento).
@@ -105,6 +109,13 @@ func applyStateUpdateTx(ctx context.Context, tx pgx.Tx, accountID, convID string
 	if !upd.InvalidateAI {
 		return nil
 	}
+	if _, err := tx.Exec(ctx, `update messaging.ai_reply_drafts
+		set status='expired',decision_reason='ai_invalidated',decided_at=now(),updated_at=now()
+		where account_id=$1::uuid and conversation_id=$2::uuid and status='pending'
+		  and (nullif($3,'')::uuid is null or id<>nullif($3,'')::uuid)`,
+		accountID, convID, upd.PreserveAIReplyDraftID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `update messaging.outbox o
 		set status = 'dead', last_error = 'ai_invalidated_by_handoff',
 			locked_at = null, locked_by = '', updated_at = now()
@@ -112,7 +123,7 @@ func applyStateUpdateTx(ctx context.Context, tx pgx.Tx, accountID, convID string
 		where o.account_id = $1::uuid and o.kind = $3 and o.status in ('pending','processing')
 		  and m.account_id = $1::uuid and m.conversation_id = $2::uuid
 		  and m.origin = 'ai' and m.status = 'PENDING'
-		  and ($4 = '' or m.id <> $4::uuid)
+		  and (nullif($4,'')::uuid is null or m.id <> nullif($4,'')::uuid)
 		  and o.payload->>'messageId' = m.id::text`, accountID, convID, OutboundJobKind, upd.PreserveAIMessageID); err != nil {
 		return err
 	}
@@ -120,7 +131,7 @@ func applyStateUpdateTx(ctx context.Context, tx pgx.Tx, accountID, convID string
 		set status = 'FAILED', provider_error_code = 'ai_handoff_canceled', updated_at = now()
 		where account_id = $1::uuid and conversation_id = $2::uuid
 		  and origin = 'ai' and status = 'PENDING'
-		  and ($3 = '' or id <> $3::uuid)`, accountID, convID, upd.PreserveAIMessageID)
+		  and (nullif($3,'')::uuid is null or id <> nullif($3,'')::uuid)`, accountID, convID, upd.PreserveAIMessageID)
 	if err != nil {
 		return err
 	}
@@ -152,10 +163,51 @@ func insertDecisionTx(ctx context.Context, tx pgx.Tx, accountID, convID string, 
 	return err
 }
 
-// ApplyTransition roda a transicao numa UNICA transacao com `select ... for update`
-// (Contrato 2, concorrencia). Le o snapshot sob lock, chama `decide` (que roda a maquina +
-// motor), grava o estado destino e, se houver, a decisao — tudo atomico. Devolve a view
-// atualizada. Conversa de outra conta => ErrNotFound (404).
+// requireTransitionConversationVisibleTx impede que uma acao por ID materialize estado ou
+// auditoria usando historico que um reset acabou de ocultar. O chamador ja mantem os locks
+// canonicos instancia SHARE -> conversa UPDATE; a segunda chamada, imediatamente antes das
+// escritas, tambem protege callbacks de decisao demorados contra mudancas de privacidade.
+func (s *Store) requireTransitionConversationVisibleTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	accountID string,
+	convID string,
+) error {
+	var visibleID string
+	err := tx.QueryRow(ctx, `select c.id::text
+		from messaging.conversations c
+		where c.account_id=$1::uuid and c.id=$2::uuid`+visibleConversationFilter+
+		s.historyVisibleConversationPredicate("c"), accountID, convID).Scan(&visibleID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// transitionConversationTx monta a resposta ainda sob o fence da instancia. Consultar a view
+// somente depois do commit permitiria que o reset acordasse, avancasse o cutoff e fizesse uma
+// transicao ja persistida terminar falsamente como 404.
+func (s *Store) transitionConversationTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	accountID string,
+	convID string,
+) (conversationRow, error) {
+	query := `select ` + conversationCols + s.lastMessageCol() + `
+		from messaging.conversations c
+		left join messaging.whatsapp_instances i
+		  on i.account_id=c.account_id and c.channel='WHATSAPP'
+		 and (i.id=c.instance_id or (c.instance_id is null and i.instance_name=c.instance_scope_key))
+		where c.account_id=$1::uuid and c.id=$2::uuid` + visibleConversationFilter +
+		s.historyVisibleConversationPredicate("c")
+	return scanConversation(tx.QueryRow(ctx, query, accountID, convID))
+}
+
+// ApplyTransition roda a transicao numa UNICA transacao sob a ordem canonica de locks
+// instancia SHARE -> conversa UPDATE. Le o snapshot e revalida a visibilidade antes de chamar
+// o motor e imediatamente antes de materializar estado/decisao. Assim, reset-first nao usa
+// texto/campos antigos; transition-first mantem o reset esperando e sua decisao fica anterior
+// ao novo cutoff. Conversa de outra conta ou historico oculto => ErrNotFound (404).
 func (s *Store) ApplyTransition(ctx context.Context, accountID, convID string,
 	decide func(convSnapshot) (stateUpdate, *decisionRecord, error)) (conversationRow, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -164,13 +216,25 @@ func (s *Store) ApplyTransition(ctx context.Context, accountID, convID string,
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	if err := lockHistoryExternalEffectScope(ctx, tx, accountID, convID, "update"); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrHistoryResetInvalidated) {
+			return conversationRow{}, ErrNotFound
+		}
+		return conversationRow{}, err
+	}
 	snap, err := lockConversationSnapshotTx(ctx, tx, accountID, convID)
 	if err != nil {
+		return conversationRow{}, err
+	}
+	if err := s.requireTransitionConversationVisibleTx(ctx, tx, accountID, convID); err != nil {
 		return conversationRow{}, err
 	}
 
 	upd, dec, err := decide(snap)
 	if err != nil {
+		return conversationRow{}, err
+	}
+	if err := s.requireTransitionConversationVisibleTx(ctx, tx, accountID, convID); err != nil {
 		return conversationRow{}, err
 	}
 
@@ -181,11 +245,15 @@ func (s *Store) ApplyTransition(ctx context.Context, accountID, convID string,
 	if err := insertDecisionTx(ctx, tx, accountID, convID, dec); err != nil {
 		return conversationRow{}, err
 	}
+	row, err := s.transitionConversationTx(ctx, tx, accountID, convID)
+	if err != nil {
+		return conversationRow{}, err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return conversationRow{}, err
 	}
-	return s.GetConversation(ctx, accountID, convID)
+	return row, nil
 }
 
 // ============================================================================
@@ -249,14 +317,19 @@ func (s *Store) DefaultTarget(ctx context.Context, accountID string) (routingTar
 // Auditoria de decisoes
 // ============================================================================
 
-// ListRoutingDecisions devolve as decisoes de uma conversa, mais recente primeiro. O escopo
-// (visibilidade) e checado ANTES no service; aqui o filtro de account e defesa em profundidade.
+// ListRoutingDecisions devolve apenas decisoes operacionais posteriores ao cutoff. A query
+// revalida conversa+tenant atomicamente, fechando o TOCTOU entre service e repositorio.
 func (s *Store) ListRoutingDecisions(ctx context.Context, accountID, convID string) ([]RoutingDecisionView, error) {
-	rows, err := s.pool.Query(ctx, `select id::text, conversation_id::text, rule_id::text,
-		outcome, reason, target_department_id::text, target_queue_id::text, decided_at
-		from messaging.routing_decisions
-		where account_id = $1::uuid and conversation_id = $2::uuid
-		order by decided_at desc`, accountID, convID)
+	rows, err := s.pool.Query(ctx, `select decision.id::text, decision.conversation_id::text,
+		decision.rule_id::text, decision.outcome, decision.reason,
+		decision.target_department_id::text, decision.target_queue_id::text, decision.decided_at
+		from messaging.routing_decisions decision
+		join messaging.conversations c
+		  on c.account_id=decision.account_id and c.id=decision.conversation_id
+		where decision.account_id = $1::uuid and decision.conversation_id = $2::uuid`+
+		s.historyVisibleConversationPredicate("c")+`
+		and decision.decided_at > `+s.effectiveHistoryCutoffExpression("c")+`
+		order by decision.decided_at desc, decision.id desc`, accountID, convID)
 	if err != nil {
 		return nil, err
 	}
@@ -293,12 +366,17 @@ const visibilityWhere = `c.account_id = $1::uuid and (
 // gate de dado => ErrNoRows -> ErrNotFound (404, nunca 403). Reutiliza conversationCols/
 // lastMessageCol (F2) — mesma view do inbox.
 func (s *Store) GetVisibleConversation(ctx context.Context, accountID string, scope VisibilityScope, convID string) (conversationRow, error) {
-	query := `select ` + conversationCols + lastMessageCol + `
+	query := `select ` + conversationCols + s.lastMessageCol() + `
 		from messaging.conversations c
 		left join messaging.whatsapp_instances i
-			on i.id = c.instance_id and i.account_id = c.account_id
-		where ` + visibilityWhere + ` and c.id = $4::uuid`
-	return scanConversation(s.pool.QueryRow(ctx, query, accountID, scope.IsBroad, scope.UserID, convID))
+			on i.account_id=c.account_id and c.channel='WHATSAPP'
+			and (i.id=c.instance_id or (c.instance_id is null and i.instance_name=c.instance_scope_key))
+		where c.account_id=$1::uuid` + visibleConversationFilter + s.historyVisibleConversationPredicate("c")
+	args := []any{accountID}
+	query, args = appendConversationVisibility(query, args, "c", scope)
+	args = append(args, convID)
+	query += ` and c.id=$` + strconv.Itoa(len(args)) + `::uuid`
+	return scanConversation(s.pool.QueryRow(ctx, query, args...))
 }
 
 // HasSettingsManage responde a permissao efetiva `omnichannel.settings.manage` NA CONTA
@@ -352,14 +430,11 @@ func (s *Store) queueDepartment(ctx context.Context, accountID, queueID string) 
 func (s *Store) LatestMessageText(ctx context.Context, accountID, convID string) (string, error) {
 	var text string
 	err := s.pool.QueryRow(ctx, `select message.content from messaging.messages message
-		where message.account_id = $1::uuid and message.conversation_id = $2::uuid
-		  and message.created_at > coalesce((select suppression.history_cleared_at
-		      from messaging.conversations conversation
-		      join messaging.contact_suppressions suppression
-		        on suppression.account_id=conversation.account_id and suppression.contact_id=conversation.contact_id
-		      where conversation.account_id=message.account_id and conversation.id=message.conversation_id),
-		      '-infinity'::timestamptz)
-		order by created_at desc, id desc limit 1`, accountID, convID).Scan(&text)
+		join messaging.conversations conversation
+		  on conversation.account_id=message.account_id and conversation.id=message.conversation_id
+		where message.account_id = $1::uuid and message.conversation_id = $2::uuid`+
+		s.historyVisibleMessagePredicate("message", "conversation")+`
+		order by message.created_at desc, message.id desc limit 1`, accountID, convID).Scan(&text)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

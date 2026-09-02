@@ -48,7 +48,7 @@ func TestCustomerDataInboundHandlerRunsIndependentlyFromAI(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	bridge := &customerDataInboundBridgeStub{}
-	handler := customerDataInboundHandler{bridge: bridge}
+	handler := customerDataInboundHandler{bridge: bridge, historyLease: allowCustomerDataHistory}
 	err = handler.Handle(context.Background(), jobs.Job{
 		ID: event.EventID, AccountID: event.AccountID, OrderingKey: event.ContactID,
 		Kind: customerDataRelationshipJobKind, Payload: payload,
@@ -69,7 +69,7 @@ func TestCustomerDataInboundHandlerRejectsCrossAccountPayload(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	bridge := &customerDataInboundBridgeStub{}
-	handler := customerDataInboundHandler{bridge: bridge}
+	handler := customerDataInboundHandler{bridge: bridge, historyLease: allowCustomerDataHistory}
 	err = handler.Handle(context.Background(), jobs.Job{
 		ID: event.EventID, AccountID: "cc09ab06-f2e7-4726-a84c-a3b3f054ddea",
 		OrderingKey: event.ContactID, Kind: customerDataRelationshipJobKind, Payload: payload,
@@ -81,6 +81,37 @@ func TestCustomerDataInboundHandlerRejectsCrossAccountPayload(t *testing.T) {
 	if len(bridge.events) != 0 {
 		t.Fatal("cross-account event reached bridge")
 	}
+}
+
+func TestCustomerDataInboundHandlerStopsAfterHistoryReset(t *testing.T) {
+	t.Parallel()
+	event := validCustomerDataInboundEvent()
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := &customerDataInboundBridgeStub{}
+	handlerErr := (customerDataInboundHandler{
+		bridge: bridge,
+		historyLease: func(context.Context, string, string, string, func() error) (bool, error) {
+			return false, nil
+		},
+	}).Handle(context.Background(), jobs.Job{
+		ID: event.EventID, AccountID: event.AccountID, OrderingKey: event.ContactID,
+		Kind: customerDataRelationshipJobKind, Payload: payload,
+	})
+	var statusErr *jobs.StatusError
+	if !errors.As(handlerErr, &statusErr) || !statusErr.Unrecoverable ||
+		!errors.Is(handlerErr, ErrHistoryResetInvalidated) || len(bridge.events) != 0 {
+		t.Fatalf("history reset reached customer data bridge: err=%v events=%#v", handlerErr, bridge.events)
+	}
+}
+
+func allowCustomerDataHistory(_ context.Context, _, _, _ string, effect func() error) (bool, error) {
+	if effect != nil {
+		return true, effect()
+	}
+	return true, nil
 }
 
 func TestCustomerDataInboundEventIsIDOnly(t *testing.T) {

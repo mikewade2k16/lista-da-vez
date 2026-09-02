@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Operacoes de instancia que nao sao CRUD: validar a config de endpoints e limpar o
@@ -79,14 +80,15 @@ const endpointValidationTimeoutMs = 120_000
 // baseURL (provider_config.baseURL -> EVOLUTION_BASE_URL) e presenca de credencial
 // (credentials_ciphertext -> EVOLUTION_API_KEY). Ver docs/LEGADO.md e o AGENT.md do modulo.
 func (s *SessionService) ValidateEndpoints(ctx context.Context, accountID string, caller Caller, in EndpointValidationInput) (EndpointValidationView, error) {
-	if !caller.IsAdmin {
-		return EndpointValidationView{}, ErrForbidden
-	}
 	row, err := s.store.ResolveInstanceForOps(ctx, accountID, in.InstanceID, in.InstanceName)
 	if err != nil {
 		if noRows(err) {
 			return EndpointValidationView{}, ErrSessionUnavailable
 		}
+		return EndpointValidationView{}, err
+	}
+	if _, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, row.ID,
+		"omnichannel.instances.manage", InstanceGrantManage); err != nil {
 		return EndpointValidationView{}, err
 	}
 
@@ -163,67 +165,48 @@ func classifyEndpointConfig(provider, baseURL string, hasCredential bool) (statu
 }
 
 // ============================================================================
-// conversations/clear
+// history/reset
 // ============================================================================
 
-// ConversationClearInput e o body de POST /tenant/whatsapp/conversations/clear. instanceId
-// ausente/vazio => escopo tenant (toda a conta); presente => so aquela instancia.
-type ConversationClearInput struct {
-	InstanceID *string `json:"instanceId"`
+type InstanceHistoryResetInput struct {
+	Confirmation     string `json:"confirmation"`
+	Reason           string `json:"reason,omitempty"`
+	ExpectedRevision *int64 `json:"expectedRevision"`
 }
 
-// ConversationClearView espelha WhatsAppConversationHistoryClearResponse (types/index.ts:216).
-type ConversationClearView struct {
-	TenantID             string  `json:"tenantId"`
-	Scope                string  `json:"scope"`
-	InstanceID           *string `json:"instanceId"`
-	InstanceName         *string `json:"instanceName"`
-	DeletedAuditEvents   int64   `json:"deletedAuditEvents"`
-	DeletedMessages      int64   `json:"deletedMessages"`
-	DeletedConversations int64   `json:"deletedConversations"`
-	Message              string  `json:"message"`
+type InstanceHistoryResetView struct {
+	InstanceID    string    `json:"instanceId"`
+	HiddenBefore  time.Time `json:"hiddenBefore"`
+	ResetRevision int64     `json:"resetRevision"`
 }
 
-// ClearConversations apaga o historico de conversas da conta (escopo tenant) ou de UMA
-// instancia. tenantId volta como o account_id (o Omni mapeia tenantId -> account_id).
-func (s *SessionService) ClearConversations(ctx context.Context, accountID string, caller Caller, in ConversationClearInput) (ConversationClearView, error) {
-	if !caller.IsAdmin {
-		return ConversationClearView{}, ErrForbidden
+func (s *SessionService) ResetInstanceHistory(ctx context.Context, accountID, instanceID string, caller Caller, in InstanceHistoryResetInput) (InstanceHistoryResetView, error) {
+	accountID = strings.TrimSpace(accountID)
+	instanceID = strings.TrimSpace(instanceID)
+	in.Confirmation = strings.TrimSpace(in.Confirmation)
+	in.Reason = strings.TrimSpace(in.Reason)
+	if accountID == "" || instanceID == "" || in.ExpectedRevision == nil || *in.ExpectedRevision < 0 || utf8.RuneCountInString(in.Reason) > 240 {
+		return InstanceHistoryResetView{}, ErrInvalidBody
 	}
-
-	instanceID := optTrim(in.InstanceID)
-	scope := "tenant"
-	var instanceName *string
-	if instanceID != nil {
-		row, err := s.store.ResolveInstanceForOps(ctx, accountID, *instanceID, "")
-		if err != nil {
-			if noRows(err) {
-				return ConversationClearView{}, ErrSessionUnavailable
-			}
-			return ConversationClearView{}, err
-		}
-		scope = "instance"
-		name := row.InstanceName
-		instanceName = &name
+	if s.store == nil {
+		return InstanceHistoryResetView{}, ErrForbidden
 	}
-
-	audit, msgs, convs, err := s.store.ClearConversations(ctx, accountID, instanceID)
+	decision, err := s.store.RequireInstanceAccess(ctx, accountID, caller.UserID, instanceID,
+		"omnichannel.instances.manage", InstanceGrantManage)
 	if err != nil {
-		return ConversationClearView{}, err
+		return InstanceHistoryResetView{}, err
 	}
-
-	message := "Historico de conversas removido"
-	if scope == "instance" {
-		message = "Historico da instancia removido"
+	if !decision.Capabilities.ResetHistory {
+		return InstanceHistoryResetView{}, ErrForbidden
 	}
-	return ConversationClearView{
-		TenantID:             accountID,
-		Scope:                scope,
-		InstanceID:           instanceID,
-		InstanceName:         instanceName,
-		DeletedAuditEvents:   audit,
-		DeletedMessages:      msgs,
-		DeletedConversations: convs,
-		Message:              message,
-	}, nil
+	result, err := s.store.ResetInstanceHistory(ctx, historyResetWrite{
+		AccountID: accountID, InstanceID: instanceID, ActorUserID: caller.UserID,
+		Confirmation: in.Confirmation, Reason: in.Reason, ExpectedRevision: *in.ExpectedRevision,
+	})
+	if err != nil {
+		return InstanceHistoryResetView{}, translate(err)
+	}
+	// O Store so retorna depois do commit. A invalidacao nunca antecipa a transacao.
+	s.publisher.PublishOmnichannelEvent(ctx, newInvalidationSignal(accountID, RealtimeInvalidationReasonHistoryReset, result.Cutoff))
+	return InstanceHistoryResetView{InstanceID: result.InstanceID, HiddenBefore: result.Cutoff, ResetRevision: result.Revision}, nil
 }

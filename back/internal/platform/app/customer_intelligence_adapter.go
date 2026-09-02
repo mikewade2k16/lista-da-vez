@@ -141,36 +141,9 @@ func (a omnichannelCustomerIntelligenceAdapter) ExecuteInteraction(
 		(resolved.Status != "resolved" && resolved.Status != "created") {
 		return omnichannel.CustomerIntelligenceDecision{}, customerintelligence.ErrNotFound
 	}
-	asOf := request.OccurredAt
-	if asOf.IsZero() {
-		asOf = time.Now().UTC()
-	}
-	decision, err := runtime.ExecuteInteraction(ctx, customerintelligence.InteractionRequest{
-		SchemaVersion:       "interaction.request.v1",
-		RequestID:           request.DispatchID + ":" + fmt.Sprint(request.Generation),
-		InteractionID:       request.DispatchID,
-		AccountID:           request.AccountID,
-		ClientAccountID:     request.ClientAccountID,
-		SubjectID:           resolved.SubjectID,
-		RelationshipID:      resolved.RelationshipID,
-		ConversationID:      request.ConversationID,
-		PipelineKey:         "conversation.respond",
-		AIGeneration:        request.Generation,
-		Message:             request.Message,
-		OperationalState:    request.OperationalState,
-		RoutingCatalog:      request.RoutingCatalog,
-		ChannelCapabilities: request.ChannelCapabilities,
-		Purpose:             "customer_service",
-		Locale:              "pt-BR",
-		Channel:             strings.ToLower(strings.TrimSpace(request.Channel)),
-		AsOf:                asOf,
-		// A data da mensagem pode ser antiga em replay/debounce. O prazo de
-		// execução começa agora; AsOf continua preservando o tempo do evento.
-		DeadlineAt:    time.Now().UTC().Add(20 * time.Second),
-		MaxItems:      100,
-		MaxTokens:     8000,
-		CorrelationID: request.DispatchID,
-	})
+	decision, err := runtime.ExecuteInteraction(ctx, customerIntelligenceRuntimeRequest(
+		request, resolved.SubjectID, resolved.RelationshipID, time.Now().UTC(),
+	))
 	if err != nil {
 		if shadow, ok := customerintelligence.RuntimeShadowDecision(err); ok {
 			if shadow.AccountID != request.AccountID ||
@@ -202,6 +175,45 @@ func (a omnichannelCustomerIntelligenceAdapter) ExecuteInteraction(
 		return omnichannel.CustomerIntelligenceDecision{}, customerintelligence.ErrInvalidInput
 	}
 	return translateIntelligenceDecision(decision, resolved), nil
+}
+
+func customerIntelligenceRuntimeRequest(
+	request omnichannel.CustomerIntelligenceInteractionRequest,
+	subjectID, relationshipID string,
+	now time.Time,
+) customerintelligence.InteractionRequest {
+	now = now.UTC()
+	asOf := request.OccurredAt
+	if asOf.IsZero() {
+		asOf = now
+	}
+	return customerintelligence.InteractionRequest{
+		SchemaVersion:       "interaction.request.v1",
+		RequestID:           request.DispatchID + ":" + fmt.Sprint(request.Generation),
+		InteractionID:       request.DispatchID,
+		AccountID:           request.AccountID,
+		ClientAccountID:     request.ClientAccountID,
+		SubjectID:           subjectID,
+		RelationshipID:      relationshipID,
+		ConversationID:      request.ConversationID,
+		PipelineKey:         "conversation.respond",
+		AIGeneration:        request.Generation,
+		Message:             request.Message,
+		OperationalState:    request.OperationalState,
+		RoutingCatalog:      request.RoutingCatalog,
+		ChannelCapabilities: request.ChannelCapabilities,
+		Purpose:             "customer_service",
+		Locale:              "pt-BR",
+		Channel:             strings.ToLower(strings.TrimSpace(request.Channel)),
+		AsOf:                asOf,
+		// A data da mensagem pode ser antiga em replay/debounce. O prazo de
+		// execução começa agora; AsOf continua preservando o tempo do evento.
+		DeadlineAt:            now.Add(20 * time.Second),
+		MaxItems:              100,
+		MaxTokens:             8000,
+		CorrelationID:         request.DispatchID,
+		SuppressStoredContext: request.DerivedMemorySuppressed,
+	}
 }
 
 func (a omnichannelCustomerIntelligenceAdapter) RecordAcceptedOutcome(

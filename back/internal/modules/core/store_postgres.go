@@ -43,13 +43,15 @@ func (r *PostgresRepository) FindUserByID(ctx context.Context, userID string) (U
 // Accounts
 // ============================================================================
 
-// accountVisibilityWhere e a clausula org-aware de escopo de accounts. Uma
+// accountVisibilityWhere e a clausula autoritativa de escopo de accounts. Uma
 // account ($-param do user em $1) e visivel quando QUALQUER caminho vale:
 //
 //	(a) o user e platform_admin (core.users.is_platform_admin) -> ve todas;
-//	(b) a account.organization_id esta entre as orgs onde o user e
-//	    'agency_owner' em core.organization_users -> dono ve as contas da org;
-//	(c) existe membership ativa em core.account_users -> comportamento atual.
+//	(b) existe membership ativa em core.account_users.
+//
+// Membership de organizacao/agencia, isoladamente, nao concede contexto de uma
+// account cliente. Operadores da agencia precisam de account_users explicito na
+// conta que vao operar; grants do Omnichannel continuam sendo um gate adicional.
 //
 // A regra vive 100% no banco (defesa em profundidade): nada do client decide
 // escopo. SQL totalmente parametrizado ($1 = userID).
@@ -61,12 +63,6 @@ const accountVisibilityWhere = `
 		    where u.id = $1::uuid
 		      and u.is_active = true
 		      and u.is_platform_admin = true
-		  )
-		  or exists (
-		    select 1 from core.organization_users ou
-		    where ou.user_id = $1::uuid
-		      and ou.org_role = 'agency_owner'
-		      and ou.organization_id = a.organization_id
 		  )
 		  or exists (
 		    select 1 from core.account_users au
@@ -83,7 +79,7 @@ const accountVisibilityWhere = `
 //
 // Ordenacao MEMBERSHIP-FIRST: as accounts onde o user tem membership explicita
 // (core.account_users) vem primeiro, depois o resto por nome. Sem isso, um
-// platform_admin/agencia (que ve TODAS as accounts) teria como defaultAccountID
+// platform_admin (que ve TODAS as accounts) teria como defaultAccountID
 // a 1a por nome (ex.: "AM Malls") em vez da sua propria conta de trabalho — foi
 // o que mandou o dev para a account errada apos a regra org-aware (2026-06-15).
 // O front usa summaries[0] como default, entao a 1a precisa ser a "casa" do user.
@@ -104,7 +100,7 @@ const listAccountsForUserQuery = `
 `
 
 // findAccountIfAccessibleQuery resolve uma unica account ($2) aplicando a MESMA
-// regra de visibilidade. Se nenhum dos tres caminhos vale -> pgx.ErrNoRows ->
+// regra de visibilidade. Se nenhum dos dois caminhos vale -> pgx.ErrNoRows ->
 // o repository traduz para ErrAccountNotMember (nao vaza existencia da account).
 const findAccountIfAccessibleQuery = `
 	select a.id, a.organization_id, a.slug, a.name, a.is_active, a.plan_code,

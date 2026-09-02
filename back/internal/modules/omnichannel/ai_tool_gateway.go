@@ -41,13 +41,18 @@ type aiToolCallResponse struct {
 }
 
 type aiToolCallGateway struct {
-	box      *secretbox.Box
-	store    *Store
-	registry *AIToolRegistry
+	box                 *secretbox.Box
+	store               *Store
+	registry            *AIToolRegistry
+	externalEffectLease func(context.Context, string, string, int64, func() error) (bool, error)
 }
 
 func newAIToolCallGateway(box *secretbox.Box, store *Store, registry *AIToolRegistry) *aiToolCallGateway {
-	return &aiToolCallGateway{box: box, store: store, registry: registry}
+	gateway := &aiToolCallGateway{box: box, store: store, registry: registry}
+	if store != nil {
+		gateway.externalEffectLease = store.WithAIDispatchExternalEffectLeaseNowait
+	}
+	return gateway
 }
 
 func registerAIToolCallRoutes(mux *http.ServeMux, gateway *aiToolCallGateway) {
@@ -154,7 +159,6 @@ func (g *aiToolCallGateway) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	binding, err := g.store.GetAIToolBindingForCall(r.Context(), claims.AccountID, in.DispatchID, in.Generation, in.BindingID)
 	if errors.Is(err, ErrNotFound) {
-		_ = g.store.InsertAudit(r.Context(), claims.AccountID, "", "", "", "AI_TOOL_DENIED", toolAuditPayload(in, "binding_not_found"))
 		httpapi.WriteError(w, r, http.StatusNotFound, "tool_not_found", "Tool não encontrada para este dispatch.")
 		return
 	}
@@ -170,6 +174,44 @@ func (g *aiToolCallGateway) handle(w http.ResponseWriter, r *http.Request) {
 		g.finishDenied(w, r, binding, in, "arguments_invalid", http.StatusUnprocessableEntity)
 		return
 	}
+	if g.externalEffectLease == nil {
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "tool_gateway_unavailable", "Gateway de tools indisponível.")
+		return
+	}
+	leaseErr := g.withToolExternalEffectLease(r.Context(), binding, func() error {
+		g.executeToolCall(w, r, claims, binding, in)
+		return nil
+	})
+	if errors.Is(leaseErr, ErrHistoryResetInvalidated) {
+		httpapi.WriteError(w, r, http.StatusConflict, "history_reset", "Execução invalidada.")
+		return
+	}
+	if leaseErr != nil {
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "tool_gateway_unavailable", "Gateway de tools indisponível.")
+		return
+	}
+}
+
+func (g *aiToolCallGateway) withToolExternalEffectLease(ctx context.Context, binding aiToolBindingExecution,
+	effect func() error) error {
+	if g == nil || g.externalEffectLease == nil {
+		return ErrHistoryResetInvalidated
+	}
+	allowed, err := g.externalEffectLease(ctx, binding.AccountID, binding.DispatchID, binding.Generation, effect)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrHistoryResetInvalidated
+	}
+	return nil
+}
+
+// executeToolCall roda toda a fase operacional sob um unico fence NOWAIT do dispatch. Assim
+// Claim/approval/audit e o handler externo pertencem à mesma ordem do reset; nenhum lease e
+// readquirido durante o callback n8n.
+func (g *aiToolCallGateway) executeToolCall(w http.ResponseWriter, r *http.Request, claims brainGatewayClaims,
+	binding aiToolBindingExecution, in aiToolCallRequest) {
 	inputMasked := maskAIToolJSON(in.Arguments, maxAIToolArgumentsBytes)
 	run, existing, err := g.store.ClaimAIToolRun(r.Context(), binding, in.CallID, in.Operation, inputMasked)
 	if err != nil {
@@ -231,9 +273,10 @@ func (g *aiToolCallGateway) handle(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	callCtx, cancel := context.WithTimeout(r.Context(), time.Duration(binding.TimeoutMS)*time.Millisecond)
 	defer cancel()
-	output, execErr := handler(callCtx, AIToolInvocation{AccountID: binding.AccountID, ConversationID: binding.ConversationID,
+	invocation := AIToolInvocation{AccountID: binding.AccountID, ConversationID: binding.ConversationID,
 		DispatchID: binding.DispatchID, Generation: binding.Generation, AgentID: binding.AgentID, ToolID: binding.ToolID,
-		Operation: in.Operation, Arguments: in.Arguments})
+		Operation: in.Operation, Arguments: in.Arguments}
+	output, execErr := handler(callCtx, invocation)
 	latency := toolCallLatencyMS(start)
 	if execErr != nil {
 		isTimeout := errors.Is(execErr, context.DeadlineExceeded) || errors.Is(callCtx.Err(), context.DeadlineExceeded)

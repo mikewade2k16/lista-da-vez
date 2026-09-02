@@ -137,6 +137,15 @@ func TestAmbiguousExecutionBecomesUnknownAndCanReconcile(t *testing.T) {
 	if err != nil || unknown.Status != ActionUnknown || unknown.ErrorCode != "execution_outcome_unknown" {
 		t.Fatalf("unknown outcome = %#v, err %v", unknown, err)
 	}
+	replayed, err := service.ConfirmProposal(
+		context.Background(), actionTestAccount, actionTestUser, proposal.ID,
+		"confirm:pause:0003:retry", false,
+	)
+	if err != nil || replayed.Status != ActionUnknown || executor.executeCalls != 1 ||
+		repository.executionStarts != 1 {
+		t.Fatalf("unknown replay = %#v, execute %d, starts %d, err %v",
+			replayed, executor.executeCalls, repository.executionStarts, err)
+	}
 	reconciled, err := service.ReconcileProposal(
 		context.Background(), actionTestAccount, actionTestUser, proposal.ID,
 	)

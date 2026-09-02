@@ -125,6 +125,11 @@ func writeAutomationResult(w http.ResponseWriter, r *http.Request, status int, p
 				"Ative o numero e publique um agente com provedor, modelo e chave antes de ligar a automacao.")
 			return
 		}
+		if errors.Is(err, ErrAutomationBindingMismatch) {
+			httpapi.WriteError(w, r, http.StatusConflict, "automation_binding_mismatch",
+				"O numero precisa ter um vinculo ativo com o mesmo cliente do perfil de automacao.")
+			return
+		}
 		writeDomainError(w, r, err)
 		return
 	}

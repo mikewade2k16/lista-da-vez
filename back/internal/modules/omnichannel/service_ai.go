@@ -22,14 +22,11 @@ import (
 // Autorizacao (permissao gateia feature)
 // ============================================================================
 
-// requireAgentPerm exige uma permissao efetiva NA CONTA (403 se faltar). platform_admin passa;
-// tambem cai na lista global do Principal quando resolvida. Mesmo padrao de service_transition.
+// requireAgentPerm exige a permissao efetiva atual na conta. Papel e claims antigos do token
+// nao contornam uma revogacao persistida no PostgreSQL.
 func (s *AIService) requireAgentPerm(ctx context.Context, accountID string, p auth.Principal, key string) error {
 	if strings.TrimSpace(accountID) == "" {
 		return ErrForbidden
-	}
-	if p.Role == auth.RolePlatformAdmin {
-		return nil
 	}
 	ok, err := s.store.hasEffectivePermission(ctx, accountID, p.UserID, key)
 	if err != nil {
@@ -38,10 +35,18 @@ func (s *AIService) requireAgentPerm(ctx context.Context, accountID string, p au
 	if ok {
 		return nil
 	}
-	if p.PermissionsResolved && containsPermission(p.Permissions, key) {
-		return nil
-	}
 	return ErrForbidden
+}
+
+func (s *AIService) conversationVisibility(ctx context.Context, accountID, userID, permissionKey string, required InstanceGrantLevel) (VisibilityScope, error) {
+	scope, err := s.store.LoadConversationAccessScope(ctx, accountID, userID)
+	if err != nil {
+		return VisibilityScope{}, err
+	}
+	if !scope.Eligible || !scope.allowsPermission(permissionKey) || !scope.allowsPermission("omnichannel.conversations.view") {
+		return VisibilityScope{}, ErrForbidden
+	}
+	return scope.conversationVisibility(required), nil
 }
 
 // assertAgentScope garante que o agente existe e e da conta (senao 404). Devolve a linha crua
@@ -417,7 +422,11 @@ func (s *AIService) ListRuns(ctx context.Context, accountID string, p auth.Princ
 	if _, err := s.assertAgentScope(ctx, accountID, agentID); err != nil {
 		return nil, err
 	}
-	return s.store.ListRuns(ctx, accountID, agentID, normalizeRunLimit(limit), beforeID)
+	visibility, err := s.conversationVisibility(ctx, accountID, p.UserID, "omnichannel.audit.view", InstanceGrantView)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListRuns(ctx, accountID, agentID, normalizeRunLimit(limit), beforeID, visibility)
 }
 
 // normalizeRunLimit aplica 1..200 default 50 (C9.5).

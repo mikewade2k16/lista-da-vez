@@ -1,14 +1,54 @@
 # E10 — rollout e operação
 
-**Status:** `DRAFT` até gates E1–E9
+**Status:** `LOCAL_CORE_COMPLETE` em 2026-08-28; R0–R5 e canários reais ainda pendentes
 
 **Resultado:** IA e canais são ativados por conta/número/coorte em etapas mensuráveis, com shadow,
 canário, pausa imediata e rollback ensaiado.
 
+## Evidência local — 2026-08-28
+
+Implementado:
+
+- migration `0299_messaging_rollout_controls.sql` com config tipada por account, revisão otimista e
+  trilha before/after/reason/actor;
+- modos `off`, `observe`, `shadow`, `assist`, `auto_pilot`, `active` e `paused`;
+- allowlists de instância/Instagram/fila, coorte determinístico, percentual, timezone, janelas,
+  tags excluídas e teto diário;
+- revalidação server-side antes da inferência, depois da inferência e dentro da transação final
+  antes do efeito do provider;
+- `paused`/`off` cancelam dispatch/outbox automático e devolvem conversas para operação humana;
+  `shadow`/`assist` permitem avaliação sem efeito externo automático;
+- migration `0301_messaging_ai_reply_drafts.sql` e boundary transacional do modo `assist`: a
+  sugestão fica pendente no PostgreSQL, aparece no inbox e somente um POST humano pode convertê-la
+  em mensagem+outbox. Uso, edição, descarte e expiração ficam registrados sem enviar o texto pelo
+  realtime;
+- rascunhos pendentes expiram ao responder por fora, limpar histórico, ocultar/bloquear o contato,
+  invalidar a IA ou sair de `assist`; a sugestão selecionada é marcada como usada no mesmo commit
+  da mensagem humana;
+- API `GET/PUT /v1/omnichannel/settings/rollout`, conflito por revisão e painel “Saúde e rollout”;
+- teste PostgreSQL real de default legado, gravação, conflito, auditoria, kill switch, draft
+  assist, edição, descarte, reset e expiração por mudança de modo.
+- suíte frontend completa com 114 arquivos/519 testes verdes, lint do write-set sem erros e nenhum
+  erro de typecheck nos componentes/composables alterados. O build de produção concluiu client, SSR,
+  prerender e empacotamento Nitro com heap de 4,5 GiB; a imagem gerada iniciou isoladamente e
+  respondeu HTTP 200. A API reconstruída sem cache aplicou localmente as migrations `0297`–`0301`.
+
+Compatibilidade deliberada: account sem linha em `messaging.rollout_configs` mantém o comportamento
+legado `active` para não interromper produção existente. O painel sinaliza esse fallback e exige
+salvar configuração explícita antes de um piloto.
+
+Ainda necessário para declarar E10/P8 globalmente `PASS`:
+
+- revisar a experiência de draft do modo `assist` com operadores reais e medir uso/edição/rejeição;
+- executar R0–R5 em ambiente autorizado e medir os critérios quantitativos;
+- ensaiar rollback de modelo, workflow e provider com integrações reais;
+- registrar decisão de avanço, owner e métricas do canário.
+
+Nenhum rollout real, mensagem externa ou ativação n8n foi executado nesta etapa.
+
 ## 1. Modos de operação
 
-Config autoritativa fica em `core.account_modules.config` ou estrutura de feature flag já existente,
-validada pelo Go:
+Config autoritativa fica em `messaging.rollout_configs`, validada pelo Go:
 
 | Modo | Ingest/CRM | IA | Envio IA | Uso |
 |---|---:|---:|---:|---|

@@ -49,10 +49,14 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 - antes de qualquer build/pull, `assert-compose-api-env.ps1` valida que o bloco `api.environment`
   do Compose repassa as variaveis criticas de boot, Evolution e R2; existir apenas no `.env` ou
   em outro servico nao basta
+- o deploy rapido valida primeiro se o Docker CLI existe e se o engine Linux responde;
+  Docker Desktop parado falha imediatamente com mensagem acionavel, antes de avaliar os Composes
 - os scripts nunca apagam volumes Docker de producao
 - `staging-down.ps1` so remove volumes com `-RemoveVolumes` explicito
 - smoke tests publicos continuam sendo a validacao padrao depois do deploy
-- `deploy:fast:prod` reconcilia por padrao os profiles `automation` e `omnichannel`;
+- `npm run deploy` e o comando canonico do deploy rapido de producao; o alias
+  `deploy:fast:prod` permanece por compatibilidade e ambos reconciliam por padrao
+  os profiles `automation` e `omnichannel`;
   workflows usam os JSONs versionados e a Evolution sobe com volumes preservados
 - `assert-compose-service-parity.ps1` impede que um container novo exista somente no
   Compose local sem uma definicao prod ou excecao local-only documentada
@@ -79,8 +83,9 @@ Fluxo RAPIDO (build local, sem git — recomendado pro dia a dia):
   reutiliza com seguranca a credencial do Docker Desktop para o pull remoto temporario.
   No build web, pausa e restaura somente os servicos locais que ja estavam rodando para liberar
   memoria; `-KeepLocalStackRunning` e opt-out. Nao toca git, nao builda na VPS. npm:
-  `deploy:fast` (staging), `deploy:fast:prod`. Em prod, o alias inclui Automation/workflows
-  versionados e Omnichannel/Evolution por padrao.
+  `deploy:fast` (staging), `deploy` (producao canonica) e `deploy:fast:prod`
+  (compatibilidade). Em prod, o alias inclui Automation/workflows versionados e
+  Omnichannel/Evolution por padrao.
 
 Fluxo registry via CI (opcao completa/rastreavel):
 

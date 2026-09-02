@@ -152,19 +152,40 @@ func (a *n8nMediaAnalyzer) AnalyzeMessage(ctx context.Context, accountID, messag
 	request.Execution.Provider = analysis.Provider
 	request.Execution.Model = analysis.Model
 	request.Execution.APIKey = apiKey
-
 	started := time.Now()
-	response, err := a.call(ctx, request)
-	if err != nil {
-		return a.fail(ctx, accountID, analysis.ID, mediaAnalysisN8NErrorCode(err), err)
-	}
-	resultText := strings.TrimSpace(response.ResultText)
-	_, err = a.store.CompleteMediaAnalysis(ctx, accountID, analysis.ID, mediaAnalysisComplete{
-		ResultText: &resultText, ResultJSON: response.Result,
-		PromptTokens: response.Usage.PromptTokens, CompletionTokens: response.Usage.CompletionTokens,
-		CostUSD: response.Usage.CostUSD, LatencyMS: int(time.Since(started).Milliseconds()),
+	var callErr, persistErr error
+	allowed, leaseErr := a.store.WithMessageExternalEffectLease(ctx, accountID, source.ConversationID, source.MessageID, func() error {
+		response, externalErr := a.call(ctx, request)
+		callErr = externalErr
+		if externalErr != nil {
+			_, persistErr = a.store.FailMediaAnalysis(ctx, accountID, analysis.ID,
+				MediaAnalysisStatusFailed, mediaAnalysisN8NErrorCode(externalErr))
+			return nil
+		}
+		resultText := strings.TrimSpace(response.ResultText)
+		_, persistErr = a.store.CompleteMediaAnalysis(ctx, accountID, analysis.ID, mediaAnalysisComplete{
+			ResultText: &resultText, ResultJSON: response.Result,
+			PromptTokens: response.Usage.PromptTokens, CompletionTokens: response.Usage.CompletionTokens,
+			CostUSD: response.Usage.CostUSD, LatencyMS: int(time.Since(started).Milliseconds()),
+		})
+		return nil
 	})
-	return err
+	if leaseErr != nil {
+		return a.fail(ctx, accountID, analysis.ID, "content_unavailable", leaseErr)
+	}
+	if !allowed {
+		return a.fail(ctx, accountID, analysis.ID, "content_unavailable", ErrHistoryResetInvalidated)
+	}
+	if persistErr != nil {
+		return persistErr
+	}
+	if callErr != nil {
+		if errors.Is(callErr, ErrHistoryResetInvalidated) {
+			return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+		}
+		return callErr
+	}
+	return nil
 }
 
 func (a *n8nMediaAnalyzer) call(ctx context.Context, payload n8nMediaRequest) (n8nMediaResponse, error) {
@@ -198,6 +219,9 @@ func (a *n8nMediaAnalyzer) call(ctx context.Context, payload n8nMediaRequest) (n
 
 func (a *n8nMediaAnalyzer) fail(ctx context.Context, accountID, analysisID, code string, cause error) error {
 	_, _ = a.store.FailMediaAnalysis(ctx, accountID, analysisID, MediaAnalysisStatusFailed, code)
+	if errors.Is(cause, ErrHistoryResetInvalidated) {
+		return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+	}
 	return cause
 }
 

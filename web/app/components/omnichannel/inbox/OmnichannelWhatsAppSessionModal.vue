@@ -10,7 +10,6 @@ import {
 } from "#components";
 import { computed, onBeforeUnmount, watch } from "vue";
 import { useOmnichannelWhatsAppSession } from "~/composables/omnichannel/useOmnichannelWhatsAppSession";
-import { useUiStore } from "~/stores/ui";
 
 const props = defineProps<{
   open: boolean;
@@ -18,14 +17,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: "update:open", value: boolean): void;
-  (event: "history-cleared"): void;
 }>();
-
-const ui = useUiStore();
 
 const {
   activate,
   canManageChannel,
+  canResetHistory,
   clearConversationHistory,
   clearingHistory,
   connectionBadgeColor,
@@ -104,25 +101,7 @@ async function handleDisplayNameBlur() {
 }
 
 async function handleClearConversationHistory() {
-  if (!selectedInstance.value) {
-    return;
-  }
-
-  const confirmation = await ui.confirm({
-    title: "Limpar conversas do WhatsApp?",
-    message: "Esta acao remove o historico de conversas, mensagens e eventos operacionais da conexao selecionada. A sessao do WhatsApp continua conectada.",
-    confirmLabel: "Limpar historico",
-    cancelLabel: "Cancelar"
-  });
-
-  if (!confirmation.confirmed) {
-    return;
-  }
-
-  const result = await clearConversationHistory();
-  if (result) {
-    emit("history-cleared");
-  }
+  await clearConversationHistory();
 }
 </script>
 
@@ -137,9 +116,22 @@ async function handleClearConversationHistory() {
         v-if="!canManageChannel"
         color="warning"
         variant="soft"
-        title="Acesso restrito"
-        description="Somente administradores podem gerenciar a conexao WhatsApp deste cliente."
-      />
+        title="Sessao e QR restritos"
+        description="A limpeza de historico aparece somente quando a API autoriza esta acao para a conexao."
+      >
+        <template #actions>
+          <USelect
+            v-if="instanceItems.length > 1"
+            :model-value="selectedInstanceKey"
+            :items="instanceItems"
+            value-key="value"
+            size="sm"
+            class="wa-modal__select"
+            :disabled="clearingHistory"
+            @update:model-value="handleSelectionChange"
+          />
+        </template>
+      </UAlert>
 
       <div v-else class="wa-modal">
         <!-- Status + qual conexao, numa linha -->
@@ -159,6 +151,7 @@ async function handleClearConversationHistory() {
             value-key="value"
             size="sm"
             class="wa-modal__select"
+            :disabled="clearingHistory"
             @update:model-value="handleSelectionChange"
           />
         </div>
@@ -169,7 +162,7 @@ async function handleClearConversationHistory() {
         <!-- QR em destaque: o coracao do modal -->
         <div class="wa-modal__qr">
           <template v-if="qrImageSrc">
-            <img :src="qrImageSrc" alt="QR Code do WhatsApp" class="wa-modal__qr-img">
+            <img :src="qrImageSrc" alt="QR Code do WhatsApp" class="wa-modal__qr-img" />
             <p class="wa-modal__qr-hint">
               No celular: WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong> → aponte a camera. O codigo renova sozinho.
             </p>
@@ -215,8 +208,9 @@ async function handleClearConversationHistory() {
     <template #footer>
       <div class="wa-modal__footer">
         <UButton color="neutral" variant="ghost" @click="handleClose">Fechar</UButton>
-        <div v-if="canManageChannel" class="wa-modal__footer-actions">
+        <div v-if="canManageChannel || canResetHistory" class="wa-modal__footer-actions">
           <UButton
+            v-if="canResetHistory"
             color="error"
             variant="ghost"
             size="sm"
@@ -224,9 +218,10 @@ async function handleClearConversationHistory() {
             :disabled="clearingHistory || disconnecting || !selectedInstance"
             @click="handleClearConversationHistory"
           >
-            Limpar conversas
+            Limpar histórico visível desta conexão
           </UButton>
           <UButton
+            v-if="canManageChannel"
             color="neutral"
             variant="outline"
             size="sm"

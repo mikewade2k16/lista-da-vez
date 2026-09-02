@@ -109,7 +109,7 @@ func (m *Module) Metadata() modules.Metadata {
 	}
 }
 
-// Permissions declara as 9 keys do canonico §5.2.
+// Permissions declara as 10 keys do canonico §5.2.
 //
 // GAP HONESTO, registrado na spec (§Seguranca): nao existe middleware de permissao por
 // key no Go — o disco so tem RequireAuth/RequireAuthWithAccount/RequireRoles e o gate de
@@ -187,6 +187,10 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 
 func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	store := NewStore(deps.Pool)
+	store.SetHistoryCutoffEnforced(historyCutoffEnforcedFromEnv())
+	if !store.HistoryCutoffEnforced() && deps.Logger != nil {
+		deps.Logger.Warn("omnichannel_history_instance_cutoff_disabled", "contact_privacy", "enforced")
+	}
 	toolRegistry := m.toolRegistry
 	if toolRegistry == nil {
 		toolRegistry = NewAIToolRegistry()
@@ -212,7 +216,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	// qrCache COMPARTILHADO: o SessionService escreve o QR que vem sincrono no connect e le no
 	// /qrcode; o InboundService escreve o QR que a Evolution empurra por webhook (QRCODE_UPDATED).
 	// Precisa ser a MESMA instancia senao o QR do webhook nunca chega ao endpoint que o painel le.
-	qr := newQRCache()
+	qr := newSharedQRCache(deps.Pool)
 
 	// Triagem IA (F9): provider/modelo/chave continuam vindo do painel/banco. O executor
 	// pode ser nativo (rollback) ou n8n (cerebro configuravel); em ambos os casos o Go
@@ -225,7 +229,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		internalToken := strings.TrimSpace(os.Getenv("OMNI_N8N_INTERNAL_TOKEN"))
 		if m.secretBox != nil && webhookURL != "" && internalToken != "" {
 			brainExec = newN8NBrainExecutor(webhookURL, internalToken, m.secretBox, deps.Logger)
-			brainGateway = newBrainGateway(m.secretBox, llmClient)
+			brainGateway = newBrainGateway(m.secretBox, llmClient, store)
 		} else if deps.Logger != nil {
 			deps.Logger.Warn("omnichannel_n8n_executor_blocked_until_brain_v2_gateway_configured")
 		}
@@ -259,6 +263,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	// service e send em locais: o ActionsService (F7) depende dos dois (forward reusa o send;
 	// status/assign passam pela FSM via o Service).
 	svc := NewService(store)
+	svc.publisher = m.publisher
 	svc.setGroupMetadataResolver(newGroupMetadataResolver(store, registry, m.secretBox, deps.Logger))
 	automationSvc := NewAutomationService(store, svc, m.clientCatalog, m.businessContext, svc)
 	channelBindingSvc := NewChannelClientBindingService(store, svc, m.clientCatalog)
@@ -300,7 +305,9 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	)
 	intelligenceWorker.Register(
 		intelligenceAcceptedJobKind,
-		intelligenceAcceptedHandler{bridge: m.customerIntelligence},
+		intelligenceAcceptedHandler{
+			bridge: m.customerIntelligence, acceptanceLease: store.WithAIIntelligenceAcceptanceLease,
+		},
 	)
 	customerDataOutboxStore, err := jobs.NewPostgresStore(
 		deps.Pool, "messaging.customer_data_outbox",
@@ -314,7 +321,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	)
 	customerDataWorker.Register(
 		customerDataRelationshipJobKind,
-		customerDataInboundHandler{bridge: m.customerDataIngest},
+		customerDataInboundHandler{bridge: m.customerDataIngest, historyLease: store.WithMessageExternalEffectLease},
 	)
 	mediaBaseURL := strings.TrimSpace(os.Getenv("OMNI_INTERNAL_API_BASE_URL"))
 	if mediaBaseURL == "" {
@@ -348,10 +355,13 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		service:    svc,
 		automation: automationSvc,
 		bindings:   channelBindingSvc,
+		operational: NewOperationalService(store,
+			strings.TrimSpace(os.Getenv("OMNI_N8N_BRAIN_WEBHOOK_URL")) != ""),
+		rollout: NewRolloutService(store),
 		// F5->F9->F8: o inbound grava um intento no outbox na mesma transacao da
 		// mensagem; o worker revalida a FSM e cria o dispatch duravel.
 		inbound: inbound,
-		session: NewSessionService(store, registry, m.secretBox, limitReader, qr, deps.Logger),
+		session: NewSessionService(store, registry, m.secretBox, limitReader, qr, deps.Logger, m.publisher),
 		ai:      aiSvc,
 		send:    sendSvc,
 		media:   NewMediaService(store, media, registry, m.secretBox, m.publisher, deps.Logger),
@@ -367,7 +377,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		intelligenceWorker: intelligenceWorker,
 		customerDataWorker: customerDataWorker,
 		cancelWorker:       cancelWorker,
-		webhookLimiter:     newRateLimiter(),
+		webhookLimiter:     newSharedRateLimiter(deps.Pool),
 		authMiddleware:     deps.AuthMiddleware,
 		brainGateway:       brainGateway,
 		toolGateway:        newAIToolCallGateway(m.secretBox, store, toolRegistry),
@@ -376,6 +386,17 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		instagram:          instagramService,
 	}
 	return m.handle, nil
+}
+
+// historyCutoffEnforcedFromEnv e fail-closed: ausente, vazio ou invalido mantem o cutoff
+// de instancia ligado. O valor false desliga somente essa camada; contato continua privado.
+func historyCutoffEnforcedFromEnv() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("OMNICHANNEL_HISTORY_CUTOFF_ENFORCED"))) {
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 // Service devolve o Service construido no Build (nil antes do Build). Ponto de injecao
@@ -405,6 +426,8 @@ type handle struct {
 	service            *Service
 	automation         *AutomationService
 	bindings           *ChannelClientBindingService
+	operational        *OperationalService
+	rollout            *RolloutService
 	inbound            *InboundService
 	session            *SessionService
 	ai                 *AIService
@@ -459,6 +482,8 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	// Ownership operacional canal -> cliente independe da IA. Conversas e
 	// touchpoints guardam snapshot; reatribuicao nunca move historico.
 	RegisterChannelClientBindingRoutes(mux, h.bindings, h.authMiddleware)
+	RegisterOperationalRoutes(mux, h.operational, h.authMiddleware)
+	RegisterRolloutRoutes(mux, h.rollout, h.authMiddleware)
 	// Envio + mídia (F6): POST conversations/{id}/messages (outbox) + GET .../media (stream+Range).
 	RegisterSendRoutes(mux, h.send, h.media, h.authMiddleware)
 	// Ações do inbox (F7): reaction/forward/delete/status/assign + group/sync/contatos.

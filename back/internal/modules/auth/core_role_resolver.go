@@ -105,8 +105,8 @@ func (store *PostgresUserStore) resolveCoreAuthRoleScope(ctx context.Context, us
 		// account (Etapa 2), nao num escopo-coarse derivado no login. Um TenantID
 		// de login viraria "papel-coarse" e poderia herdar grants tenant-wide do
 		// roleCatalog legado que o papel custom nao concede (over-grant). O
-		// account_checker org-aware (Etapa 2) ja concede a conta-agencia ao usuario
-		// de org pelo caminho correto (header X-Account-Id validado por requisicao).
+		// account_checker (Etapa 2) exige account_users explicito, inclusive para a
+		// conta-agencia (header X-Account-Id validado por requisicao).
 		// (O atalho legado do CanAccessTenant — que confiava no principal.TenantID
 		// sem rechecar membership — foi REMOVIDO; o acesso a tenant e sempre
 		// rechecado no banco. Mesmo assim mantemos o escopo de login vazio: a fonte

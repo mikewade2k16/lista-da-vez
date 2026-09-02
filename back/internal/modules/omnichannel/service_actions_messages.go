@@ -33,7 +33,7 @@ func (a *ActionsService) React(ctx context.Context, accountID string, p auth.Pri
 	if emoji != nil && len(*emoji) > maxReactionEmojiLen {
 		return ErrInvalidBody
 	}
-	if _, err := a.resolveConversation(ctx, accountID, p, convID); err != nil {
+	if _, err := a.resolveConversationWithGrant(ctx, accountID, p, convID, InstanceGrantReply); err != nil {
 		return err
 	}
 	msgs, err := a.store.ListActionMessages(ctx, accountID, convID, []string{messageID})
@@ -68,13 +68,24 @@ func (a *ActionsService) React(ctx context.Context, accountID string, p auth.Pri
 	if emoji != nil {
 		reactionEmoji = *emoji
 	}
-	if rErr := prov.SendReaction(ctx, cred, channel.ReactionInput{
-		InstanceName:      target.InstanceScopeKey,
-		RemoteJID:         target.ExternalID,
-		ExternalMessageID: strings.TrimSpace(*msgs[0].ExternalID),
-		FromMe:            msgs[0].Direction == directionOutbound,
-		Emoji:             reactionEmoji,
-	}); rErr != nil {
+	var providerErr error
+	allowed, err := a.store.WithMessageExternalEffectLease(ctx, accountID, convID, messageID, func() error {
+		providerErr = prov.SendReaction(ctx, cred, channel.ReactionInput{
+			InstanceName:      target.InstanceScopeKey,
+			RemoteJID:         target.ExternalID,
+			ExternalMessageID: strings.TrimSpace(*msgs[0].ExternalID),
+			FromMe:            msgs[0].Direction == directionOutbound,
+			Emoji:             reactionEmoji,
+		})
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrNotFound
+	}
+	if providerErr != nil {
 		// Erro generico do adapter (sem body/chave — canonico §10); logamos so identificadores.
 		a.logger.Error("omnichannel_reaction_provider_failed", "account_id", accountID, "conversation_id", convID)
 		return ErrProviderUnavailable
@@ -104,10 +115,14 @@ func (a *ActionsService) Forward(ctx context.Context, accountID string, p auth.P
 	if err := a.svc.requirePermission(ctx, accountID, p, "omnichannel.conversations.reply"); err != nil {
 		return ForwardResult{}, err
 	}
-	if _, err := a.resolveConversation(ctx, accountID, p, sourceConvID); err != nil {
+	if _, err := a.resolveConversationWithGrant(ctx, accountID, p, sourceConvID, InstanceGrantReply); err != nil {
 		return ForwardResult{}, err
 	}
-	if _, err := a.resolveConversation(ctx, accountID, p, targetConvID); err != nil {
+	if _, err := a.resolveConversationWithGrant(ctx, accountID, p, targetConvID, InstanceGrantReply); err != nil {
+		return ForwardResult{}, err
+	}
+	visibility, err := a.svc.resolveConversationVisibility(ctx, accountID, p.UserID, "omnichannel.conversations.reply", InstanceGrantReply)
+	if err != nil {
 		return ForwardResult{}, err
 	}
 	res := ForwardResult{
@@ -117,14 +132,16 @@ func (a *ActionsService) Forward(ctx context.Context, accountID string, p auth.P
 		Messages:             []MessageView{},
 	}
 	for _, mid := range messageIDs {
-		src, err := a.store.GetMessage(ctx, accountID, p.UserID, sourceConvID, mid)
-		if err != nil {
-			res.FailedToQueueCount++
-			res.FailedToQueueIDs = append(res.FailedToQueueIDs, mid)
-			continue
-		}
-		view, _, err := a.send.SendMessage(ctx, accountID, p, targetConvID, forwardInput(src, targetConvID, mid))
-		if err != nil {
+		var view MessageView
+		allowed, err := a.store.WithForwardMessageExternalEffectLease(ctx, accountID, sourceConvID, mid, targetConvID, func() error {
+			src, readErr := a.store.GetVisibleMessage(ctx, accountID, sourceConvID, mid, visibility)
+			if readErr != nil {
+				return readErr
+			}
+			view, _, readErr = a.send.SendMessage(ctx, accountID, p, targetConvID, forwardInput(src, targetConvID, mid))
+			return readErr
+		})
+		if err != nil || !allowed {
 			res.FailedToQueueCount++
 			res.FailedToQueueIDs = append(res.FailedToQueueIDs, mid)
 			continue
@@ -180,7 +197,7 @@ func (a *ActionsService) DeleteForMe(ctx context.Context, accountID string, p au
 	if err := a.svc.requirePermission(ctx, accountID, p, "omnichannel.conversations.reply"); err != nil {
 		return DeleteForMeResult{}, err
 	}
-	row, err := a.resolveConversation(ctx, accountID, p, convID)
+	row, err := a.resolveConversationWithGrant(ctx, accountID, p, convID, InstanceGrantReply)
 	if err != nil {
 		return DeleteForMeResult{}, err
 	}
@@ -213,7 +230,7 @@ func (a *ActionsService) DeleteForAll(ctx context.Context, accountID string, p a
 	if err := a.svc.requirePermission(ctx, accountID, p, "omnichannel.conversations.reply"); err != nil {
 		return DeleteForAllResult{}, err
 	}
-	if _, err := a.resolveConversation(ctx, accountID, p, convID); err != nil {
+	if _, err := a.resolveConversationWithGrant(ctx, accountID, p, convID, InstanceGrantReply); err != nil {
 		return DeleteForAllResult{}, err
 	}
 	target, err := a.store.ConversationChannelTarget(ctx, accountID, convID)
@@ -243,15 +260,24 @@ func (a *ActionsService) DeleteForAll(ctx context.Context, accountID string, p a
 			res.SkippedIDs = append(res.SkippedIDs, mid)
 			continue
 		}
+		var providerErr error
+		allowed, leaseErr := a.store.WithMessageExternalEffectLease(ctx, accountID, convID, mid, func() error {
+			providerErr = prov.DeleteForAll(ctx, cred, channel.DeleteInput{
+				InstanceName:      target.InstanceScopeKey,
+				RemoteJID:         target.ExternalID,
+				ExternalMessageID: strings.TrimSpace(*m.ExternalID),
+				FromMe:            true,
+			})
+			return nil
+		})
+		if leaseErr != nil || !allowed {
+			res.SkippedIDs = append(res.SkippedIDs, mid)
+			continue
+		}
 		// Envio SINCRONO ao provider (F7 ligada): so OUTBOUND com id externo e elegivel; fromMe e
 		// sempre true. Falha por-id => failedIds (NUNCA 502 no multi-id — contrato do legado:
 		// updatedIds/skippedIds/failedIds no 200). Erro do adapter e generico (sem body/chave).
-		if dErr := prov.DeleteForAll(ctx, cred, channel.DeleteInput{
-			InstanceName:      target.InstanceScopeKey,
-			RemoteJID:         target.ExternalID,
-			ExternalMessageID: strings.TrimSpace(*m.ExternalID),
-			FromMe:            true,
-		}); dErr != nil {
+		if providerErr != nil {
 			a.logger.Error("omnichannel_delete_for_all_provider_failed", "account_id", accountID, "conversation_id", convID)
 			res.FailedIDs = append(res.FailedIDs, mid)
 			continue

@@ -94,6 +94,11 @@ func TestCheckThreshold(t *testing.T) {
 	if err := checkThreshold(lim, 2); !IsLimitExceeded(err) {
 		t.Errorf("2 de 2 deveria estourar (o 3o passaria): %v", err)
 	}
+
+	zero := Limit{Value: 0, Set: true, Source: "account"}
+	if err := checkThreshold(zero, 0); !IsLimitExceeded(err) {
+		t.Errorf("limite zero deve bloquear a primeira criacao: %v", err)
+	}
 }
 
 func contains(s, sub string) bool {

@@ -47,7 +47,8 @@ func (s *Store) GetMediaFetchData(ctx context.Context, accountID, messageID stri
 		left join messaging.whatsapp_instances i
 		  on i.id = m.instance_id and i.account_id = m.account_id
 		left join messaging.account_config ac on ac.account_id = m.account_id
-		where m.account_id = $1::uuid and m.id = $2::uuid`, accountID, messageID).Scan(
+		where m.account_id = $1::uuid and m.id = $2::uuid`+
+		s.historyVisibleMessagePredicate("m", "c"), accountID, messageID).Scan(
 		&d.MessageID, &d.ConversationID, &d.InstanceScopeKey, &d.ExternalMessageID,
 		&d.MessageType, &d.MediaURL, &d.MimeType, &d.FileName, &d.StorageKey,
 		&d.SourceKind, &d.Provider, &d.CredentialCiphertext, &rawConfig, &maxUploadMB)
@@ -109,11 +110,13 @@ func (s *Store) RetryMediaFetch(ctx context.Context, accountID, conversationID, 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var messageType, storageKey, sourceKind string
-	err = tx.QueryRow(ctx, `select message_type, coalesce(media_storage_key, ''),
-			coalesce(media_source_kind, '')
-		from messaging.messages
-		where account_id = $1::uuid and conversation_id = $2::uuid and id = $3::uuid
-		for update`, accountID, conversationID, messageID).Scan(&messageType, &storageKey, &sourceKind)
+	err = tx.QueryRow(ctx, `select m.message_type, coalesce(m.media_storage_key, ''),
+			coalesce(m.media_source_kind, '')
+		from messaging.messages m
+		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+		where m.account_id = $1::uuid and m.conversation_id = $2::uuid and m.id = $3::uuid`+
+		s.historyVisibleMessagePredicate("m", "c")+`
+		for update of m`, accountID, conversationID, messageID).Scan(&messageType, &storageKey, &sourceKind)
 	if err != nil {
 		return MessageView{}, err
 	}

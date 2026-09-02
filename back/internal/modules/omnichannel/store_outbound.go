@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ type outboundMessageInsert struct {
 	MediaDurationSecs *int
 	Origin            string
 	Reply             *replyReferenceRow
+	AIReplyDraftID    string
 }
 
 type replyReferenceRow struct {
@@ -51,7 +53,7 @@ type replyReferenceRow struct {
 
 // createOutboundMessageTx grava a mensagem PENDING/OUTBOUND, monta a URL autenticada de midia e
 // toca last_message_at usando a transacao composta do caller.
-func createOutboundMessageTx(ctx context.Context, tx pgx.Tx, in outboundMessageInsert) (MessageView, error) {
+func (s *Store) createOutboundMessageTx(ctx context.Context, tx pgx.Tx, in outboundMessageInsert) (MessageView, error) {
 	metadata := in.MetadataJSON
 	if len(metadata) == 0 {
 		metadata = nil
@@ -110,8 +112,10 @@ func createOutboundMessageTx(ctx context.Context, tx pgx.Tx, in outboundMessageI
 		return MessageView{}, err
 	}
 
-	view, err := scanMessage(tx.QueryRow(ctx, `select `+messageCols+` from messaging.messages m
-		where m.id = $1::uuid and m.account_id = $2::uuid`, messageID, in.AccountID))
+	view, err := scanMessage(tx.QueryRow(ctx, `select `+s.messageCols()+` from messaging.messages m
+		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+		where m.id = $1::uuid and m.account_id = $2::uuid`+
+		s.historyVisibleMessagePredicate("m", "c"), messageID, in.AccountID))
 	if err != nil {
 		return MessageView{}, err
 	}
@@ -153,8 +157,10 @@ func (s *Store) CreateHumanOutboundMessage(ctx context.Context, in outboundMessa
 		if existingConversationID != in.ConversationID {
 			return MessageView{}, false, ErrInvalidBody
 		}
-		view, scanErr := scanMessage(tx.QueryRow(ctx, `select `+messageCols+` from messaging.messages m
-			where m.account_id = $1::uuid and m.id = $2::uuid`, in.AccountID, existingMessageID))
+		view, scanErr := scanMessage(tx.QueryRow(ctx, `select `+s.messageCols()+` from messaging.messages m
+			join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+			where m.account_id = $1::uuid and m.id = $2::uuid`+
+			s.historyVisibleMessagePredicate("m", "c"), in.AccountID, existingMessageID))
 		if scanErr != nil {
 			return MessageView{}, false, scanErr
 		}
@@ -175,6 +181,7 @@ func (s *Store) CreateHumanOutboundMessage(ctx context.Context, in outboundMessa
 	if err != nil {
 		return MessageView{}, false, err
 	}
+	upd.PreserveAIReplyDraftID = strings.TrimSpace(in.AIReplyDraftID)
 	if err := applyStateUpdateTx(ctx, tx, in.AccountID, in.ConversationID, upd, s.AIDispatchV2Enabled()); err != nil {
 		return MessageView{}, false, err
 	}
@@ -200,15 +207,18 @@ func (s *Store) CreateHumanOutboundMessage(ctx context.Context, in outboundMessa
 		}
 	}()
 
-	view, err := createOutboundMessageTx(ctx, tx, in)
+	view, err := s.createOutboundMessageTx(ctx, tx, in)
 	if err != nil {
+		return MessageView{}, false, err
+	}
+	if err := resolveHumanAIReplyDraftTx(ctx, tx, in, view.ID); err != nil {
 		return MessageView{}, false, err
 	}
 	payload, _ := json.Marshal(outboundJobPayload{MessageID: view.ID, ConversationID: in.ConversationID})
 	if _, err := tx.Exec(ctx, `insert into messaging.outbox
 		(account_id, ordering_key, idempotency_key, kind, payload, max_attempts)
 		values ($1::uuid, $2, $3, $4, $5::jsonb, 5)`,
-		in.AccountID, in.ConversationID, idempotencyKey, OutboundJobKind, payload); err != nil {
+		in.AccountID, in.ConversationID, idempotencyKey, OutboundJobKind, string(payload)); err != nil {
 		return MessageView{}, false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -234,7 +244,9 @@ func (s *Store) ResolveReplyReference(ctx context.Context, accountID, conversati
 	err := s.pool.QueryRow(ctx, `select m.id::text, coalesce(m.external_message_id, ''),
 		m.content, m.message_type, coalesce(m.sender_name, '')
 		from messaging.messages m
-		where m.account_id = $1::uuid and m.conversation_id = $2::uuid and m.id = $3::uuid`,
+		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+		where m.account_id = $1::uuid and m.conversation_id = $2::uuid and m.id = $3::uuid`+
+		s.historyVisibleMessagePredicate("m", "c"),
 		accountID, conversationID, messageID,
 	).Scan(&r.MessageID, &r.ExternalMessageID, &r.Content, &r.MessageType, &r.SenderName)
 	return r, err
@@ -243,8 +255,10 @@ func (s *Store) ResolveReplyReference(ctx context.Context, accountID, conversati
 // GetMessageByID devolve a mensagem por id, so escopada por conta (sem exclusao de hidden —
 // e para o produtor/idempotencia, nao para a leitura do inbox). Outra conta => ErrNoRows.
 func (s *Store) GetMessageByID(ctx context.Context, accountID, messageID string) (MessageView, error) {
-	return scanMessage(s.pool.QueryRow(ctx, `select `+messageCols+` from messaging.messages m
-		where m.id = $1::uuid and m.account_id = $2::uuid`, messageID, accountID))
+	return scanMessage(s.pool.QueryRow(ctx, `select `+s.messageCols()+` from messaging.messages m
+		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+		where m.id = $1::uuid and m.account_id = $2::uuid`+
+		s.historyVisibleMessagePredicate("m", "c"), messageID, accountID))
 }
 
 // FindOutboxMessageID le o messageId do payload de um job ja enfileirado com a
@@ -324,21 +338,19 @@ type outboundAIMetadata struct {
 // GetOutboundSendData carrega a mensagem + a conversa + a instancia para o envio. Escopado por
 // conta; mensagem de outra conta => ErrNoRows.
 func (s *Store) GetOutboundSendData(ctx context.Context, accountID, messageID string) (outboundSendData, error) {
-	return scanOutboundSendData(s.pool.QueryRow(ctx, outboundSendDataSQL(""), accountID, messageID))
+	return scanOutboundSendData(s.pool.QueryRow(ctx, s.outboundSendDataSQL(""), accountID, messageID))
 }
 
-func outboundSendDataSQL(lockClause string) string {
+func (s *Store) outboundSendDataSQL(lockClause string) string {
 	return `select m.id::text, m.conversation_id::text, m.status, m.origin,
 			m.provider_error_code, m.provider_status_at, m.message_type,
 			m.content, m.media_caption, m.media_storage_key, m.media_url, m.media_mime_type, m.media_file_name,
 			c.contact_phone, c.external_id, c.external_id, c.instance_scope_key,
 			coalesce(i.provider, case when c.channel='INSTAGRAM' then 'instagram' else '' end),
-			m.reply_to_external_message_id,
-			(select r.content from messaging.messages r where r.id = m.reply_to_message_id
-			  and r.account_id = m.account_id and r.conversation_id = m.conversation_id),
-			(select r.message_type from messaging.messages r where r.id = m.reply_to_message_id
-			  and r.account_id = m.account_id and r.conversation_id = m.conversation_id),
-			c.state, c.ai_generation, m.metadata_json,
+			` + s.replyValueExpression("m", "c", "external_message_id") + `,
+			` + s.replyValueExpression("m", "c", "content") + `,
+			` + s.replyValueExpression("m", "c", "message_type") + `,
+			c.state, c.ai_generation, ` + s.sanitizedMessageMetadataExpression("m", "c") + `,
 			coalesce(i.credentials_ciphertext, ia.credentials_ciphertext, ''), coalesce(i.provider_config, ia.provider_config, '{}'::jsonb)
 		from messaging.messages m
 		join messaging.conversations c on c.id = m.conversation_id and c.account_id = m.account_id
@@ -372,9 +384,9 @@ func scanOutboundSendData(row rowScanner) (outboundSendData, error) {
 	return d, err
 }
 
-// DispatchOutbound serializa a revalidacao do lease IA, a chamada ao provider e a
-// persistencia do ACK local pelo mesmo lock da conversa usado em ApplyTransition. O callback
-// deve respeitar o timeout do contexto; em erro a transacao faz rollback e libera o lock.
+// DispatchOutbound serializa revalidacao, provider e ACK na ordem instancia -> conversa ->
+// mensagem. O lock da instancia cobre o callback: reset-first invalida o envio; provider-first
+// termina antes de o reset avancar o cutoff.
 func (s *Store) DispatchOutbound(ctx context.Context, accountID, messageID string,
 	send func(outboundSendData) (string, error)) (outboundDispatchResult, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -383,9 +395,8 @@ func (s *Store) DispatchOutbound(ctx context.Context, accountID, messageID strin
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// ApplyTransition sempre bloqueia a conversa antes de tocar mensagens/outbox. Repetir
-	// explicitamente essa ordem evita o ciclo conversa->mensagem versus mensagem->conversa
-	// quando dispatch e takeover começam ao mesmo tempo.
+	// A primeira leitura so descobre o escopo. O helper abaixo adquire a instancia antes
+	// da conversa, seguindo a mesma ordem do reset e de ApplyTransition.
 	var conversationID string
 	err = tx.QueryRow(ctx, `select conversation_id::text from messaging.messages
 		where account_id = $1::uuid and id = $2::uuid`, accountID, messageID).Scan(&conversationID)
@@ -395,19 +406,16 @@ func (s *Store) DispatchOutbound(ctx context.Context, accountID, messageID strin
 	if err != nil {
 		return outboundDispatchResult{}, err
 	}
-	var lockedConversationID string
-	err = tx.QueryRow(ctx, `select id::text from messaging.conversations
-		where account_id = $1::uuid and id = $2::uuid for update`,
-		accountID, conversationID).Scan(&lockedConversationID)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if err := lockHistoryExternalEffectScope(ctx, tx, accountID, conversationID, "update"); errors.Is(err, ErrHistoryResetInvalidated) {
+		return outboundDispatchResult{MessageID: messageID, ConversationID: conversationID}, ErrHistoryResetInvalidated
+	} else if errors.Is(err, pgx.ErrNoRows) {
 		return outboundDispatchResult{}, nil
-	}
-	if err != nil {
+	} else if err != nil {
 		return outboundDispatchResult{}, err
 	}
 
 	data, err := scanOutboundSendData(tx.QueryRow(ctx,
-		outboundSendDataSQL("for update of m"), accountID, messageID))
+		s.outboundSendDataSQL("for update of m"), accountID, messageID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return outboundDispatchResult{}, nil
 	}
@@ -417,6 +425,9 @@ func (s *Store) DispatchOutbound(ctx context.Context, accountID, messageID strin
 	result := outboundDispatchResult{
 		MessageID: data.MessageID, ConversationID: data.ConversationID,
 		Status: data.Status, ExternalMessageID: "",
+	}
+	if data.Status == "FAILED" && data.ProviderErrorCode == "history_reset" {
+		return result, ErrHistoryResetInvalidated
 	}
 	if data.Origin == "ai" && (data.Status == "FAILED" && data.ProviderErrorCode == "ai_handoff_canceled" ||
 		data.ConversationState != StateAIActive || data.MessageAIGeneration == nil ||
@@ -437,6 +448,38 @@ func (s *Store) DispatchOutbound(ctx context.Context, accountID, messageID strin
 		return result, nil
 	}
 	if err := s.enforceWhatsAppCloudPolicy(ctx, tx, accountID, data); err != nil {
+		return result, err
+	}
+	var historyVisible bool
+	err = tx.QueryRow(ctx, `select exists (
+		select 1 from messaging.messages history_message
+		join messaging.conversations history_conversation
+		  on history_conversation.account_id=history_message.account_id
+		 and history_conversation.id=history_message.conversation_id
+		where history_message.account_id=$1::uuid and history_message.id=$2::uuid`+
+		s.historyVisibleMessagePredicate("history_message", "history_conversation")+`)`,
+		accountID, messageID).Scan(&historyVisible)
+	if err != nil {
+		return result, err
+	}
+	if !historyVisible {
+		return result, ErrHistoryResetInvalidated
+	}
+	// Recarrega a citacao no ultimo statement antes do efeito externo. O cutoff de contato
+	// pode mudar sem o lock da conversa; uma leitura antiga nunca pode carregar quoted oculto.
+	err = tx.QueryRow(ctx, `select `+
+		s.replyValueExpression("m", "c", "external_message_id")+`, `+
+		s.replyValueExpression("m", "c", "content")+`, `+
+		s.replyValueExpression("m", "c", "message_type")+`
+		from messaging.messages m
+		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+		where m.account_id=$1::uuid and m.id=$2::uuid`+
+		s.historyVisibleMessagePredicate("m", "c"), accountID, messageID).
+		Scan(&data.ReplyExternalID, &data.ReplyContent, &data.ReplyMessageType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return result, ErrHistoryResetInvalidated
+	}
+	if err != nil {
 		return result, err
 	}
 
@@ -657,10 +700,35 @@ func (s *Store) GetMediaDescriptor(ctx context.Context, accountID, userID, conve
 		left join messaging.whatsapp_instances i on i.id = m.instance_id and i.account_id = m.account_id
 		where m.account_id = $1::uuid and m.conversation_id = $2::uuid and m.id = $3::uuid
 		  and not exists (select 1 from messaging.hidden_messages h
-			where h.message_id = m.id and h.user_id = $4::uuid)`,
+			where h.message_id = m.id and h.user_id = $4::uuid)`+
+		s.historyVisibleMessagePredicate("m", "c"),
 		accountID, conversationID, messageID, userID,
 	).Scan(&d.MessageID, &d.ConversationID, &d.InstanceScopeKey, &d.StorageKey, &d.MimeType,
 		&d.FileName, &d.MediaURL, &d.SourceKind, &d.ExternalMessageID, &d.Metadata, &d.Provider)
+	return d, err
+}
+
+// GetVisibleMediaDescriptor aplica o mesmo resolver relacional usado por lista, detalhe e
+// mensagens dentro da propria query da midia. Assim uma revogacao concluida antes desta leitura
+// nunca deixa o descritor/storage key atravessar a fronteira do repository.
+func (s *Store) GetVisibleMediaDescriptor(ctx context.Context, accountID, conversationID, messageID string, scope VisibilityScope) (mediaDescriptor, error) {
+	var d mediaDescriptor
+	query := `select m.id::text, m.conversation_id::text, m.instance_scope_key,
+			m.media_storage_key, m.media_mime_type, m.media_file_name, m.media_url, m.media_source_kind,
+			m.external_message_id, m.metadata_json, i.provider
+		from messaging.messages m
+		join messaging.conversations c on c.id=m.conversation_id and c.account_id=m.account_id
+		left join messaging.whatsapp_instances i on i.id=m.instance_id and i.account_id=m.account_id
+		where m.account_id=$1::uuid and m.conversation_id=$2::uuid`
+	args := []any{accountID, conversationID}
+	query, args = appendConversationVisibility(query, args, "c", scope)
+	args = append(args, messageID)
+	query += ` and m.id=$` + strconv.Itoa(len(args)) + `::uuid
+		and not exists (select 1 from messaging.hidden_messages h
+			where h.message_id=m.id and h.user_id=$3::uuid)` + s.historyVisibleMessagePredicate("m", "c")
+	err := s.pool.QueryRow(ctx, query, args...).Scan(&d.MessageID, &d.ConversationID, &d.InstanceScopeKey,
+		&d.StorageKey, &d.MimeType, &d.FileName, &d.MediaURL, &d.SourceKind,
+		&d.ExternalMessageID, &d.Metadata, &d.Provider)
 	return d, err
 }
 

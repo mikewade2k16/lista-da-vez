@@ -25,6 +25,8 @@ import type { Contact, Conversation, GroupParticipant, Message, MessageType } fr
 import type { InboxRenderItem } from "./types";
 import InboxChatBody from "./InboxChatBody.vue";
 import InboxChatFooter from "./InboxChatFooter.vue";
+import InboxAIReplyDraft from "./InboxAIReplyDraft.vue";
+import type { OmnichannelAIReplyDraft } from "~/composables/omnichannel/useOmnichannelAIReplyDraft";
 import InboxForwardMessagesModal from "./InboxForwardMessagesModal.vue";
 import InboxChatHeader from "./InboxChatHeader.vue";
 
@@ -70,6 +72,10 @@ const props = defineProps<{
   stickyDateLabel: string;
   isGroupConversation: boolean;
   draft: string;
+  aiReplyDraft: OmnichannelAIReplyDraft | null;
+  loadingAiReplyDraft: boolean;
+  dismissingAiReplyDraft: boolean;
+  aiReplyDraftError: string;
   hasAttachment: boolean;
   attachmentType: MessageType | null;
   attachmentName: string | null;
@@ -102,23 +108,29 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: "body-mounted", element: HTMLElement | null): void;
   (event: "chat-scroll", payload: Event): void;
-  (event: "load-older-messages"): void;
-  (event: "scroll-to-latest"): void;
+  (
+    event:
+      | "load-older-messages"
+      | "scroll-to-latest"
+      | "close-conversation"
+      | "take-conversation"
+      | "release-conversation"
+      | "open-whatsapp-session"
+      | "clear-reply"
+      | "clear-attachment"
+      | "use-ai-reply-draft"
+      | "dismiss-ai-reply-draft",
+  ): void;
   (event: "send", payload?: MentionSendPayload): void;
   (event: "open-mention", payload: MentionOpenPayload): void;
-  (event: "close-conversation"): void;
-  (event: "take-conversation"): void;
-  (event: "release-conversation"): void;
-  (event: "open-whatsapp-session"): void;
   (event: "set-reply", messageEntry: Message): void;
-  (event: "clear-reply"): void;
   (event: "set-reaction", value: { messageId: string; emoji: string | null }): void;
-  (event: "send-contact", value: { name: string; phone: string; contactId?: string | null; avatarUrl?: string | null }): void;
-  (event: "save-contact-card", value: { name: string; phone: string; contactId?: string | null; avatarUrl?: string | null }): void;
-  (event: "open-contact-card", value: { name: string; phone: string; contactId?: string | null; avatarUrl?: string | null }): void;
+  (
+    event: "send-contact" | "save-contact-card" | "open-contact-card",
+    value: { name: string; phone: string; contactId?: string | null; avatarUrl?: string | null },
+  ): void;
   (event: "update:draft", value: string): void;
   (event: "pick-attachment", value: { file: File | null; mode: AttachmentPickerMode; durationSeconds?: number | null }): void;
-  (event: "clear-attachment"): void;
   (event: "update:show-outbound-operator-label", value: boolean): void;
 }>();
 const { token, coreToken, tenantSlug } = useAdminSession();
@@ -1133,6 +1145,16 @@ const footerBindings = computed(() => ({
 
     <template #footer>
       <div class="chat-page__panel-footer-slot">
+        <InboxAIReplyDraft
+          :draft="aiReplyDraft"
+          :loading="loadingAiReplyDraft"
+          :dismissing="dismissingAiReplyDraft"
+          :error-message="aiReplyDraftError"
+          :disabled="!canManageConversation || sendingMessage"
+          :composer-has-content="Boolean(draft.trim() || hasAttachment)"
+          @use="emit('use-ai-reply-draft')"
+          @dismiss="emit('dismiss-ai-reply-draft')"
+        />
         <InboxChatFooter v-bind="footerBindings" />
       </div>
     </template>

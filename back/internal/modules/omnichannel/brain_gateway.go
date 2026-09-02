@@ -1,6 +1,7 @@
 package omnichannel
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -16,12 +17,17 @@ import (
 // It is intentionally outside JWT/module middleware: n8n calls it server-to-server,
 // and the encrypted short-lived token is the authentication boundary.
 type BrainGateway struct {
-	box *secretbox.Box
-	llm llm.Client
+	box                 *secretbox.Box
+	llm                 llm.Client
+	externalEffectLease func(context.Context, string, string, int64, func() error) (bool, error)
 }
 
-func newBrainGateway(box *secretbox.Box, client llm.Client) *BrainGateway {
-	return &BrainGateway{box: box, llm: client}
+func newBrainGateway(box *secretbox.Box, client llm.Client, stores ...*Store) *BrainGateway {
+	gateway := &BrainGateway{box: box, llm: client}
+	if len(stores) > 0 && stores[0] != nil {
+		gateway.externalEffectLease = stores[0].WithAIDispatchExternalEffectLeaseNowait
+	}
+	return gateway
 }
 
 type brainGatewayRequest struct {
@@ -43,7 +49,7 @@ func registerBrainGatewayRoutes(mux *http.ServeMux, gateway *BrainGateway) {
 }
 
 func (g *BrainGateway) handle(w http.ResponseWriter, r *http.Request) {
-	if g == nil || g.box == nil || g.llm == nil {
+	if g == nil || g.box == nil || g.llm == nil || g.externalEffectLease == nil {
 		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "gateway_unavailable", "Gateway indisponivel.")
 		return
 	}
@@ -88,10 +94,23 @@ func (g *BrainGateway) handle(w http.ResponseWriter, r *http.Request) {
 	if len(in.Execution.OutputSchema) > 0 && string(in.Execution.OutputSchema) != "null" {
 		request.Schema = &llm.Schema{Name: "omnichannel_triage", Version: 1, Definition: in.Execution.OutputSchema}
 	}
-	resp, err := g.llm.Complete(r.Context(), request)
-	if err != nil {
+	var resp llm.Response
+	var providerErr error
+	allowed, leaseErr := g.externalEffectLease(r.Context(), claims.AccountID, claims.DispatchID, claims.Generation, func() error {
+		resp, providerErr = g.llm.Complete(r.Context(), request)
+		return nil
+	})
+	if leaseErr != nil {
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "gateway_unavailable", "Gateway indisponivel.")
+		return
+	}
+	if !allowed {
+		httpapi.WriteError(w, r, http.StatusConflict, "history_reset", "Execucao invalidada.")
+		return
+	}
+	if providerErr != nil {
 		status := http.StatusBadGateway
-		if errors.Is(err, llm.ErrKeyMissing) || errors.Is(err, llm.ErrInvalidProvider) || errors.Is(err, llm.ErrInvalidModel) {
+		if errors.Is(providerErr, llm.ErrKeyMissing) || errors.Is(providerErr, llm.ErrInvalidProvider) || errors.Is(providerErr, llm.ErrInvalidModel) {
 			status = http.StatusUnprocessableEntity
 		}
 		httpapi.WriteError(w, r, status, "gateway_provider_error", "Provider indisponivel.")

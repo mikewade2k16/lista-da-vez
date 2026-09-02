@@ -34,6 +34,9 @@ export function useOmnichannelInboxState() {
   const loadingContacts = ref(false);
   const loadingUsers = ref(false);
   const loadingWhatsAppStatus = ref(false);
+  const whatsappInstanceAccessState = ref<
+    "loading" | "resolved-empty" | "resolved-nonempty" | "error"
+  >("loading");
   const loadingMessages = ref(false);
   const loadingOlderMessages = ref(false);
   const loadingGroupParticipants = ref(false);
@@ -87,6 +90,7 @@ export function useOmnichannelInboxState() {
     loadingContacts,
     loadingUsers,
     loadingWhatsAppStatus,
+    whatsappInstanceAccessState,
     loadingMessages,
     loadingOlderMessages,
     loadingGroupParticipants,

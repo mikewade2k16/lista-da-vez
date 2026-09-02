@@ -80,7 +80,9 @@ func (g *MediaAnalysisGateway) handle(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, r, http.StatusUnauthorized, "media_gateway_unauthorized", "Token interno invalido.")
 		return
 	}
-	descriptor, status, err := g.store.GetMediaDescriptorForAnalysis(r.Context(), claims.AccountID, claims.AnalysisID, claims.MessageID)
+	// A primeira leitura descobre somente a conversa. O descriptor e o status sao relidos
+	// depois do fence NOWAIT; nenhum byte ou header de midia sai desta leitura otimista.
+	descriptor, _, err := g.store.GetMediaDescriptorForAnalysis(r.Context(), claims.AccountID, claims.AnalysisID, claims.MessageID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) || errors.Is(err, ErrMediaAnalysisInvalid) {
 			httpapi.WriteError(w, r, http.StatusNotFound, "media_not_found", "Midia indisponivel.")
@@ -89,30 +91,56 @@ func (g *MediaAnalysisGateway) handle(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "media_gateway_unavailable", "Midia indisponivel.")
 		return
 	}
-	if status != MediaAnalysisStatusQueued && status != MediaAnalysisStatusProcessing {
+	var streamErr error
+	allowed, leaseErr := g.store.WithMessageExternalEffectLeaseNowait(r.Context(), claims.AccountID,
+		descriptor.ConversationID, claims.MessageID, func() error {
+			descriptor, status, descriptorErr := g.store.GetMediaDescriptorForAnalysis(
+				r.Context(), claims.AccountID, claims.AnalysisID, claims.MessageID)
+			if descriptorErr != nil {
+				streamErr = descriptorErr
+				return nil
+			}
+			if status != MediaAnalysisStatusQueued && status != MediaAnalysisStatusProcessing {
+				streamErr = ErrNotFound
+				return nil
+			}
+			key := deref(descriptor.StorageKey)
+			if key == "" || !strings.EqualFold(deref(descriptor.SourceKind), "disk") {
+				streamErr = ErrMediaAnalysisInvalid
+				return nil
+			}
+			file, info, openErr := g.media.Open(key)
+			if openErr != nil {
+				streamErr = ErrNotFound
+				return nil
+			}
+			defer func() { _ = file.Close() }()
+			mime := deref(descriptor.MimeType)
+			if mime == "" {
+				mime = "application/octet-stream"
+			}
+			w.Header().Set("Content-Type", mime)
+			w.Header().Set("Content-Length", formatInt(info.Size()))
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			_, _ = io.CopyN(w, file, info.Size())
+			return nil
+		})
+	if leaseErr != nil {
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "media_gateway_unavailable", "Midia indisponivel.")
+		return
+	}
+	if !allowed || errors.Is(streamErr, ErrNotFound) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "media_not_found", "Midia indisponivel.")
 		return
 	}
-	key := deref(descriptor.StorageKey)
-	if key == "" || !strings.EqualFold(deref(descriptor.SourceKind), "disk") {
+	if errors.Is(streamErr, ErrMediaAnalysisInvalid) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "media_not_ready", "Midia ainda nao esta pronta.")
 		return
 	}
-	file, info, err := g.media.Open(key)
-	if err != nil {
-		httpapi.WriteError(w, r, http.StatusNotFound, "media_not_found", "Midia indisponivel.")
-		return
+	if streamErr != nil {
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "media_gateway_unavailable", "Midia indisponivel.")
 	}
-	defer func() { _ = file.Close() }()
-	mime := deref(descriptor.MimeType)
-	if mime == "" {
-		mime = "application/octet-stream"
-	}
-	w.Header().Set("Content-Type", mime)
-	w.Header().Set("Content-Length", formatInt(info.Size()))
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = io.CopyN(w, file, info.Size())
 }
 
 func (g *MediaAnalysisGateway) claims(r *http.Request) (mediaStreamClaims, bool) {

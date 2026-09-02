@@ -12,14 +12,12 @@ import (
 // O PostgresRepository carrega um *pgxpool.Pool concreto, dificil de fingir sem
 // um Postgres real (nao ha infra de teste de integracao no modulo core). Por
 // isso estes testes seguem o padrao de TestBuildScopedQueryReadsUsersFromCore
-// (users/core_projection_test.go): validam o CONTRATO da query org-aware mais a
-// traducao de erro de FindAccountIfMember via scannable fake. Os 3 caminhos de
-// visibilidade (platform_admin / agency_owner / membership) sao verificados no
-// nivel da clausula SQL que decide o escopo no banco.
+// (users/core_projection_test.go): validam o CONTRATO da query tenant-safe mais a
+// traducao de erro de FindAccountIfMember via scannable fake.
 
-// TestAccountVisibilityCoversThreeAccessPaths garante que a clausula de escopo
-// contempla os tres caminhos org-aware e que cada um le da tabela correta.
-func TestAccountVisibilityCoversThreeAccessPaths(t *testing.T) {
+// TestAccountVisibilityRequiresPlatformOrMembership garante que organizacao nao
+// concede acesso implicito a uma account cliente.
+func TestAccountVisibilityRequiresPlatformOrMembership(t *testing.T) {
 	cases := []struct {
 		name     string
 		fragment string
@@ -27,14 +25,14 @@ func TestAccountVisibilityCoversThreeAccessPaths(t *testing.T) {
 		// (a) platform_admin ve todas as accounts ativas.
 		{"platform_admin", "u.is_platform_admin = true"},
 		{"platform_admin_table", "from core.users u"},
-		// (b) agency_owner ve as accounts da sua organization.
-		{"agency_owner_role", "ou.org_role = 'agency_owner'"},
-		{"agency_owner_org_match", "ou.organization_id = a.organization_id"},
-		{"agency_owner_table", "from core.organization_users ou"},
-		// (c) membership explicita ativa (comportamento legado, inalterado).
+		// (b) membership explicita ativa.
 		{"membership_table", "from core.account_users au"},
 		{"membership_active", "au.is_active = true"},
 		{"membership_account_match", "au.account_id = a.id"},
+	}
+	if strings.Contains(accountVisibilityWhere, "core.organization_users") ||
+		strings.Contains(accountVisibilityWhere, "agency_owner") {
+		t.Fatalf("organization membership must not grant client account visibility:\n%s", accountVisibilityWhere)
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -54,9 +52,9 @@ func TestAccountVisibilityIsParameterizedByUser(t *testing.T) {
 	if !strings.Contains(accountVisibilityWhere, "a.is_active = true") {
 		t.Fatalf("expected visibility to require active account:\n%s", accountVisibilityWhere)
 	}
-	// As tres ramificacoes sao unidas por OR num unico predicado.
-	if strings.Count(accountVisibilityWhere, " or exists (") != 2 {
-		t.Fatalf("expected 3 OR-ed exists() branches:\n%s", accountVisibilityWhere)
+	// Platform admin e membership explicita sao unidos por OR num unico predicado.
+	if strings.Count(accountVisibilityWhere, " or exists (") != 1 {
+		t.Fatalf("expected 2 OR-ed exists() branches:\n%s", accountVisibilityWhere)
 	}
 }
 
@@ -76,9 +74,8 @@ func TestListAccountsForUserQueryContract(t *testing.T) {
 	}
 	// A regra de escopo precisa estar embutida (reutiliza accountVisibilityWhere).
 	if !strings.Contains(listAccountsForUserQuery, "u.is_platform_admin = true") ||
-		!strings.Contains(listAccountsForUserQuery, "ou.org_role = 'agency_owner'") ||
 		!strings.Contains(listAccountsForUserQuery, "from core.account_users au") {
-		t.Fatalf("list query must embed the 3-path visibility rule:\n%s", listAccountsForUserQuery)
+		t.Fatalf("list query must embed platform-or-membership visibility:\n%s", listAccountsForUserQuery)
 	}
 	// Sem JOIN multiplicador -> nenhuma chance de linha duplicada por account.
 	if strings.Contains(listAccountsForUserQuery, "join core.account_users") {
@@ -107,9 +104,8 @@ func TestFindAccountIfAccessibleQueryContract(t *testing.T) {
 		t.Fatalf("expected user scope via $1::uuid:\n%s", findAccountIfAccessibleQuery)
 	}
 	if !strings.Contains(findAccountIfAccessibleQuery, "u.is_platform_admin = true") ||
-		!strings.Contains(findAccountIfAccessibleQuery, "ou.org_role = 'agency_owner'") ||
 		!strings.Contains(findAccountIfAccessibleQuery, "from core.account_users au") {
-		t.Fatalf("find query must embed the same 3-path visibility rule:\n%s", findAccountIfAccessibleQuery)
+		t.Fatalf("find query must embed the same platform-or-membership rule:\n%s", findAccountIfAccessibleQuery)
 	}
 	// Mesmas colunas extras da list (scanAccount e compartilhado): is_agency +
 	// organizationName via left join 1:1 com core.organizations.

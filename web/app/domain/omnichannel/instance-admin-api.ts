@@ -3,6 +3,18 @@ import type { OmniCapabilities, OmniChannelLimit } from '~/domain/omnichannel/co
 
 const WA = '/v1/omnichannel/tenant/whatsapp'
 
+export interface OmniInstanceHistoryResetInput {
+  confirmation: string
+  reason?: string
+  expectedRevision: number
+}
+
+export interface OmniInstanceHistoryResetResult {
+  instanceId: string
+  hiddenBefore: string
+  resetRevision: number
+}
+
 export function deleteInstance(api: ApiRequest, id: string): Promise<void> {
   return api(`${WA}/instances/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -17,6 +29,22 @@ export function updateChannelLimit(
     method: 'PUT',
     body: { maxChannels },
   }) as Promise<OmniChannelLimit>
+}
+
+export function resetInstanceHistory(
+  api: ApiRequest,
+  id: string,
+  input: OmniInstanceHistoryResetInput,
+): Promise<OmniInstanceHistoryResetResult> {
+  const reason = input.reason?.trim()
+  return api(`${WA}/instances/${encodeURIComponent(id)}/history/reset`, {
+    method: 'POST',
+    body: {
+      confirmation: input.confirmation.trim(),
+      expectedRevision: input.expectedRevision,
+      ...(reason ? { reason } : {}),
+    },
+  }) as Promise<OmniInstanceHistoryResetResult>
 }
 
 export function fetchCapabilities(api: ApiRequest, id: string): Promise<OmniCapabilities | null> {

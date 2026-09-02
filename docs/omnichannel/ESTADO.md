@@ -4,7 +4,7 @@
 > o espelho de fases é `web/app/components/roadmap/data/phases-part7.ts`.
 > Este arquivo existe só para **retomar de onde parou** — apagar quando o piloto P0 fechar.
 >
-> Última atualização: **2026-07-23**
+> Última atualização: **2026-08-28**
 
 ---
 
@@ -99,6 +99,82 @@ P0 atual: mídia inbound real, quote, espelho `fromMe`, job idempotente da IA, d
 contrato versionado `continue_ai|handoff|no_reply`. Os detalhes históricos abaixo ainda são
 úteis como evidência, mas estados antigos de “pendente” podem ter sido superados por esta
 atualização e pelo AGENT do módulo.
+
+## Atualização P0 — reset lógico por conexão (2026-08-28)
+
+- O botão “Limpar histórico visível desta conexão” usa uma mutação por `instanceId`, confirmação
+  exata de `instanceName` e revisão otimista. Sessão, contatos, dados brutos e auditoria permanecem.
+- A migration `0297` acrescenta cutoff/revisão à instância e o evento
+  `WHATSAPP_INSTANCE_HISTORY_RESET`, preservando integralmente o vocabulário anterior de auditoria.
+- O endpoint tenant-wide antigo foi aposentado de forma segura: responde
+  `409 history_reset_moved`, não interpreta o body e não executa `DELETE`.
+- Leituras do inbox, mensagens, busca, mídia, IA, automação e ações diretas usam o cutoff efetivo;
+  workers revalidam antes de provider/n8n. Realtime account-wide transporta somente invalidação
+  opaca e o frontend reidrata pela REST autorizada.
+- Estado deste fechamento: **P0 técnico local PASS**. A evidência consolidada inclui migration real
+  em PostgreSQL descartável, cinco integrações de reset/corridas, suites Go afetadas, `go vet`, 10
+  arquivos/42 testes Vitest e build de produção Nuxt completo (cliente, SSR, prerender e Nitro).
+- O `vue-tsc` global continua vermelho por dívida preexistente fora do write-set: 406 erros no
+  frontend completo; nenhum erro pertence aos arquivos alterados pelo P0. Curl autenticado e smoke
+  de browser no ambiente alvo não foram executados, portanto este registro não afirma deploy.
+
+## Atualização P1 — grants relacionais e enforcement canônico (2026-08-28)
+
+- A migration `0298` cria política/revisão na instância, grants tenant-scoped e o evento de auditoria
+  `WHATSAPP_INSTANCE_ACCESS_CHANGED`. Default e backfill permanecem `RESTRICTED`.
+- O backfill real foi validado em PostgreSQL descartável: responsável ativo→`manage`, atribuído
+  válido→`reply`, criador ativo como fallback; vínculo externo, membership inativa e UUID inválido
+  são ignorados/relatados, e conexão sem gestor não é aberta automaticamente.
+- Criação pelo POST e pelo bootstrap agora exige membership/módulo ativos mais
+  `omnichannel.instances.manage`; não há bypass por `caller.IsAdmin`. Instância e primeiro `manage`
+  são atômicos e a invalidação opaca ocorre apenas após commit.
+- O resolver `ConversationAccessScope` e a escrita completa de policy/grants estão prontos, com
+  revisão otimista, revogação lógica, transferência de responsável e proteção do último gestor.
+- P1B substituiu os filtros legados nas superfícies de conversas, mensagens, ações, mídia,
+  contatos/CRM, IA, automação, bindings e lifecycle. Não há acesso automático por uma única
+  conexão, instância sem responsável, papel/admin legado ou `settings.manage`.
+- Realtime permanece opaco e revalida conta, membership, módulo e `conversations.view` antes de
+  cada escrita; revogação em voo fecha com 1008. O frontend trata os quatro estados de
+  `/instances/access` e falha fechado sem bloquear Instagram.
+- Estado: **P1 técnico local PASS**. Evidência direcionada: integrações reais P1A/P1B, realtime e
+  regressão P0 de reset verdes; 7 arquivos/32 testes Vitest verdes; ESLint direcionado sem erros
+  (somente os warnings históricos `max-lines`). A validação global posterior está consolidada na
+  atualização P6–P8 abaixo; smoke autenticado e deploy continuam separados.
+
+## Atualização P2–P4 — acesso administrável e cliente próprio (2026-08-28)
+
+- **P2 técnico local PASS:** API/painel relacional de grants, níveis view/reply/manage, revisão
+  otimista, conflito sem reaplicação e remoção dos gates de papel. Lista vazia/erro nunca vira acesso
+  global e a revogação invalida o escopo opacamente.
+- **P3 técnico local PASS:** número próprio é provisionado na account do cliente. Usuário da agência
+  precisa de `core.account_users` explícito naquele cliente, módulo, permissões e grant; membership
+  organizacional isolada não concede contexto nem inbox.
+- **P4 técnico local PASS:** binding cliente×canal e automation profile precisam coincidir. A
+  validação ocorre ao configurar, antes da IA e novamente antes do provider; divergência falha
+  fechada. O binding da agência organiza CRM/roteamento, mas não delega inbox cross-account.
+
+## Atualização P6–P8 — evidência, hardening e rollout (2026-08-28)
+
+- **P6 local PASS:** suites Go/frontend, integrações PostgreSQL e 89 guardas de ownership n8n
+  passaram. Evidência final atualizada: Go test/vet verdes no escopo core+omnichannel+realtime; 114
+  arquivos e 519 testes Vitest; ESLint do escopo novo sem erros. O typecheck global mantém dívida
+  antiga fora deste write-set, mas não aponta erro nos novos arquivos E9/E10. O build Nuxt de
+  produção do delta P8 concluiu client, SSR, prerender e empacotamento Nitro com heap de 4,5 GiB; a
+  imagem resultante iniciou em container isolado e respondeu HTTP 200. A API foi reconstruída sem
+  cache e aplicou localmente as migrations `0297`–`0301`. Canários Evolution/Meta, App Review e
+  cutover real continuam externos e pendentes.
+- **P7 núcleo local concluído:** health account-scoped, alertas acionáveis, rate limit e cache QR
+  compartilhados, teste concorrente entre quatro réplicas, falha fechada com pool indisponível,
+  isolamento do `X-Account-Id` e restore isolado de banco+mídia com checksum idêntico. Não é PASS
+  global até executar monitoramento/on-call, carga multi-account prolongada, backup real da VPS e
+  SLOs com provider real.
+- **P8 núcleo local concluído:** config tipada, auditoria, coorte/percentual/horário/allowlists/limite,
+  painel, draft humano persistido do modo `assist` e kill switch server-side em todos os boundaries
+  do envio. O draft aparece no inbox, não cria outbox automático, registra uso/edição/descarte e
+  expira em reset, bloqueio, resposta humana ou mudança de modo. Account sem config preserva
+  `active` legado e recebe alerta para configurar explicitamente antes do piloto.
+- R0–R5, mensagens externas, deploy, ativação n8n e rollback real não foram executados. P5 físico
+  continua fora de escopo sem nova autorização.
 
 ---
 
@@ -202,7 +278,7 @@ Ambas fecharam. **Reconciliação da costura aplicada por mim:**
 > **Gap honesto (follow-up F4):** a interface `channel.Provider` só tem 5 métodos — reaction/delete-for-all/group/sync NÃO chegam no provider ainda; respondem **409 `provider_action_unavailable`** (nunca sucesso fingido). forward/status/assign/delete-for-me/open-conversation funcionam ponta a ponta. Falta: estender `channel.Provider` com `SendReaction`/`DeleteForAll` + implementar no evolution + trocar os 409 pela chamada real. Passo próprio (toca o pacote channel/F4).
 
 ### F5 (realtime) + F9 (triagem IA) — 2026-07-17, noite — CÓDIGO em disco, rotas wireadas
-**F5 realtime ✅** — canal Go `GET /v1/realtime/omnichannel` (padrão ticket, fora do gate), Publisher injetado no app.go (`WithPublisher(realtimeService)`), `message.created` publicado no inbound pós-commit (com o id interno, senão o front duplica no merge), mídia sanitizada (data URL→null). Front `useOmnichannelInboxRealtime.ts` reescrito sobre `useRealtimeSocket` (accountId pela fonte do REST — evita o loop 1006 do platform_admin). Testes de transporte verdes; WS route: sem ticket→401. **Nota:** F5 só emite `message.created`; `conversation.updated`/`message.updated` completos dependem de leitura de conversa (F6/F7) — os 3 shapes e o transporte já existem.
+**F5 realtime ✅ — registro histórico, transporte atualizado no P0 de 2026-08-27.** O canal Go continua em `GET /v1/realtime/omnichannel`, com ticket e escopo por conta. Eventos internos ricos não atravessam mais o boundary: o WS publica apenas `omnichannel.invalidate` com `{eventId,reason,occurredAt}`, e o front refaz a leitura autorizada pela REST.
 
 **F9 triagem IA ✅ (rotas), ⏳ (auto-disparo)** — migration `0206` (ai_agents/versions/runs/collect_field_defs + FK routing_decisions.ai_run_id), triagem nativa sobre `platform/llm`, saída schema-validada, `human_active` bloqueia, limite degrada (não derruba). **Rotas costuradas por mim** no module.go (`NewAIService(store, llm.New(...), secretBox, limits, logger)` + `RegisterAIRoutes`). Config/CRUD/publish-rollback/simulate **funcionam**.
 
@@ -263,7 +339,7 @@ via curl direto na Evolution :8085.
 
 ### ✅ RESOLVIDO (2026-07-17, tarde) — remap de rotas + superfície de instância do F4
 - **6 rotas remapeadas** de `/whatsapp/session/*` e `/whatsapp/instances` → `/tenant/whatsapp/*` (o path do front verbatim, D-B). `http_session.go` + `http.go`.
-- **5 handlers novos** que o front chamava e não existiam: `POST/PATCH tenant/whatsapp/instances`, `PUT .../{id}/users`, `POST tenant/whatsapp/validate-endpoints`, `POST tenant/whatsapp/conversations/clear` (`http_instances.go` + `service_instances.go` + `service_instance_ops.go` + `store_instances.go`). `assignedUserIds`/`userScopePolicy` persistem em `provider_config jsonb` (sem migration nova); `validate-endpoints` valida config (probe vivo é F6). LEGADO item `f` resolvido.
+- **Registro histórico dos handlers:** `POST/PATCH tenant/whatsapp/instances`, `PUT .../{id}/users` e `POST tenant/whatsapp/validate-endpoints` permanecem. O antigo `POST tenant/whatsapp/conversations/clear` foi aposentado no P0 de 2026-08-27 e agora só retorna `409 history_reset_moved`; o reset válido é `POST .../instances/{id}/history/reset`. `assignedUserIds`/`userScopePolicy` persistem em `provider_config jsonb`; `validate-endpoints` valida config (probe vivo é F6).
 - `go build`/`vet`/`test` verdes; rebuild da api aplicando. **O smoke do mock connect deve funcionar** — o dono confirma no browser.
 
 _Histórico do bloqueador (abaixo, mantido como registro):_
@@ -300,13 +376,14 @@ o do front; NÃO mexer no front.**
 | PATCH | `/tenant/whatsapp/instances/{id}` | conferir F2 | conferir |
 | PUT | `/tenant/whatsapp/instances/{id}/users` | — | criar handler (assigned users) |
 | POST | `/tenant/whatsapp/validate-endpoints` | — | **novo handler** (validação de config) |
-| POST | `/tenant/whatsapp/conversations/clear` | — | **novo handler** (limpar conversas) |
+| POST | `/tenant/whatsapp/instances/{id}/history/reset` | — | reset lógico por conexão, confirmação + revisão |
+| POST | `/tenant/whatsapp/conversations/clear` | — | legado inerte: **409 `history_reset_moved`**, nunca apaga |
 
-Passos: (1) editar os `mux.Handle(...)` em `http_session.go` (5 rotas de sessão) e `http.go` (instances) para
-o prefixo `tenant/whatsapp/`; (2) escrever handlers de `instances/{id}/users`, `validate-endpoints` e
-`conversations/clear` (ver o body/response esperado no shape TS do front: `WhatsAppInstanceRecord`,
-`WhatsAppStatusResponse`, `WhatsAppBootstrapResponse`, `WhatsAppQrCodeResponse`); (3) `docker compose up -d
---build api` (sem `--no-cache`); (4) `curl` cada rota → 401 (sem token) ou 200, nenhum 404. Depois o smoke do mock.
+Passos históricos já reconciliados: as rotas permanecem sob `tenant/whatsapp/`; os handlers de
+`instances/{id}/users` e `validate-endpoints` continuam disponíveis. A única mutação de limpeza é
+`instances/{id}/history/reset`; `conversations/clear` é somente compatibilidade inerte e sempre responde
+`409 history_reset_moved`. O build de produção local está concluído; curl autenticado e smoke de browser
+no ambiente alvo ainda exigem evidência antes de marcar deploy como pronto.
 **Não esquecer:** as rotas de sessão/instância continuam sob `RequireAuthWithAccount` (membership) — não regredir p/ `RequireAuth`.
 
 **Pendências de reconciliação que NÃO fiz (follow-ups nomeados, não bloqueiam o smoke do mock):**
@@ -396,7 +473,7 @@ Painel dizendo que dado real é fake inverte o princípio 4 e treina o admin a i
 |---|---|---|
 | **Permission keys declaradas, não aplicadas** — as 9 keys `omnichannel.*` existem mas nenhuma rota as exige; a plataforma **não tem middleware de permissão** (só `RequireAuth`/`RequireAuthWithAccount`/`RequireRoles`). Hoje qualquer membro da conta lê o inbox inteiro | `modules/omnichannel/module.go` | decidir na F6/F7 (middleware novo × check no service) |
 | `docs/LEGADO.md` **não recebeu os vestígios da F1** (entrega 8): front sem backend, os 5 adaptadores de costura, arquivos >450 linhas, módulo fora de layer, e `assignedUserIds`/`userScopePolicy` hardcoded (A3 da F2) | `docs/LEGADO.md` | antes do commit |
-| `socket.io-client` **não existe** no web: o import verbatim derruba o build do Vite. A F1 trocou por um **stub inerte** preservando a lógica dos 3 eventos | `useOmnichannelInboxRealtime.ts` | **F5** reescreve o arquivo sobre WS nativo |
+| Registro histórico F1: `socket.io-client` não existia e o transporte começou como stub. No P0 de 2026-08-27 a lógica rica foi removida; o WS nativo aceita só invalidação opaca e reidrata por REST | `useOmnichannelInboxRealtime.ts` | resolvido no contrato atual |
 | 460 warnings de `max-lines` no tree portado + 2 erros `no-useless-escape` herdados do legado | `web/app/**/omnichannel/**` | **F14** (esperado e consciente — não "consertar" antes) |
 | ~~Teste de concorrência FIFO (risco 5)~~ | ~~`platform/jobs`~~ | ✅ **feito e passa** contra Postgres real (`TEST_DATABASE_URL=postgres://omni:omni_dev@localhost:5432/omni` `go test ./internal/platform/jobs/ -run FIFO`). Skippa sem a env — não é falha |
 | `llm` sem client concreto e limits sem leitor | `platform/llm`, `platform/modules/limits.go` | ✅ **completados nesta sessão** (client OpenAI-compat + testes; leitor de limites + 409 `limit_exceeded`) |

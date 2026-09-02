@@ -1,9 +1,40 @@
 # E9 — segurança, LGPD, observabilidade e escala
 
-**Status:** `DRAFT`; requisitos locais são aplicados desde E0
+**Status:** `LOCAL_CORE_COMPLETE` em 2026-08-28; validações externas de produção ainda pendentes
 
 **Resultado:** o módulo possui SLOs mensuráveis, isolamento/segredos testados, retenção executada,
 backlog/custo operáveis e restauração de banco+mídia provada.
+
+## Evidência local — 2026-08-28
+
+Implementado:
+
+- `GET /v1/omnichannel/operations/health`, protegido por `omnichannel.audit.view` ou
+  `omnichannel.settings.manage`, sem PII e com ação, severidade, owner e runbook por alerta;
+- visão de processo, PostgreSQL, configuração n8n, outbox, dispatch IA, provider/webhook,
+  retenção e divergência de binding cliente×canal×automação;
+- rate limiter compartilhado em PostgreSQL com chave de escopo+IP em SHA-256 e falha fechada;
+- cache de QR compartilhado em PostgreSQL, com TTL e limite de 1 MiB; o conteúdo nunca entra em
+  log ou métrica;
+- migration aditiva `0300_messaging_shared_runtime_guards.sql` com tabelas UNLOGGED e limpeza
+  oportunista de expirados;
+- teste de integração real com migrations para health, isolamento, cache QR e rate limit, incluindo
+  32 acessos concorrentes distribuídos entre quatro limiters e indisponibilidade do pool negada
+  por fail-closed;
+- middleware de troca de account provado no PostgreSQL real: `agency_owner` sem `account_users`
+  explícito não entra no cliente; o mesmo usuário passa somente depois do vínculo ativo;
+- restore isolado real por `pg_dump`/`pg_restore`: banco em formato custom restaurado, migration
+  `0300`, conversa, mídia e grant encontrados, outbox insegura igual a zero e checksum da mídia
+  idêntico. Medição local: dump 0,749 s; restore 8,468 s; artefato 1.378.671 bytes.
+
+Ainda necessário para declarar E9/P7 globalmente `PASS`:
+
+- ligar alertas ao monitoramento e ao on-call reais da produção;
+- executar carga multi-account e fault injection controlado sem bloquear a estação de trabalho;
+- restaurar o backup real da VPS em ambiente isolado e registrar RPO/RTO daquele ambiente;
+- executar smoke com providers reais e observar SLOs do coorte em janela definida.
+
+Nenhum desses itens externos autoriza deploy, restart ou ativação de workflow por consequência.
 
 ## 1. Princípio de execução
 

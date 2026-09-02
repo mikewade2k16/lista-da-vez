@@ -15,7 +15,8 @@ func (s *Store) GetMediaAnalysisSource(ctx context.Context, accountID, messageID
 		coalesce(m.media_file_size_bytes,0),coalesce(m.metadata_json->>'mediaSha256','')
 		from messaging.messages m
 		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
-		where m.account_id=$1::uuid and m.id=$2::uuid and m.media_source_kind='disk'`, accountID, messageID).
+		where m.account_id=$1::uuid and m.id=$2::uuid and m.media_source_kind='disk'`+
+		s.historyVisibleMessagePredicate("m", "c"), accountID, messageID).
 		Scan(&out.MessageID, &out.ConversationID, &out.InstanceID, &out.ExternalID, &out.MessageType,
 			&out.MIMEType, &out.FileName, &out.SizeBytes, &out.ContentHash)
 	return out, err
@@ -34,7 +35,8 @@ func (s *Store) CreateMediaAnalysis(ctx context.Context, accountID string, in me
 		select $1::uuid, m.id, c.id, $4, $5, $6, $7, $8::uuid, $9, $10::uuid
 		from messaging.messages m
 		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
-		where m.account_id=$1::uuid and m.id=$2::uuid and c.id=$3::uuid
+		where m.account_id=$1::uuid and m.id=$2::uuid and c.id=$3::uuid`+
+		s.historyVisibleMessagePredicate("m", "c")+`
 		on conflict (account_id, message_id, analysis_kind, content_hash, provider, model, agent_version_id)
 		do nothing
 		returning `+mediaAnalysisColumns,
@@ -64,14 +66,35 @@ func (s *Store) GetMediaAnalysisByDedupe(ctx context.Context, accountID string, 
 	return scanMediaAnalysis(s.pool.QueryRow(ctx, `select `+mediaAnalysisColumns+`
 		from messaging.media_analyses
 		where account_id=$1::uuid and message_id=$2::uuid and analysis_kind=$3
-		  and content_hash=$4 and provider=$5 and model=$6 and agent_version_id=$7::uuid`,
+		  and content_hash=$4 and provider=$5 and model=$6 and agent_version_id=$7::uuid
+		  and exists (
+			select 1 from messaging.messages history_message
+			join messaging.conversations history_conversation
+			  on history_conversation.account_id=history_message.account_id
+			 and history_conversation.id=history_message.conversation_id
+			where history_message.account_id=media_analyses.account_id
+			  and history_message.id=media_analyses.message_id`+
+		s.historyVisibleMessagePredicate("history_message", "history_conversation")+`)`,
 		accountID, in.MessageID, in.Kind, strings.ToLower(in.ContentHash), strings.TrimSpace(in.Provider), strings.TrimSpace(in.Model), in.AgentVersionID))
 }
 
 func (s *Store) ListMediaAnalyses(ctx context.Context, accountID, messageID string) ([]mediaAnalysisRow, error) {
-	rows, err := s.pool.Query(ctx, `select `+mediaAnalysisColumns+`
-		from messaging.media_analyses where account_id=$1::uuid and message_id=$2::uuid
-		order by created_at desc, id desc`, accountID, messageID)
+	rows, err := s.pool.Query(ctx, `select analysis.id::text, analysis.account_id::text,
+		analysis.message_id::text, analysis.conversation_id::text, analysis.analysis_kind,
+		analysis.content_hash, analysis.status, analysis.provider, analysis.model,
+		analysis.agent_version_id::text, analysis.result_text, analysis.result_json,
+		analysis.prompt_tokens, analysis.completion_tokens, analysis.cost_usd::float8,
+		analysis.latency_ms, analysis.attempts, analysis.last_error, analysis.created_at,
+		analysis.completed_at, analysis.expires_at, analysis.credential_id::text
+		from messaging.media_analyses analysis
+		join messaging.messages history_message
+		  on history_message.account_id=analysis.account_id and history_message.id=analysis.message_id
+		join messaging.conversations history_conversation
+		  on history_conversation.account_id=history_message.account_id
+		 and history_conversation.id=history_message.conversation_id
+		where analysis.account_id=$1::uuid and analysis.message_id=$2::uuid`+
+		s.historyVisibleMessagePredicate("history_message", "history_conversation")+`
+		order by analysis.created_at desc, analysis.id desc`, accountID, messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,9 +110,8 @@ func (s *Store) ListMediaAnalyses(ctx context.Context, accountID, messageID stri
 	return out, rows.Err()
 }
 
-// GetMediaDescriptorForAnalysis binds the stream token to the analysis row and
-// message in one tenant-scoped query. It deliberately omits hidden-message
-// semantics because this is an internal server-to-server route, not a browser API.
+// GetMediaDescriptorForAnalysis binds the stream token to one still-visible message and its
+// analysis in a tenant-scoped query. O gateway revalida esta query dentro do fence NOWAIT.
 func (s *Store) GetMediaDescriptorForAnalysis(ctx context.Context, accountID, analysisID, messageID string) (mediaDescriptor, string, error) {
 	var d mediaDescriptor
 	var status string
@@ -100,7 +122,8 @@ func (s *Store) GetMediaDescriptorForAnalysis(ctx context.Context, accountID, an
 		join messaging.messages m on m.account_id=a.account_id and m.id=a.message_id
 		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
 		left join messaging.whatsapp_instances i on i.account_id=m.account_id and i.id=m.instance_id
-		where a.account_id=$1::uuid and a.id=$2::uuid and a.message_id=$3::uuid`,
+		where a.account_id=$1::uuid and a.id=$2::uuid and a.message_id=$3::uuid`+
+		s.historyVisibleMessagePredicate("m", "c"),
 		accountID, analysisID, messageID).Scan(&d.MessageID, &d.ConversationID, &d.InstanceScopeKey,
 		&d.StorageKey, &d.MimeType, &d.FileName, &d.MediaURL, &d.SourceKind,
 		&d.ExternalMessageID, &d.Metadata, &d.Provider, &status)

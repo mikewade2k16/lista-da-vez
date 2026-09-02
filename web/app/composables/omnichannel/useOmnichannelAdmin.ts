@@ -289,7 +289,7 @@ export function useOmnichannelAdmin() {
     clearMessages(true);
 
     try {
-      const updated = await apiFetch<WhatsAppInstanceRecord>(`/tenant/whatsapp/instances/${instanceId}/users`, {
+      await apiFetch(`/tenant/whatsapp/instances/${instanceId}/users`, {
         method: "PUT",
         body: {
           userIds: whatsappInstanceForm.assignedUserIds
@@ -297,9 +297,8 @@ export function useOmnichannelAdmin() {
       });
 
       await loadWhatsAppInstances({ silent: true });
-      startEditWhatsAppInstance(
-        whatsappInstances.value.find((entry) => entry.id === updated.id) ?? updated
-      );
+      const updated = whatsappInstances.value.find((entry) => entry.id === instanceId);
+      if (updated) startEditWhatsAppInstance(updated);
       infoMessage.value = "Usuarios da instancia atualizados.";
     } catch (error) {
       setError(extractError(error));

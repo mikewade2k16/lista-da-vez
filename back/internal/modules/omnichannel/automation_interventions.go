@@ -3,6 +3,7 @@ package omnichannel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 
@@ -25,9 +26,19 @@ func (s *Store) ListAutomationInterventions(ctx context.Context, accountID, clie
 		  on c.account_id=h.account_id and c.id=h.conversation_id
 		join messaging.automation_profiles p
 		  on p.account_id=c.account_id and p.whatsapp_instance_id=c.instance_id
+		 and p.client_account_id=c.client_account_id
+		join messaging.channel_client_bindings binding
+		  on binding.account_id=p.account_id
+		 and binding.client_account_id=p.client_account_id
+		 and binding.whatsapp_instance_id=p.whatsapp_instance_id
+		 and binding.channel='WHATSAPP'
+		 and binding.effective_from <= now()
+		 and (binding.effective_to is null or binding.effective_to > now())
 		join messaging.whatsapp_instances wi
 		  on wi.account_id=p.account_id and wi.id=p.whatsapp_instance_id
-		where h.account_id=$1::uuid and h.status in ('requested','queued')
+		where h.account_id=$1::uuid and h.status in ('requested','queued')`+
+		` and h.requested_at > `+s.effectiveHistoryCutoffExpression("c")+
+		s.historyVisibleConversationPredicate("c")+`
 		  and not exists (select 1 from messaging.contact_suppressions suppression
 		      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id
 		        and suppression.is_hidden=true)
@@ -81,6 +92,13 @@ func (s *AutomationService) ListInterventions(ctx context.Context, accountID str
 		client, allowed := byID[row.ClientAccountID]
 		if !allowed {
 			continue
+		}
+		if err := s.permissions.assertConversationAccess(ctx, accountID, p.UserID, row.ConversationID,
+			"omnichannel.agents.manage", InstanceGrantManage); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			return nil, err
 		}
 		out = append(out, AutomationInterventionView{
 			ID: row.ID, Client: client, ConversationID: row.ConversationID,

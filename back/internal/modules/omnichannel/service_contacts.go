@@ -12,8 +12,13 @@ import (
 // ============================================================================
 
 // ListContacts devolve os contatos da account.
-func (s *Service) ListContacts(ctx context.Context, accountID string) ([]ContactView, error) {
-	rows, err := s.store.ListContacts(ctx, accountID)
+func (s *Service) ListContacts(ctx context.Context, accountID string, caller Caller) ([]ContactView, error) {
+	visibility, err := s.resolveConversationVisibility(ctx, accountID, caller.UserID,
+		"omnichannel.conversations.view", InstanceGrantView)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.store.ListVisibleContacts(ctx, accountID, visibility)
 	if err != nil {
 		return nil, err
 	}
@@ -58,14 +63,25 @@ func contactView(row contactRow) ContactView {
 //
 // A publicacao do realtime `conversation.updated` que o legado faz aqui e da F5 — esta
 // fase nao emite evento nenhum.
-func (s *Service) CreateContact(ctx context.Context, accountID string, in ContactInput) (SaveContactView, error) {
+func (s *Service) CreateContact(ctx context.Context, accountID string, caller Caller, in ContactInput) (SaveContactView, error) {
+	access, err := s.store.LoadConversationAccessScope(ctx, accountID, caller.UserID)
+	if err != nil {
+		return SaveContactView{}, err
+	}
+	if !access.Eligible || !access.allowsPermission("omnichannel.contacts.manage") {
+		return SaveContactView{}, ErrForbidden
+	}
+	visibility := access.conversationVisibility(InstanceGrantView)
 	phone := strings.TrimSpace(in.Phone)
 	name := strings.TrimSpace(in.Name)
 	avatar := normalizeAvatar(in.AvatarURL)
 	conversationID := strings.TrimSpace(in.ConversationID)
 
+	if conversationID == "" {
+		return SaveContactView{}, ErrNotFound
+	}
 	if conversationID != "" {
-		conv, err := s.store.GetConversation(ctx, accountID, conversationID)
+		conv, err := s.store.GetVisibleConversation(ctx, accountID, visibility, conversationID)
 		if err != nil {
 			return SaveContactView{}, translate(err)
 		}
@@ -96,7 +112,7 @@ func (s *Service) CreateContact(ctx context.Context, accountID string, in Contac
 		return SaveContactView{}, err
 	}
 	// Amarra todas as conversas com esse telefone ao contato (legado: updateMany).
-	if err := s.store.LinkConversationsByPhone(ctx, accountID, phone, id); err != nil {
+	if err := s.store.LinkVisibleConversationsByPhone(ctx, accountID, phone, id, visibility); err != nil {
 		return SaveContactView{}, err
 	}
 
@@ -110,10 +126,10 @@ func (s *Service) CreateContact(ctx context.Context, accountID string, in Contac
 	if conversationID == "" {
 		return out, nil
 	}
-	if err := s.store.UpdateConversationContact(ctx, accountID, conversationID, id, name, phone, avatar); err != nil {
-		return SaveContactView{}, err
+	if err := s.store.UpdateVisibleConversationContact(ctx, accountID, conversationID, id, name, phone, avatar, visibility); err != nil {
+		return SaveContactView{}, translate(err)
 	}
-	convRow, err := s.store.GetConversation(ctx, accountID, conversationID)
+	convRow, err := s.store.GetVisibleConversation(ctx, accountID, visibility, conversationID)
 	if err != nil {
 		return SaveContactView{}, translate(err)
 	}
@@ -127,8 +143,16 @@ func (s *Service) CreateContact(ctx context.Context, accountID string, in Contac
 
 // UpdateContact aplica o PATCH. Campo ausente = nao mexe; avatarUrl null = limpa
 // (o legado distingue os dois casos — replicar).
-func (s *Service) UpdateContact(ctx context.Context, accountID, id string, patch ContactPatch) (ContactView, error) {
-	existing, err := s.store.GetContact(ctx, accountID, id)
+func (s *Service) UpdateContact(ctx context.Context, accountID string, caller Caller, id string, patch ContactPatch) (ContactView, error) {
+	access, err := s.store.LoadConversationAccessScope(ctx, accountID, caller.UserID)
+	if err != nil {
+		return ContactView{}, err
+	}
+	if !access.Eligible || !access.allowsPermission("omnichannel.contacts.manage") {
+		return ContactView{}, ErrForbidden
+	}
+	visibility := access.conversationVisibility(InstanceGrantView)
+	existing, err := s.store.GetVisibleContact(ctx, accountID, id, visibility)
 	if err != nil {
 		return ContactView{}, translate(err)
 	}
@@ -157,12 +181,12 @@ func (s *Service) UpdateContact(ctx context.Context, accountID, id string, patch
 	}
 	// Telefone mudou: propaga para as conversas do contato (o legado faz o mesmo).
 	if phone != existing.Phone {
-		if err := s.store.SyncConversationPhone(ctx, accountID, id, phone); err != nil {
+		if err := s.store.SyncVisibleConversationPhone(ctx, accountID, id, phone, visibility); err != nil {
 			return ContactView{}, err
 		}
 	}
 
-	row, err := s.store.GetContact(ctx, accountID, id)
+	row, err := s.store.GetVisibleContact(ctx, accountID, id, visibility)
 	if err != nil {
 		return ContactView{}, translate(err)
 	}

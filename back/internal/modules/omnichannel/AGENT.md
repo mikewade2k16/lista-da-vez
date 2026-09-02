@@ -170,6 +170,109 @@ remover ou aplicar regras do omnichannel a ids de outro módulo.
 - E9/E10 ficam pausadas enquanto o MVP de automação WhatsApp é validado. Comentários/menções
   nunca publicam sem aprovação humana e todas as ações continuam na outbox Go.
 
+### P0 — reset lógico do histórico por conexão (2026-08-27)
+
+- `POST /v1/omnichannel/tenant/whatsapp/instances/{id}/history/reset` é a única mutação válida.
+  Exige `confirmation` igual ao `instanceName` após trim, `expectedRevision` e, sem bypass de papel,
+  as permissões efetivas `omnichannel.instances.manage` e
+  `omnichannel.conversations.privacy.manage`.
+- `POST /tenant/whatsapp/conversations/clear` é um alias inerte: responde sempre
+  `409 history_reset_moved` depois da autenticação e nunca lê body, delega ou executa `DELETE`.
+- A migration `0297` mantém `history_visible_from` e `history_reset_revision` na instância. O reset
+  trava a linha, avança o cutoff com `statement_timestamp()`, incrementa revisão/`ai_generation`,
+  limpa apenas `extracted_fields`, cancela trabalho anterior ainda cancelável e preserva mensagens,
+  conversas, contatos, handoffs, análises e auditoria.
+- O cutoff efetivo de leitura é o maior entre o da instância WhatsApp e o cutoff de privacidade do
+  contato; visibilidade é estrita (`created_at > cutoff`). Conversa WhatsApp sem mensagem posterior
+  não aparece e acesso direto retorna 404. Instagram não usa cutoff de instância, mas continua
+  respeitando privacidade do contato.
+- Lista, detalhe, paginação/busca de mensagens, preview, mídia, IA, automação e ações por ID direto
+  aplicam a mesma regra. Workers revalidam imediatamente antes de provider/n8n; trabalho antigo
+  não produz novo efeito externo.
+- O tópico account-wide publica somente `omnichannel.invalidate`, com payload exato
+  `{eventId, reason, occurredAt}`. Motivos aceitos: `message_changed`, `history_reset` e
+  `access_scope_changed`. IDs de domínio, telefone, texto, preview e mídia nunca atravessam o WS;
+  clientes reidratam o estado pela REST autorizada e fazem bootstrap completo ao reconectar.
+- `OMNICHANNEL_HISTORY_CUTOFF_ENFORCED=false` desliga emergencialmente somente o cutoff da
+  instância. Privacidade do contato, migration, revisões e auditoria permanecem ativas.
+
+### P1 — grants relacionais e enforcement canônico (2026-08-28)
+
+- A migration `0298` adiciona `access_policy`/`access_revision` e
+  `messaging.whatsapp_instance_user_grants`, com FKs compostas por conta, níveis
+  `view|reply|manage`, revogação lógica e auditoria `WHATSAPP_INSTANCE_ACCESS_CHANGED`.
+- Backfill: responsável ativo vira `manage`; `assignedUserIds` válido vira `reply`; criador ativo
+  vira `manage` somente sem responsável válido. Toda conexão continua `RESTRICTED`; casos inválidos,
+  inativos e sem gestor ficam disponíveis no relatório do repository.
+- `ConversationAccessScope` é o resolver obrigatório de conteúdo: calcula conta, membership, módulo,
+  permissões efetivas, policy, grant, fila e atribuição. Lista, detalhe, mensagens, mídia, ações,
+  contatos/CRM, IA, automação e bindings usam a mesma `VisibilityScope`; fora do dado retorna 404.
+- WhatsApp exige conexão autorizada e depois `manage` relacional ou fila/atribuição. Instagram não
+  herda grants WhatsApp e continua exigindo fila/atribuição. Não existem exceção de conexão única,
+  conexão sem dono pública, papel/admin legado ou `settings.manage` ampliando conteúdo.
+- POST de instância e bootstrap não usam mais `caller.IsAdmin`: exigem membership/módulo ativos e
+  `omnichannel.instances.manage`; instância + primeiro `manage` são gravados na mesma transação.
+  Responsável explícito recebe o grant; sem ele, o ator recebe. Invalidação
+  `access_scope_changed` só é publicada depois do commit.
+- `ReplaceInstanceAccess` trava a instância, compara revisão, valida memberships da mesma conta,
+  impede remoção do último `manage`, preserva linhas revogadas, atualiza o responsável e incrementa
+  `access_revision` exatamente uma vez. A API administrativa desses grants pertence ao P2.
+- Lifecycle/configuração exige `omnichannel.instances.manage` e grant `manage`; a feature permission
+  não amplia o conteúdo da conversa e o grant relacional não substitui a permission da feature.
+- O compose posterior a um reset pode reutilizar a linha canônica somente depois do mesmo escopo
+  relacional; isso não torna histórico, preview ou mensagem anterior novamente visíveis.
+- Realtime transporta somente invalidação opaca e revalida conta, membership, módulo e
+  `omnichannel.conversations.view` antes de cada escrita. Mudança de acesso fecha o socket com 1008.
+
+### P2–P4 — administração, conta do cliente e binding autoritativo (2026-08-28)
+
+- `GET/PUT /tenant/whatsapp/instances/{id}/users` é a API relacional de grants. Escrita exige
+  revisão otimista, membership ativa dos usuários, ao menos um `manage` e auditoria. O painel usa
+  `myCapabilities`; não deriva autorização de papel legado.
+- Estado de acesso no frontend é fail-closed: loading, vazio e erro nunca viram “todas as
+  conexões”. Troca de account invalida conexão, conversa, histórico e caches antes do bootstrap.
+- WhatsApp próprio do cliente pertence à account do cliente. Membership de organização/agência,
+  isoladamente, não autoriza o cliente: é obrigatório `core.account_users` explícito, módulo,
+  permissão e grant na account operada.
+- Criação de instância provisiona o primeiro grant `manage` e o binding `standalone_default` da
+  própria account de forma idempotente. Binding de uma instância da agência com cliente serve a
+  CRM/roteamento; não delega inbox cross-account.
+- `messaging.channel_client_bindings` e `automation_profiles.client_account_id` precisam apontar
+  para o mesmo cliente da instância. O service valida na configuração e o runtime revalida antes da
+  IA e antes do provider. Divergência retorna conflito ou falha fechada; não existe fallback.
+
+### E9/P7 — saúde e guardas compartilhadas (2026-08-28)
+
+- `GET /v1/omnichannel/operations/health` exige `omnichannel.audit.view` ou
+  `omnichannel.settings.manage`. A projeção é account-scoped, não contém PII e devolve alertas com
+  código, severidade, ação, owner e `docs/omnichannel/runbooks/OPERACAO_E9.md`.
+- `messaging.runtime_rate_limit_buckets` e `messaging.runtime_qr_cache` (migration `0300`) são
+  UNLOGGED e compartilhadas entre réplicas. Rate limit armazena somente hash SHA-256 do escopo+IP e
+  falha fechado em erro do banco. QR possui TTL/limite e nunca entra em log.
+- Restore local isolado de PostgreSQL+mídia foi provado. E9 global ainda exige alertas/on-call,
+  carga/fault injection, restore do backup real e SLOs com provider real.
+
+### E10/P8 — rollout e kill switch (2026-08-28)
+
+- `messaging.rollout_configs`/`rollout_changes` (migration `0299`) são a fonte tipada por account.
+  A API é `GET/PUT /v1/omnichannel/settings/rollout`, com revisão, motivo e auditoria obrigatórios.
+- Modos: `off`, `observe`, `shadow`, `assist`, `auto_pilot`, `active`, `paused`. Coorte é
+  determinístico; instância/fila/Instagram, percentual, horário, tags e teto diário são gates.
+- O runtime avalia rollout antes e depois da inferência e novamente dentro da transação final antes
+  do provider. `paused`/`off` cancelam trabalho automático e preservam o inbox humano;
+  `shadow`/`assist` não produzem efeito externo automático.
+- No modo `assist`, `messaging.ai_reply_drafts` (migration `0301`) é a única projeção operacional
+  da sugestão. Criar draft e completar dispatch são atômicos e cercados por config+instância+
+  generation. Realtime transporta só invalidação opaca, nunca o texto.
+- Somente `SendService.SendMessage` pode marcar o draft como `used`, no mesmo commit da mensagem
+  humana+outbox; compara o texto para registrar `edited`. Descartar exige reply permission e escopo
+  canônico. Reset, resposta externa ao draft, bloqueio/ocultação, invalidação da IA ou saída de
+  `assist` expiram a sugestão pendente.
+- Ausência de config mantém `active` legado por compatibilidade e aparece como alerta no painel.
+  Toda account piloto deve salvar configuração explícita antes do primeiro canário.
+- Código/testes locais não equivalem a rollout real. R0–R5, canário e rollback de provider/workflow
+  continuam pendentes e nunca são executados sem autorização operacional explícita.
+
 ## 🔴 Backlog de funcionalidades + bugs conhecidos (a pedido do dono, 2026-07-18)
 **Prioridade do dono: FUNCIONALIDADES primeiro; aparência + estes bugs DEPOIS.** NÃO polir UI nem
 corrigir isto antes de fechar as funcionalidades pendentes. Descobertos com WhatsApp **real** pareado
@@ -192,26 +295,19 @@ corrigir isto antes de fechar as funcionalidades pendentes. Descobertos com What
 4. **Ajustes visuais menores** — pendentes; só depois das funcionalidades (decisão do dono). O
    alinhamento base ao design system já foi feito (bolhas viraram card, tokens corrigidos).
 
-> **Estado: F4 (canal provider-agnóstico + webhook inbound + sessão/QR).** Entrou a camada
+> **Histórico de F4/F5 (supersedido pelo P0 acima).** Entrou a camada
 > tradutora `channel.Provider` + eventos canônicos, o **registry** de providers (só o `mock`
 > registrado; `evolution` pluga na fase seguinte), o **webhook inbound público** (dedupe por
 > `messaging.webhook_events`) e o **ciclo de sessão/QR** (bootstrap/connect/status/qrcode/
-> logout). **F5 (realtime) ligado**: o webhook inbound publica `message.created` no canal
-> `omnichannel:account:{id}` (transporte `realtime`, injetado via `WithPublisher`); ainda
+> logout). O registro abaixo descreve a implementação inicial de F5; hoje todo evento rico é
+> reduzido no boundary a `omnichannel.invalidate`. Ainda
 > **sem envio** (F6). Com `provider='mock'` grava inbound sem número real.
 
-> **F5 — realtime (canal `omnichannel:account:{id}`).** `publisher.go` define a interface
-> `Publisher` (`PublishOmnichannelEvent(RealtimeEvent)`) + os 3 literais de evento
-> (`RealtimeEvent{MessageCreated,MessageUpdated,ConversationUpdated}`); o módulo `realtime` a
-> implementa e o `app.go` injeta `omnichannel.WithPublisher(realtimeService)`. O **call-site
-> monta o subconjunto** de cada evento (spec F5 "shapes por call-site", nunca unificar). Em F5 o
-> único produtor é o **webhook inbound**: `service_inbound.go` publica `message.created` com o id
-> INTERNO persistido (por isso `PersistInbound`/`writeInboundMessage` devolvem `inboundResult`
-> com `ConversationID`/`MessageID`) — `realtime.go` monta o payload e **sanitiza mídia data: →
-> ausente** (`sanitizeMediaURLForRealtime`; nunca base64 no WS; o publisher repete a checagem).
-> Publica FORA da transação (persiste → commita → publica). `message.updated`/
-> `conversation.updated` do webhook ficam para a F6. Detalhe do transporte + autorização (404 p/
-> não-membro, 403 p/ permissão faltando) em `back/internal/modules/realtime/AGENT.md`.
+> **F5 — realtime atual (canal `omnichannel:account:{id}`).** `publisher.go` mantém os eventos
+> internos de domínio por compatibilidade entre produtores. O módulo `realtime` é o boundary:
+> descarta o payload rico e publica exclusivamente a invalidação opaca definida no P0. A publicação
+> ocorre somente depois do commit. Detalhes de transporte e autorização (404 para não membro, 403
+> para permissão faltando) ficam em `back/internal/modules/realtime/AGENT.md`.
 
 > **F6 — envio via outbox + mídia (`http_send.go`, `service_outbound.go`, `outbound_handler.go`,
 > `service_media.go`, `store_outbound.go`, `media_storage.go`, `ssrf.go`).** `POST
@@ -326,6 +422,7 @@ limites). Nunca duplicar esses dados em `messaging.*`.
 | Tabela | Origem | Nota |
 |---|---|---|
 | `whatsapp_instances` | `WhatsAppInstance` | `UNIQUE(account_id, instance_name)`. `provider`/`provider_config`/`credentials_ciphertext` são **novas** (D-A) |
+| `whatsapp_instance_user_grants` | **nova (0298/P1A)** | acesso relacional por conexão; PK/FKs compostas por conta; revogação lógica e revisão otimista |
 | `conversations` | `Conversation` | `UNIQUE(account_id, external_id, channel, instance_scope_key)`. `state`/`department_id`/`queue_id`/`assigned_user_id`/`extracted_fields` são **novas** |
 | `messages` | `Message` | `(account_id, created_at)`, `(conversation_id, created_at)`. **F6 (0207)**: `media_storage_key` (path relativo à raiz privada, nunca no JSON) + `media_source_kind` (`disk`\|`url_encrypted`) |
 | `contacts` | `Contact` | Desde 0211, telefone opcional e único quando preenchido; identidade multicanal fica em `contact_identities` |
@@ -400,7 +497,7 @@ Prefixo `/v1/omnichannel`, `RequireAuth` + gate de módulo no Chain (`moduleGati
 | `GET /users` | membros ATIVOS da conta (picker de atribuição do inbox), shape `TenantUser[]`. Reusa `ListAssignableUsers` (`core.account_users`); `role` = valor neutro (GAP DECLARADO do RBAC custom, ver `GetInstanceManagement`) |
 | `GET /tenant/whatsapp/instances` · `GET /tenant/whatsapp/instances/access` | filtro **corrigido** (ver A2) |
 | `POST /conversations/{id}/messages` | **F6** envio. Body do legado + `idempotencyKey?`. TEXT exige `content` (≤4000); mídia exige `mediaUrl`. **200** enfileirado · **202** falhou ao enfileirar (mensagem `FAILED`) · **403** VIEWER · **413/415** upload · **422/403** anti-SSRF de `mediaUrl` http(s) |
-| `GET /conversations/{cid}/messages/{mid}/media` | **F6** stream com `Range` (`http.ServeContent`). `disposition=inline\|attachment`, `download`. Exclui `hidden_messages`→404. `Cache-Control: private, max-age=60` + `nosniff` |
+| `GET /conversations/{cid}/messages/{mid}/media` | **F6** stream com `Range` (`http.ServeContent`). `disposition=inline\|attachment`, `download`. Exclui `hidden_messages`→404. `Cache-Control: private, no-store` + `Pragma: no-cache` + `Expires: 0` + `nosniff` |
 
 ### Rotas de gestão de instância (escrita) — `http_instances.go`
 
@@ -417,7 +514,8 @@ do Principal, nunca do body. Erros por `writeSessionError` (409 `number_in_use` 
 | `DELETE /tenant/whatsapp/instances/{id}` | remove a instância. **BLOQUEIA com 409 `instance_has_conversations`** se houver conversas atreladas (o front usa "Desativar"=PATCH `isActive:false` no caso comum; delete duro só sem histórico). Só admin; fora de escopo → 404. **204** |
 | `PUT /tenant/whatsapp/instances/{id}/users` | body = `{ userIds: string[] }` (o front manda `userIds`, não `assignedUserIds`). Filtra p/ membros ativos da conta. **200** |
 | `POST /tenant/whatsapp/validate-endpoints` | body `{ instanceId?, instanceName? }`; valida **config** (não faz probe vivo — ver gap 7). **200** |
-| `POST /tenant/whatsapp/conversations/clear` | body `{ instanceId? }`; `instanceId` ausente = escopo **tenant** (conta toda), presente = **instance**. Apaga audit→messages→conversations numa tx e devolve as contagens. **200** |
+| `POST /tenant/whatsapp/instances/{id}/history/reset` | reset lógico de uma conexão, com confirmação exata e revisão otimista; preserva dados e auditoria. **200/403/404/409/422** |
+| `POST /tenant/whatsapp/conversations/clear` | compatibilidade inerte; não lê body e nunca apaga/delega. **409 `history_reset_moved`** |
 
 Semânticas duras: `phoneNumber` passa pelo `number_guard` (um número, uma instância);
 `instance_name` colide no índice único → 409 `instance_name_conflict`; `responsibleUserId`
@@ -522,13 +620,11 @@ Registrados também em `docs/LEGADO.md`.
    **não expõe** serviço de permissões (`ResolveEffectivePermissions` vive no módulo `access`).
    As 9 keys `omnichannel.*` hoje gateiam o **front**; a F2 as **declara**. Enforcement por key
    vira load-bearing na **escrita** (F6/F7). **Não fingir que a key protege a rota agora.**
-2. **`assignedUserIds` e `userScopePolicy` — agora PERSISTEM** (deixaram de ser constantes
-   fixas). O front tem controles reais para os dois (seletor de política + `PUT .../users`);
-   mantê-los fixos deixaria esses controles mortos (o save reverteria na releitura). Ficam em
-   `whatsapp_instances.provider_config` (jsonb, chaves `userScopePolicy`/`assignedUserIds`) —
-   **coluna existente, NÃO tabela nova** (armadilha A3 respeitada; o merge `|| jsonb_build_object`
-   preserva as outras chaves, ex.: `baseURL`). `scanInstance` lê via `parseInstanceScope` com
-   fallback nos defaults do legado. O `/access` (operador) segue emitindo `assignedUserIds: []`.
+2. **`assignedUserIds` e `userScopePolicy` são metadados de compatibilidade.** O front ainda tem
+   os controles legados e essas chaves permanecem em `whatsapp_instances.provider_config` por uma
+   versão; o merge preserva as outras chaves, como `baseURL`. Desde a migration 0298, autorização
+   por usuário usa `whatsapp_instance_user_grants`. Depois do enforcement P1B, o JSON não participa
+   da decisão nem volta a ser fonte de segurança. O `/access` (operador) segue omitindo os IDs.
 3. **`users[].role` e `atendimentoAccess`** (array do `WhatsAppInstanceManagementResponse`)
    saem com valor neutro (`AGENT`/`true`). Os papéis do Omni são **custom por conta**
    (`core.roles` + `core.user_role_assignments` + overrides) e quem os resolve é o `access` —
@@ -577,8 +673,8 @@ Registrados também em `docs/LEGADO.md`.
 | `http_session.go` | **F4** rotas do painel `/v1/omnichannel/whatsapp/session/*` + credenciais |
 | `number_guard.go` | **F4** "um número, uma instância" INTERNO (só a própria conta) |
 | `qr_cache.go` | **F4** cache de QR em memória (TTL 120s; não sobrevive a restart). **Compartilhado** entre `SessionService` (connect síncrono + `/qrcode`) e `InboundService` (QR via webhook `QRCODE_UPDATED`) |
-| `publisher.go` | **F5** interface `Publisher` (`PublishOmnichannelEvent`) + `RealtimeEvent` + 3 literais + `noopPublisher` |
-| `realtime.go` | **F5** `sanitizeMediaURLForRealtime` (data: → "") + `publishInboundMessage` (monta `message.created` do webhook) |
+| `publisher.go` | **F5/P0** interface `Publisher`, eventos internos compatíveis, `omnichannel.invalidate` e motivos fechados |
+| `realtime.go` | **F5/P0** produtores internos + invalidação pós-commit; o boundary realtime gera o `eventId` opaco e remove payload rico |
 | `http_send.go` | **F6** `RegisterSendRoutes` + `POST /messages` + `GET /media`; `writeSendError` (413/415/422/403/404); `callerCanReply` (VIEWER→403) |
 | `service_outbound.go` | **F6** `SendService`: escopo→reply→upload→cria PENDING→enfileira→`message.created`→audita; `Enqueuer` (fatia do outbox); `OutboundJobKind` |
 | `outbound_handler.go` | **F6** `OutboundHandler` (jobs.Handler): resolve provider/credencial→`SendMessage`→`SENT`/`FAILED`→`message.updated`; `isTerminalJobError` espelha o engine |
@@ -733,16 +829,17 @@ Registrados também em `docs/LEGADO.md`.
   `messageCols` (nunca no JSON).
 - **`GET /media`**: `http.ServeContent` (1º uso do repo) resolve `Range`/`206`/`Content-Range` sem
   `io.ReadAll` (D2). Content-Type explícito do mime salvo + `nosniff` + `Cache-Control: private,
-  max-age=60`. Rehidratação one-shot (`requiresMediaDecrypt`/`url_encrypted`) via
+  no-store` + `Pragma: no-cache` + `Expires: 0`. Rehidratação one-shot
+  (`requiresMediaDecrypt`/`url_encrypted`) via
   `provider.DownloadMedia` → grava disco → `message.updated` **completo** (sem `correlationId`).
 - **Anti-SSRF** (`ssrf.go`, F12 reusa): valida o **IP resolvido** (não o hostname) no `Control` do
   dialer (fecha TOCTOU/DNS rebinding), sem seguir redirect. Bloqueia loopback/privado/link-local/
   CGNAT/metadata. `mediaUrl` http(s) no envio passa por aqui: scheme inválido → **422**, host
   interno → **403**.
-- **Shapes de realtime por call-site**: `message.created` (envio HTTP) = Message completo +
-  `correlationId` (= id da mensagem, nunca `sync-history:`); `message.updated` (worker) = mínimo
-  `{id, status, externalMessageId, updatedAt, correlationId}`. `mediaUrl` data: → `null` (nunca
-  base64 no WS). Auditoria: `MESSAGE_OUTBOUND_QUEUED|SENT|FAILED`.
+- **Realtime account-wide**: produtores podem continuar usando eventos internos de mensagem para
+  sinalizar mudança, mas o boundary publica somente `omnichannel.invalidate` com
+  `{eventId, reason, occurredAt}`. Nenhum shape de mensagem, `correlationId`, ID de domínio ou mídia
+  atravessa o WS. Auditoria permanece `MESSAGE_OUTBOUND_QUEUED|SENT|FAILED`.
 
 ### Wiring pendente (F6) — a fazer no `module.go`/`app.go` (a F6 não os edita)
 

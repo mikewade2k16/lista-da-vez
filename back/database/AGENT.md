@@ -380,3 +380,29 @@ Ambiente esperado:
 - A task continua em seu `board_id` original. A configuracao altera somente a consulta da pagina.
 - `tasks.user_preferences` e tenant-scoped por `account_id + user_id`; `last_board_id` usa FK
   composta para impedir preferencia apontando para board de outra conta.
+
+## Omnichannel: cutoff lógico por conexão (migration 0297)
+
+- `messaging.whatsapp_instances.history_visible_from` oculta operacionalmente somente mensagens
+  WhatsApp com `created_at <= cutoff`; nenhum reset físico de conversa, contato ou auditoria é
+  permitido por essa funcionalidade.
+- `history_reset_revision` é monotônica e deve ser comparada sob `SELECT ... FOR UPDATE` antes de
+  avançar o cutoff. Concorrência divergente falha, não sobrescreve silenciosamente.
+- A leitura usa o maior timestamp entre o cutoff da instância e
+  `messaging.contact_suppressions.history_cleared_at`. Instagram não usa o cutoff da instância.
+- `WHATSAPP_INSTANCE_HISTORY_RESET` preserva a trilha com metadados de ator/conta/instância,
+  revisões e cutoffs; a confirmação digitada e conteúdo de mensagens nunca entram no payload.
+
+## Omnichannel: acesso relacional por conexão (migration 0298)
+
+- `messaging.whatsapp_instances.access_policy` aceita somente `RESTRICTED` e `ACCOUNT_SHARED`;
+  default e backfill são sempre `RESTRICTED`. `access_revision` protege escritas concorrentes.
+- `messaging.whatsapp_instance_user_grants` repete `account_id` e usa FKs compostas para a
+  instância e a membership. Níveis são hierárquicos (`view < reply < manage`) e revogação preserva
+  a linha com revisão, ator e horário.
+- O backfill idempotente converte responsável ativo em `manage`, `assignedUserIds` válido em
+  `reply` e criador ativo em `manage` somente sem responsável válido. Metadado inválido/inativo é
+  ignorado e aparece no relatório; conexão sem gestor nunca vira compartilhada.
+- Toda alteração runtime trava a instância, compara `access_revision`, mantém pelo menos um
+  `manage`, incrementa a revisão da instância uma vez e grava
+  `WHATSAPP_INSTANCE_ACCESS_CHANGED` na mesma transação.

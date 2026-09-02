@@ -1,15 +1,50 @@
 package omnichannel
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestAIToolExternalEffectRevalidatesHistoryResetImmediatelyBeforeHandler(t *testing.T) {
+	providerCalls := 0
+	gateway := &aiToolCallGateway{externalEffectLease: func(context.Context, string, string, int64, func() error) (bool, error) {
+		return false, nil
+	}}
+	err := gateway.withToolExternalEffectLease(context.Background(), aiToolBindingExecution{
+		AccountID: "account-1", DispatchID: "dispatch-1", Generation: 3,
+	}, func() error {
+		providerCalls++
+		return nil
+	})
+	if !errors.Is(err, ErrHistoryResetInvalidated) || providerCalls != 0 {
+		t.Fatalf("err=%v providerCalls=%d", err, providerCalls)
+	}
+}
+
+func TestAIToolExternalEffectAllowedRunsOperationalPhaseOnce(t *testing.T) {
+	leaseCalls, operationalCalls := 0, 0
+	gateway := &aiToolCallGateway{externalEffectLease: func(_ context.Context, _, _ string, _ int64, effect func() error) (bool, error) {
+		leaseCalls++
+		return true, effect()
+	}}
+	err := gateway.withToolExternalEffectLease(context.Background(), aiToolBindingExecution{
+		AccountID: "account-1", DispatchID: "dispatch-1", Generation: 3,
+	}, func() error {
+		operationalCalls++
+		return nil
+	})
+	if err != nil || leaseCalls != 1 || operationalCalls != 1 {
+		t.Fatalf("err=%v leaseCalls=%d operationalCalls=%d", err, leaseCalls, operationalCalls)
+	}
+}
 
 func TestValidateAIToolArgumentsUsesAllowlistedSchema(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"sku":{"type":"string","maxLength":8},"quantity":{"type":"integer"}},"required":["sku"],"additionalProperties":false}`)

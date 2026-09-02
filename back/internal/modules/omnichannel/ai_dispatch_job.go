@@ -65,6 +65,9 @@ func (h aiDispatchHandler) Handle(ctx context.Context, job jobs.Job) error {
 		return nil
 	}
 	if dispatch.Status == AIDispatchCancelled || dispatch.Status == AIDispatchFailed {
+		if dispatch.Status == AIDispatchCancelled && dispatch.LastError == "history_reset" {
+			return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+		}
 		if dispatch.Status == AIDispatchCancelled &&
 			dispatch.LastError == "superseded_by_inbound" {
 			return nil
@@ -88,6 +91,14 @@ func (h aiDispatchHandler) Handle(ctx context.Context, job jobs.Job) error {
 			ctx, job.AccountID, p.DispatchID, "superseded_by_inbound",
 		)
 		return nil
+	}
+	rollout, err := h.store.EvaluateAIRollout(ctx, job.AccountID, dispatch.ConversationID)
+	if err != nil {
+		return err
+	}
+	if !rollout.RunAI {
+		_, _ = h.store.CancelAIDispatch(ctx, job.AccountID, p.DispatchID, "rollout_"+rollout.Mode)
+		return h.failOpenToHuman(ctx, job.AccountID, dispatch.ConversationID)
 	}
 	agent, enabled, err := h.store.ActiveAgentForInstance(ctx, job.AccountID, deref(conv.InstanceID))
 	if err != nil {
@@ -133,6 +144,13 @@ func (h aiDispatchHandler) Handle(ctx context.Context, job jobs.Job) error {
 	if !started {
 		return nil
 	}
+	allowed, err := h.store.AIDispatchExternalEffectAllowed(ctx, job.AccountID, p.DispatchID, p.Generation)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+	}
 
 	operatorForcedReply := isOperatorReplyDispatch(dispatch)
 	messageID := dispatch.MessageIDs[len(dispatch.MessageIDs)-1]
@@ -140,6 +158,9 @@ func (h aiDispatchHandler) Handle(ctx context.Context, job jobs.Job) error {
 		ctx, job, dispatch, p, conv, messageID, operatorForcedReply,
 	)
 	if err != nil {
+		if errors.Is(err, ErrHistoryResetInvalidated) {
+			return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+		}
 		if isTerminalJobError(err, job) {
 			_, _ = h.store.FailAIDispatch(ctx, job.AccountID, p.DispatchID, "dispatch_terminal_error")
 			return h.failOpenToHuman(ctx, job.AccountID, dispatch.ConversationID)
@@ -151,11 +172,41 @@ func (h aiDispatchHandler) Handle(ctx context.Context, job jobs.Job) error {
 	if err != nil {
 		return err
 	}
+	if latest.Status == AIDispatchCancelled && latest.LastError == "history_reset" {
+		return &jobs.StatusError{Unrecoverable: true, Err: ErrHistoryResetInvalidated}
+	}
 	if latest.Generation != p.Generation || latest.Status == AIDispatchCancelled {
 		// A message arrived while the model was running. Release the row so the newer
 		// outbox generation can execute after this FIFO job settles.
 		_, _ = h.store.RequeueAIDispatch(ctx, job.AccountID, p.DispatchID, "superseded_generation")
 		return nil
+	}
+	rollout, err = h.store.EvaluateAIRollout(ctx, job.AccountID, dispatch.ConversationID)
+	if err != nil {
+		return err
+	}
+	if !rollout.RunAI {
+		_, _ = h.store.CancelAIDispatch(ctx, job.AccountID, p.DispatchID, "rollout_"+rollout.Mode)
+		return h.failOpenToHuman(ctx, job.AccountID, dispatch.ConversationID)
+	}
+	if !rollout.AutoSend {
+		if rollout.Mode == RolloutModeAssist && result.Outcome == dispatchTriaged &&
+			strings.TrimSpace(result.Output.ReplyDraft) != "" {
+			_, saved, saveErr := h.store.CompleteAIDispatchWithReplyDraft(
+				ctx, job.AccountID, p.DispatchID, p.Generation,
+				result.RunID, result.Output.ReplyDraft,
+			)
+			if saveErr != nil {
+				return saveErr
+			}
+			if saved {
+				if h.send != nil {
+					h.send.publishAIReplyDraftChanged(ctx, job.AccountID)
+				}
+				return nil
+			}
+		}
+		return h.complete(ctx, job.AccountID, p.DispatchID, p.Generation, result.RunID)
 	}
 
 	if result.Outcome == dispatchBlocked {
@@ -403,26 +454,38 @@ func (h aiDispatchHandler) executeIntelligenceOrLegacy(
 		)
 	}
 	request := CustomerIntelligenceInteractionRequest{
-		AccountID:           accountID,
-		ClientAccountID:     strings.TrimSpace(*conv.ClientAccountID),
-		ContactSourceID:     contactSourceID,
-		ContactExternalID:   deref(conv.ContactExternalID),
-		ContactPhone:        deref(conv.ContactPhone),
-		ContactName:         deref(conv.ContactName),
-		ConversationID:      dispatch.ConversationID,
-		MessageID:           messageID,
-		DispatchID:          p.DispatchID,
-		Generation:          p.Generation,
-		Channel:             conv.Channel,
-		ProcessKey:          "conversation.respond",
-		OperatorForced:      operatorForcedReply,
-		Message:             message,
-		OperationalState:    operationalState,
-		RoutingCatalog:      routingCatalog,
-		ChannelCapabilities: channelCapabilities,
-		OccurredAt:          time.Now().UTC(),
+		AccountID:               accountID,
+		ClientAccountID:         strings.TrimSpace(*conv.ClientAccountID),
+		ContactSourceID:         contactSourceID,
+		ContactExternalID:       deref(conv.ContactExternalID),
+		ContactPhone:            deref(conv.ContactPhone),
+		ContactName:             deref(conv.ContactName),
+		ConversationID:          dispatch.ConversationID,
+		MessageID:               messageID,
+		DispatchID:              p.DispatchID,
+		Generation:              p.Generation,
+		Channel:                 conv.Channel,
+		ProcessKey:              "conversation.respond",
+		OperatorForced:          operatorForcedReply,
+		Message:                 message,
+		OperationalState:        operationalState,
+		RoutingCatalog:          routingCatalog,
+		ChannelCapabilities:     channelCapabilities,
+		OccurredAt:              time.Now().UTC(),
+		DerivedMemorySuppressed: conv.DerivedMemorySuppressed,
 	}
-	decision, decisionErr := h.intelligence.ExecuteInteraction(ctx, request)
+	var decision CustomerIntelligenceDecision
+	var decisionErr error
+	allowed, err := h.store.WithAIDispatchExternalEffectLease(ctx, accountID, p.DispatchID, p.Generation, func() error {
+		decision, decisionErr = h.intelligence.ExecuteInteraction(ctx, request)
+		return nil
+	})
+	if err != nil {
+		return DispatchResult{}, nil, err
+	}
+	if !allowed {
+		return DispatchResult{}, nil, ErrHistoryResetInvalidated
+	}
 	if policy.Mode == "shadow" {
 		if decisionErr != nil {
 			h.logger.Warn(

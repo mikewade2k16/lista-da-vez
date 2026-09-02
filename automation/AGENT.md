@@ -87,7 +87,8 @@ docs/automation/                   <- documentacao detalhada (migrada de docs/n8
 
 ## Como rodar (local)
 
-A stack NAO sobe no dev normal. Sobe sob demanda:
+A stack sobe junto com o dev normal (`npm run dev`), que ativa todos os profiles.
+Para subir ou operar somente este profile:
 
 ```bash
 docker compose --profile automation up -d        # sobe n8n + waha + redis (+ api/web/postgres)
@@ -175,7 +176,8 @@ publicacao. O adapter Meta no Go e pre-requisito para qualquer entrega real.
 **Guardas automáticos atuais:**
 - **git (pre-commit, `-Check`):** valida somente o inventário local e bloqueia registro/ID inválido;
   não consulta Docker e não afirma se o runtime está alinhado.
-- **deploy rápido de produção:** `deploy:fast:prod` é a operação explícita de plataforma do dono:
+- **deploy rápido de produção:** `npm run deploy` é a operação explícita de plataforma do dono
+  (`deploy:fast:prod` permanece como alias compatível):
   usa os JSONs versionados (`-SkipWorkflowExport`), reconcilia o profile `automation`, faz backup,
   importa somente quando o manifest muda e verifica banco n8n == arquivo. Não consulta nem
   sobrescreve o repo a partir do runtime local.

@@ -22,10 +22,23 @@ func scanHandoff(row rowScanner) (HandoffView, error) {
 	return out, err
 }
 
+// operationalConversationProjectionPredicate impede que snapshots preservados para auditoria
+// reaparecam em rotas operacionais depois do cutoff. O alias/timestamp sao literais internos.
+func (s *Store) operationalConversationProjectionPredicate(rowAlias, timestampColumn string) string {
+	return ` and exists (
+		select 1 from messaging.conversations c
+		where c.account_id=` + rowAlias + `.account_id
+		  and c.id=` + rowAlias + `.conversation_id` +
+		s.historyVisibleConversationPredicate("c") + `
+		  and ` + rowAlias + `.` + timestampColumn + ` > ` + s.effectiveHistoryCutoffExpression("c") + `)`
+}
+
 func (s *Store) GetOpenHandoff(ctx context.Context, accountID, conversationID string) (HandoffView, error) {
-	row, err := scanHandoff(s.pool.QueryRow(ctx, `select `+handoffColumns+` from messaging.handoffs
+	row, err := scanHandoff(s.pool.QueryRow(ctx, `select `+handoffColumns+` from messaging.handoffs h
 		where account_id=$1::uuid and conversation_id=$2::uuid
-		  and status in ('requested','queued','accepted') order by created_at desc, id desc limit 1`, accountID, conversationID))
+		  and status in ('requested','queued','accepted')`+
+		s.operationalConversationProjectionPredicate("h", "requested_at")+`
+		order by h.created_at desc, h.id desc limit 1`, accountID, conversationID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return HandoffView{}, ErrNotFound
 	}
@@ -33,8 +46,10 @@ func (s *Store) GetOpenHandoff(ctx context.Context, accountID, conversationID st
 }
 
 func (s *Store) ListHandoffs(ctx context.Context, accountID, conversationID string) ([]HandoffView, error) {
-	rows, err := s.pool.Query(ctx, `select `+handoffColumns+` from messaging.handoffs
-		where account_id=$1::uuid and conversation_id=$2::uuid order by created_at desc, id desc`, accountID, conversationID)
+	rows, err := s.pool.Query(ctx, `select `+handoffColumns+` from messaging.handoffs h
+		where account_id=$1::uuid and conversation_id=$2::uuid`+
+		s.operationalConversationProjectionPredicate("h", "requested_at")+`
+		order by h.created_at desc, h.id desc`, accountID, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +65,8 @@ func (s *Store) ListHandoffs(ctx context.Context, accountID, conversationID stri
 	return out, rows.Err()
 }
 
-// CreateHandoff enfileira o snapshot sob lock da conversa. O retorno de uma linha
-// existente é um replay idempotente. A policy é avaliada no mesmo lock/transação;
+// CreateHandoff enfileira o snapshot sob o fence da instância e lock da conversa.
+// O retorno de uma linha existente é um replay idempotente. A policy é avaliada no mesmo lock/transação;
 // n8n não escolhe fila nem grava estado.
 func (s *Store) CreateHandoff(ctx context.Context, accountID, conversationID, actorID string, in HandoffRequest) (HandoffView, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -59,6 +74,21 @@ func (s *Store) CreateHandoff(ctx context.Context, accountID, conversationID, ac
 		return HandoffView{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockHistoryExternalEffectScope(ctx, tx, accountID, conversationID, "update"); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrHistoryResetInvalidated) {
+			return HandoffView{}, ErrNotFound
+		}
+		return HandoffView{}, err
+	}
+	var visible bool
+	if err := tx.QueryRow(ctx, `select exists(select 1 from messaging.conversations c
+		where c.account_id=$1::uuid and c.id=$2::uuid`+
+		s.historyVisibleConversationPredicate("c")+`)`, accountID, conversationID).Scan(&visible); err != nil {
+		return HandoffView{}, err
+	}
+	if !visible {
+		return HandoffView{}, ErrNotFound
+	}
 	snap, err := lockConversationSnapshotTx(ctx, tx, accountID, conversationID)
 	if err != nil {
 		return HandoffView{}, err
@@ -76,8 +106,9 @@ func (s *Store) CreateHandoff(ctx context.Context, accountID, conversationID, ac
 	}
 	if strings.TrimSpace(in.IdempotencyKey) != "" {
 		var existing HandoffView
-		existing, err = scanHandoff(tx.QueryRow(ctx, `select `+handoffColumns+` from messaging.handoffs
-			where account_id=$1::uuid and idempotency_key=$2`, accountID, strings.TrimSpace(in.IdempotencyKey)))
+		existing, err = scanHandoff(tx.QueryRow(ctx, `select `+handoffColumns+` from messaging.handoffs h
+			where account_id=$1::uuid and idempotency_key=$2`+
+			s.operationalConversationProjectionPredicate("h", "requested_at"), accountID, strings.TrimSpace(in.IdempotencyKey)))
 		if err == nil {
 			if err := tx.Commit(ctx); err != nil {
 				return HandoffView{}, err
@@ -89,9 +120,11 @@ func (s *Store) CreateHandoff(ctx context.Context, accountID, conversationID, ac
 		}
 	}
 	var open HandoffView
-	open, err = scanHandoff(tx.QueryRow(ctx, `select `+handoffColumns+` from messaging.handoffs
+	open, err = scanHandoff(tx.QueryRow(ctx, `select `+handoffColumns+` from messaging.handoffs h
 		where account_id=$1::uuid and conversation_id=$2::uuid
-		  and status in ('requested','queued','accepted') order by created_at desc, id desc limit 1`, accountID, conversationID))
+		  and status in ('requested','queued','accepted')`+
+		s.operationalConversationProjectionPredicate("h", "requested_at")+`
+		order by h.created_at desc, h.id desc limit 1`, accountID, conversationID))
 	if err == nil {
 		if in.IntelligenceAcceptance != nil {
 			return HandoffView{}, ErrConflict
@@ -261,9 +294,11 @@ func (s *Store) TakeConversation(ctx context.Context, accountID, conversationID,
 }
 
 func (s *Store) ListSLAEvents(ctx context.Context, accountID, conversationID string) ([]SLAEventView, error) {
-	rows, err := s.pool.Query(ctx, `select id::text, conversation_id::text, handoff_id::text,
-		event_type, idempotency_key, occurred_at, metadata from messaging.sla_events
-		where account_id=$1::uuid and conversation_id=$2::uuid order by occurred_at desc, id desc`, accountID, conversationID)
+	rows, err := s.pool.Query(ctx, `select sla.id::text, sla.conversation_id::text, sla.handoff_id::text,
+		sla.event_type, sla.idempotency_key, sla.occurred_at, sla.metadata from messaging.sla_events sla
+		where sla.account_id=$1::uuid and sla.conversation_id=$2::uuid`+
+		s.operationalConversationProjectionPredicate("sla", "occurred_at")+`
+		order by sla.occurred_at desc, sla.id desc`, accountID, conversationID)
 	if err != nil {
 		return nil, err
 	}

@@ -3,8 +3,7 @@ import type {
   Conversation,
   GroupParticipant,
   Message,
-  MessageType,
-  UserRole
+  MessageType
 } from "~/types";
 
 export interface MessagesPageResponse {
@@ -19,6 +18,12 @@ export interface ConversationsPageResponse {
   hasMore: boolean;
   nextCursor?: string;
 }
+
+export type WhatsAppInstanceAccessState =
+  | "loading"
+  | "resolved-empty"
+  | "resolved-nonempty"
+  | "error";
 
 export interface SyncConversationHistoryResponse {
   conversationId: string;
@@ -171,10 +176,6 @@ export function toArrayOrEmpty<T>(value: unknown) {
   }
 
   return [];
-}
-
-export function canWriteInboxByRole(role: UserRole | null | undefined) {
-  return role === "ADMIN" || role === "SUPERVISOR" || role === "AGENT";
 }
 
 export function buildDateKey(value: string) {

@@ -56,25 +56,43 @@ func validAIToolRunStatus(status string) bool {
 
 // ListAIToolRuns is account+agent scoped at every query. An unknown cursor
 // starts a page, matching the existing AI-run pagination contract.
-func (s *Store) ListAIToolRuns(ctx context.Context, accountID, agentID, status, beforeID string, limit int) ([]AIToolRunView, error) {
+func (s *Store) ListAIToolRuns(ctx context.Context, accountID, agentID, status, beforeID string, limit int, scopes ...VisibilityScope) ([]AIToolRunView, error) {
 	query := `select ` + aiToolRunViewCols + `
 		from messaging.ai_tool_runs r
 		join messaging.ai_tool_bindings b
 		  on b.account_id = r.account_id and b.id = r.binding_id
 		where r.account_id = $1::uuid and b.agent_id = $2::uuid`
 	args := []any{accountID, agentID}
+	if len(scopes) > 0 {
+		query = `select ` + aiToolRunViewCols + `
+			from messaging.ai_tool_runs r
+			join messaging.ai_tool_bindings b on b.account_id=r.account_id and b.id=r.binding_id
+			join messaging.conversations c on c.account_id=r.account_id and c.id=r.conversation_id
+			where r.account_id=$1::uuid and b.agent_id=$2::uuid`
+		query, args = appendConversationVisibility(query, args, "c", scopes[0])
+		query += s.historyVisibleConversationPredicate("c")
+	}
 	if strings.TrimSpace(status) != "" {
 		query += " and r.status = $" + strconv.Itoa(len(args)+1)
 		args = append(args, status)
 	}
 	if strings.TrimSpace(beforeID) != "" {
 		var before time.Time
-		err := s.pool.QueryRow(ctx, `select r.created_at
+		cursorQuery := `select r.created_at
 			from messaging.ai_tool_runs r
 			join messaging.ai_tool_bindings b
 			  on b.account_id = r.account_id and b.id = r.binding_id
-			where r.account_id=$1::uuid and b.agent_id=$2::uuid and r.id=$3::uuid`,
-			accountID, agentID, beforeID).Scan(&before)
+			where r.account_id=$1::uuid and b.agent_id=$2::uuid and r.id=$3::uuid`
+		cursorArgs := []any{accountID, agentID, beforeID}
+		if len(scopes) > 0 {
+			cursorQuery = `select r.created_at from messaging.ai_tool_runs r
+				join messaging.ai_tool_bindings b on b.account_id=r.account_id and b.id=r.binding_id
+				join messaging.conversations c on c.account_id=r.account_id and c.id=r.conversation_id
+				where r.account_id=$1::uuid and b.agent_id=$2::uuid and r.id=$3::uuid`
+			cursorQuery, cursorArgs = appendConversationVisibility(cursorQuery, cursorArgs, "c", scopes[0])
+			cursorQuery += s.historyVisibleConversationPredicate("c")
+		}
+		err := s.pool.QueryRow(ctx, cursorQuery, cursorArgs...).Scan(&before)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, err
 		}

@@ -588,6 +588,27 @@ func (s *Service) BuildContext(
 	maxTokens := bounded(request.MaxTokens, defaultContextTokens, 128, maxContextTokens)
 	envelope.Budget.MaxItems = maxItems
 	envelope.Budget.MaxTokens = maxTokens
+	if request.SuppressStoredContext {
+		envelope.Warnings = append(envelope.Warnings, "historical_context_suppressed")
+		raw, refreshErr := refreshContextEnvelope(&envelope)
+		if refreshErr != nil {
+			return ContextEnvelope{}, refreshErr
+		}
+		if s.secrets == nil {
+			return ContextEnvelope{}, ErrSecretsUnavailable
+		}
+		ciphertext, encryptErr := s.secrets.Encrypt(string(raw))
+		if encryptErr != nil {
+			return ContextEnvelope{}, encryptErr
+		}
+		envelope.SnapshotID, err = s.foundation.SaveContextSnapshot(
+			ctx, envelope, ciphertext, hashBytes(raw),
+		)
+		if err != nil {
+			return ContextEnvelope{}, err
+		}
+		return envelope, nil
+	}
 
 	facts, err := s.foundation.ListFacts(ctx, scope, request.RelationshipID, maxItems)
 	if err != nil {

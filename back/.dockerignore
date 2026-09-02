@@ -1,8 +1,13 @@
 .git
 .gitignore
 .logs
+.tmp
+.gocache
 tmp
 tmp_api_*.log
+*.exe
+*.test
+coverage.out
 .env
 README.md
 PLAN.md

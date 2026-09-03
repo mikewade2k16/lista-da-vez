@@ -8,6 +8,7 @@ import { useContextRealtime } from '~/composables/useContextRealtime'
 import { useDashboardShell } from '~/composables/useDashboardShell'
 import { useAuthStore } from '~/stores/auth'
 import { useMenuLayoutStore } from '~/stores/menuLayout'
+import { isAssistantRoute } from '~/utils/assistant-routes'
 import { useCoreAccountStore } from '../../layers/core/stores/account'
 
 const { state, activeWorkspaceId, allowedWorkspaces, setActiveProfile } = useDashboardShell()
@@ -30,6 +31,7 @@ const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice |
 // indisponiveis" e o estado esperado, nao um erro. O aviso de modo degradado so
 // faz sentido para quem TEM queue (e portanto deveria conseguir carregar /v1/settings).
 const hasQueueModule = computed(() => accountStore.enabledModules.includes('queue'))
+const assistantEnabled = computed(() => isAssistantRoute(route.path))
 const usesQueueWorkspace = computed(
   () =>
     String(route.path || '').startsWith('/operacao') ||
@@ -88,7 +90,7 @@ function handleProfileChange(profileId) {
         />
         <slot></slot>
       </div>
-      <OmniAssistantHost />
+      <OmniAssistantHost v-if="assistantEnabled" />
     </section>
 
     <button

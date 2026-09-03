@@ -33,6 +33,7 @@ import {
 import { normalizeTaskChecklist } from '../utils/task-checklist'
 import { isTaskUpdatedEventAlreadyApplied } from '../utils/realtime-refresh'
 import { taskClientVisibleInScope } from '../utils/client-scope'
+import { legacyTaskClientLabel } from '../utils/legacy-client'
 import { uploadTaskVideoFile, type TaskVideoUploadProgress } from '../utils/task-video-upload'
 import { useTasksWorkspace } from './useTasksWorkspace'
 import { useTimeTracking } from './useTimeTracking'
@@ -345,7 +346,10 @@ export function useTasksPageContext() {
     const id = String(clientId ?? '').trim()
     if (!id) return ''
     return (
-      tasksClient.clientOptions.find((c) => c.value === id)?.label || `Cliente ${id.slice(0, 8)}`
+      tasksClient.clientOptions.find((c) => c.value === id)?.label ||
+      tasksWorkspace.tasks.value.find((task) => task.clientId === id && task.clientName)
+        ?.clientName ||
+      ''
     )
   }
   function taskSort(a: TaskItem, b: TaskItem) {
@@ -428,6 +432,7 @@ export function useTasksPageContext() {
     return tasksWorkspace.tasks.value.filter((task) => visibleIds.has(task.id))
   }
   const isPlatformAdmin = computed(() => String(auth.role || '') === 'platform_admin')
+  const canBrowseAgencyClientCatalog = computed(() => Boolean(accountStore.activeAccount?.isAgency))
   // Clientes reais de core.accounts (/v1/tenants/clients); sem marcador de mock (WAVE 6: mock removido).
   const allClientOptions = computed(() =>
     tasksClient.clientOptions.map((c) => ({
@@ -763,8 +768,19 @@ export function useTasksPageContext() {
       avatar: { text: initialsFor(o.label) },
     })),
   )
+  const assignedClientOptions = computed<OmniSelectOption[]>(() => {
+    const catalogIds = new Set(clientOptions.value.map((option) => String(option.value)))
+    const seen = new Set<string>()
+    return tasksWorkspace.tasks.value.flatMap((task) => {
+      const value = normalizeText(task.clientId, 80)
+      const label = legacyTaskClientLabel(value, task.clientName)
+      if (!value || !label || catalogIds.has(value) || seen.has(value)) return []
+      seen.add(value)
+      return [{ label, value, disabled: true }]
+    })
+  })
   const clientOptionsAvatar = computed<OmniSelectOption[]>(() =>
-    clientOptions.value.map((o: OmniSelectOption) => ({
+    [...clientOptions.value, ...assignedClientOptions.value].map((o: OmniSelectOption) => ({
       ...o,
       avatar: { text: initialsFor(o.label) },
     })),
@@ -3218,6 +3234,14 @@ export function useTasksPageContext() {
     { immediate: true },
   )
 
+  watch(
+    canBrowseAgencyClientCatalog,
+    (allowed) => {
+      void tasksClient.initialize(allowed)
+    },
+    { flush: 'sync' },
+  )
+
   // Lazy-load das arquivadas: por padrao o board carrega so nao-arquivadas (performance §6).
   // Quando o usuario desativa "ocultar arquivadas", busca as arquivadas do board ativo sob
   // demanda, sem recarregar os outros boards.
@@ -3249,13 +3273,15 @@ export function useTasksPageContext() {
     }
     try {
       await pageLoading.withLoading('Carregando tasks...', async () => {
-        tasksClient.initialize()
+        if (!accountStore.accountsLoaded && auth.isAuthenticated) {
+          await accountStore.fetchAccounts()
+        }
+        await tasksClient.initialize(canBrowseAgencyClientCatalog.value)
         await tasksWorkspace.initialize()
         await Promise.all([
           usersStore.ensureLoaded().catch(() => false),
           refreshActiveTracking(true).catch(() => undefined),
         ])
-        if (tasksClient.isAdmin) await tasksClient.refreshClientOptions()
         if (!activeProject.value && tasksWorkspace.projects.value.length > 0)
           tasksWorkspace.setActiveProject(tasksWorkspace.projects.value[0]!.id)
         hydrateProjectDraft(activeProject.value)

@@ -24,6 +24,7 @@ import type {
   TaskVideoItem,
   TaskCalendarMediaItem,
 } from '../types/tasks'
+import { legacyTaskClientLabel } from '../utils/legacy-client'
 
 const LEGACY_STORAGE_KEY = 'omni.admin.tasks.workspace.v1'
 const LEGACY_NOTICE_KEY = 'tasks.legacy-migrated.v1'
@@ -796,9 +797,8 @@ function mapTaskToStoreItem(
   const normalizedInvolvedLabels = uniqueStrings(involvedLabels).filter(
     (label) => normalizeKey(label) !== normalizeKey(responsibleLabel),
   )
-  // clientId (UI) = clientAccountId (UUID real). Se a task ainda nao tem clientAccountId mas carrega
-  // um clientId integer LEGADO no ui_metadata, expoe esse integer como string para o badge "MOCK"
-  // sinalizar que precisa ser reatribuido a um cliente real.
+  // clientId (UI) = clientAccountId (UUID real). O fallback numerico existe apenas para conseguir
+  // identificar registros anteriores ao backfill; a UI resolve seu nome canonico e nunca exibe o ID.
   const legacyClientId = Number(resolvedTaskUi?.clientId || 0)
   const clientIdValue =
     clientAccountId ||
@@ -814,9 +814,10 @@ function mapTaskToStoreItem(
     responsible: responsibleLabel,
     involved: normalizedInvolvedLabels,
     clientId: clientIdValue,
-    clientName:
-      normalizeText(resolvedTaskUi?.clientName, 140) ||
-      (clientAccountId ? `Conta ${clientAccountId.slice(0, 8)}` : ''),
+    clientName: legacyTaskClientLabel(
+      clientIdValue,
+      normalizeText(resolvedTaskUi?.clientName, 140),
+    ),
     type: normalizeText(resolvedTaskUi?.type, 120),
     priority: normalizePriority(task.priority),
     prioritySet:

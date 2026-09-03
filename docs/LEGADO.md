@@ -91,7 +91,14 @@ _Histórico:_
 
 ---
 
-## 4. Clientes de Tasks (`clientId` integer mock) — `band-aid` (front migrado p/ UUID real 2026-06-10, aguarda validação no browser)
+## 4. Clientes de Tasks (`clientId` integer mock) — `resolvido` (2026-09-03)
+
+**RESOLVIDO 2026-09-03:** as migrations `0302_tasks_legacy_client_accounts.sql` e
+`0303_tasks_remove_legacy_client_ids.sql` convertem associações numéricas conhecidas para o UUID de
+`core.accounts` apenas quando a conta existe na mesma organização e removem cópias numéricas do
+`ui_metadata`. Resíduos sem conta real não viram conta fictícia e a UI nunca apresenta o número como
+nome (`legacy-client.ts`). O catálogo de Tasks só é solicitado no workspace da agência; conta-cliente
+continua isolada à própria conta.
 
 **ATUALIZAÇÃO 2026-06-10 (tarde):** os 4 clientes foram criados em `core.accounts` e o front foi
 migrado: o seletor de cliente de task agora PUXA `/v1/tenants` (UUID real) e grava em

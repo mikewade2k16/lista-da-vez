@@ -189,6 +189,10 @@ function onEditorMode(mode: 'side' | 'center' | 'fullscreen') {
 function onEditorWidth(width: number) {
   taskEditorWidth.value = width
 }
+
+function onTaskTitleInput(event: Event) {
+  updateTaskDraftTitle((event.target as HTMLTextAreaElement).value)
+}
 </script>
 
 <template>
@@ -254,15 +258,15 @@ function onEditorWidth(width: number) {
         >
           {{ presenceFieldLabel('title') }}
         </span>
-        <UInput
-          :model-value="taskDraftTitleValue()"
+        <textarea
+          :value="taskDraftTitleValue()"
           class="tasks-page__task-title-input"
-          variant="none"
+          rows="1"
           :disabled="isPresenceFieldLocked('title')"
           placeholder="Nova task"
-          @update:model-value="updateTaskDraftTitle"
+          @input="onTaskTitleInput"
           @keydown.enter.prevent="flushTaskDraftAutosave"
-        />
+        ></textarea>
       </div>
 
       <div class="tasks-page__task-properties">

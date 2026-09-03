@@ -92,6 +92,24 @@ func TestBuildListAccessibleQueryBuildsOrganizationClientCatalogForCustomRole(t 
 	}
 }
 
+func TestBuildListAccessibleQueryKeepsClientUserScopedToItsOwnAccount(t *testing.T) {
+	query, args := buildListAccessibleQuery(auth.Principal{
+		UserID: "user-client-member",
+		Role:   auth.RoleConsultant,
+	}, ListInput{ClientCatalog: true})
+
+	assertQueryContains(t, query, "t.is_agency = false")
+	assertQueryContains(t, query, "au.user_id = $1::uuid")
+	assertQueryContains(t, query, "au.account_id = t.id")
+	assertQueryContains(t, query, "au.is_active = true")
+	if strings.Contains(query, "true or") {
+		t.Fatalf("client user must not receive the platform-wide catalog:\n%s", query)
+	}
+	if len(args) != 1 || args[0] != "user-client-member" {
+		t.Fatalf("expected only the scoped user id arg, got %#v", args)
+	}
+}
+
 func TestBuildListAccessibleQueryBuildsGlobalClientCatalogForPlatformAdmin(t *testing.T) {
 	query, _ := buildListAccessibleQuery(auth.Principal{
 		UserID: "platform-user",

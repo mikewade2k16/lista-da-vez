@@ -1,17 +1,11 @@
 <script setup lang="ts">
-import { onMounted, provide, ref } from 'vue'
+import { onMounted, provide } from 'vue'
 import { defineLazyComponent } from '~/utils/lazy-component'
 import AdminPageHeader from '../../core/components/admin/AdminPageHeader.vue'
 import CoreSkeleton from '../../core/components/CoreSkeleton.vue'
 import { TASKS_PAGE_CONTEXT_KEY, useTasksPageContext } from '../composables/useTasksPageContext'
 import TasksFilterBar from '../components/TasksFilterBar.vue'
 import TasksBoardView from '../components/TasksBoardView.vue'
-// Crow Assistant na pagina de Tasks (WAVE 11, decisao do dono): o MESMO chat do calendario
-// (estado singleton useCalendarChat — mesma conversa/config/historico). O contexto da IA ja
-// enxerga as tasks do board configurado. Painel lazy: so carrega no 1o clique do FAB.
-import { useCalendarChat } from '~/composables/useCalendarChat'
-import { useCalendarStore } from '~/stores/calendar'
-
 // Componentes pesados carregados sob demanda para reduzir o bundle inicial
 // da pagina /tasks. Boards e a view default; tabela/modal/settings so carregam
 // quando o usuario interage.
@@ -20,9 +14,6 @@ const TasksProjectSettings = defineLazyComponent(
   () => import('../components/TasksProjectSettings.vue'),
 )
 const TasksTaskModal = defineLazyComponent(() => import('../components/TasksTaskModal.vue'))
-const CalendarChatPanel = defineLazyComponent(
-  () => import('~/components/calendar/CalendarChatPanel.vue'),
-)
 
 // @ts-ignore Nuxt macro available at runtime in this page.
 definePageMeta({
@@ -58,17 +49,6 @@ const {
   taskEditorOpen,
   taskEditorMode,
 } = context
-
-// Crow Assistant (WAVE 11): FAB abre o MESMO chat do calendario. O calendar store precisa
-// estar inicializado (config da IA, clientes, mes) — init() e guardado (roda 1x).
-const assistantMounted = ref(false)
-const calendarStore = useCalendarStore()
-const chat = useCalendarChat()
-function openAssistant(): void {
-  assistantMounted.value = true
-  void calendarStore.init()
-  chat.openPanel()
-}
 </script>
 
 <template>
@@ -152,18 +132,6 @@ function openAssistant(): void {
 
     <TasksProjectSettings />
     <TasksTaskModal />
-
-    <!-- Crow Assistant (WAVE 11): FAB fixo + o MESMO painel de chat do calendario. -->
-    <button
-      type="button"
-      class="tasks-page__assistant-fab"
-      aria-label="Abrir o Crow Assistant"
-      title="Crow Assistant (o mesmo do calendário)"
-      @click="openAssistant"
-    >
-      <UIcon name="i-lucide-sparkles" aria-hidden="true" />
-    </button>
-    <CalendarChatPanel v-if="assistantMounted" />
   </section>
 </template>
 
@@ -176,41 +144,6 @@ function openAssistant(): void {
   min-height: 0;
   overflow-y: auto;
   padding-bottom: 1rem;
-}
-
-/* Crow Assistant (WAVE 11): FAB fixo no canto inferior direito da pagina de tasks.
-   ACIMA do botao de feedback do dashboard (fixed bottom 2rem/right 2rem, 3rem) — no mesmo
-   canto os dois se sobrepunham e o feedback interceptava o clique do assistant (WAVE 12). */
-.tasks-page__assistant-fab {
-  position: fixed;
-  right: 2rem;
-  bottom: 5.6rem;
-  z-index: 60;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.9rem;
-  height: 2.9rem;
-  border: none;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
-  color: rgb(255 255 255);
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    filter 0.15s ease;
-}
-
-.tasks-page__assistant-fab:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.08);
-}
-
-.tasks-page__assistant-fab svg,
-.tasks-page__assistant-fab .iconify {
-  width: 1.25rem;
-  height: 1.25rem;
 }
 
 .tasks-page__board {
@@ -692,13 +625,24 @@ function openAssistant(): void {
   margin-bottom: 1rem;
 }
 
-.tasks-page__task-title-input input {
+.tasks-page__task-title-input {
+  display: block;
+  width: 100%;
   min-height: 3.25rem;
-  padding-inline: 0;
+  padding: 0;
+  resize: none;
+  overflow: hidden;
+  field-sizing: content;
+  border: 0;
+  outline: 0;
+  background: transparent;
   font-size: 2.25rem;
   font-weight: 800;
+  line-height: 1.15;
   letter-spacing: 0;
   color: rgb(var(--text));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .tasks-page__task-properties {
@@ -1192,7 +1136,7 @@ function openAssistant(): void {
     grid-template-columns: 1fr;
   }
 
-  .tasks-page__task-title-input input {
+  .tasks-page__task-title-input {
     font-size: 1.75rem;
   }
 

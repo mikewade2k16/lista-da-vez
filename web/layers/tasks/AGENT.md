@@ -470,3 +470,21 @@ efetivas da conta ativa, incluindo RBAC custom carregado por `/v2/me/context`.
 - Modal e card sempre espelham os mesmos campos (memória feedback_modal_board_mirror)
 - Optimistic updates: aplica local → dispatcha REST → reconcilia via WS (server-version vence)
 - Não aceitar `account_id` ou `client_account_id` do localStorage — derivar do MeContext
+
+### Catálogo de clientes, isolamento e assistente (2026-09-03)
+
+- REGRA DE SEGURANÇA: conta-cliente X e seus usuários só enxergam dados de X. Eles nunca recebem,
+  contam nem descobrem os demais clientes da agência. No front, `tasks-client.ts` só solicita o
+  catálogo quando `activeAccount.isAgency === true`; em conta-cliente limpa o catálogo (fail closed).
+- Usuário da agência, inclusive com papel customizado, enxerga os clientes da organização porque
+  `/v1/tenants/clients` autoriza por `core.organization_users`, não pelo `auth.role` grosso. O backend
+  é a autoridade final: membership apenas em `core.account_users` retorna somente aquela própria
+  conta; apenas `platform_admin` tem catálogo global.
+- Cliente de task é sempre nome + UUID real de `core.accounts`, nunca o número legado na UI.
+  `0302_tasks_legacy_client_accounts.sql` converte IDs conhecidos sem cruzar organização;
+  `0303_tasks_remove_legacy_client_ids.sql` remove cópias numéricas de tasks já vinculadas; e
+  `legacy-client.ts` impede que resíduos como `106`, `10` ou `Cliente 106` apareçam como nome.
+- `/tasks` não monta o Crow Assistant. O host do layout autenticado fica restrito a
+  `/calendario` e `/meta-ads` (incluindo subrotas).
+- O título no drawer é um textarea de uma linha inicial com crescimento pelo conteúdo; títulos
+  longos devem quebrar linha e permanecer integralmente visíveis.

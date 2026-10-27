@@ -397,9 +397,17 @@ export const useCardapioStore = defineStore('cardapio', () => {
     return result
   }
 
-  async function exportProducts(id: string): Promise<ProductTransferDocument> {
+  async function loadProductImportSources(): Promise<RestaurantListItem[]> {
+    const response = await apiRequest('/v1/cardapio/restaurants')
+    return asArray<RestaurantListItem>(response, 'restaurants')
+  }
+
+  async function exportProducts(id: string, accountId?: string): Promise<ProductTransferDocument> {
     return (await apiRequest(
-      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products/export`),
+      withScopeFor(
+        `/v1/cardapio/restaurants/${encodeURIComponent(id)}/products/export`,
+        accountId ?? scopeAccountId.value,
+      ),
     )) as ProductTransferDocument
   }
 
@@ -742,6 +750,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
     deleteProduct,
     bulkProducts,
     exportProducts,
+    loadProductImportSources,
     previewProductImport,
     importProducts,
     loadReviews,

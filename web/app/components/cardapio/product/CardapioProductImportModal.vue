@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import CardapioProductImportSource from '~/components/cardapio/product/CardapioProductImportSource.vue'
 
 import {
   applyProductImportCategoryDecisions,
@@ -31,14 +32,42 @@ const emit = defineEmits<{
 }>()
 
 const store = useCardapioStore()
+const sourceMode = ref<'file' | 'menu'>('menu')
 const document = ref<ProductTransferDocument | null>(null)
 const fileName = ref('')
 const errorMessage = ref('')
-const updateExisting = ref(true)
+const updateExisting = ref(false)
 const previewing = ref(false)
 const categoriesReviewed = ref(false)
 const categoryDrafts = ref<CategoryDraft[]>([])
 const selectedCategorySlugs = ref<string[]>([])
+
+function resetDocument() {
+  emit('reset')
+  document.value = null
+  errorMessage.value = ''
+  categoryDrafts.value = []
+  selectedCategorySlugs.value = []
+  categoriesReviewed.value = false
+}
+
+async function onSourceLoaded(parsed: ProductTransferDocument, name: string) {
+  resetDocument()
+  updateExisting.value = false
+  fileName.value = `Cardápio: ${name}`
+  document.value = parsed
+  try {
+    await loadCategoryPreview(parsed)
+  } catch (caught) {
+    errorMessage.value = getApiErrorMessage(caught, 'Não foi possível revisar os produtos.')
+  }
+}
+
+function changeSource(mode: 'file' | 'menu') {
+  resetDocument()
+  sourceMode.value = mode
+  updateExisting.value = mode === 'file'
+}
 
 const activeCategories = computed(() => categoryDrafts.value.filter((item) => !item.removed))
 const removedCategories = computed(() => categoryDrafts.value.filter((item) => item.removed))
@@ -188,13 +217,36 @@ function submit() {
   <UModal
     :open="true"
     title="Importar produtos"
-    description="Envie JSON ou CSV. Antes de gravar, revise todas as categorias que ainda não existem."
+    description="Copie de outro cardápio ou envie JSON/CSV. Revise os produtos e as categorias antes de importar."
     :ui="{ content: 'max-w-4xl' }"
     @update:open="!$event && emit('close')"
   >
     <template #body>
       <div class="cardapio-product-import">
-        <label class="cardapio-product-import__drop">
+        <div class="cardapio-product-import__category-tools">
+          <UButton
+            label="De outro cardápio"
+            icon="i-lucide-copy"
+            :variant="sourceMode === 'menu' ? 'solid' : 'soft'"
+            :disabled="importing || previewing"
+            @click="changeSource('menu')"
+          />
+          <UButton
+            label="De arquivo JSON/CSV"
+            icon="i-lucide-file-up"
+            :variant="sourceMode === 'file' ? 'solid' : 'soft'"
+            :disabled="importing || previewing"
+            @click="changeSource('file')"
+          />
+        </div>
+        <CardapioProductImportSource
+          v-if="sourceMode === 'menu'"
+          :restaurant-id="restaurantId"
+          :disabled="importing || previewing"
+          @loaded="onSourceLoaded"
+          @reset="resetDocument"
+        />
+        <label v-else class="cardapio-product-import__drop">
           <span class="cardapio-product-import__drop-title">Selecionar arquivo JSON ou CSV</span>
           <span class="cardapio-product-import__drop-hint">
             Até 10 MB. Nenhuma categoria nova será criada sem sua confirmação.
@@ -389,107 +441,4 @@ function submit() {
   </UModal>
 </template>
 
-<style scoped>
-.cardapio-product-import {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.cardapio-product-import__drop {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 1rem;
-  border: 1px dashed var(--line-soft);
-  border-radius: var(--radius-md);
-  background: rgb(var(--surface-2) / 0.45);
-}
-
-.cardapio-product-import__drop-title {
-  color: var(--text-main);
-  font-weight: 650;
-}
-
-.cardapio-product-import__drop-hint,
-.cardapio-product-import__summary span,
-.cardapio-product-import__category-main span {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-}
-
-.cardapio-product-import__file {
-  margin-top: 0.35rem;
-  color: var(--text-main);
-}
-
-.cardapio-product-import__summary,
-.cardapio-product-import__category-tools,
-.cardapio-product-import__category,
-.cardapio-product-import__review-action,
-.cardapio-product-import__loading {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.cardapio-product-import__summary,
-.cardapio-product-import__category-tools {
-  justify-content: space-between;
-}
-
-.cardapio-product-import__summary {
-  padding: 0.75rem;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  color: var(--text-main);
-}
-
-.cardapio-product-import__categories {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.cardapio-product-import__category-list {
-  display: flex;
-  max-height: 20rem;
-  flex-direction: column;
-  gap: 0.5rem;
-  overflow-y: auto;
-  padding-right: 0.25rem;
-}
-
-.cardapio-product-import__category {
-  padding: 0.65rem;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface-2) / 0.35);
-}
-
-.cardapio-product-import__category-main {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.cardapio-product-import__review-action {
-  justify-content: flex-end;
-}
-
-.cardapio-product-import__loading {
-  justify-content: center;
-  padding: 1rem;
-  color: var(--text-muted);
-}
-
-.cardapio-product-import__errors {
-  max-height: 10rem;
-  overflow-y: auto;
-  padding-left: 1.25rem;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-</style>
+<style scoped src="./product-import.css"></style>

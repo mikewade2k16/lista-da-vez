@@ -9,7 +9,7 @@ export interface VariationDraft {
   priceDeltaCents: number
 }
 
-const props = defineProps<{ modelValue: VariationDraft[] }>()
+const props = defineProps<{ modelValue: VariationDraft[]; wholeAmounts?: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: VariationDraft[]): void }>()
 
 function add() {
@@ -55,6 +55,7 @@ function updateDelta(index: number, value: number) {
       />
       <CardapioMoneyInput
         :model-value="variation.priceDeltaCents"
+        :whole-amounts="wholeAmounts"
         placeholder="Acrescimo"
         @update:model-value="updateDelta(index, $event)"
       />

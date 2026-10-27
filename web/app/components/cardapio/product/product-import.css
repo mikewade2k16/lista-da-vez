@@ -1,0 +1,102 @@
+.cardapio-product-import {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cardapio-product-import__drop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius-md);
+  background: rgb(var(--surface-2) / 0.45);
+}
+
+.cardapio-product-import__drop-title {
+  color: var(--text-main);
+  font-weight: 650;
+}
+
+.cardapio-product-import__drop-hint,
+.cardapio-product-import__summary span,
+.cardapio-product-import__category-main span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.cardapio-product-import__file {
+  margin-top: 0.35rem;
+  color: var(--text-main);
+}
+
+.cardapio-product-import__summary,
+.cardapio-product-import__category-tools,
+.cardapio-product-import__category,
+.cardapio-product-import__review-action,
+.cardapio-product-import__loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cardapio-product-import__summary,
+.cardapio-product-import__category-tools {
+  justify-content: space-between;
+}
+
+.cardapio-product-import__summary {
+  padding: 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+}
+
+.cardapio-product-import__categories {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cardapio-product-import__category-list {
+  display: flex;
+  max-height: 20rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.cardapio-product-import__category {
+  padding: 0.65rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface-2) / 0.35);
+}
+
+.cardapio-product-import__category-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cardapio-product-import__review-action {
+  justify-content: flex-end;
+}
+
+.cardapio-product-import__loading {
+  justify-content: center;
+  padding: 1rem;
+  color: var(--text-muted);
+}
+
+.cardapio-product-import__errors {
+  max-height: 10rem;
+  overflow-y: auto;
+  padding-left: 1.25rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}

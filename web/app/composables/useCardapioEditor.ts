@@ -38,6 +38,7 @@ function clonePayment(payment?: RestaurantPayment): RestaurantPayment {
 
 function cloneSettings(settings?: RestaurantSettings): RestaurantSettings {
   return {
+    productPriceDecimals: settings?.productPriceDecimals === true,
     deliveryFeeCents: Number(settings?.deliveryFeeCents ?? 0),
     deliveryEnabled: Boolean(settings?.deliveryEnabled),
     pickupEnabled: Boolean(settings?.pickupEnabled),

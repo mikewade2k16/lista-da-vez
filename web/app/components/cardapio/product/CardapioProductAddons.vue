@@ -8,7 +8,7 @@ export interface AddonDraft {
   priceCents: number
 }
 
-const props = defineProps<{ modelValue: AddonDraft[] }>()
+const props = defineProps<{ modelValue: AddonDraft[]; wholeAmounts?: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: AddonDraft[]): void }>()
 
 function add() {
@@ -54,6 +54,7 @@ function updatePrice(index: number, value: number) {
       />
       <CardapioMoneyInput
         :model-value="addon.priceCents"
+        :whole-amounts="wholeAmounts"
         placeholder="Preco"
         @update:model-value="updatePrice(index, $event)"
       />

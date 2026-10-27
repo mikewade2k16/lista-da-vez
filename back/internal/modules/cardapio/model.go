@@ -31,6 +31,7 @@ type HourSpan struct {
 
 // Settings sao as regras comerciais do restaurante (entrega/retirada/local).
 type Settings struct {
+	ProductPriceDecimals   bool            `json:"productPriceDecimals"`
 	DeliveryFeeCents       int64           `json:"deliveryFeeCents"`
 	DeliveryEnabled        bool            `json:"deliveryEnabled"`
 	PickupEnabled          bool            `json:"pickupEnabled"`

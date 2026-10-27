@@ -118,7 +118,23 @@ Regras transversais (todas as páginas): tokens do design system (nunca hex), BE
 - [x] Sync roadmap + AGENT.md (back/front) + doc
 - [ ] **Usuário**: aplicar migration `0171` + `docker compose up -d --build api` + validação visual no browser
 
+### Produtos — busca e valores (2026-10-27)
+
+- Busca local por nome combinada com categoria/disponibilidade; ignora acentos e caixa e mostra contagem filtrada.
+- Edicao monetaria livre, com selecao, exclusao e colagem nativas. Tabela confirma ao sair do campo ou Enter, sem mascara durante a digitacao.
+- Toggle "Valores sem centavos" por restaurante: padrao ligado. Desligar permite centavos explicitos (22,50); 22 significa R$ 22 em ambos os modos. Valores existentes nao sao arredondados ao carregar ou alternar a preferencia.
+- Persistencia: `restaurants.settings.productPriceDecimals` (JSONB existente, default Go false); DTO, PATCH e formulario Dados preservam o valor. Aplica ao produto, preco comparativo, variacoes e adicionais.
+- Preco comparativo agora usa `compareAtPriceCents` ja retornado pela listagem lean.
+- Deploy: rebuild da API + web; sem migration ou env nova.
+
+### Produtos — importacao entre cardapios e acoes (2026-10-27)
+
+- Importar > De outro cardapio: lista de origens autorizadas, busca/selecao de produtos, revisao de categorias e copia para o destino. Nao altera a origem; fotos, variacoes e adicionais acompanham os produtos.
+- Reusa GET de restaurantes/exportacao e POST de preview/importacao. O accountId da origem e explicito no export, sem trocar o escopo do editor de destino. Sem endpoint/schema novo.
+- Produtos existentes no destino sao preservados por padrao na copia entre cardapios; atualizacao por slug e opcional. Importacao por JSON/CSV continua disponivel.
+- Acoes em lote usam apenas IDs ainda existentes no cardapio atual, bloqueiam a tabela enquanto gravam e reconsultam a lista apos sucesso; exclusao segue com confirmacao.
+- Validacao: cinco acoes reais em PostgreSQL descartavel, isolamento de conta/cardapio e 23 testes front de cardapio. Componentes compilados pelo Vite; lint sem erros nos arquivos alterados. O build completo anterior compilou client/server, mas falhou no empacotamento Nitro por limite de heap de 3 GB.
+
 ### Pendências/Follow-ups conhecidos
-- **compareAtPriceCents na lista lean** (P5): `ProductLean`/`ListProductsLean` (back) e `ProductListItem` (front) não trazem o campo; a coluna "Preço comparativo" fica vazia até o produto ser editado (a edição funciona via load-full). Fix opcional: adicionar `compare_at_price_cents` ao `ListProductsLean` + DTO + type.
 - **Avaliações de estabelecimento no site público** (TAVOLA): F2 expôs só no painel; a renderização no `/v1/public/*` é follow-up.
 - **Tamanho de arquivo**: `CardapioSectionCategorias.vue` (505) e `CardapioSectionAvaliacoes.vue` (556) passaram de 450 (quase tudo CSS coeso); aceitável, mas candidatos a extrair `<style>` se crescerem.

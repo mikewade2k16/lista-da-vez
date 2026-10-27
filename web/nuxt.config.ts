@@ -228,24 +228,15 @@ export default defineNuxtConfig({
     // server do Vite). Deixar o Rollup bundlar normalmente: yjs e todos os peers
     // (y-protocols, prosemirror-*, lib0) ja estao em node_modules e o editor e lazy.
     server: {
-      // Pre-compile em BACKGROUND, no boot, de todas as paginas + shell — e o
-      // que faz a troca de rota ser instantanea em vez de compilar sob demanda
-      // a cada clique. ATENCAO aos caminhos: sao relativos a RAIZ DO VITE, que
-      // no Nuxt 4 e o srcDir (web/app), NAO a raiz do web/. A versao anterior
-      // usava './app/...' e resolvia para web/app/app/... (inexistente) — o
-      // warmup falhava silencioso (Pre-transform error no log) e NUNCA aqueceu
-      // nada, em Docker nem nativo. Globs sao suportados.
+      // Aquecer apenas a entrada publica. Transformar todos os componentes aqui
+      // faz o Nuxt incluir seus estilos no HTML inicial em dev (centenas de CSS),
+      // alem de disputar CPU e memoria com a primeira navegacao.
+      // Caminhos relativos ao srcDir do Vite (web/app); demais telas sob demanda.
       warmup: {
         clientFiles: [
           './app.vue',
-          // App inteiro: paginas, layouts, componentes, stores, composables,
-          // domain e utils — transformar 1 modulo NAO transforma os imports
-          // dele, entao so listar as paginas deixaria 90% do grafo frio.
-          './**/*.vue',
-          './**/*.ts',
-          // Layers (core/queue/tasks/finance) — mesmos motivos.
-          '../layers/*/**/*.vue',
-          '../layers/*/**/*.ts',
+          './pages/index.vue',
+          './pages/auth/login.vue',
         ],
       },
       watch: shouldUsePollingWatcher

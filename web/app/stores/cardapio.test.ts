@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { useAuthStore } from './auth'
 import { useCardapioStore } from './cardapio'
+import type { ProductBulkAction } from '~/domain/cardapio/types'
 
 function getFetchMock() {
   return (globalThis as any).$fetch as ReturnType<typeof vi.fn>
@@ -21,6 +22,15 @@ function authenticateSession(partial: Record<string, unknown> = {}) {
 
 const httpError = (status: number, message: string) =>
   Object.assign(new Error(message), { statusCode: status, data: { error: { message } } })
+
+async function initializeEditor(accountId: string) {
+  const store = useCardapioStore()
+  const fetchMock = getFetchMock()
+  fetchMock.mockImplementation(async () => ({ id: 'bari', name: 'Bari' }))
+  await store.loadRestaurant('bari', accountId)
+  fetchMock.mockClear()
+  return store
+}
 
 describe('useCardapioStore', () => {
   beforeEach(() => {
@@ -154,5 +164,57 @@ describe('useCardapioStore', () => {
       ok: false,
       message: 'Slug ja existe',
     })
+  })
+
+  it.each<ProductBulkAction>(['enable', 'disable', 'feature', 'remove_feature', 'delete'])(
+    'sends the selected products for %s and reloads the authoritative list',
+    async (action) => {
+      const store = await initializeEditor('destination-account')
+      const fetchMock = getFetchMock()
+      fetchMock.mockImplementation(async (path: string) =>
+        path.includes('bulk-action')
+          ? { affected: 2 }
+          : { products: [{ id: 'fresh-product', isAvailable: true }] },
+      )
+      const result = await store.bulkProducts('bari', ['p1', 'p2'], action)
+      expect(result.affected).toBe(2)
+      expect(fetchMock.mock.calls[0]?.[0]).toContain(
+        '/restaurants/bari/products/bulk-action?accountId=destination-account',
+      )
+      expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+        method: 'POST',
+      })
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+        ids: ['p1', 'p2'],
+        action,
+      })
+      expect(store.products[0]?.id).toBe('fresh-product')
+    },
+  )
+
+  it('reads another menu with its own account without switching the destination', async () => {
+    const store = await initializeEditor('bari-account')
+    const fetchMock = getFetchMock()
+    fetchMock.mockResolvedValueOnce({
+      restaurants: [{ id: 'mostarda', accountId: 'mostarda-account' }],
+    })
+    const sources = await store.loadProductImportSources()
+    expect(sources[0]?.id).toBe('mostarda')
+    fetchMock.mockResolvedValueOnce({ version: 1, products: [{ slug: 'entrada' }] })
+    await store.exportProducts('mostarda', 'mostarda-account')
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(
+      '/restaurants/mostarda/products/export?accountId=mostarda-account',
+    )
+    expect(store.restaurantId).toBe('bari')
+    expect(store.restaurants).toEqual([])
+    fetchMock.mockResolvedValueOnce({ newCategories: [] })
+    await store.previewProductImport('bari', {
+      updateExisting: false,
+      acceptedCategorySlugs: [],
+      products: [],
+    })
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(
+      '/restaurants/bari/products/import/preview?accountId=bari-account',
+    )
   })
 })

@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, ref, unref } from 'vue'
+import { normalizeProductSearch } from '~/domain/cardapio/product-search'
 import type { MaybeRefOrGetter } from 'vue'
 
 import { useCardapioStore } from '~/stores/cardapio'
@@ -59,6 +60,7 @@ function reaisToCents(reais: unknown): number {
 }
 
 export interface CardapioProductFilters {
+  search?: unknown
   categoryId?: unknown
   availability?: unknown
 }
@@ -139,11 +141,7 @@ export function useCardapioProductColumns(
           // casar com a opcao "Sem categoria".
           categoryId: product.categoryId ?? '',
           priceReais: centsToReais(product.priceCents),
-          // ATENCAO: a projecao lean (ProductLean no back) NAO traz
-          // compareAtPriceCents — sempre 0 aqui. A edicao funciona (load-full),
-          // mas o valor exibido nao reflete um preco riscado ja salvo ate o
-          // produto ser carregado/editado. Backend gap (ver AGENT.md).
-          compareAtPriceReais: 0,
+          compareAtPriceReais: centsToReais(product.compareAtPriceCents ?? 0),
           imageSrc: resolveMediaUrl(product.imageUrl, apiBase.value),
         }
         // Aplica o overlay otimista (edicao em voo) por cima da projecao do banco.
@@ -163,10 +161,12 @@ export function useCardapioProductColumns(
   // id; disponibilidade por boolean. Vazio/'' = sem filtro.
   const filteredRows = computed<CardapioProductRow[]>(() => {
     const state = resolveFilterState(filtersState)
+    const query = normalizeProductSearch(state.search)
     const categoryFilter = String(state.categoryId ?? '').trim()
     const availabilityFilter = state.availability
 
     return tableRows.value.filter((row) => {
+      if (query && !normalizeProductSearch(row.name).includes(query)) return false
       if (categoryFilter && String(row.categoryId ?? '') !== categoryFilter) {
         return false
       }
@@ -210,6 +210,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'priceReais',
+      wholeAmounts: store.restaurant?.settings.productPriceDecimals !== true,
       label: 'Preço',
       type: 'money',
       editable: true,
@@ -218,6 +219,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'compareAtPriceReais',
+      wholeAmounts: store.restaurant?.settings.productPriceDecimals !== true,
       label: 'Preço comparativo',
       type: 'money',
       editable: true,
@@ -253,6 +255,12 @@ export function useCardapioProductColumns(
   ])
 
   const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
+    {
+      key: 'search',
+      label: 'Buscar produtos',
+      type: 'text',
+      placeholder: 'Buscar pelo nome do produto...',
+    },
     {
       key: 'categoryId',
       label: 'Categoria',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
@@ -12,7 +12,8 @@ import type { SiteLayout } from '~/domain/cardapio/types'
 // postMessage; a persistencia (rascunho/publicacao) e do painel.
 //
 // Protocolo postMessage (canal 'omni-studio'):
-//   painel -> iframe: { channel, type:'init', layout: SiteLayout|null }
+//   painel -> iframe: { channel, type:'init', layout: SiteLayout|null, restaurantTheme }
+//                     { channel, type:'restaurant-theme', restaurantTheme }
 //                     { channel, type:'upload-result', requestId, url }
 //   iframe -> painel: { channel, type:'ready' } e { channel, type:'change', layout }
 //                     { channel, type:'upload-request', requestId, file }
@@ -128,14 +129,30 @@ function postToStudio(message: Record<string, unknown>) {
   if (!target || !studioOrigin.value) {
     return
   }
-  target.postMessage({ channel: STUDIO_CHANNEL, ...message }, studioOrigin.value)
+  target.postMessage(
+    JSON.parse(JSON.stringify({ channel: STUDIO_CHANNEL, ...message })),
+    studioOrigin.value,
+  )
 }
+
+function restaurantTheme() {
+  return store.restaurant?.theme ?? null
+}
+
+watch(
+  () => store.restaurant?.theme,
+  () => {
+    if (studioReady.value)
+      postToStudio({ type: 'restaurant-theme', restaurantTheme: restaurantTheme() })
+  },
+  { deep: true },
+)
 
 // Carrega o rascunho do back e devolve 'init' ao Studio (layout ou null se vazio).
 async function sendInitLayout() {
   const id = store.restaurantId
   if (!id) {
-    postToStudio({ type: 'init', layout: null })
+    postToStudio({ type: 'init', layout: null, restaurantTheme: restaurantTheme() })
     return
   }
   try {
@@ -144,9 +161,13 @@ async function sendInitLayout() {
     version.value = result.version
     dirty.value = false
     const hasPages = Object.keys(result.layout.pages ?? {}).length > 0
-    postToStudio({ type: 'init', layout: hasPages ? result.layout : null })
+    postToStudio({
+      type: 'init',
+      layout: hasPages ? result.layout : null,
+      restaurantTheme: restaurantTheme(),
+    })
   } catch (caught) {
-    postToStudio({ type: 'init', layout: null })
+    postToStudio({ type: 'init', layout: null, restaurantTheme: restaurantTheme() })
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel carregar o rascunho do site.'))
   }
 }
@@ -179,7 +200,11 @@ async function handleUploadRequest(requestId: string, file: File | undefined) {
 function onMessage(event: MessageEvent) {
   // Defesa: so a origem do Studio e aceita; mensagens de outras janelas/origens
   // (ads, extensoes, outros iframes) sao ignoradas silenciosamente.
-  if (!studioOrigin.value || event.origin !== studioOrigin.value) {
+  if (
+    !studioOrigin.value ||
+    event.origin !== studioOrigin.value ||
+    event.source !== iframeRef.value?.contentWindow
+  ) {
     return
   }
   const data = event.data as StudioInboundMessage | null
@@ -399,190 +424,4 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
-.cardapio-site {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  min-height: 0;
-  flex: 1;
-}
-
-.cardapio-site__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.cardapio-site__info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.cardapio-site__note {
-  font-size: 0.86rem;
-  color: var(--text-muted);
-  margin: 0;
-}
-
-.cardapio-site__status {
-  padding: 0.18rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.74rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.cardapio-site__status--dirty {
-  background: rgb(var(--primary) / 0.16);
-  color: rgb(var(--primary));
-}
-
-.cardapio-site__status--saved {
-  background: rgb(var(--success) / 0.16);
-  color: rgb(var(--success));
-}
-
-.cardapio-site__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-shrink: 0;
-}
-
-.cardapio-site__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.5rem 0.95rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-  background: rgb(var(--surface-2) / 0.8);
-  color: var(--text-main);
-  font-weight: 600;
-  font-size: 0.87rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.cardapio-site__btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.cardapio-site__btn--primary {
-  border: none;
-  color: rgb(var(--surface));
-  background: linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary-600)));
-}
-
-.cardapio-site__empty {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  padding: 2rem 0;
-  text-align: center;
-}
-
-.cardapio-site__frame-wrap {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: rgb(var(--surface-2) / 0.4);
-}
-
-.cardapio-site__frame {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-height: 70vh;
-  border: none;
-}
-
-.cardapio-site__divider {
-  display: inline-block;
-  width: 1px;
-  height: 1.4rem;
-  background: var(--line-soft);
-  margin: 0 0.2rem;
-  align-self: center;
-}
-
-.cardapio-site__btn--icon {
-  padding: 0.5rem 0.7rem;
-}
-
-/* Tela cheia (W6): o frame-wrap ocupa toda a viewport quando ativo. */
-
-.cardapio-site__frame-wrap--fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-  border-radius: 0;
-  border: none;
-  background: rgb(var(--surface-2));
-}
-
-/* Botao de tela cheia posicionado sobre o canto superior direito do frame. */
-.cardapio-site__fullscreen-btn {
-  position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  z-index: 10;
-  padding: 0.3rem 0.75rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-  background: rgb(var(--surface-2) / 0.9);
-  color: var(--text-main);
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.cardapio-site__frame-wrap:hover .cardapio-site__fullscreen-btn {
-  opacity: 1;
-}
-
-/* Botao de sair, sobreposto ao canto da tela em fullscreen. */
-.cardapio-site__exit-fullscreen-btn {
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
-  z-index: 1000;
-  padding: 0.35rem 0.85rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-  background: rgb(var(--surface-2) / 0.95);
-  color: var(--text-main);
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
-}
-
-.cardapio-site__spinner {
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 999px;
-  border: 2px solid rgb(var(--primary) / 0.35);
-  border-top-color: rgb(var(--primary));
-  animation: cardapio-site-spin 0.7s linear infinite;
-}
-
-@keyframes cardapio-site-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>
+<style scoped src="./cardapio-site.css"></style>

@@ -29,6 +29,12 @@ Plano canonico: [docs/MULTITENANT_COMPLETION_PLAN.md](../docs/MULTITENANT_COMPLE
 
 ## Workflow oficial
 
+O warmup do Vite deve abranger somente `app.vue`, a entrada `/` e o login.
+Nao usar globs de todos os componentes/paginas/layers: em dev, o Nuxt passa a
+incluir os estilos desses modulos no HTML inicial (458 CSS observados), elevando
+requisicoes e consumo de CPU/memoria antes mesmo da primeira navegacao.
+Demais telas sao compiladas sob demanda.
+
 Dev do frontend roda NO DOCKER via `docker compose watch` desde 2026-07-03;
 producao continua 100% Docker (build multi-stage -> GHCR). O bind mount
 `./web:/app` FOI REMOVIDO do compose: caminho Windows atravessa a ponte 9P do

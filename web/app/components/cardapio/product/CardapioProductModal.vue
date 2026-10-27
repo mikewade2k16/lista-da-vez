@@ -176,11 +176,17 @@ async function onSave() {
           </label>
           <label class="cardapio-pm__field">
             <span class="cardapio-pm__label">Preco base</span>
-            <CardapioMoneyInput v-model="form.priceCents" />
+            <CardapioMoneyInput
+              v-model="form.priceCents"
+              :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
+            />
           </label>
           <label class="cardapio-pm__field">
             <span class="cardapio-pm__label">Preço cheio (riscado)</span>
-            <CardapioMoneyInput v-model="form.compareAtPriceCents" />
+            <CardapioMoneyInput
+              v-model="form.compareAtPriceCents"
+              :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
+            />
             <span class="cardapio-pm__hint">
               Opcional. Maior que o preço base, mostra o desconto riscado. 0 = sem risco.
             </span>
@@ -276,10 +282,16 @@ async function onSave() {
         </div>
 
         <div class="cardapio-pm__section">
-          <CardapioProductVariations v-model="form.variations" />
+          <CardapioProductVariations
+            v-model="form.variations"
+            :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
+          />
         </div>
         <div class="cardapio-pm__section">
-          <CardapioProductAddons v-model="form.addons" />
+          <CardapioProductAddons
+            v-model="form.addons"
+            :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
+          />
         </div>
         <div class="cardapio-pm__section">
           <CardapioProductGallery

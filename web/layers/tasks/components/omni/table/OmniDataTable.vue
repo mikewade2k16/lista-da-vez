@@ -422,6 +422,7 @@ watch(imagePreviewOpen, (open) => {
               <div :data-cell-input="`${rowId(row)}:${column.key}`">
                 <OmniMoneyInput
                   :model-value="numberValue(row[column.key])"
+                  :whole-amounts="column.wholeAmounts"
                   @update:model-value="emitCellUpdate(row, column, $event)"
                 />
               </div>

@@ -1,5 +1,18 @@
 # Plano — Cardápio Fase 3: Site builder (layout de seções) — Opção B
 
+## Correcao de Aparencia na previa (2026-10-27)
+
+Deploy de API e painel concluido em producao: `local-20261027-cardapio-75cfa51522`.
+Backup validado antes da troca; ambos saudaveis e assets conferidos online. TAVOLA excluido
+do deploy por instrucao do usuario; a correcao completa da previa ainda depende de publica-lo.
+
+O painel transmite `restaurantTheme` no init do Studio e atualiza por mensagem dedicada, sem
+alterar o documento de layout. StudioPreview aplica as cinco cores e suas escalas, fontes de
+titulo/corpo e raios via o mesmo helper `restaurantThemeVariables` do site publico. Antes so
+acento/titulo eram aplicados e a previa dependia de uma leitura publica potencialmente antiga.
+Validacao de origin+source em ambas as pontas. Sem migration ou API nova; publicar painel e
+TAVOLA juntos. Testes do helper: `node --test app/utils/restaurant-theme.test.mjs` no TAVOLA web.
+
 > **Status: Opção B — Fases 1-3 ENTREGUES + MIGRAÇÃO LAYOUT-DRIVEN CONCLUÍDA (2026-06-21, back + front, ponta a ponta). Falta a Fase 4 (endurecimento).**
 > O site TAVOLA (home, cardápio e página de prato) agora renderiza a partir do
 > `SiteLayout` (data em runtime, sem deploy), com fallback ao render curado.

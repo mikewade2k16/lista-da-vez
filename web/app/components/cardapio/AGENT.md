@@ -6,6 +6,29 @@ Estas instrucoes valem para `web/app/components/cardapio/` (painel `/cardapio`).
 
 ## Responsabilidade
 
+Deploy 2026-10-27: API/painel em producao na tag `local-20261027-cardapio-75cfa51522`,
+com backup e verificacao de saude/assets. TAVOLA NAO publicado por pedido do usuario;
+a metade da correcao da previa que vive no Studio permanece pendente online.
+
+Tema da previa Site (2026-10-27): painel envia `restaurantTheme` separado do layout no init
+do canal `omni-studio` e sincroniza mudancas por `restaurant-theme`. Mensagens JSON simples
+(sem proxies Vue); valida origin e source do iframe. O Studio/TAVOLA precisa da versao que
+recebe o tema e usa `restaurantThemeVariables` tanto no site publico como no StudioPreview.
+Sincronizar Aparencia nao modifica rascunho/historico. CSS da aba em `sections/cardapio-site.css`.
+
+Importacao entre cardapios (2026-10-27): `CardapioProductImportSource.vue` busca origens
+via `loadProductImportSources` (sem substituir state do editor), exporta com accountId explicito,
+permite selecionar produtos e entrega o documento ao modal existente para revisao de categorias.
+Mesmo fluxo de preview/import no destino; updateExisting=false por padrao ao copiar. CSS do modal
+em `product/product-import.css`. Bulk bloqueia a tabela e filtra IDs obsoletos antes da requisicao.
+
+Produtos (2026-10-27): busca por nome sem acentos/caixa; valores com edicao livre via
+`OmniDecimalMoneyInput` (reais) / `CardapioMoneyInput` (centavos). Tabela confirma no blur/Enter.
+`settings.productPriceDecimals` persiste no JSONB do restaurante: false/ausente = valores inteiros,
+true = permite centavos explicitos. Toggle na aba Produtos; preservado no cloneSettings de Dados.
+Aplica a preco/comparativo/variacoes/adicionais; nao arredonda precos existentes sem edicao.
+Coluna comparativa usa o `compareAtPriceCents` da lista lean. Sem migration; rebuild API + web.
+
 Painel de gestao dos cardapios online (restaurantes). CRUD de restaurante, categorias, produtos
 (variacoes/adicionais/galeria), avaliacoes, dominios e pedidos. O front PUBLICO (site estatico que o
 visitante acessa) e outro repo: este painel so administra os dados via API do painel.

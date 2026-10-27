@@ -33,8 +33,27 @@ const importOpen = ref(false)
 const importBusy = ref(false)
 const importResult = ref<ProductImportResult | null>(null)
 const exportBusy = ref(false)
+const settingsBusy = ref(false)
+const wholeAmounts = computed(() => store.restaurant?.settings.productPriceDecimals !== true)
+
+async function setWholeAmounts(enabled: boolean) {
+  const restaurant = store.restaurant
+  if (!restaurant || settingsBusy.value) return
+  settingsBusy.value = true
+  try {
+    await store.patchRestaurant(restaurant.id, {
+      settings: { ...restaurant.settings, productPriceDecimals: !enabled },
+    })
+    ui.success('Preferencia de valores salva para este cardapio.')
+  } catch (caught) {
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel salvar a preferencia de valores.'))
+  } finally {
+    settingsBusy.value = false
+  }
+}
 
 const filtersState = ref<CardapioProductFilters & Record<string, unknown>>({
+  search: '',
   categoryId: '',
   availability: '',
 })
@@ -55,7 +74,9 @@ const {
 // Sinaliza produtos sem imagem (ex.: import que ainda nao tem foto cadastrada).
 const noImageCount = computed(() => tableRows.value.filter((row) => !row.imageUrl).length)
 const selectedProductIds = computed(() =>
-  selectedIds.value.map((id) => String(id).trim()).filter(Boolean),
+  [...new Set(selectedIds.value.map(String))].filter((id) =>
+    store.products.some((product) => product.id === id),
+  ),
 )
 
 const bulkActionItems = computed(() => [
@@ -185,7 +206,9 @@ async function runBulkAction(action: ProductBulkAction) {
   try {
     const result = await store.bulkProducts(restaurantId, ids, action)
     selectedIds.value = []
-    ui.success(`${result.affected} produto(s) atualizado(s).`)
+    ui.success(
+      `${result.affected} produto(s) ${action === 'delete' ? 'excluído(s)' : 'atualizado(s)'}.`,
+    )
   } catch (caught) {
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel aplicar a acao em lote.'))
   } finally {
@@ -249,7 +272,7 @@ async function importProducts(input: ProductImportInput) {
 }
 
 function onResetFilters() {
-  filtersState.value = { categoryId: '', availability: '' }
+  filtersState.value = { search: '', categoryId: '', availability: '' }
 }
 </script>
 
@@ -257,9 +280,16 @@ function onResetFilters() {
   <section class="cardapio-prod">
     <div class="cardapio-prod__head">
       <p class="cardapio-prod__count">
-        {{ tableRows.length }} produto(s)
+        {{ filteredRows.length }} de {{ tableRows.length }} produto(s)
         <span v-if="noImageCount" class="cardapio-prod__warn">· {{ noImageCount }} sem imagem</span>
       </p>
+      <USwitch
+        :model-value="wholeAmounts"
+        :disabled="settingsBusy || !store.restaurant"
+        label="Valores sem centavos"
+        description="22 = R$ 22. Desative para digitar centavos. Precos existentes sao preservados."
+        @update:model-value="setWholeAmounts"
+      />
     </div>
 
     <OmniCollectionFilters
@@ -284,7 +314,7 @@ function onResetFilters() {
             color="neutral"
             variant="soft"
             :loading="bulkBusy"
-            :disabled="!selectedIds.length || bulkBusy"
+            :disabled="!selectedProductIds.length || bulkBusy"
           />
         </UDropdownMenu>
         <UButton
@@ -311,6 +341,7 @@ function onResetFilters() {
     <OmniDataTable
       v-model="selectedIds"
       :rows="filteredRows"
+      :loading="bulkBusy"
       :columns="tableColumns"
       row-key="id"
       empty-text="Nenhum produto encontrado com os filtros atuais."
@@ -373,6 +404,8 @@ function onResetFilters() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .cardapio-prod__count {

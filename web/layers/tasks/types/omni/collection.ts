@@ -25,6 +25,7 @@ export interface OmniTableAction {
 }
 
 export interface OmniTableColumn {
+  wholeAmounts?: boolean
   key: string
   label: string
   adminOnly?: boolean

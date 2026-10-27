@@ -1,12 +1,16 @@
 ﻿<script setup lang="ts">
+import OmniDecimalMoneyInput from './OmniDecimalMoneyInput.vue'
+
 const props = withDefaults(
   defineProps<{
     modelValue?: number | null
+    wholeAmounts?: boolean
     placeholder?: string
     disabled?: boolean
   }>(),
   {
     modelValue: 0,
+    wholeAmounts: undefined,
     placeholder: 'R$ 0,00',
     disabled: false,
   },
@@ -131,7 +135,15 @@ function onInput(value: string | number | undefined) {
 </script>
 
 <template>
+  <OmniDecimalMoneyInput
+    v-if="props.wholeAmounts !== undefined"
+    :model-value="props.modelValue ?? 0"
+    :whole-amounts="props.wholeAmounts"
+    :disabled="props.disabled"
+    @update:model-value="emit('update:modelValue', $event)"
+  />
   <UInput
+    v-else
     :model-value="displayValue"
     :placeholder="props.placeholder"
     inputmode="numeric"

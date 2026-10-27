@@ -408,6 +408,17 @@ absolutizado no publico via `PUBLIC_API_BASE_URL`.
 
 ## Arquivos
 
+Teste real de acoes em lote: `store_bulk_integration_test.go`, opt-in por
+`CARDAPIO_TEST_DATABASE_URL` apontando para PostgreSQL descartavel (cria schema minimo proprio).
+Cobre enable/disable/feature/remove_feature/delete, conta incorreta e selecao mista de restaurantes.
+Importacao entre cardapios no painel reusa listagem/export/preview/import existentes; gates e
+escopos seguem obrigatorios em cada requisicao, inclusive origem de outra account para admin.
+
+Preferencia de valores de produtos (2026-10-27): `Settings.ProductPriceDecimals`, JSON
+`productPriceDecimals`, persiste em `restaurants.settings` (JSONB existente). False/ausente
+e o padrao de digitacao em reais inteiros no painel; true habilita centavos explicitos.
+Nao altera precos armazenados nem recalculo do checkout. Sem migration, rebuild da API.
+
 `module.go` (Registry; monta o gate de permissao via `core.RBACService`) · `rbac.go`
 (`cardapioGate`/`requireCardapioPerm` helpers + chaves `permView`/`permManage`/`permOrdersManage`)
 · `model.go`/`model_order.go` (DTOs) · `store.go` (interface `dataStore`)

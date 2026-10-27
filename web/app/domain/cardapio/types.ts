@@ -37,6 +37,7 @@ export interface RestaurantPayment {
 }
 
 export interface RestaurantSettings {
+  productPriceDecimals?: boolean
   deliveryFeeCents: number
   deliveryEnabled: boolean
   pickupEnabled: boolean

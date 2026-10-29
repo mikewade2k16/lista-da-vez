@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useCardapioImportCompletion } from '~/composables/useCardapioImportCompletion'
 import CardapioProductImportSource from '~/components/cardapio/product/CardapioProductImportSource.vue'
 
 import {
@@ -14,7 +15,6 @@ import {
 import { slugify } from '~/domain/utils/slugify'
 import { useCardapioStore } from '~/stores/cardapio'
 import { getApiErrorMessage } from '~/utils/api-client'
-
 interface CategoryDraft extends ProductImportCategoryDecision {
   productCount: number
 }
@@ -24,13 +24,11 @@ const props = defineProps<{
   importing: boolean
   result: ProductImportResult | null
 }>()
-
 const emit = defineEmits<{
   close: []
   reset: []
   submit: [input: ProductImportInput]
 }>()
-
 const store = useCardapioStore()
 const sourceMode = ref<'file' | 'menu'>('menu')
 const document = ref<ProductTransferDocument | null>(null)
@@ -85,10 +83,15 @@ const categoryNamesValid = computed(() =>
 const hasCategoryEdits = computed(() =>
   categoryDrafts.value.some((item) => item.name.trim() !== item.originalName.trim()),
 )
+useCardapioImportCompletion(
+  () => props.result,
+  () => emit('close'),
+)
 const canImport = computed(
   () =>
     Boolean(document.value?.products.length) &&
     !props.importing &&
+    !props.result &&
     !previewing.value &&
     !errorMessage.value &&
     categoriesReviewed.value &&
@@ -223,7 +226,27 @@ function submit() {
   >
     <template #body>
       <div class="cardapio-product-import">
-        <div class="cardapio-product-import__category-tools">
+        <UAlert
+          v-if="result"
+          :color="result.failed ? 'warning' : 'success'"
+          variant="soft"
+          :icon="result.failed ? 'i-lucide-triangle-alert' : 'i-lucide-circle-check'"
+          :title="
+            result.failed ? 'Importação concluída com erros' : 'Importação concluída com sucesso!'
+          "
+          :description="`${result.created} criado(s), ${result.updated} atualizado(s), ${result.skipped} ignorado(s) e ${result.failed} com erro.`"
+        />
+
+        <ul v-if="result?.errors.length" class="cardapio-product-import__errors">
+          <li v-for="item in result.errors.slice(0, 8)" :key="`${item.row}:${item.slug}`">
+            Linha {{ item.row }}
+            <template v-if="item.slug">({{ item.slug }})</template>
+            :
+            {{ item.message }}
+          </li>
+          <li v-if="result.errors.length > 8">E mais {{ result.errors.length - 8 }} erro(s).</li>
+        </ul>
+        <div v-if="!result || result.failed" class="cardapio-product-import__category-tools">
           <UButton
             label="De outro cardápio"
             icon="i-lucide-copy"
@@ -239,183 +262,166 @@ function submit() {
             @click="changeSource('file')"
           />
         </div>
-        <CardapioProductImportSource
-          v-if="sourceMode === 'menu'"
-          :restaurant-id="restaurantId"
-          :disabled="importing || previewing"
-          @loaded="onSourceLoaded"
-          @reset="resetDocument"
-        />
-        <label v-else class="cardapio-product-import__drop">
-          <span class="cardapio-product-import__drop-title">Selecionar arquivo JSON ou CSV</span>
-          <span class="cardapio-product-import__drop-hint">
-            Até 10 MB. Nenhuma categoria nova será criada sem sua confirmação.
-          </span>
-          <input
-            class="cardapio-product-import__file"
-            type="file"
-            accept=".json,.csv,application/json,text/csv"
+        <template v-if="!result || result.failed">
+          <CardapioProductImportSource
+            v-if="sourceMode === 'menu'"
+            :restaurant-id="restaurantId"
             :disabled="importing || previewing"
-            @change="onFileChange"
+            @loaded="onSourceLoaded"
+            @reset="resetDocument"
           />
-        </label>
+          <label v-else class="cardapio-product-import__drop">
+            <span class="cardapio-product-import__drop-title">Selecionar arquivo JSON ou CSV</span>
+            <span class="cardapio-product-import__drop-hint">
+              Até 10 MB. Nenhuma categoria nova será criada sem sua confirmação.
+            </span>
+            <input
+              class="cardapio-product-import__file"
+              type="file"
+              accept=".json,.csv,application/json,text/csv"
+              :disabled="importing || previewing"
+              @change="onFileChange"
+            />
+          </label>
 
-        <UAlert
-          v-if="errorMessage"
-          color="error"
-          variant="soft"
-          icon="i-lucide-alert-triangle"
-          title="Arquivo inválido"
-          :description="errorMessage"
-        />
-
-        <div v-if="document" class="cardapio-product-import__summary">
-          <div>
-            <strong>{{ document.products.length }}</strong>
-            produto(s) encontrados
-          </div>
-          <span>{{ fileName }}</span>
-        </div>
-
-        <div v-if="previewing" class="cardapio-product-import__loading">
-          <UIcon name="i-lucide-loader-circle" class="animate-spin" />
-          Conferindo categorias existentes...
-        </div>
-
-        <section
-          v-else-if="document && categoryDrafts.length"
-          class="cardapio-product-import__categories"
-        >
           <UAlert
-            color="warning"
+            v-if="errorMessage"
+            color="error"
             variant="soft"
-            icon="i-lucide-tags"
-            :title="`${categoryDrafts.length} categoria(s) nova(s) encontrada(s)`"
-            description="Revise os nomes. Remover uma categoria fará seus produtos entrarem sem categoria."
+            icon="i-lucide-alert-triangle"
+            title="Arquivo inválido"
+            :description="errorMessage"
           />
 
-          <div class="cardapio-product-import__category-tools">
-            <UCheckbox
-              :model-value="allActiveSelected"
-              label="Selecionar todas"
-              @update:model-value="setAllSelected"
-            />
-            <UButton
-              label="Remover selecionadas"
-              icon="i-lucide-trash-2"
-              color="error"
-              variant="soft"
-              size="sm"
-              :disabled="!selectedCategorySlugs.length"
-              @click="removeSelectedCategories"
-            />
+          <div v-if="document" class="cardapio-product-import__summary">
+            <div>
+              <strong>{{ document.products.length }}</strong>
+              produto(s) encontrados
+            </div>
+            <span>{{ fileName }}</span>
           </div>
 
-          <div class="cardapio-product-import__category-list">
-            <div
-              v-for="category in activeCategories"
-              :key="category.originalSlug"
-              class="cardapio-product-import__category"
-            >
+          <div v-if="previewing" class="cardapio-product-import__loading">
+            <UIcon name="i-lucide-loader-circle" class="animate-spin" />
+            Conferindo categorias existentes...
+          </div>
+
+          <section
+            v-else-if="document && categoryDrafts.length"
+            class="cardapio-product-import__categories"
+          >
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-lucide-tags"
+              :title="`${categoryDrafts.length} categoria(s) nova(s) encontrada(s)`"
+              description="Revise os nomes. Remover uma categoria fará seus produtos entrarem sem categoria."
+            />
+
+            <div class="cardapio-product-import__category-tools">
               <UCheckbox
-                :model-value="selectedCategorySlugs.includes(category.originalSlug)"
-                :aria-label="`Selecionar ${category.name}`"
-                @update:model-value="setCategorySelected(category.originalSlug, $event)"
+                :model-value="allActiveSelected"
+                label="Selecionar todas"
+                @update:model-value="setAllSelected"
               />
-              <div class="cardapio-product-import__category-main">
-                <UInput
-                  v-model="category.name"
-                  aria-label="Nome da categoria"
-                  :color="category.name.trim() ? 'neutral' : 'error'"
-                  :disabled="importing"
-                  @update:model-value="markReviewPending"
-                />
-                <span>
-                  {{ category.productCount }} produto(s)
-                  <template v-if="existingCategoryName(category)">
-                    · usará a categoria existente “{{ existingCategoryName(category) }}”
-                  </template>
-                </span>
-              </div>
               <UButton
+                label="Remover selecionadas"
                 icon="i-lucide-trash-2"
                 color="error"
-                variant="ghost"
+                variant="soft"
                 size="sm"
-                title="Importar estes produtos sem categoria"
-                :aria-label="`Remover categoria ${category.name}`"
-                @click="removeCategory(category.originalSlug)"
+                :disabled="!selectedCategorySlugs.length"
+                @click="removeSelectedCategories"
               />
             </div>
-          </div>
+
+            <div class="cardapio-product-import__category-list">
+              <div
+                v-for="category in activeCategories"
+                :key="category.originalSlug"
+                class="cardapio-product-import__category"
+              >
+                <UCheckbox
+                  :model-value="selectedCategorySlugs.includes(category.originalSlug)"
+                  :aria-label="`Selecionar ${category.name}`"
+                  @update:model-value="setCategorySelected(category.originalSlug, $event)"
+                />
+                <div class="cardapio-product-import__category-main">
+                  <UInput
+                    v-model="category.name"
+                    aria-label="Nome da categoria"
+                    :color="category.name.trim() ? 'neutral' : 'error'"
+                    :disabled="importing"
+                    @update:model-value="markReviewPending"
+                  />
+                  <span>
+                    {{ category.productCount }} produto(s)
+                    <template v-if="existingCategoryName(category)">
+                      · usará a categoria existente “{{ existingCategoryName(category) }}”
+                    </template>
+                  </span>
+                </div>
+                <UButton
+                  icon="i-lucide-trash-2"
+                  color="error"
+                  variant="ghost"
+                  size="sm"
+                  title="Importar estes produtos sem categoria"
+                  :aria-label="`Remover categoria ${category.name}`"
+                  @click="removeCategory(category.originalSlug)"
+                />
+              </div>
+            </div>
+
+            <UAlert
+              v-if="removedCategories.length"
+              color="neutral"
+              variant="soft"
+              :title="`${removedCategories.length} categoria(s) removida(s)`"
+              :description="`${removedProductCount} produto(s) serão importados sem categoria.`"
+            >
+              <template #actions>
+                <UButton
+                  label="Restaurar removidas"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  @click="restoreRemovedCategories"
+                />
+              </template>
+            </UAlert>
+
+            <div class="cardapio-product-import__review-action">
+              <UBadge v-if="categoriesReviewed" color="success" variant="soft">
+                Categorias confirmadas
+              </UBadge>
+              <UButton
+                v-else
+                :label="reviewButtonLabel"
+                icon="i-lucide-check-check"
+                color="primary"
+                :disabled="!categoryNamesValid"
+                @click="confirmCategories"
+              />
+            </div>
+          </section>
 
           <UAlert
-            v-if="removedCategories.length"
-            color="neutral"
+            v-else-if="document && !previewing"
+            color="success"
             variant="soft"
-            :title="`${removedCategories.length} categoria(s) removida(s)`"
-            :description="`${removedProductCount} produto(s) serão importados sem categoria.`"
-          >
-            <template #actions>
-              <UButton
-                label="Restaurar removidas"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                @click="restoreRemovedCategories"
-              />
-            </template>
-          </UAlert>
+            icon="i-lucide-circle-check"
+            title="Nenhuma categoria nova"
+            description="Todas as categorias do arquivo já existem ou os produtos estão sem categoria."
+          />
 
-          <div class="cardapio-product-import__review-action">
-            <UBadge v-if="categoriesReviewed" color="success" variant="soft">
-              Categorias confirmadas
-            </UBadge>
-            <UButton
-              v-else
-              :label="reviewButtonLabel"
-              icon="i-lucide-check-check"
-              color="primary"
-              :disabled="!categoryNamesValid"
-              @click="confirmCategories"
-            />
-          </div>
-        </section>
-
-        <UAlert
-          v-else-if="document && !previewing"
-          color="success"
-          variant="soft"
-          icon="i-lucide-circle-check"
-          title="Nenhuma categoria nova"
-          description="Todas as categorias do arquivo já existem ou os produtos estão sem categoria."
-        />
-
-        <UCheckbox
-          v-model="updateExisting"
-          label="Atualizar produtos existentes com o mesmo slug"
-          description="Desmarcado: produtos existentes são preservados e contabilizados como ignorados."
-          :disabled="importing"
-        />
-
-        <UAlert
-          v-if="result"
-          :color="result.failed ? 'warning' : 'success'"
-          variant="soft"
-          :icon="result.failed ? 'i-lucide-triangle-alert' : 'i-lucide-circle-check'"
-          title="Resultado da importação"
-          :description="`${result.created} criado(s), ${result.updated} atualizado(s), ${result.skipped} ignorado(s) e ${result.failed} com erro.`"
-        />
-
-        <ul v-if="result?.errors.length" class="cardapio-product-import__errors">
-          <li v-for="item in result.errors.slice(0, 8)" :key="`${item.row}:${item.slug}`">
-            Linha {{ item.row }}
-            <template v-if="item.slug">({{ item.slug }})</template>
-            :
-            {{ item.message }}
-          </li>
-          <li v-if="result.errors.length > 8">E mais {{ result.errors.length - 8 }} erro(s).</li>
-        </ul>
+          <UCheckbox
+            v-model="updateExisting"
+            label="Atualizar produtos existentes com o mesmo slug"
+            description="Desmarcado: produtos existentes são preservados e contabilizados como ignorados."
+            :disabled="importing"
+          />
+        </template>
       </div>
     </template>
 

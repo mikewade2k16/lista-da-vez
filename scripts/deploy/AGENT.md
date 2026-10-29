@@ -35,8 +35,8 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 
 ## Regras do fluxo
 
-- a VPS NAO builda imagem: deploy e' `pull` + `up -d --no-build` (build fica no CI/GHCR)
-- o `IMAGE_TAG` deployado deve ser um SHA concreto que o CI ja publicou (nunca `latest` em prod)
+- a VPS NAO builda imagem: recebe por pull GHCR ou docker load verificado e usa up --no-build
+- o `IMAGE_TAG` deve ser concreto: SHA do CI ou local-<timestamp> do build local (nunca latest em prod)
 - promover pra prod = usar a MESMA tag que passou por staging (`promote.ps1` le do `.env.staging`)
 - os scripts nunca sobrescrevem o `.env.<ambiente>` remoto (so atualizam a linha `IMAGE_TAG`)
 - antes de copiar compose ou trocar `IMAGE_TAG`, o deploy valida segredos obrigatorios no
@@ -56,7 +56,7 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 - smoke tests publicos continuam sendo a validacao padrao depois do deploy
 - `npm run deploy` e o comando canonico do deploy rapido de producao; o alias
   `deploy:fast:prod` permanece por compatibilidade e ambos reconciliam por padrao
-  os profiles `automation` e `omnichannel`;
+  o profile `omnichannel` (Automation exige opt-in explicito);
   workflows usam os JSONs versionados e a Evolution sobe com volumes preservados
 - `assert-compose-service-parity.ps1` impede que um container novo exista somente no
   Compose local sem uma definicao prod ou excecao local-only documentada
@@ -72,7 +72,28 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 - mudancas que afetem banco, importacao de dados ou restore devem oferecer caminho claro para backup antes da execucao
 - evitar adicionar comportamento automatico destrutivo sem opt-in explicito
 
+## Deploy verificado no Mac (2026-10-29)
+
+validate-release.ps1 aplica lint/testes focados antes do build. Pausa/restauracao usa
+Compose efetivo, incluindo local-access do Mac. Transporte auto seleciona GHCR com
+credencial ou image-archive.ps1 (save/gzip/SCP/SHA256/load). rollout-app.sh espera
+healthchecks e HTTP; em erro restaura snapshot privado de env/Compose e imagens
+anteriores. Backup pg_dump validado antes de trocar Compose/tag. Sem build na VPS.
+
 ## Scripts atuais
+
+Mac/Linux (2026-10-29): atalhos npm passam por `run-deploy.mjs` (pwsh no Unix,
+powershell.exe no Windows), sem shell intermediario. Ajuda e tratada pelo launcher
+sem executar PowerShell/preflight/build. SSH/SCP resolvidos pelo PATH; helper Docker
+recebe .exe so no Windows. `deploy-fast.ps1` usa linux/amd64 por padrao e verifica a
+existencia da chave antes de buildar. Testes focados: `node --test scripts/deploy/run-deploy.test.mjs`
+e parser PowerShell nos scripts alterados. Setup em `docs/SETUP_MAC.md`.
+
+Acesso por maquina: launcher le `~/.config/omni/deploy.json` (sshUser/sshKeyPath)
+e injeta OMNI_DEPLOY_USER/OMNI_DEPLOY_KEY_PATH so no processo filho; scripts usam
+essas variaveis nos defaults. Flags explicitas vencem; sem configuracao mantem os
+defaults anteriores. Arquivo e chave ficam fora do repo. Chave valida nao e prova de
+permissao na VPS: validar autenticacao com comando remoto somente leitura, sem build.
 
 Fluxo RAPIDO (build local, sem git — recomendado pro dia a dia):
 
@@ -84,8 +105,7 @@ Fluxo RAPIDO (build local, sem git — recomendado pro dia a dia):
   No build web, pausa e restaura somente os servicos locais que ja estavam rodando para liberar
   memoria; `-KeepLocalStackRunning` e opt-out. Nao toca git, nao builda na VPS. npm:
   `deploy:fast` (staging), `deploy` (producao canonica) e `deploy:fast:prod`
-  (compatibilidade). Em prod, o alias inclui Automation/workflows versionados e
-  Omnichannel/Evolution por padrao.
+  (compatibilidade). Em prod, o alias inclui Omnichannel/Evolution; Automation e opt-in.
 
 Fluxo registry via CI (opcao completa/rastreavel):
 

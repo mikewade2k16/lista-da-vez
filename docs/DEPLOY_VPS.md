@@ -10,13 +10,62 @@ arquitetura da VPS e procedimentos raros (primeiro go-live, ERP, release especia
 
 ---
 
+## Execucao homologada em producao — 2026-10-29
+
+`npm run deploy` concluiu com exit 0 na tag `local-20261029-160432`, usando SSH
+(sem credencial GHCR local). API/painel/Evolution/evolution-db healthy; `/` e
+`/healthz` HTTP 200. VPS com aproximadamente 6 GB de memoria disponivel apos o rollout;
+nenhum build na VPS. Stack local restaurada e demais servicos preservados.
+Validacao: lint dos arquivos alterados (zero erros), 33 testes web, 4 testes do launcher,
+go test/vet dos pacotes alterados, build de producao e smoke da imagem x64 HTTP 200.
+Rollback simulado restaurou configuracoes corretamente.
+
+Backups gzip e SHA256 verificados (permissao 600), em `/home/deploy/lista-atendimento/backups/`:
+
+- `backup_local-20261029-160432_20261029_193534.sql.gz` (180 MB);
+- `evolution_local-20261029-160432_20261029_193658.sql.gz` (26 MB).
+
+Snapshot privado e marcadores `app.success`/`deploy.success` em
+`.deploy/local-20261029-160432/`. Imagens anteriores preservadas para rollback.
+Para uma tag ja carregada por SSH: `npm run deploy:prod -- -Tag TAG_ANTERIOR -UseLoadedImages`.
+TAVOLA nao foi publicado. Automation/n8n nao foi importado ou reiniciado.
+
+## Deploy rapido no Mac e Windows (2026-10-29)
+
+`npm run deploy` executa o launcher, lint dos arquivos web alterados, testes do cardapio
+quando afetado e go test/vet dos pacotes Go alterados. Usa o Compose local efetivo
+(incluindo overrides do Mac) para pausar/restaurar apenas servicos que estavam rodando.
+Os stages de compilacao usam a arquitetura nativa e as imagens finais sao linux/amd64.
+
+Transporte `-Transport auto` (padrao): GHCR quando ha credencial local, ou arquivo
+docker save + gzip + SCP/SSH quando ausente. `-Transport registry` exige credencial;
+`-Transport ssh` escolhe a transferencia direta. SSH exige ambas as imagens (-Service both).
+O arquivo recebe verificacao SHA256 na VPS antes do docker load; a VPS nunca compila.
+A imagem web tambem e iniciada isoladamente e precisa responder HTTP 200 antes da entrega.
+
+Antes da atualizacao: preflight de segredos, snapshot privado de Compose/env em
+`.deploy/<tag>/`, backup pg_dump comprimido validado com gzip -t e SHA256 (principal e Evolution quando reconciliado). O novo
+Compose e validado antes de substituir o anterior; api/web sobem sem rebuild/pull
+implicito/dependencias, com espera de healthchecks. Falha de subida/HTTP restaura
+Compose/env anteriores e sobe novamente as imagens anteriores.
+
 ## TL;DR — os 2 comandos (sem enrolacao)
+
+Mac/Linux e Windows: os atalhos npm escolhem automaticamente `pwsh` ou
+`powershell.exe`. Setup do Mac: [SETUP_MAC.md](SETUP_MAC.md).
+`npm run deploy` e o alias canonico de `deploy:fast:prod`; aceita os mesmos argumentos
+apos `--`. Use `npm run deploy -- --help` para consultar opcoes sem executar nada.
+No Mac, informe `-KeyPath` e `-User` quando diferirem dos defaults do Windows.
+Para salvar essas escolhas neste computador, configure `~/.config/omni/deploy.json`
+com `sshUser` e `sshKeyPath`, conforme [SETUP_MAC.md](SETUP_MAC.md).
+O deploy rapido gera imagens `linux/amd64` por padrao, inclusive no Apple Silicon,
+e rejeita chave SSH ausente antes do build. GHCR autenticado e SSH autorizado continuam
+sendo pre-requisitos.
 
 **`npm run deploy:fast:prod`** -> builda na sua maquina e ja manda. Um comando, na hora.
 Nao depende de git nem de CI. (Faz backup do banco; rollback disponivel.) **E' o do dia-a-dia.**
-Tambem reconcilia o profile `automation` em prod (`redis`/`waha`/`n8n`/`whisper`) e reimporta os
-workflows versionados do n8n quando eles mudarem. O profile `omnichannel`
-(`evolution-db`/`evolution`) tambem e reconciliado, sempre preservando volumes.
+O alias publica API/painel e reconcilia o profile `omnichannel` (`evolution-db`/`evolution`),
+preservando volumes. Automation/n8n exige opt-in explicito; nao e alterado por padrao.
 
 **`npm run deploy:prod`** -> nao builda nada. So puxa uma imagem que o CI ja construiu.
 Por isso exige duas coisas, em ordem, com espera no meio:
@@ -60,9 +109,9 @@ npm run deploy:promote                     # promove a MESMA imagem do staging p
 
 ### Automation/n8n no deploy rapido
 
-`deploy:fast:prod` e a operacao explicita de plataforma do dia a dia e passa
-`-DeployAutomation -SkipWorkflowExport -DeployOmnichannel` por padrao. Portanto usa os JSONs
-versionados como fonte do rollout e nao consulta nem sobrescreve o repo a partir do n8n local:
+O alias padrao passa apenas `-DeployOmnichannel`. Quando a publicacao de Automation
+for autorizada explicitamente, use `-DeployAutomation -SkipWorkflowExport` para usar os JSONs
+versionados como fonte do rollout, sem consultar nem sobrescrever o repo pelo n8n local:
 
 - envia para a VPS somente `automation/export/workflow-*.json` (NAO envia
   `credentials.decrypted.json`);

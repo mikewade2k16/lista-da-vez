@@ -57,6 +57,12 @@
 
 ## 6. Performance (pilar 2)
 
+- **Validacao proporcional (pedido do usuario, 2026-10-29):** nao iniciar build completo
+  automaticamente em ajustes locais de telas, filtros, estilos e composables. Usar hot reload,
+  lint dos arquivos alterados e testes do comportamento afetado. Build de producao/imagens
+  fica para deploy solicitado ou necessidade concreta de dependencias/empacotamento/configuracao,
+  explicada antes de executar. Nao consumir tempo/processamento apenas para cumprir checklist.
+
 - **Usuário clicou → sistema responde imediatamente.** Se vai demorar, skeleton/loading aparece em < 100ms. Sem tela branca, sem delay perceptível.
 - Requests da UI são cancelados se o usuário navegar antes de completar (AbortController).
 - Paginação server-side em qualquer lista com > 50 itens potenciais.

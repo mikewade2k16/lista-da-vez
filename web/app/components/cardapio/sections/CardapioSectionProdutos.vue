@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
 import OmniDataTable from '../../../../layers/tasks/components/omni/table/OmniDataTable.vue'
 import CardapioProductImportModal from '~/components/cardapio/product/CardapioProductImportModal.vue'
+import CardapioProductDateRange from '~/components/cardapio/product/CardapioProductDateRange.vue'
 import CardapioProductModal from '~/components/cardapio/product/CardapioProductModal.vue'
 import {
   useCardapioProductColumns,
@@ -71,11 +72,17 @@ const {
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel atualizar o produto.')),
 })
 
+// Ao mudar os filtros, nenhuma selecao oculta participa das acoes em lote.
+watch(filteredRows, (rows) => {
+  const visible = new Set(rows.map((row) => row.id))
+  selectedIds.value = selectedIds.value.filter((id) => visible.has(String(id)))
+})
+
 // Sinaliza produtos sem imagem (ex.: import que ainda nao tem foto cadastrada).
-const noImageCount = computed(() => tableRows.value.filter((row) => !row.imageUrl).length)
+const noImageCount = computed(() => tableRows.value.filter((row) => !row.imageUrl?.trim()).length)
 const selectedProductIds = computed(() =>
   [...new Set(selectedIds.value.map(String))].filter((id) =>
-    store.products.some((product) => product.id === id),
+    filteredRows.value.some((product) => product.id === id),
   ),
 )
 
@@ -303,6 +310,12 @@ function onResetFilters() {
       @reset="onResetFilters"
       @reset-columns="resetToDefaults"
     >
+      <template #below>
+        <CardapioProductDateRange
+          v-if="filtersState.createdPeriod === 'custom'"
+          v-model="filtersState"
+        />
+      </template>
       <template #actions>
         <UBadge v-if="selectedIds.length" color="neutral" variant="soft">
           {{ selectedIds.length }} selecionado(s)

@@ -8,12 +8,17 @@ param(
   # "api"/"web" so funcionam com uma -Tag que ja exista no GHCR para o outro servico.
   [ValidateSet("both", "api", "web")]
   [string]$Service = "both",
+  # A VPS e amd64; nao publicar imagens ARM por acidente ao usar Apple Silicon.
+  [ValidateSet("linux/amd64", "linux/arm64")]
+  [string]$TargetPlatform = "linux/amd64",
+  [ValidateSet("auto", "registry", "ssh")]
+  [string]$Transport = "auto",
   [string]$ApiImage = "ghcr.io/mikewade2k16/omni-api",
   [string]$WebImage = "ghcr.io/mikewade2k16/omni-web",
   [string]$VpsHost = "85.31.62.33",
   [int]$Port = 22,
-  [string]$User = "deploy",
-  [string]$KeyPath = (Join-Path $HOME ".ssh\gh_actions_omnichannel_vps"),
+  [string]$User = $(if ($env:OMNI_DEPLOY_USER) { $env:OMNI_DEPLOY_USER } else { "deploy" }),
+  [string]$KeyPath = $(if ($env:OMNI_DEPLOY_KEY_PATH) { $env:OMNI_DEPLOY_KEY_PATH } else { Join-Path $HOME ".ssh/gh_actions_omnichannel_vps" }),
   [switch]$BackupDatabase,
   [switch]$ForceRecreate,
   [switch]$SkipSmokeTests,
@@ -83,6 +88,14 @@ elseif ($ForceAutomationWorkflowImport -or $SkipWorkflowExport -or
   throw "WorkflowOwner/WorkflowOnly/SkipWorkflowExport/ForceAutomationWorkflowImport exigem -DeployAutomation explicito."
 }
 
+if (-not (Test-Path -LiteralPath $KeyPath -PathType Leaf)) {
+  throw "Chave SSH nao encontrada: $KeyPath. Informe -KeyPath antes de iniciar o build."
+}
+$sshProbe = (Get-Command ssh -CommandType Application -ErrorAction Stop).Source
+& $sshProbe -i $KeyPath -p $Port -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new "$User@$VpsHost" true
+if ($LASTEXITCODE -ne 0) { throw 'Preflight SSH falhou; nenhum build foi iniciado.' }
+Write-Host 'Preflight SSH: OK'
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "docker nao encontrado no PATH. Instale ou abra o Docker Desktop antes do deploy."
 }
@@ -102,6 +115,8 @@ if (-not (Test-Path -LiteralPath $composeServiceParityGuard -PathType Leaf)) {
 
 if (-not (Test-Path $deployPull)) { throw "deploy-pull.ps1 nao encontrado em $scriptDir" }
 
+& (Join-Path $scriptDir 'validate-release.ps1')
+
 function Get-LocalDockerRegistryCredential {
   param([Parameter(Mandatory = $true)][string]$Registry)
 
@@ -119,7 +134,8 @@ function Get-LocalDockerRegistryCredential {
   }
 
   if ($helper) {
-    $helperExe = "docker-credential-$helper.exe"
+    $helperExe = "docker-credential-$helper"
+    if ($env:OS -eq 'Windows_NT') { $helperExe += '.exe' }
     if (-not (Get-Command $helperExe -ErrorAction SilentlyContinue)) {
       throw "Helper de credencial Docker nao encontrado: $helperExe"
     }
@@ -144,14 +160,29 @@ function Get-LocalDockerRegistryCredential {
   return [pscustomobject]@{ Username = $parts[0]; Secret = $parts[1] }
 }
 
+if ($Transport -ne 'ssh' -and [string]::IsNullOrWhiteSpace($GhcrToken)) {
+  try {
+    $credential = Get-LocalDockerRegistryCredential -Registry 'ghcr.io'
+    $GhcrUser = $credential.Username
+    $GhcrToken = $credential.Secret
+    $Transport = 'registry'
+  } catch {
+    if ($Transport -eq 'registry') { throw }
+    $Transport = 'ssh'
+    Write-Host 'GHCR sem credencial local; usando transferencia de imagens por SSH.'
+  }
+} elseif ($Transport -eq 'auto') { $Transport = 'registry' }
+
 if ([string]::IsNullOrWhiteSpace($Tag)) {
   $Tag = "local-" + (Get-Date -Format "yyyyMMdd-HHmmss")
 }
 
+if ($Tag -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' -or $Tag -eq 'latest') { throw 'Tag de release invalida.' }
+
 $apiRef = "${ApiImage}:${Tag}"
 $webRef = "${WebImage}:${Tag}"
 
-Write-Host "Build LOCAL + push GHCR + pull na VPS (sem git, sem build na VPS)."
+Write-Host "Build LOCAL + entrega $Transport na VPS (sem git, sem build na VPS)."
 Write-Host "Ambiente: $Environment | Tag: $Tag | Servico: $Service"
 if ($Service -eq "both" -or $Service -eq "web") {
   Write-Host "Heap do build web: $WebBuildHeapMB MB"
@@ -176,7 +207,8 @@ if ($DeployAutomation -and -not $SkipWorkflowExport) {
     throw "n8n dev fora: sync owner-scoped de '$($workflowSelection[0].Key)' nao pode ser provado. Use -SkipWorkflowExport apenas para deployar deliberadamente o JSON versionado."
   }
   Write-Host "==> E0: sync owner-scoped owner='$WorkflowOwner' key='$WorkflowOnly' antes do deploy"
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $n8nExportScript -Sync -Owner $WorkflowOwner -Only $WorkflowOnly -Container $n8nDevContainer
+  $shellName = if ($PSVersionTable.PSVersion.Major -lt 6) { "powershell.exe" } elseif ($env:OS -eq "Windows_NT") { "pwsh.exe" } else { "pwsh" }
+  & (Join-Path $PSHOME $shellName) -NoProfile -ExecutionPolicy Bypass -File $n8nExportScript -Sync -Owner $WorkflowOwner -Only $WorkflowOnly -Container $n8nDevContainer
   if ($LASTEXITCODE -ne 0) {
     throw "Falha no sync owner-scoped do workflow '$WorkflowOnly' (exit $LASTEXITCODE)."
   }
@@ -190,8 +222,13 @@ function Build-And-Push {
     [string[]]$BuildArgs = @()
   )
   Write-Host "==> docker build $Label -> $Ref"
-  & docker build @BuildArgs -t $Ref $Context
+  & docker build --platform $TargetPlatform @BuildArgs -t $Ref $Context
   if ($LASTEXITCODE -ne 0) { throw "Falha no build da imagem $Label." }
+  if ($Label -eq 'web') {
+    Get-Content -LiteralPath (Join-Path $scriptDir 'smoke-web-image.mjs') -Raw | & docker run --rm -i --platform $TargetPlatform --network none --entrypoint node $Ref --input-type=module
+    if ($LASTEXITCODE -ne 0) { throw 'Smoke da imagem web falhou; publicacao abortada.' }
+  }
+  if ($Transport -eq "ssh") { return }
   Write-Host "==> docker push $Ref (so as camadas que mudaram sobem)"
   & docker push $Ref
   if ($LASTEXITCODE -ne 0) { throw "Falha no push de $Ref (esta logado no ghcr.io? use -GhcrUser/-GhcrToken)." }
@@ -203,12 +240,12 @@ $localServicesToRestore = @()
 $buildsWeb = $Service -eq "both" -or $Service -eq "web"
 try {
   if ($buildsWeb -and -not $KeepLocalStackRunning) {
-    $localServicesToRestore = @(& docker compose -f $composeDev --profile "*" ps --status running --services)
+    $localServicesToRestore = @(& docker compose --profile "*" ps --status running --services)
     if ($LASTEXITCODE -ne 0) { throw "Falha ao inventariar a stack local antes do build web." }
     $localServicesToRestore = @($localServicesToRestore | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
     if ($localServicesToRestore.Count -gt 0) {
       Write-Host "==> Pausando stack local durante o build web: $($localServicesToRestore -join ', ')"
-      & docker compose -f $composeDev --profile "*" stop @localServicesToRestore
+      & docker compose --profile "*" stop @localServicesToRestore
       if ($LASTEXITCODE -ne 0) { throw "Falha ao pausar a stack local antes do build web." }
     }
   }
@@ -225,7 +262,7 @@ try {
 finally {
   if ($localServicesToRestore.Count -gt 0) {
     Write-Host "==> Restaurando stack local: $($localServicesToRestore -join ', ')"
-    & docker compose -f $composeDev --profile "*" start @localServicesToRestore
+    & docker compose --profile "*" start @localServicesToRestore
     if ($LASTEXITCODE -ne 0) {
       Write-Warning "Nao consegui restaurar toda a stack local. Rode: docker compose --profile '*' start $($localServicesToRestore -join ' ')"
     }
@@ -236,19 +273,11 @@ if ($Service -ne "both") {
   Write-Host "AVISO: -Service $Service buildou so um servico. A tag '$Tag' precisa ja ter o outro no GHCR (rode -Service both pelo menos uma vez por tag)."
 }
 
-# Deploy: a VPS so faz pull + up --no-build (reusa o script existente).
-$remoteGhcrUser = $GhcrUser
-$remoteGhcrToken = $GhcrToken
-if ([string]::IsNullOrWhiteSpace($remoteGhcrToken)) {
-  try {
-    $localGhcrCredential = Get-LocalDockerRegistryCredential -Registry "ghcr.io"
-    $remoteGhcrUser = $localGhcrCredential.Username
-    $remoteGhcrToken = $localGhcrCredential.Secret
-    Write-Host "==> Credencial GHCR local sera usada somente no pull remoto temporario"
-  }
-  catch {
-    throw "Nao consegui reutilizar a credencial GHCR local no pull remoto. Rode docker login ghcr.io ou informe -GhcrUser/-GhcrToken. Detalhe: $($_.Exception.Message)"
-  }
+. (Join-Path $scriptDir 'image-archive.ps1')
+$imageArchive = ''
+if ($Transport -eq 'ssh') {
+  if ($Service -ne 'both') { throw 'Transporte SSH exige -Service both para garantir as duas imagens.' }
+  $imageArchive = Export-DeployImageArchive -Tag $Tag -Images @($apiRef, $webRef)
 }
 
 $forward = @{
@@ -267,13 +296,14 @@ if ($DeployAutomation) {
 }
 if ($DeployOmnichannel) { $forward.DeployOmnichannel = $true }
 if ($ForceAutomationWorkflowImport) { $forward.ForceAutomationWorkflowImport = $true }
-if (-not [string]::IsNullOrWhiteSpace($remoteGhcrToken)) {
-  $forward.GhcrUser = $remoteGhcrUser
-  $forward.GhcrToken = $remoteGhcrToken
+if ($imageArchive) { $forward.ImageArchive = $imageArchive }
+if ($Transport -eq "registry" -and -not [string]::IsNullOrWhiteSpace($GhcrToken)) {
+  $forward.GhcrUser = $GhcrUser
+  $forward.GhcrToken = $GhcrToken
 }
 
 & $deployPull @forward
 
 Write-Host ""
 Write-Host "Deploy rapido ($Environment) concluido: imagem $Tag no ar."
-Write-Host "Rollback: scripts/deploy/deploy-pull.ps1 -Environment $Environment -Tag <tag-anterior>"
+Write-Host "Rollback: npm run deploy:prod -- -Tag <tag-anterior> $(if ($Transport -eq 'ssh') { '-UseLoadedImages' })"

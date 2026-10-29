@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, ref, unref } from 'vue'
-import { normalizeProductSearch } from '~/domain/cardapio/product-search'
+import { productMatchesFilters, productDateRange, productExtraFilters, type CardapioProductFilters } from '~/domain/cardapio/product-filters'
 import type { MaybeRefOrGetter } from 'vue'
 
 import { useCardapioStore } from '~/stores/cardapio'
@@ -11,6 +11,8 @@ import type {
   OmniSelectOption,
   OmniTableColumn,
 } from '~/types/omni/collection'
+
+export type { CardapioProductFilters } from '~/domain/cardapio/product-filters'
 
 // Campos editaveis inline na tabela de produtos. Cada um vira um PATCH
 // full-replace (ver persistCell). `priceCents`/`compareAtPriceCents` chegam
@@ -59,11 +61,6 @@ function reaisToCents(reais: unknown): number {
   return Math.max(0, Math.round((Number(reais) || 0) * 100))
 }
 
-export interface CardapioProductFilters {
-  search?: unknown
-  categoryId?: unknown
-  availability?: unknown
-}
 
 function resolveFilterState(source?: MaybeRefOrGetter<CardapioProductFilters>) {
   const raw = typeof source === 'function' ? source() : unref(source)
@@ -161,23 +158,8 @@ export function useCardapioProductColumns(
   // id; disponibilidade por boolean. Vazio/'' = sem filtro.
   const filteredRows = computed<CardapioProductRow[]>(() => {
     const state = resolveFilterState(filtersState)
-    const query = normalizeProductSearch(state.search)
-    const categoryFilter = String(state.categoryId ?? '').trim()
-    const availabilityFilter = state.availability
-
-    return tableRows.value.filter((row) => {
-      if (query && !normalizeProductSearch(row.name).includes(query)) return false
-      if (categoryFilter && String(row.categoryId ?? '') !== categoryFilter) {
-        return false
-      }
-      if (
-        typeof availabilityFilter === 'boolean' &&
-        Boolean(row.isAvailable) !== availabilityFilter
-      ) {
-        return false
-      }
-      return true
-    })
+    const range = productDateRange(state)
+    return tableRows.value.filter((row) => productMatchesFilters(row, state, range))
   })
 
   const allTableColumns = computed<OmniTableColumn[]>(() => [
@@ -280,6 +262,7 @@ export function useCardapioProductColumns(
       ],
       accessor: (row) => Boolean(row.isAvailable),
     },
+    ...productExtraFilters,
   ])
 
   // Mapeia a chave da COLUNA (priceReais/compareAtPriceReais sao da UI) para o

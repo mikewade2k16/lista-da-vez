@@ -10,6 +10,23 @@ collapse do bio, RBAC do core). Nada de lib nova de drag-n-drop.
 
 ## Objetivo
 
+Navegacao das abas (2026-10-29): usar query `aba` no editor, preservando `account`
+e demais parametros. Links reais permitem compartilhar/abrir em outra guia; refresh
+e voltar/avancar restauram a aba. Aba ausente, invalida ou sem permissao usa Dados.
+
+Ajuste Produtos (2026-10-29): implementado, fechar automaticamente a importacao
+bem-sucedida apos exibir o resultado, bloquear reenvio do mesmo lote e combinar filtros
+de foto e cadastro (hoje, ontem, esta semana, ultimos 7 dias, este mes e intervalo).
+Usa created_at existente, inclusive para importacoes anteriores, sem migration.
+Validacao: 28 testes front (filtros, fechamento, importacao e store), compilacao
+dos tres componentes Vue e go test/vet do modulo cardapio passaram.
+Deploy deste ajuste concluido em 2026-10-29 via npm run deploy: API/painel na tag local-20261029-160432; filtros, importacao e links por aba publicados. TAVOLA fora do escopo.
+
+Correcao do ambiente local (2026-10-29): filtro de data vazio porque a API em execucao
+ainda era de 27/10 e a lista lean nao devolvia createdAt. API local atualizada com o
+campo ja implementado, sem migration, build do painel ou publicacao em producao.
+Smoke: API healthy. Filtro real America/Maceio sobre os campos do banco reconhece 206 produtos de hoje/sem foto no Bari (409 totais); resposta publica valida os 185 ativos desse grupo.
+
 1. **Duplicar** um cardápio inteiro (restaurante + catálogo + zonas + layout) num clique.
 2. **Dados** com blocos colapsáveis (Identidade, Contato, Endereço, Horários, …) — sem scroll infinito.
 3. **Categorias** e **Entrega**: drag-n-drop para reordenar + layout de **2 colunas** + edição inline, com a ordem ("o que vem antes") sempre visível.

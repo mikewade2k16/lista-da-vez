@@ -173,16 +173,17 @@ type Product struct {
 
 // ProductLean e a projecao enxuta da listagem de produtos do painel.
 type ProductLean struct {
-	ID                  string  `json:"id"`
-	CategoryID          *string `json:"categoryId"`
-	Slug                string  `json:"slug"`
-	Name                string  `json:"name"`
-	PriceCents          int64   `json:"priceCents"`
-	CompareAtPriceCents int64   `json:"compareAtPriceCents,omitempty"`
-	ImageURL            string  `json:"imageUrl"`
-	IsAvailable         bool    `json:"isAvailable"`
-	IsFeatured          bool    `json:"isFeatured"`
-	SortOrder           int     `json:"sortOrder"`
+	CreatedAt           time.Time `json:"createdAt"`
+	ID                  string    `json:"id"`
+	CategoryID          *string   `json:"categoryId"`
+	Slug                string    `json:"slug"`
+	Name                string    `json:"name"`
+	PriceCents          int64     `json:"priceCents"`
+	CompareAtPriceCents int64     `json:"compareAtPriceCents,omitempty"`
+	ImageURL            string    `json:"imageUrl"`
+	IsAvailable         bool      `json:"isAvailable"`
+	IsFeatured          bool      `json:"isFeatured"`
+	SortOrder           int       `json:"sortOrder"`
 }
 
 // Review e o DTO de avaliacao curada. productId e opcional (F2): vazio/null = review

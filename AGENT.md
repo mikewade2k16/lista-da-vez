@@ -137,8 +137,11 @@ O fluxo local sem Docker continua existindo apenas como fallback:
   - `$omnichannel-hibrido`: usar sempre que a tarefa tocar atendimento, CRM multicanal,
     canais, IA, n8n, filas ou handoff;
   - `$revisao-dia`: usar para balanço consultivo; é somente leitura.
-  As fontes Claude originais continuam em `.claude/skills`, mas as versões nativas e
-  implicitamente invocáveis ficam em `~/.codex/skills`.
+  As fontes das skills do projeto devem ser versionadas em `.claude/skills/`,
+  `.codex/skills/` ou `.agents/skills/` (liberadas no `.gitignore`). Copias em
+  `~/.codex/skills` sao instalacoes locais e nao acompanham o Git deste repositorio.
+  Nesta maquina as tres skills pessoais ainda precisam ser recuperadas do outro PC;
+  nao tratar os documentos de engenharia como se fossem a skill instalada.
 - n8n tem ownership por módulo: antes de editar/importar/exportar/ativar/desativar/remover,
   identificar o owner pelo mapa em `automation/AGENT.md`. A tarefa só pode tocar workflows
   do módulo explicitamente em escopo; scripts compartilhados preservam os demais ids e estados.
@@ -206,6 +209,14 @@ a verificacao.
 
 ## Validacao minima
 
-- frontend: `npm --prefix web run build` + `npm --prefix web run lint`
-- backend: `go test ./...` + `golangci-lint run ./...` em `back/`
-- compose: `docker compose config`
+Regra do usuario (2026-10-29): **nao executar build completo automaticamente para
+validar ajustes locais**. Mudancas de tela, filtros, estilos e composables devem usar
+hot reload e verificacoes focadas. Build de producao/imagens fica para deploy solicitado
+ou necessidade concreta de validar dependencias, empacotamento ou configuracao de build;
+explicar essa necessidade antes de executar. Nao iniciar build so para cumprir checklist.
+Essa regra substitui recomendacoes antigas de build a cada mudanca ou "sempre que viavel".
+Nao alterar hooks de commit/push como parte dessa regra documental.
+
+- frontend: lint nos arquivos alterados e testes relevantes, sem varrer todo o painel por padrao;
+- backend: testes e lint dos pacotes afetados em `back/`;
+- compose: `docker compose config` quando sua configuracao for alterada.

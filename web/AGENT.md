@@ -304,8 +304,11 @@ Onda 1 de testes (AC-15, 2026-07): cobertura de `domain/utils/permissions` (matr
 
 Quando houver mudanca de codigo em `web/`:
 
-- rodar `npm --prefix web run lint` para garantir que nao introduziu novo error;
-- rodar `npm --prefix web run build` sempre que viavel;
+- rodar lint dos arquivos alterados e testes relevantes;
+- **nao rodar build completo automaticamente** (pedido do usuario em 2026-10-29).
+  Telas, filtros, estilos e composables usam hot reload e validacao focada. Build fica
+  para deploy solicitado ou necessidade concreta de dependencias/empacotamento/configuracao,
+  explicada antes da execucao. Esta regra substitui "build sempre que viavel";
 - conferir se nao voltou nenhum import de `@core/*`;
 - conferir se paginas/workspaces nao passaram a depender direto do bridge monolitico.
 

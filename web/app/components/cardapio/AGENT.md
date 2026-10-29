@@ -6,6 +6,33 @@ Estas instrucoes valem para `web/app/components/cardapio/` (painel `/cardapio`).
 
 ## Responsabilidade
 
+Deploy 2026-10-29 concluido via npm run deploy: API/painel na tag
+`local-20261029-160432`, healthy e HTTP 200; filtros de data/foto, fechamento da
+importacao e links por aba incluidos. Backups principal/Evolution verificados.
+TAVOLA permanece fora da publicacao; detalhes em docs/DEPLOY_VPS.md.
+
+Abas com link (2026-10-29): `CardapioEditorWorkspace` deriva a secao da query `aba`.
+Nav usa NuxtLink e preserva account, demais queries e hash; compartilhar, refresh e
+historico restauram a secao. Lista/tipos/resolucao ficam em domain/cardapio/editor-sections.ts.
+Aba ausente/invalida ou fora das visiveis usa a primeira permitida (Dados).
+Nenhum estado paralelo de aba em ref/localStorage. Troca de account tambem recarrega
+o restaurante. Validacao focada de URLs, gates, parametros, lint e SFC; sem build completo.
+
+Produtos (2026-10-29): filtros combinados por foto e createdAt (cadastro original,
+inclusive produtos importados anteriormente). Atalhos hoje/ontem/esta semana
+(segunda-feira)/ultimos 7 dias/este mes e intervalo inclusivo, no horario local.
+product-filters.ts concentra a logica; DateRange fica apenas nesta aba. A selecao
+e limitada aos produtos visiveis. Importacao com resultado bloqueia reenvio;
+sucesso aparece no modal e fecha em 1,5s via useCardapioImportCompletion.
+Falhas parciais permanecem abertas para consultar os erros. Exige API + painel;
+sem migration e sem alteracao no TAVOLA.
+
+Diagnostico local de data (2026-10-29): API antiga sem createdAt na lista lean fazia
+Hoje excluir todos os itens, mesmo com dados no banco. Atualizar tambem a API ao
+ativar este filtro; nao inventar datas no front ou buscar um detalhe por produto.
+API local atualizada; filtro nos campos reais do banco validou 206 itens de hoje/sem foto;
+resposta publica confirma os 185 ativos desse grupo.
+
 Deploy 2026-10-27: API/painel em producao na tag `local-20261027-cardapio-75cfa51522`,
 com backup e verificacao de saude/assets. TAVOLA NAO publicado por pedido do usuario;
 a metade da correcao da previa que vive no Studio permanece pendente online.

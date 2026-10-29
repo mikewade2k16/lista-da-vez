@@ -1,4 +1,4 @@
-FROM node:24.11.1-bookworm-slim AS deps
+FROM --platform=$BUILDPLATFORM node:24.11.1-bookworm-slim AS deps
 
 WORKDIR /app
 

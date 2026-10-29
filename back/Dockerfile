@@ -1,4 +1,7 @@
-FROM golang:1.26.5-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.5-bookworm AS build
+
+ARG TARGETOS=linux
+ARG TARGETARCH
 
 WORKDIR /src
 
@@ -7,8 +10,8 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/api ./cmd/api
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/migrate ./cmd/migrate
 
 FROM debian:bookworm-slim
 

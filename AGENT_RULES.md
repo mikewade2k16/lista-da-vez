@@ -9,6 +9,10 @@ Para entender o que esta pronto / em beta / pendente, consulte `/roadmap` > aba 
 
 ---
 
+## Validacao proporcional — regra do usuario (2026-10-29)
+
+Nao executar build completo automaticamente para validar ajustes locais de telas, filtros, estilos ou composables. Usar hot reload, lint dos arquivos alterados e testes relevantes. Build de producao/imagens fica para deploy solicitado ou necessidade concreta de dependencias, empacotamento ou configuracao de build, explicada antes da execucao. Nao gastar tempo/processamento apenas para cumprir checklist. Substitui recomendacoes antigas de build a cada mudanca ou sempre que viavel; nao altera hooks de commit/push.
+
 ## Legado, mocks e fonte da verdade (PRIORIDADE MAXIMA)
 
 Objetivo final: **uma unica fonte de verdade no banco real**. Nada de tabela/codigo legado paralelo, front mock, dado so em localStorage ou qualquer coisa que nao persista no banco pode ficar escondido como se estivesse pronto.

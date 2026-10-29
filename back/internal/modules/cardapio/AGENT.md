@@ -11,6 +11,11 @@ do visitante** de um front Nuxt **estatico** hospedado no site do cliente.
 
 ## Estado: C1 — back + banco (2026-06-12) · Fase 2 back (2026-06-19) · Fase 10/F1 ingestao de telemetria (2026-06-25) · Fase 10/F2 API de analytics (2026-06-25) · slugify canonico (2026-06-29)
 
+Produtos (2026-10-29): ProductLean/ListProductsLean tambem devolvem createdAt,
+lido da coluna created_at existente. Permite filtrar por cadastro no painel,
+inclusive lotes importados antes do ajuste. Sem migration ou mudanca de datas;
+rebuild da API necessario junto ao painel.
+
 Entregue slugify canonico (2026-06-29): `normalizeSlug` em `service.go` passou a
 delegar para `stringsx.Slugify` (NFD + sem acentos). Mudanca deliberada: slugs NOVOS
 de restaurante/categoria/produto passam a ter acentos normalizados (ex.: "Acai" em vez

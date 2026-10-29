@@ -36,7 +36,17 @@ Controlle10 - ftp/
 web-reference/
 
 # Local assistant/browser artifacts
-.claude/
+# Skills do projeto devem acompanhar o repositorio; configuracoes pessoais ficam locais.
+!.claude/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
+!.codex/
+!.codex/skills/
+!.codex/skills/**
+!.agents/
+!.agents/skills/
+!.agents/skills/**
 .codex-logs/
 .playwright-mcp/
 web/.codex-devserver.*.log

@@ -1,8 +1,8 @@
 param(
   [string]$VpsHost = "85.31.62.33",
   [int]$Port = 22,
-  [string]$User = "deploy",
-  [string]$KeyPath = (Join-Path $HOME ".ssh\gh_actions_omnichannel_vps"),
+  [string]$User = $(if ($env:OMNI_DEPLOY_USER) { $env:OMNI_DEPLOY_USER } else { "deploy" }),
+  [string]$KeyPath = $(if ($env:OMNI_DEPLOY_KEY_PATH) { $env:OMNI_DEPLOY_KEY_PATH } else { Join-Path $HOME ".ssh/gh_actions_omnichannel_vps" }),
   # Por padrao preserva os volumes (so para os containers). -RemoveVolumes apaga
   # tambem os volumes omni-staging_* (zera o banco de staging) — use com cuidado.
   [switch]$RemoveVolumes
@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 
 if (-not (Test-Path $KeyPath)) { throw "Chave SSH nao encontrada em $KeyPath" }
 
-$SshExe = Join-Path $env:SystemRoot "System32\OpenSSH\ssh.exe"
+$SshExe = (Get-Command ssh -CommandType Application -ErrorAction Stop).Source
 if (-not (Test-Path $SshExe)) { throw "ssh.exe nao encontrado em $SshExe" }
 
 $resolvedKeyPath = (Resolve-Path $KeyPath).Path

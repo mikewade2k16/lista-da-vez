@@ -1,5 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import {
+  CARDAPIO_SECTIONS,
+  resolveCardapioSection,
+  cardapioSectionLocation,
+  type SectionTab,
+} from '~/domain/cardapio/editor-sections'
 
 import CardapioSectionDados from '~/components/cardapio/sections/CardapioSectionDados.vue'
 import CardapioSectionCategorias from '~/components/cardapio/sections/CardapioSectionCategorias.vue'
@@ -20,46 +27,11 @@ import { getApiErrorMessage } from '~/utils/api-client'
 
 const props = defineProps<{ restaurantId: string; accountId?: string }>()
 
+const route = useRoute()
 const store = useCardapioStore()
 const ui = useUiStore()
 const auth = useAuthStore()
 const accountStore = useCoreAccountStore()
-
-type SectionId =
-  | 'dados'
-  | 'categorias'
-  | 'produtos'
-  | 'avaliacoes'
-  | 'pedidos'
-  | 'relatorios'
-  | 'entrega'
-  | 'dominios'
-  | 'aparencia'
-  | 'site'
-
-// Faixa de acesso de uma secao. Decisao 2026-06-22: SEM split operacao/config —
-// quem tem o modulo cardapio ve tudo ('all'); so Dominios/Site ficam restritos a
-// plataforma (Crow / platform_admin). Mapeamento no doc PLANO_CARDAPIO_GESTAO_UX.
-type SectionGate = 'all' | 'platform'
-
-interface SectionTab {
-  id: SectionId
-  label: string
-  gate: SectionGate
-}
-
-const SECTIONS: SectionTab[] = [
-  { id: 'dados', label: 'Dados', gate: 'all' },
-  { id: 'categorias', label: 'Categorias', gate: 'all' },
-  { id: 'produtos', label: 'Produtos', gate: 'all' },
-  { id: 'avaliacoes', label: 'Avaliacoes', gate: 'all' },
-  { id: 'pedidos', label: 'Pedidos', gate: 'all' },
-  { id: 'relatorios', label: 'Relatorios', gate: 'all' },
-  { id: 'entrega', label: 'Entrega', gate: 'all' },
-  { id: 'dominios', label: 'Dominios', gate: 'platform' },
-  { id: 'aparencia', label: 'Aparencia', gate: 'all' },
-  { id: 'site', label: 'Site', gate: 'platform' },
-]
 
 // platform_admin = papel platform_admin OU modo dev (platformView) do switcher —
 // espelha o CardapioEditorClientSelect e o resto do painel. So ele ve Dominios/Site.
@@ -79,9 +51,14 @@ function isSectionAllowed(section: SectionTab): boolean {
   return isPlatformAdmin.value
 }
 
-const visibleSections = computed(() => SECTIONS.filter(isSectionAllowed))
+const visibleSections = computed(() => CARDAPIO_SECTIONS.filter(isSectionAllowed))
 
-const active = ref<SectionId>('dados')
+const active = computed(() =>
+  resolveCardapioSection(
+    route.query.aba,
+    visibleSections.value.map((section) => section.id),
+  ),
+)
 const togglingActive = ref(false)
 
 // Defesa em profundidade: o painel so renderiza a secao ativa se ela esta na
@@ -89,22 +66,6 @@ const togglingActive = ref(false)
 // nao some o conteudo; resolvido, uma secao gateada nunca pinta o painel.
 const isActiveVisible = computed(() =>
   visibleSections.value.some((section) => section.id === active.value),
-)
-
-// A secao ativa cai sempre na primeira visivel para o usuario. Quando a lista
-// visivel muda (hidratacao das permissoes ou troca de escopo) e a atual deixa
-// de ser permitida, reposiciona — nunca fixa em 'dados' se o usuario nao a ve.
-watch(
-  visibleSections,
-  (sections) => {
-    if (!sections.length) {
-      return
-    }
-    if (!sections.some((section) => section.id === active.value)) {
-      active.value = sections[0].id
-    }
-  },
-  { immediate: true },
 )
 
 const isActive = computed(() => store.restaurant?.isActive ?? false)
@@ -131,7 +92,7 @@ function loadActive() {
   }
 }
 
-watch(() => props.restaurantId, loadActive)
+watch(() => [props.restaurantId, props.accountId], loadActive)
 onMounted(loadActive)
 </script>
 
@@ -183,16 +144,16 @@ onMounted(loadActive)
 
     <div v-else class="cardapio-editor__body">
       <nav class="cardapio-editor__nav" aria-label="Secoes do cardapio">
-        <button
+        <NuxtLink
           v-for="section in visibleSections"
           :key="section.id"
-          type="button"
+          :to="cardapioSectionLocation(route, section.id)"
+          :aria-current="active === section.id ? 'page' : undefined"
           class="cardapio-editor__nav-item"
           :class="{ 'cardapio-editor__nav-item--active': active === section.id }"
-          @click="active = section.id"
         >
           {{ section.label }}
-        </button>
+        </NuxtLink>
       </nav>
 
       <div v-if="isActiveVisible" class="cardapio-editor__panel">
@@ -353,6 +314,8 @@ onMounted(loadActive)
 }
 
 .cardapio-editor__nav-item {
+  display: block;
+  text-decoration: none;
   width: 100%;
   padding: 0.6rem 0.85rem;
   border-radius: var(--radius-sm);

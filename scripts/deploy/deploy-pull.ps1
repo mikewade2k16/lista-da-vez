@@ -7,8 +7,10 @@ param(
   [string]$Tag = "",
   [string]$VpsHost = "85.31.62.33",
   [int]$Port = 22,
-  [string]$User = "deploy",
-  [string]$KeyPath = (Join-Path $HOME ".ssh\gh_actions_omnichannel_vps"),
+  [string]$User = $(if ($env:OMNI_DEPLOY_USER) { $env:OMNI_DEPLOY_USER } else { "deploy" }),
+  [string]$KeyPath = $(if ($env:OMNI_DEPLOY_KEY_PATH) { $env:OMNI_DEPLOY_KEY_PATH } else { Join-Path $HOME ".ssh/gh_actions_omnichannel_vps" }),
+  [string]$ImageArchive = "",
+  [switch]$UseLoadedImages,
   [switch]$BackupDatabase,
   [switch]$ForceRecreate,
   [switch]$SkipSmokeTests,
@@ -72,8 +74,10 @@ if ([string]::IsNullOrWhiteSpace($Tag)) {
   Write-Host "AVISO: confirme que o build-images.yml ja publicou essa tag no GHCR."
 }
 
-$SshExe = Join-Path $env:SystemRoot "System32\OpenSSH\ssh.exe"
-$ScpExe = Join-Path $env:SystemRoot "System32\OpenSSH\scp.exe"
+if ($Tag -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' -or $Tag -eq 'latest') { throw 'Tag de release invalida.' }
+
+$SshExe = (Get-Command ssh -CommandType Application -ErrorAction Stop).Source
+$ScpExe = (Get-Command scp -CommandType Application -ErrorAction Stop).Source
 foreach ($exe in @($SshExe, $ScpExe)) {
   if (-not (Test-Path $exe)) { throw "Executavel nao encontrado: $exe" }
 }
@@ -213,11 +217,61 @@ echo "Preflight de segredos obrigatorios: OK"
 "@
 Invoke-RemoteCommand -Description "Validando ambiente remoto antes do deploy" -Command $preflightCmd
 
+$releaseDirQ = Convert-ToBashSingleQuoted ".deploy/$Tag"
+$snapshotCmd = @"
+set -euo pipefail
+cd $remotePathQ
+mkdir -p $releaseDirQ
+chmod 700 $releaseDirQ
+cp -p $envFileQ $releaseDirQ/env.before
+cp -p docker-compose.prod.yml $releaseDirQ/compose.before.yml
+chmod 600 $releaseDirQ/env.before
+docker ps --format '{{.Names}} {{.Image}}' > $releaseDirQ/images.before.txt
+available=`$(df -Pk . | awk 'NR==2 {print `$4}')
+[ "`$available" -ge 3145728 ] || { echo 'Menos de 3 GB livres na VPS'; exit 1; }
+echo 'Snapshot de configuracao e espaco remoto: OK'
+"@
+Invoke-RemoteCommand -Description 'Preservando configuracao anterior para rollback' -Command $snapshotCmd
+
+if ($ImageArchive) {
+  . (Join-Path $scriptDir 'image-archive.ps1')
+  Send-DeployImageArchive -Archive $ImageArchive -Tag $Tag -RemoteTarget $remoteTarget -RemotePath $remotePath -ScpExe $ScpExe -ScpArguments $scpBaseArgs
+}
+
+$evolutionBackup = if ($DeployOmnichannel) { @"
+if [ -n "`$(docker compose $composeOmnichannelArgs ps -q evolution-db)" ]; then
+  evolution_backup="backups/evolution_$Tag`_`$(date +%Y%m%d_%H%M%S).sql.gz"
+  docker compose $composeOmnichannelArgs exec -T evolution-db sh -lc 'pg_dump -U "`$POSTGRES_USER" -d "`$POSTGRES_DB"' </dev/null | gzip > "`$evolution_backup"
+  gzip -t "`$evolution_backup"
+  sha256sum "`$evolution_backup" > "`$evolution_backup.sha256"
+  printf '%s\n' "$remotePath/`$evolution_backup"
+fi
+"@ } else { "" }
+
+# 5. Backup opcional do Postgres (antes de mexer nos containers).
+if ($BackupDatabase) {
+  $backupCmd = @"
+set -euo pipefail
+cd $remotePathQ
+umask 077
+mkdir -p backups
+backup_name="backups/backup_$Tag`_`$(date +%Y%m%d_%H%M%S).sql.gz"
+docker compose $composeArgs exec -T postgres sh -lc 'pg_dump -U "`$POSTGRES_USER" -d "`$POSTGRES_DB"' </dev/null | gzip > "`$backup_name"
+gzip -t "`$backup_name"
+sha256sum "`$backup_name" > "`$backup_name.sha256"
+
+printf '%s\n' "$remotePath/`$backup_name"
+$evolutionBackup
+"@
+  $backupFile = Invoke-RemoteCommand -Description "Backup remoto do Postgres ($Environment)" -Command $backupCmd -CaptureOutput
+  if ($backupFile) { Write-Host "Backup remoto: $backupFile" }
+}
+
 # 2. Envia o compose (a VPS so precisa do compose + .env; o codigo vive nas
 #    imagens). O preflight acima garante que um erro de env nao altere nem o compose remoto.
 
 Write-Host "==> Enviando docker-compose.prod.yml"
-$scpArgs = $scpBaseArgs + @($composeLocal, "${remoteTarget}:${remotePath}/docker-compose.prod.yml")
+$scpArgs = $scpBaseArgs + @($composeLocal, "${remoteTarget}:${remotePath}/.deploy/$Tag/docker-compose.next.yml")
 & $ScpExe @scpArgs
 if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o docker-compose.prod.yml (scp)." }
 
@@ -226,7 +280,8 @@ $tagQ = Convert-ToBashSingleQuoted $Tag
 $setTagCmd = @"
 set -euo pipefail
 cd $remotePathQ
-docker compose $composeArgs config --quiet
+docker compose --env-file $envFileQ -f $releaseDirQ/docker-compose.next.yml config --quiet
+cp $releaseDirQ/docker-compose.next.yml docker-compose.prod.yml
 if grep -q '^IMAGE_TAG=' $envFileQ; then
   sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=$Tag|" $envFileQ
 else
@@ -251,36 +306,10 @@ export DOCKER_CONFIG="`$ghcr_auth_dir"
 "@
 }
 
-# 5. Backup opcional do Postgres (antes de mexer nos containers).
-if ($BackupDatabase) {
-  $backupCmd = @"
-set -euo pipefail
-cd $remotePathQ
-mkdir -p backups
-docker compose $composeArgs exec -T postgres sh -lc 'pg_dump -U "`$POSTGRES_USER" -d "`$POSTGRES_DB"' </dev/null | gzip > "backups/backup_`$(date +%Y%m%d_%H%M%S).sql.gz"
-latest=`$(ls -t backups | head -n 1)
-printf '%s\n' "$remotePath/backups/`$latest"
-"@
-  $backupFile = Invoke-RemoteCommand -Description "Backup remoto do Postgres ($Environment)" -Command $backupCmd -CaptureOutput
-  if ($backupFile) { Write-Host "Backup remoto: $backupFile" }
-}
-
 # 6. Pull + up SEM build (a VPS nunca compila).
-# AC-04b (self-healing): a partir da imagem que contem o ac-04b, o `migrate up` auto-provisiona
-# a role least-privilege `omni_app` no boot (cria + converge senha + grant connect a partir de
-# DATABASE_APP_URL) e em production falha alto e cedo se faltar senha — criar a role deixou de
-# ser pre-requisito manual. IMAGENS ANTIGAS (pre-ac-04b): a api conecta como `omni_app` mas NAO
-# a cria; se a role nao existir, entra em crash-loop (28P01), a web nao sobe e o painel da 502 —
-# este script NAO cria a role. Runbook (fallback) em docs/DEPLOY_VPS.md (secao "Role de runtime
-# omni_app").
-$deployCmd = @"
-set -euo pipefail
-cd $remotePathQ
-$registryAuthSetup
-docker compose $composeArgs pull api web
-docker compose $composeArgs up -d --no-build$forceRecreateFlag api web
-docker compose $composeArgs ps api web
-"@
+$imagePull = if ($ImageArchive -or $UseLoadedImages) { "docker image inspect ghcr.io/mikewade2k16/omni-api:$Tag ghcr.io/mikewade2k16/omni-web:$Tag >/dev/null" } else { "docker compose $composeArgs pull api web" }
+$deployCmd = Get-Content -LiteralPath (Join-Path $scriptDir 'rollout-app.sh') -Raw
+$deployCmd = $deployCmd.Replace('@REMOTE_PATH@', $remotePathQ).Replace('@ENV_FILE@', $envFileQ).Replace('@RELEASE_DIR@', $releaseDirQ).Replace('@REGISTRY_AUTH@', $registryAuthSetup).Replace('@IMAGE_PULL@', $imagePull).Replace('@FORCE_RECREATE@', $forceRecreateFlag).Replace('@PUBLIC_URL@', (Convert-ToBashSingleQuoted $publicBaseUrl))
 Invoke-RemoteCommand -Description "Pull + up --no-build (api web) no $Environment" -Command $deployCmd
 
 # 7. Omnichannel opcional: reconcilia Evolution e seu banco proprio. O up normal
@@ -290,7 +319,7 @@ if ($DeployOmnichannel) {
 set -euo pipefail
 cd $remotePathQ
 docker compose $composeOmnichannelArgs pull evolution-db evolution
-docker compose $composeOmnichannelArgs up -d --no-build$forceRecreateFlag evolution-db evolution
+docker compose $composeOmnichannelArgs up -d --no-build --wait --wait-timeout 180$forceRecreateFlag evolution-db evolution
 docker compose $composeOmnichannelArgs ps evolution-db evolution
 "@
   Invoke-RemoteCommand -Description "Profile omnichannel (Evolution) no $Environment" -Command $omnichannelCmd
@@ -416,4 +445,5 @@ printf "GET %s/healthz => %s\n" "$publicBaseUrl" "`$health"
 }
 
 Write-Host ""
+Invoke-RemoteCommand -Description 'Registrando deploy concluido' -Command "touch '$remotePath/.deploy/$Tag/deploy.success'"
 Write-Host "Deploy ($Environment) finalizado: imagem $Tag no ar."

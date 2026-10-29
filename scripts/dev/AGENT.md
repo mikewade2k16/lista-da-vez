@@ -45,6 +45,12 @@ do container no ultimo build/sync. O bind mount ./web:/app nao existe mais
 
 ## Observacao
 
+Mac Apple Silicon (2026-10-29): `setup-mac-tools.rb` instala Node/npm e PowerShell
+oficiais no home do usuario, verifica SHA-256, preserva configuracoes do shell com
+backup e configura prompt Git/colorido para zsh e bash. Fonte reproduzivel em Git;
+nao inicia build/deploy nem instala dependencias do app no host. Guia: `docs/SETUP_MAC.md`.
+As regras Git Bash/PowerShell.exe abaixo descrevem o ambiente Windows.
+
 Se algum script precisar chamar PowerShell, usar `powershell.exe -ExecutionPolicy Bypass -File ...` com caminho convertido para Windows via `cygpath -w`.
 
 `npm run dev:down` deve usar `docker compose stop`: parada cotidiana nunca remove

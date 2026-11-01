@@ -37,11 +37,29 @@ Verificação em 2026-11-01: 11 containers ativos; API, web, PostgreSQL, Redis,
 n8n, WAHA, Whisper, Evolution, banco Evolution e runner Meta saudáveis; proxy
 local respondendo. Painel e `/healthz` retornaram HTTP 200. As chamadas da API
 para n8n, WAHA, Whisper e Evolution também retornaram 200.
-O n8n local não possui workflows, WAHA não possui sessões e Evolution não possui
-instâncias. O runner legado Meta não possui autenticação Claude. Restaurar um
-backup autorizado com credenciais ou configurar essas integrações antes de
-considerar os fluxos ponta a ponta prontos. Não foram alterados workflows,
-credenciais, dados de usuários ou código do Finance nesta intervenção.
+Os oito workflows foram recuperados do runtime da VPS e importados no n8n local,
+com seus IDs canônicos. As três credenciais referenciadas pelo WhatsApp foram
+restauradas com autorização explícita, cifradas no banco local do n8n; Redis e
+WAHA foram adaptados para os endereços locais. O community node
+`n8n-nodes-waha@2024.11.5` também foi instalado no volume local.
+Os seis workflows ativos na VPS foram reativados localmente. Os dois webhooks
+restantes (Instagram First Contact e Queue Attendance Analysis), inativos na VPS,
+foram habilitados somente no Mac para disponibilizar esses módulos.
+Produção não foi alterada. Os JSONs versionados continuam com `active: false`,
+sem pinData nem staticData de produção, conforme a política do projeto.
+
+WAHA não possui sessões e Evolution não possui instâncias locais: conectar um
+número de testes pelo painel antes de testar mensagens reais. Não copiar a sessão
+do número de produção para o Mac. O runner legado Meta está saudável, mas sem
+autenticação Claude; não é dependência do Assistente 360 atual.
+Não houve alteração de dados de usuários nem de código do Finance.
+
+Validação após restauração: nove endpoints POST registrados nos oito workflows;
+Brain executando a validação de contrato sem chamada a provedor externo;
+Whisper retornando HTTP 200 numa transcrição de áudio sintético de um segundo;
+build de produção do web concluído. Não houve envio de mensagens nem teste completo
+de cada fluxo de negócio. Temporários de credenciais em texto puro são removidos
+após a importação; as credenciais persistem cifradas no volume do n8n.
 
 Configurações de agentes: [guia compartilhado](agents/CONFIGURACAO.md).
 

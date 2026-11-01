@@ -2,6 +2,14 @@
 
 ## Escopo
 
+Restauração local Mac (2026-11-01): oito workflows obtidos do runtime VPS com
+IDs preservados; cópias Git normalizadas sem dados de execução. Credenciais
+OpenAI/Redis/WAHA importadas com autorização explícita e endpoints Redis/WAHA
+adaptados ao Docker local, sem segredos no Git. Community node WAHA 2024.11.5.
+Os oito webhooks ficam ativos localmente; Instagram First Contact e Queue
+Attendance Analysis permanecem com o estado original inativo na VPS, que não
+foi alterada. Pareamento de um número de testes continua sendo feito no painel.
+
 Automacao de atendimento de WhatsApp com IA, originalmente construida em n8n + WAHA
 (projeto "n8n Whatsapp", instalacao separada) e trazida para dentro do Omni em
 2026-06-04. Hoje roda como stack de containers do proprio projeto (profile

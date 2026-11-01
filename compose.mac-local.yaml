@@ -1,0 +1,69 @@
+# Compatibilidade local com Apple Silicon.
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+  # O front publico fica em outro repositorio; subir explicitamente quando clonado.
+  crow-nuxt:
+    profiles: ["bio"]
+  waha:
+    platform: linux/amd64
+    ports: !override
+      - "127.0.0.1:${AUTOMATION_WAHA_PORT:-3010}:3000"
+  n8n:
+    ports: !override
+      - "127.0.0.1:${AUTOMATION_N8N_PORT:-5680}:5678"
+  redis:
+    ports: !override
+      - "127.0.0.1:${AUTOMATION_REDIS_PORT:-6380}:6379"
+  whisper:
+    ports: !override
+      - "127.0.0.1:${WHISPER_PORT:-8010}:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+  meta-ads-assistant:
+    ports: !override
+      - "127.0.0.1:${META_ADS_ASSISTANT_PORT:-8765}:8765"
+  api:
+    ports: !reset []
+    build:
+      dockerfile: ../compose.mac-api.Dockerfile
+    # A copia de producao nao executa seeds demo nem bootstrap ERP local.
+    command: ["sh", "-c", "APP_ENV=production migrate up && exec api"]
+    environment:
+      R2_ENABLED: "false"
+      SMTP_HOST: ""
+      ERP_SYNC_AUTOMATIC_ENABLED: "false"
+      META_ADS_WRITES_ENABLED: "false"
+      OMNI_AI_EXECUTOR: native
+      META_ADS_ASSISTANT_RUNNER_URL: http://meta-ads-assistant:8765
+  web:
+    ports: !reset []
+  local-access:
+    image: omni-web
+    pull_policy: never
+    entrypoint: ["node", "/local-access-proxy.cjs"]
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "127.0.0.1:3003:3003"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./compose.mac-proxy.cjs:/local-access-proxy.cjs:ro
+    networks: [default, local_access]
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+
+networks:
+  default:
+    # WhatsApp, modelos STT e integracoes precisam de saida para a internet.
+    name: omni_local_services
+  local_access:
+    name: omni_local_access

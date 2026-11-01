@@ -45,6 +45,12 @@ do container no ultimo build/sync. O bind mount ./web:/app nao existe mais
 
 ## Observacao
 
+Stack Mac completa: `npm run dev:mac:up` usa o override Mac e os profiles
+automation, omnichannel e meta-ads-assistant explicitamente; serviços auxiliares
+ficam em localhost com saída para internet. Não remover volumes ao reparar rede.
+`sync-agent-skills.mjs` mantém as cópias portáveis Claude/Codex idênticas;
+`npm run agents:check` detecta divergência sem escrever arquivos.
+
 Mac Apple Silicon (2026-10-29): `setup-mac-tools.rb` instala Node/npm e PowerShell
 oficiais no home do usuario, verifica SHA-256, preserva configuracoes do shell com
 backup e configura prompt Git/colorido para zsh e bash. Fonte reproduzivel em Git;

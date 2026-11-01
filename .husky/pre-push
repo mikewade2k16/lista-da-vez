@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+if [ -z "${BASH_VERSION:-}" ] || shopt -oq posix; then exec bash "$0" "$@"; fi
 # Husky pre-push hook — Omni
 #
 # Antes de enviar para o remoto, valida o build de producao do web.

@@ -41,12 +41,22 @@ web-reference/
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+!.claude/settings.json
 !.codex/
 !.codex/skills/
 !.codex/skills/**
 !.agents/
 !.agents/skills/
 !.agents/skills/**
+.claude/settings.local.json
+.codex/config.local.toml
+.codex/auth.json
+.codex/sessions/
+.DS_Store
+# Infra Mac portavel (tambem supera excludes locais de clones antigos).
+!compose.mac-local.yaml
+!compose.mac-api.Dockerfile
+!compose.mac-proxy.cjs
 .codex-logs/
 .playwright-mcp/
 web/.codex-devserver.*.log

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+if [ -z "${BASH_VERSION:-}" ] || shopt -oq posix; then exec bash "$0" "$@"; fi
 # Husky pre-commit hook — Omni
 #
 # Roda lint-staged que despacha:
@@ -10,6 +11,7 @@
 # Para pular em emergencia: git commit --no-verify  (use com parcimonia)
 #
 # Mantem os formatadores/lints web seriais para limitar consumo em commits grandes.
+node scripts/dev/sync-agent-skills.mjs --check || exit $?
 npx lint-staged --concurrent 1
 LINT_STATUS=$?
 

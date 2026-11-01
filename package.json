@@ -2,6 +2,11 @@
   "name": "omni",
   "private": true,
   "scripts": {
+    "agents:sync": "node scripts/dev/sync-agent-skills.mjs",
+    "agents:check": "node scripts/dev/sync-agent-skills.mjs --check",
+    "dev:mac:up": "docker compose -f docker-compose.yml -f compose.mac-local.yaml --profile automation --profile omnichannel --profile meta-ads-assistant up -d --build postgres api web local-access redis n8n waha whisper evolution-db evolution meta-ads-assistant",
+    "dev:mac:ps": "docker compose -f docker-compose.yml -f compose.mac-local.yaml --profile automation --profile omnichannel --profile meta-ads-assistant ps -a",
+    "dev:mac:stop": "docker compose -f docker-compose.yml -f compose.mac-local.yaml --profile automation --profile omnichannel --profile meta-ads-assistant stop",
     "prepare": "husky",
     "dev": "docker compose --profile \"*\" up -d --build && docker compose --profile \"*\" watch --no-up",
     "dev:detach": "docker compose up -d",

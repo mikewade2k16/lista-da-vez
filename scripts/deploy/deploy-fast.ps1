@@ -173,6 +173,11 @@ if ($Transport -ne 'ssh' -and [string]::IsNullOrWhiteSpace($GhcrToken)) {
   }
 } elseif ($Transport -eq 'auto') { $Transport = 'registry' }
 
+if ($Transport -eq 'ssh') {
+  Get-Command sftp -CommandType Application -ErrorAction Stop | Out-Null
+  if ($Service -ne 'both') { throw 'Transporte SSH exige -Service both para garantir as duas imagens.' }
+}
+
 if ([string]::IsNullOrWhiteSpace($Tag)) {
   $Tag = "local-" + (Get-Date -Format "yyyyMMdd-HHmmss")
 }

@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 
 import { slugify } from '~/domain/cardapio/types'
-import type { Product } from '~/domain/cardapio/types'
+import { normalizeProductTags } from '~/domain/cardapio/product-tags'
+import type { Product, ProductPairing } from '~/domain/cardapio/types'
 import type { VariationDraft } from '~/components/cardapio/product/CardapioProductVariations.vue'
 import type { AddonDraft } from '~/components/cardapio/product/CardapioProductAddons.vue'
 
@@ -24,7 +25,8 @@ export interface ProductForm {
   cookTime: string
   diet: string
   allergens: string
-  tags: string
+  tags: string[]
+  pairing: ProductPairing | null
   isAvailable: boolean
   isFeatured: boolean
   sortOrder: number
@@ -60,7 +62,8 @@ export function emptyProductForm(): ProductForm {
     cookTime: '',
     diet: '',
     allergens: '',
-    tags: '',
+    tags: [],
+    pairing: null,
     isAvailable: true,
     isFeatured: false,
     sortOrder: 0,
@@ -86,7 +89,8 @@ export function productToForm(product: Product): ProductForm {
     cookTime: product.cookTime,
     diet: listToText(product.diet),
     allergens: listToText(product.allergens),
-    tags: listToText(product.tags),
+    tags: [...(product.tags ?? [])],
+    pairing: product.pairing ? { ...product.pairing } : null,
     isAvailable: product.isAvailable,
     isFeatured: product.isFeatured,
     sortOrder: product.sortOrder,
@@ -123,7 +127,8 @@ export function formToPayload(form: ProductForm): Record<string, unknown> {
     cookTime: form.cookTime.trim(),
     diet: textToList(form.diet),
     allergens: textToList(form.allergens),
-    tags: textToList(form.tags),
+    tags: normalizeProductTags(form.tags),
+    pairing: form.pairing,
     isAvailable: form.isAvailable,
     isFeatured: form.isFeatured,
     sortOrder: Math.trunc(Number(form.sortOrder) || 0),

@@ -1,0 +1,31 @@
+{
+  "packages": {
+    "4": "implemented: recurring/new customers (0319), awaiting acceptance",
+    "5": "implemented: chat sheet/period independent from page, awaiting acceptance",
+    "6": "implemented: receipt to Finance entry with confirmation (0320), awaiting acceptance",
+    "7": "partial: official XSD 1.01 collected, unsigned DPS producer, rule lifecycle (0321); signing/sequencer/homologation pending",
+    "8": "consolidation done; acceptance kit delivered; user acceptance pending"
+  },
+  "passed": [
+    "integrated -race run on fresh disposable PostgreSQL: 296 passed, 0 failed (finance, knowledge, accounting, nfse, calendar, auth, platform/app)",
+    "Poppler, xmllint and Calendar confirmation tests executed separately with tools: passed",
+    "full migration chain 0001-0321 without seeds and least-privilege grants",
+    "Go lint Finance/Accounting/App: 0 issues (was 6)",
+    "306 frontend tests"
+  ],
+  "not_executed": [
+    "OCR with private files (5 tests)",
+    "R2 live storage (2 tests)",
+    "browser/layout by the agent",
+    "homologation, signing, real issuer data",
+    "user acceptance"
+  ],
+  "findings": [
+    "official TSSerieDPS pattern uses literal ^/$ in XSD; xmllint rejects any series; confirm at homologation",
+    "xmllint/libxml2 absent in API and tools images",
+    "Swagger SEFIN still HTTP 403"
+  ],
+  "performance": "P15-PACOTE8-DESEMPENHO-2026-11-06.json",
+  "acceptanceKit": "../ROTEIRO_ACEITE_CT15.md",
+  "aiCalls": 0
+}

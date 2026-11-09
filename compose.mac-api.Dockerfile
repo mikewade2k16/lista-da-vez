@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/migrate ./cmd/migrate
 FROM debian:bookworm-slim
 
 RUN apt-get -o Acquire::http::Timeout=20 -o Acquire::Retries=5 update \
-  && apt-get -o Acquire::http::Timeout=20 -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates curl ffmpeg tzdata \
+  && apt-get -o Acquire::http::Timeout=20 -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates curl ffmpeg tzdata tesseract-ocr tesseract-ocr-por poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

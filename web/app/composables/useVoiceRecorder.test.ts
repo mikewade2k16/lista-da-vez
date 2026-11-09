@@ -9,7 +9,7 @@ import { useVoiceRecorder } from './useVoiceRecorder'
 
 interface PendingRequest {
   path: string
-  options: { signal?: AbortSignal }
+  options: { signal?: AbortSignal; headers?: Record<string, string> }
   resolve: (value: unknown) => void
 }
 
@@ -124,6 +124,34 @@ describe('useVoiceRecorder context isolation', () => {
 
     await expect(result).resolves.toBe('')
     expect(voice.errorMessage.value).toBe('')
+    scope.stop()
+  })
+
+  it('transcribes for the chat client without switching the page client', async () => {
+    const pending: PendingRequest[] = []
+    fetchMock().mockImplementation(
+      (path: string, options: PendingRequest['options']) =>
+        new Promise((resolve) => pending.push({ path, options, resolve })),
+    )
+    const selected = ref('account-b')
+    const scope = effectScope()
+    const voice = scope.run(() =>
+      useVoiceRecorder(
+        () => 'finance',
+        () => selected.value,
+      ),
+    )!
+    expect(await voice.start()).toBe(true)
+    const result = voice.stopAndTranscribe()
+    await flushRecorderStop()
+    expect(pending[0]?.options.headers?.['X-Account-Id']).toBe('account-b')
+    useCoreAccountStore().activeAccountId = 'account-c'
+    expect(pending[0]?.options.signal?.aborted).toBe(false)
+    selected.value = 'account-d'
+    expect(pending[0]?.options.signal?.aborted).toBe(true)
+    pending[0]?.resolve({ text: 'texto tardio de B' })
+    await expect(result).resolves.toBe('')
+    expect(useCoreAccountStore().activeAccountId).toBe('account-c')
     scope.stop()
   })
 

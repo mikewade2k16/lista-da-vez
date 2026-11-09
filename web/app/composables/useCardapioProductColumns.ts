@@ -1,10 +1,16 @@
 import { computed, onBeforeUnmount, ref, unref } from 'vue'
-import { productMatchesFilters, productDateRange, productExtraFilters, type CardapioProductFilters } from '~/domain/cardapio/product-filters'
+import {
+  productMatchesFilters,
+  productDateRange,
+  productExtraFilters,
+  type CardapioProductFilters,
+} from '~/domain/cardapio/product-filters'
 import type { MaybeRefOrGetter } from 'vue'
 
 import { useCardapioStore } from '~/stores/cardapio'
 import { formToPayload, productToForm } from '~/composables/useCardapioProductForm'
 import { resolveMediaUrl } from '~/utils/media'
+import { normalizeProductTags, productTagOptions } from '~/domain/cardapio/product-tags'
 import type { Category, ProductListItem } from '~/domain/cardapio/types'
 import type {
   OmniFilterDefinition,
@@ -24,6 +30,7 @@ export type CardapioProductFieldKey =
   | 'compareAtPriceCents'
   | 'isAvailable'
   | 'isFeatured'
+  | 'tags'
 
 const EDITABLE_FIELDS = new Set<CardapioProductFieldKey>([
   'name',
@@ -32,6 +39,7 @@ const EDITABLE_FIELDS = new Set<CardapioProductFieldKey>([
   'compareAtPriceCents',
   'isAvailable',
   'isFeatured',
+  'tags',
 ])
 
 // Chaves de COLUNA editaveis inline (priceReais/compareAtPriceReais sao da UI;
@@ -43,6 +51,7 @@ const EDITABLE_COLUMN_KEYS = [
   'compareAtPriceReais',
   'isAvailable',
   'isFeatured',
+  'tags',
 ] as const
 
 // Linha da tabela: projecao lean + preco em REAIS (OmniMoneyInput trabalha em
@@ -60,7 +69,6 @@ function centsToReais(cents: number): number {
 function reaisToCents(reais: unknown): number {
   return Math.max(0, Math.round((Number(reais) || 0) * 100))
 }
-
 
 function resolveFilterState(source?: MaybeRefOrGetter<CardapioProductFilters>) {
   const raw = typeof source === 'function' ? source() : unref(source)
@@ -114,6 +122,8 @@ export function useCardapioProductColumns(
       .map((category) => ({ label: category.name, value: category.id })),
   ])
 
+  const tagOptions = computed(() => productTagOptions(store.products))
+
   // Ordena por categoria (sortOrder da categoria) e depois por sortOrder do
   // produto, expondo a categoria como coluna/filtro (sem agrupamento na tabela,
   // que a OmniDataTable nao suporta de forma limpa).
@@ -166,9 +176,9 @@ export function useCardapioProductColumns(
     {
       key: 'imageSrc',
       label: 'Imagem',
-      type: 'image',
-      editable: true,
-      minWidth: 110,
+      type: 'custom',
+      minWidth: 104,
+      maxWidth: 120,
       defaultOrder: 10,
     },
     {
@@ -177,7 +187,8 @@ export function useCardapioProductColumns(
       type: 'text',
       editable: true,
       locked: true,
-      minWidth: 220,
+      minWidth: 190,
+      maxWidth: 240,
       defaultOrder: 20,
     },
     {
@@ -187,7 +198,8 @@ export function useCardapioProductColumns(
       editable: true,
       options: categoryOptions.value,
       placeholder: 'Categoria',
-      minWidth: 200,
+      minWidth: 138,
+      maxWidth: 160,
       defaultOrder: 30,
     },
     {
@@ -227,6 +239,27 @@ export function useCardapioProductColumns(
       defaultOrder: 70,
     },
     {
+      key: 'tags',
+      label: 'Tags',
+      type: 'custom',
+      minWidth: 140,
+      maxWidth: 180,
+      defaultOrder: 80,
+    },
+    {
+      key: 'createdAt',
+      label: 'Data de cadastro',
+      type: 'text',
+      formatter: (value) => {
+        const date = new Date(String(value ?? ''))
+        return Number.isFinite(date.getTime())
+          ? date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+          : '—'
+      },
+      minWidth: 170,
+      defaultOrder: 90,
+    },
+    {
       key: 'actions',
       label: 'Ações',
       type: 'custom',
@@ -263,6 +296,13 @@ export function useCardapioProductColumns(
       accessor: (row) => Boolean(row.isAvailable),
     },
     ...productExtraFilters,
+    {
+      key: 'tags',
+      label: 'Tags',
+      type: 'multiselect',
+      placeholder: 'Filtrar por tags',
+      options: tagOptions.value,
+    },
   ])
 
   // Mapeia a chave da COLUNA (priceReais/compareAtPriceReais sao da UI) para o
@@ -272,6 +312,11 @@ export function useCardapioProductColumns(
     value: unknown,
   ): { field: CardapioProductFieldKey; modelValue: unknown } | null {
     switch (key) {
+      case 'tags':
+        return {
+          field: 'tags',
+          modelValue: normalizeProductTags(Array.isArray(value) ? value.map(String) : []),
+        }
       case 'name':
         return { field: 'name', modelValue: String(value ?? '') }
       case 'categoryId':
@@ -301,6 +346,9 @@ export function useCardapioProductColumns(
       const form = productToForm(full)
 
       switch (resolved.field) {
+        case 'tags':
+          form.tags = resolved.modelValue as string[]
+          break
         case 'name':
           form.name = String(resolved.modelValue ?? '').trim()
           break
@@ -361,8 +409,9 @@ export function useCardapioProductColumns(
   // Sobe a imagem pela API de midia e grava a url via PATCH full-replace (mesma
   // mecanica de persistCell, mas a origem do valor e o upload).
   async function applyImageUpload(productId: string, file: File) {
-    const url = await store.uploadMedia(productId, file)
     const full = await store.loadProduct(productId)
+    const url = await store.uploadMedia(full.restaurantId, file)
+    if (!url.trim()) throw new Error('O servidor nao retornou o endereco da imagem enviada.')
     const form = productToForm(full)
     form.imageUrl = url
     await store.patchProduct(productId, formToPayload(form))
@@ -374,6 +423,7 @@ export function useCardapioProductColumns(
   })
 
   return {
+    tagOptions,
     categoryOptions,
     tableRows,
     filteredRows,

@@ -74,9 +74,11 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 
 ## Deploy verificado no Mac (2026-10-29)
 
-validate-release.ps1 aplica lint/testes focados antes do build. Pausa/restauracao usa
-Compose efetivo, incluindo local-access do Mac. Transporte auto seleciona GHCR com
-credencial ou image-archive.ps1 (save/gzip/SCP/SHA256/load). rollout-app.sh espera
+validate-release.ps1 aplica lint/testes focados antes do build.
+Antes do ESLint, executa `nuxt prepare` no web local e exige sucesso para evitar
+consumir uma configuracao `.nuxt/eslint.config.mjs` incompleta ou desatualizada.
+Pausa/restauracao usa Compose efetivo, incluindo local-access do Mac. Transporte auto seleciona GHCR com
+credencial ou image-archive.ps1 (save/gzip/SFTP retomavel/SHA256/load). rollout-app.sh espera
 healthchecks e HTTP; em erro restaura snapshot privado de env/Compose e imagens
 anteriores. Backup pg_dump validado antes de trocar Compose/tag. Sem build na VPS.
 
@@ -143,6 +145,11 @@ Ao alterar scripts desta pasta:
 2. validar os workflows em `.github/workflows/build-images.yml` e `deploy-vps.yml` se a mudanca tocar o fluxo GitHub
 3. garantir que os comandos documentados em `docs/DEPLOY_VPS.md` ainda correspondem ao comportamento real
 
+`validate-release.ps1` constrói os pacotes Go usando o contexto `back/`. Os testes
+do Calendar leem `automation/export/workflow-calendar-chat.json`; por isso, a etapa
+de teste monta a pasta `automation/` do repositório como `/automation` somente para
+`go test` e `go vet`. A pasta fica somente leitura e não entra na imagem de produção.
+
 ## Referencias
 
 - `../../docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md` (plano canonico)
@@ -153,3 +160,22 @@ Ao alterar scripts desta pasta:
 - `../dev/AGENT.md`
 - `../backup/AGENT.md` (backup agendado do Postgres — complementa o `-BackupDatabase` on-demand)
 - `../../docs/BACKUP_RESTORE.md` (runbook de backup/restore)
+
+## Sincronização de arquivos novos — 2026-11-04
+
+validate-release.ps1 cria o diretório pai no web local antes de cada docker cp.
+Isso permite validar componentes em pastas novas ainda ausentes na imagem, inclusive
+com espaços no caminho. Falha no mkdir interrompe a validação antes da cópia/lint.
+A sincronização continua limitada aos fontes selecionados pelo script; não executa
+deploy nem precisa reiniciar o container para criar esses diretórios.
+
+
+## Transporte resiliente de imagens — 2026-11-04
+
+`image-archive.ps1` cria/verifica o diretório remoto antes do envio. SFTP `reput`
+retoma um `.part` identificado pela tag e pelo SHA256, com até três tentativas.
+Somente após SHA256 válido renomeia o arquivo e executa `docker load`; falhas
+preservam o arquivo local para retomar com `deploy-pull.ps1 -ImageArchive`, mesma
+tag/ambiente/opções. O fluxo rápido exige cliente SFTP antes do build. Não repetir
+rollout automaticamente nem afirmar que testes simulados validam a rede da VPS.
+Teste sem rede: `pwsh -NoProfile -File scripts/deploy/image-archive.test.ps1`.

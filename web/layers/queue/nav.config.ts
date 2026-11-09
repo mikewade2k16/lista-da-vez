@@ -413,6 +413,14 @@ export default {
               agencyOnly: true,
             },
             {
+              id: 'manage-knowledge',
+              label: 'Base pública',
+              icon: 'page',
+              path: '/manage/base-publica',
+              workspaceId: 'knowledge_admin',
+              agencyOnly: true,
+            },
+            {
               id: 'erp',
               label: 'ERP',
               icon: 'boxes',

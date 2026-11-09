@@ -41,6 +41,11 @@ services:
       META_ADS_WRITES_ENABLED: "false"
       OMNI_AI_EXECUTOR: native
       META_ADS_ASSISTANT_RUNNER_URL: http://meta-ads-assistant:8765
+      # Originais privados (comprovantes, fontes) com R2 desligado: fora de /uploads,
+      # que e publico. Volume proprio; nao altera os volumes existentes.
+      PRIVATE_FILES_DIR: /app/data/private
+    volumes:
+      - api_private_files:/app/data/private
   web:
     ports: !reset []
   local-access:
@@ -67,3 +72,6 @@ networks:
     name: omni_local_services
   local_access:
     name: omni_local_access
+
+volumes:
+  api_private_files:

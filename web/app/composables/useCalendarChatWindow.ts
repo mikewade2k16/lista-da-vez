@@ -6,8 +6,8 @@ import type { CalendarChatConfig, CalendarChatPosition } from '~/utils/calendar'
 
 // Layout da janela compartilhada do assistente. Na surface Calendar preserva o contrato
 // historico e persiste em calendar.config.chat SOMENTE depois de a configuracao da account
-// estar hidratada. Meta/global usam memoria isolada por account+surface: nunca fazem o PUT
-// full-replace do Calendar a partir de defaults.
+// estar hidratada. As surfaces compartilham medidas em memória por account; somente
+// Calendar pode fazer PUT da sua configuração, nunca a partir de defaults.
 
 // Margens/limites da janela (px).
 const AREA_MARGIN = 12
@@ -50,8 +50,8 @@ export function useCalendarChatWindow(
   const areaRect = ref<AreaRect>({ left: 0, top: 0, width: 0, height: 0 })
   const resizing = ref(false)
 
-  // Layouts nao-Calendar sao efemeros e escopados. Nao usam localStorage nem o banco do
-  // Calendar; ao trocar account nunca reaproveitam medidas da account anterior.
+  // Edições visuais são compartilhadas pelas surfaces da mesma account na sessão.
+  // Não usam localStorage; outra account não reaproveita essas medidas.
   const transientLayouts = useState<Record<string, CalendarChatConfig>>(
     'assistant-chat:window-layouts',
     () => ({}),
@@ -66,15 +66,14 @@ export function useCalendarChatWindow(
   }
 
   function transientLayoutKey(): string {
-    return `${activeAccountId() || 'no-account'}:${surface()}`
+    return `${activeAccountId() || 'no-account'}:shared`
   }
 
   function layoutForCurrentContext(): CalendarChatConfig {
-    if (shouldPersistAssistantWindowLayout(surface(), store.isConfigLoaded)) {
-      return { ...store.config.chat }
-    }
-    if (surface() === 'calendar') return { ...DEFAULT_CHAT_LAYOUT }
-    return { ...(transientLayouts.value[transientLayoutKey()] ?? DEFAULT_CHAT_LAYOUT) }
+    const edited = transientLayouts.value[transientLayoutKey()]
+    if (edited) return { ...edited }
+    if (store.isConfigLoaded) return { ...store.config.chat }
+    return { ...DEFAULT_CHAT_LAYOUT }
   }
 
   function clearSaveTimer(): void {
@@ -120,12 +119,17 @@ export function useCalendarChatWindow(
     { immediate: true },
   )
 
-  // Re-hidrata do banco apenas na surface Calendar e somente para a account carregada,
+  // Re-hidrata da configuração Calendar carregada, preservando uma edição de sessão,
   // EXCETO enquanto o proprio save deste layout esta pendente.
   watch(
     () => store.config.chat,
     (value) => {
-      if (surface() === 'calendar' && store.isConfigLoaded && !savePending && value) {
+      if (
+        store.isConfigLoaded &&
+        !savePending &&
+        value &&
+        !transientLayouts.value[transientLayoutKey()]
+      ) {
         localChat.value = { ...value }
       }
     },
@@ -134,13 +138,8 @@ export function useCalendarChatWindow(
 
   function applyChat(next: CalendarChatConfig): void {
     localChat.value = next
-    if (surface() !== 'calendar') {
-      transientLayouts.value = {
-        ...transientLayouts.value,
-        [transientLayoutKey()]: { ...next },
-      }
-      return
-    }
+    transientLayouts.value = { ...transientLayouts.value, [transientLayoutKey()]: { ...next } }
+    if (surface() !== 'calendar') return
     // Nunca salva o objeto default antes de fetchConfig concluir para a account ativa.
     if (!shouldPersistAssistantWindowLayout(surface(), store.isConfigLoaded)) return
 

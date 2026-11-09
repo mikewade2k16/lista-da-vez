@@ -154,12 +154,15 @@ export const useCoreAccountStore = defineStore('core/account', () => {
     }
   }
 
+  let contextSequence = 0
   async function fetchContext(accountId: string) {
+    const sequence = ++contextSequence
     try {
       const data = (await api(`/v2/me/context?accountId=${accountId}`)) as any
-      context.value = data.context ?? null
+      if (sequence === contextSequence && activeAccountId.value === accountId)
+        context.value = data.context ?? null
     } catch {
-      context.value = null
+      if (sequence === contextSequence && activeAccountId.value === accountId) context.value = null
     }
   }
 
@@ -196,6 +199,7 @@ export const useCoreAccountStore = defineStore('core/account', () => {
   }
 
   function reset() {
+    contextSequence++
     accounts.value = []
     activeAccountId.value = ''
     context.value = null

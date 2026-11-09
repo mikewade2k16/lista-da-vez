@@ -341,6 +341,7 @@ func (s *Service) UpdateProduct(ctx context.Context, accountID, id string, in Pr
 }
 
 func validateProductInput(in *ProductInput) error {
+	in.Tags = normalizeProductTags(in.Tags)
 	in.Slug = normalizeSlug(in.Slug)
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Slug == "" || in.Name == "" {

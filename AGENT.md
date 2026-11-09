@@ -173,16 +173,18 @@ O fluxo local sem Docker continua existindo apenas como fallback:
 
 ## Pre-commit hook (Fase 6.3 do PLANO_REFATORACAO)
 
-Configurado a partir de 2026-05-18. Toda vez que voce roda `git commit`, o Husky dispara `npx lint-staged` que despacha pelos wrappers:
+Configurado a partir de 2026-05-18. Toda vez que voce roda `git commit`, o Husky dispara `npx lint-staged` que despacha pelos wrappers via `bash`, sem depender do bit executável dos arquivos no macOS/Windows:
 
 - `scripts/dev/lint-web-staged.sh` -> `eslint --fix` nos `.vue`/`.ts`/`.js`/`.mjs` staged
 - `scripts/dev/format-web-staged.sh` -> `prettier --write` nos arquivos web staged
-- `scripts/dev/lint-go-staged.sh` -> `gofmt -w` + `golangci-lint run --new-from-rev=HEAD` em **escopo de pacote** (nao arquivo isolado)
+- wrappers Go executam `gofmt` e `golangci-lint run --new-from-rev=HEAD` em container `omni-go-tools`, com a toolchain do backend; não exigem Go instalado no host
 - `scripts/dev/lint-migrations-staged.sh` -> valida schema qualificado somente em DDL novo no diff staged; DDL legado fora da alteracao atual nao bloqueia o commit
 
 ### Decisao tecnica importante
 
 O wrapper Go nao roda golangci-lint em arquivos isolados — extrai os **pacotes** dos arquivos staged e roda no escopo `./pkg/...`. Sem isso, linters como `unused`, `errcheck` e `staticcheck` (que precisam do pacote inteiro) gerariam falsos positivos/negativos. A flag `--new-from-rev=HEAD` evita bloquear commit em pacote que ja tinha divida na baseline registrada.
+
+A imagem `omni-go-tools:1.26.5-v2.4.0` é preparada pelo pre-commit na primeira alteração Go. O Docker Desktop precisa estar ativo.
 
 ### Bypass de emergencia
 

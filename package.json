@@ -4,7 +4,9 @@
   "scripts": {
     "agents:sync": "node scripts/dev/sync-agent-skills.mjs",
     "agents:check": "node scripts/dev/sync-agent-skills.mjs --check",
-    "dev:mac:up": "docker compose -f docker-compose.yml -f compose.mac-local.yaml --profile automation --profile omnichannel --profile meta-ads-assistant up -d --build postgres api web local-access redis n8n waha whisper evolution-db evolution meta-ads-assistant",
+    "dev:mac:start": "bash scripts/dev/mac-stack-watch.sh start",
+    "dev:mac:up": "bash scripts/dev/mac-stack-watch.sh up",
+    "dev:mac:watch": "bash scripts/dev/mac-stack-watch.sh watch",
     "dev:mac:ps": "docker compose -f docker-compose.yml -f compose.mac-local.yaml --profile automation --profile omnichannel --profile meta-ads-assistant ps -a",
     "dev:mac:stop": "docker compose -f docker-compose.yml -f compose.mac-local.yaml --profile automation --profile omnichannel --profile meta-ads-assistant stop",
     "prepare": "husky",

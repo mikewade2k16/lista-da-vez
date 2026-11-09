@@ -233,3 +233,41 @@ Dois pools, duas roles (defesa em profundidade + pre-requisito do RLS):
 - `0129_site_tracking_events.sql` adiciona `site.tracking_events` e amplia
   `site.webhook_sources.entity_type` para `tracking`. O receptor usa HMAC
   com timestamp e idempotencia por `source_id + source_event_id`.
+
+- `0310_accounting_foundation.sql`: schema accounting com emitentes/membros,
+  perfis imutáveis, diagnósticos, documentos, revisão/autorização separadas,
+  execuções/eventos/artefatos/receipts e outbox transacional. FKs compostas isolam
+  conta/emitente/documento; nenhuma credencial, blob fiscal ou cálculo em float.
+  Não habilita módulo em contas nem altera seeds/senhas/volumes. Testar/reaplicar
+  somente em PostgreSQL descartável antes de integração.
+
+## Migration0311 — Plus
+
+`0311_assistant_plus.sql` é aditiva/idempotente: modo/emitente/versão nas conversas,
+envelope nas mensagens e modo nos recibos Calendar existentes. Não copia histórico
+nem habilita contas. Testada duas vezes em PostgreSQL descartável. Próximo número
+reservado CT-06:0312; aplicação em ambiente de uso não realizada no CT-05.
+
+## Migration0312 — Conhecimento CT-06
+
+accounting.knowledge_bindings com FK composta conta/emitente/base e versão CAS;
+messaging.knowledge_document_applicability guarda metadados/revisão/original/hash
+e version_lock, sem duplicar texto. location aditiva em chunks. Triggers impedem
+editar/inserir/apagar chunks publicados e reescrever documento publicado.
+Testada/reaplicada em PostgreSQL descartável. Não aplicada ao banco de uso.
+
+## Migration0313 — Uso LLM Plus CT-07
+
+finance.plus_llm_runs: request único por conta/ator, escopo emitente lógico, versões
+de configuração/prompt/política/modelo, referências de documentos/chunks, status,
+tokens/latência/custo nullable e validade do registro. Sem texto/segredo/config
+concorrente. Índices por conta/data e expires_at. Reserva e orçamento transacionais.
+Nova migration testada/reaplicada em PostgreSQL descartável; não aplicada em uso.
+
+### Finance — migration0316 (2026-11-06)
+
+finance.plus_llm_runs.issuer_id passa a aceitar NULL para classe conversation
+pessoal. Conta/ator/request continuam obrigatórios e únicos por conta/ator/request.
+source_summary empresarial preserva emitente explícito pelo serviço. Não há tabela
+nova de conversa; sem alteração de mensagens, senhas ou seeds. Finalização usa
+comparação NULL-safe pelo owner. Cadeia completa testada sem seeds em banco vazio.

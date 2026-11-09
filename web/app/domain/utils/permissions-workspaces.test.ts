@@ -87,6 +87,8 @@ describe('global storage workspace', () => {
   it('is exclusive to the platform administrator defaults', () => {
     expect(getAllowedWorkspaces('platform_admin')).toContain('storage_admin')
     expect(getAllowedWorkspaces('owner')).not.toContain('storage_admin')
+    expect(getAllowedWorkspaces('platform_admin')).toContain('knowledge_admin')
+    expect(getAllowedWorkspaces('owner')).not.toContain('knowledge_admin')
   })
 })
 

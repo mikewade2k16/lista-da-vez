@@ -12,32 +12,56 @@ import (
 
 // RegisterRoutes monta /v1/finance/* no mux (RequireAuth; gating de modulo no Chain).
 func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
-	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+	wrap := func(permission string, h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(requireFinancePermission(permission, h))
 	}
 
-	mux.Handle("GET /v1/finance/sheets", wrap(handleListSheets(svc)))
-	mux.Handle("POST /v1/finance/sheets", wrap(handleCreateSheet(svc)))
-	mux.Handle("GET /v1/finance/sheets/{id}", wrap(handleGetSheet(svc)))
-	mux.Handle("PUT /v1/finance/sheets/{id}", wrap(handleUpdateSheet(svc)))
-	mux.Handle("DELETE /v1/finance/sheets/{id}", wrap(handleDeleteSheet(svc)))
-	mux.Handle("PATCH /v1/finance/sheets/{id}/lines/{lineId}", wrap(handlePatchLine(svc)))
-
-	mux.Handle("GET /v1/finance/config", wrap(handleGetConfig(svc)))
-	mux.Handle("PUT /v1/finance/config", wrap(handleSaveConfig(svc)))
-	mux.Handle("GET /v1/finance/config/recurring-clients", wrap(handleRecurringClients(svc)))
+	mux.Handle("GET /v1/finance/sheets", wrap("finance.sheets.view", handleListSheets(svc)))
+	mux.Handle("POST /v1/finance/sheets", wrap("finance.sheets.manage", handleCreateSheet(svc)))
+	mux.Handle("GET /v1/finance/sheets/{id}", wrap("finance.sheets.view", handleGetSheet(svc)))
+	mux.Handle("PUT /v1/finance/sheets/{id}", wrap("finance.sheets.manage", handleUpdateSheet(svc)))
+	mux.Handle("DELETE /v1/finance/sheets/{id}", wrap("finance.sheets.manage", handleDeleteSheet(svc)))
+	mux.Handle("PATCH /v1/finance/sheets/{id}/status", wrap("finance.sheets.manage", handleSheetStatus(svc)))
+	mux.Handle("PATCH /v1/finance/sheets/{id}/lines/{lineId}", wrap("finance.sheets.manage", handlePatchLine(svc)))
+	mux.Handle("GET /v1/finance/config", wrap("finance.config.view", handleGetConfig(svc)))
+	mux.Handle("PUT /v1/finance/config", wrap("finance.config.manage", handleSaveConfig(svc)))
+	mux.Handle("GET /v1/finance/config/recurring-clients", wrap("finance.config.view", handleRecurringClients(svc)))
 }
 
 // accountIDFromContext resolve a account do request (X-Account-Id ou TenantID do JWT).
 func accountIDFromContext(r *http.Request) (string, bool) {
-	if accountID := strings.TrimSpace(r.Header.Get("X-Account-Id")); accountID != "" {
-		return accountID, true
-	}
 	principal, ok := auth.PrincipalFromContext(r.Context())
-	if !ok {
-		return "", false
+	return principal.AccountID, ok && principal.AccountID != ""
+}
+
+func requireFinancePermission(permission string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		if !canFinance(principal, permission) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para esta operacao financeira.")
+			return
+		}
+		next(w, r)
 	}
-	return principal.TenantID, principal.TenantID != ""
+}
+
+func canFinance(principal auth.Principal, permission string) bool {
+	if principal.Role == auth.RolePlatformAdmin {
+		return true
+	}
+	if !principal.PermissionsResolved {
+		return false
+	}
+	for _, granted := range principal.Permissions {
+		if strings.TrimSpace(granted) == permission || (principal.Role == auth.RoleOwner && strings.TrimSpace(granted) == "core.account.manage") {
+			return true
+		}
+	}
+	return false
 }
 
 // successList e o envelope de listagem.
@@ -55,6 +79,12 @@ func writeSuccess(w http.ResponseWriter, status int, data any) {
 // writeFinanceError mapeia sentinelas para 404; resto vira 500.
 func writeFinanceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, ErrSheetClosed):
+		httpapi.WriteError(w, r, http.StatusConflict, "sheet_closed", "Planilha fechada. Reabra antes de editar.")
+	case errors.Is(err, ErrSheetConflict):
+		httpapi.WriteError(w, r, http.StatusConflict, "sheet_conflict", "A planilha foi alterada. Recarregue antes de salvar.")
+	case errors.Is(err, ErrInvalidStatus):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_status", "Status de planilha invalido.")
 	case errors.Is(err, ErrSheetNotFound):
 		httpapi.WriteError(w, r, http.StatusNotFound, "sheet_not_found", "Planilha nao encontrada.")
 	case errors.Is(err, ErrLineNotFound):
@@ -224,6 +254,18 @@ func handleSaveConfig(svc *Service) http.HandlerFunc {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", err.Error())
 			return
 		}
+		principal, _ := auth.PrincipalFromContext(r.Context())
+		if !canFinance(principal, "finance.recurring.manage") {
+			current, err := svc.GetConfig(r.Context(), accountID, strVal(in.CoreTenantID))
+			if err != nil {
+				writeFinanceError(w, r, err)
+				return
+			}
+			if !sameRecurring(current.RecurringEntries, in.RecurringEntries) {
+				httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para alterar recorrencias.")
+				return
+			}
+		}
 		data, err := svc.SaveConfig(r.Context(), accountID, in)
 		if err != nil {
 			writeFinanceError(w, r, err)
@@ -253,4 +295,33 @@ func handleRecurringClients(svc *Service) http.HandlerFunc {
 		}
 		writeSuccess(w, http.StatusOK, data)
 	}
+}
+
+func handleSheetStatus(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, ok := accountIDFromContext(r)
+		if !ok {
+			noAccount(w, r)
+			return
+		}
+		var in struct {
+			Status            string `json:"status"`
+			ExpectedUpdatedAt string `json:"expectedUpdatedAt"`
+		}
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", err.Error())
+			return
+		}
+		d, err := svc.ChangeStatus(r.Context(), accountID, r.PathValue("id"), in.Status, in.ExpectedUpdatedAt)
+		if err != nil {
+			writeFinanceError(w, r, err)
+			return
+		}
+		writeSuccess(w, http.StatusOK, d)
+	}
+}
+
+// CanFinancePermission exposes the canonical Finance permission rule to adapters.
+func CanFinancePermission(principal auth.Principal, permission string) bool {
+	return canFinance(principal, permission)
 }

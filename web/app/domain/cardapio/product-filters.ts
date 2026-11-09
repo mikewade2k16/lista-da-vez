@@ -4,6 +4,7 @@ export interface CardapioProductFilters {
   search?: unknown
   categoryId?: unknown
   availability?: unknown
+  tags?: unknown
   image?: unknown
   createdPeriod?: unknown
   createdFrom?: unknown
@@ -55,6 +56,7 @@ export function productMatchesFilters(
     isAvailable: boolean
     imageUrl: string
     createdAt?: string
+    tags?: string[]
   },
   filters: CardapioProductFilters,
   range = productDateRange(filters),
@@ -63,6 +65,14 @@ export function productMatchesFilters(
   const category = String(filters.categoryId ?? '').trim()
   if (query && !normalizeProductSearch(product.name).includes(query)) return false
   if (category && product.categoryId !== category) return false
+  const selectedTags = Array.isArray(filters.tags) ? filters.tags.map(String) : []
+  if (
+    selectedTags.length &&
+    !selectedTags.some((tag) =>
+      product.tags?.some((value) => value.trim().toLowerCase() === tag.trim().toLowerCase()),
+    )
+  )
+    return false
   if (typeof filters.availability === 'boolean' && product.isAvailable !== filters.availability)
     return false
   const hasImage = Boolean(product.imageUrl?.trim())

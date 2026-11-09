@@ -14,7 +14,7 @@ import type { CalendarMediaItem } from '~/utils/calendar'
 export type CalendarChatScopeMode = 'client' | 'all'
 
 /** Pagina que fornece o contexto default da conversa. */
-export type AssistantChatSurface = 'calendar' | 'meta_ads' | 'global'
+export type AssistantChatSurface = 'calendar' | 'meta_ads' | 'global' | 'finance'
 
 export type AssistantResourceKind = 'instagram_post' | 'meta_campaign' | 'meta_ad_account'
 
@@ -262,6 +262,7 @@ export interface CalendarChatConversationDetail {
 
 /** Cliente visivel para o SELECT de escopo (GET /chat/scope). */
 export interface CalendarChatScopeClient {
+  disabled?: boolean
   id: string
   name: string
 }
@@ -382,7 +383,7 @@ function normalizeScopeMode(value: unknown): CalendarChatScopeMode {
 }
 
 export function normalizeAssistantChatSurface(value: unknown): AssistantChatSurface {
-  if (value === 'meta_ads' || value === 'global') return value
+  if (value === 'meta_ads' || value === 'global' || value === 'finance') return value
   return 'calendar'
 }
 

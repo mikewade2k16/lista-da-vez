@@ -57,7 +57,7 @@ function errorCode(error: unknown): string {
   return String(e?.data?.error?.code || '')
 }
 
-export function useVoiceRecorder(surface: () => AssistantChatSurface) {
+export function useVoiceRecorder(surface: () => AssistantChatSurface, accountScope?: () => string) {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const accountStore = useCoreAccountStore()
@@ -96,7 +96,9 @@ export function useVoiceRecorder(surface: () => AssistantChatSurface) {
   // singleton no shell; sem esta fronteira uma resposta tardia da conta anterior
   // poderia repovoar o draft depois da troca de contexto.
   const contextKey = computed(() => {
-    const accountId = String(accountStore.activeAccountId || '').trim()
+    const accountId = String(
+      (accountScope ? accountScope() : accountStore.activeAccountId) || '',
+    ).trim()
     const userId = String(
       auth.principal?.userId || auth.principal?.userID || auth.user?.id || '',
     ).trim()
@@ -371,6 +373,7 @@ export function useVoiceRecorder(surface: () => AssistantChatSurface) {
       const response = (await apiRequest(assistantTranscribePath(snapshot.surface), {
         method: 'POST',
         body: form,
+        headers: { 'X-Account-Id': snapshot.key.split(':')[0] || '' },
         signal: controller.signal,
       })) as TranscribeResponse
       if (transcriptionController !== controller || !isCurrentContext(snapshot)) return ''

@@ -817,3 +817,7 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
 - A migration `0292` aceita `anthropic` em `automation.omni_chat_configs.provider`. O workflow
   Calendar Chat usa a API Messages nativa; outros providers seguem pelo contrato OpenAI-compatible.
   Não persistir chave no workflow: `OmniChatRuntime` injeta o segredo somente server-to-server.
+
+## Runtime Finance (2026-11-02)
+
+`ResolveAssistantSettings` resolve credencial canônica account-scoped e modelo para a configuração independente do Finance. Não regrava nem herda a configuração global do Omni. Nunca serializar `APIKey` em respostas públicas.

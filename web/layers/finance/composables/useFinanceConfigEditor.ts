@@ -4,6 +4,7 @@
 // A re-sincronizacao das linhas fixas/recorrentes com a planilha e disparada
 // pela pagina (watchers em configDraft/clientRecurringEntries -> editor.syncAllFixedRows).
 import type { InjectionKey } from 'vue'
+import { useFinanceAutosave } from './useFinanceAutosave'
 import type {
   FinanceCategoryConfig,
   FinanceConfigKind,
@@ -77,9 +78,25 @@ export function useFinanceConfigEditor() {
     notes: '',
   })
 
-  let saveConfigTimer: ReturnType<typeof setTimeout> | null = null
-  let configPersistInFlight = false
-  let configPersistQueued = false
+  const autosave = useFinanceAutosave(CONFIG_AUTOSAVE_DEBOUNCE_MS)
+  const canManageConfig = computed(
+    () =>
+      auth.role === 'platform_admin' ||
+      (auth.role === 'owner' && coreAccount.permissions.includes('core.account.manage')) ||
+      coreAccount.permissions.includes('finance.config.manage'),
+  )
+  const canManageSheets = computed(
+    () =>
+      auth.role === 'platform_admin' ||
+      (auth.role === 'owner' && coreAccount.permissions.includes('core.account.manage')) ||
+      coreAccount.permissions.includes('finance.sheets.manage'),
+  )
+  const canManageRecurring = computed(
+    () =>
+      auth.role === 'platform_admin' ||
+      (auth.role === 'owner' && coreAccount.permissions.includes('core.account.manage')) ||
+      coreAccount.permissions.includes('finance.recurring.manage'),
+  )
 
   const categoryConfigOptions = computed(() =>
     configDraft.categories.map((category) => ({
@@ -129,35 +146,23 @@ export function useFinanceConfigEditor() {
     }
   }
 
-  async function persistConfig() {
-    if (configPersistInFlight) {
-      configPersistQueued = true
-      return
-    }
-    configPersistInFlight = true
-    configPersistQueued = false
-    try {
-      await saveConfig(buildConfigPersistPayload())
-    } finally {
-      configPersistInFlight = false
-      if (configPersistQueued) {
-        configPersistQueued = false
-        void persistConfig()
-      }
-    }
-  }
-
   function queueConfigPersist() {
-    if (saveConfigTimer) clearTimeout(saveConfigTimer)
-    saveConfigTimer = setTimeout(() => {
-      saveConfigTimer = null
-      void persistConfig()
-    }, CONFIG_AUTOSAVE_DEBOUNCE_MS)
+    const accountId = coreAccount.activeAccountId
+    if (!accountId || !canManageConfig.value) return
+    const payload = structuredClone(buildConfigPersistPayload())
+    const key = `${accountId}:${payload.coreTenantId || ''}`
+    autosave.schedule(key, async () => {
+      const saved = await saveConfig(payload, accountId)
+      if (!saved) throw new Error('finance_config_save_failed')
+      if (coreAccount.activeAccountId === accountId && !autosave.has(key)) syncConfigDraft()
+    })
   }
 
   async function fetchClientRecurringEntries() {
+    const accountId = coreAccount.activeAccountId
     try {
       const response = (await apiRequest('/v1/finance/config/recurring-clients', {
+        headers: { 'X-Account-Id': accountId },
         query: {
           limit: 300,
           coreTenantId: targetCoreTenantId.value || undefined,
@@ -175,6 +180,7 @@ export function useFinanceConfigEditor() {
         }>
       }
 
+      if (accountId !== coreAccount.activeAccountId) return
       clientRecurringEntries.value = (response.data || [])
         .map((client) => {
           const stores = Array.isArray(client.stores)
@@ -210,11 +216,13 @@ export function useFinanceConfigEditor() {
   }
 
   async function loadConfig() {
+    const accountId = coreAccount.activeAccountId
     await Promise.all([fetchConfig(targetCoreTenantId.value), fetchClientRecurringEntries()])
-    syncConfigDraft()
+    if (accountId === coreAccount.activeAccountId) syncConfigDraft()
   }
 
   async function openConfigPanel() {
+    if (!(await autosave.flush())) return
     await loadConfig()
     configOpen.value = true
   }
@@ -403,15 +411,24 @@ export function useFinanceConfigEditor() {
     upsertRecurringEntry(sourceCoreTenantId, { notes: normalizeText(notes, 240) })
   }
 
-  onScopeDispose(() => {
-    if (saveConfigTimer) clearTimeout(saveConfigTimer)
-  })
+  watch(
+    () => coreAccount.activeAccountId,
+    () => {
+      void autosave.flush()
+    },
+    { flush: 'sync' },
+  )
 
   return {
     config,
     configDraft,
     clientRecurringEntries,
     configOpen,
+    canManageConfig,
+    canManageSheets,
+    canManageRecurring,
+    saveLabel: autosave.label,
+    retrySave: autosave.flush,
     loading,
     saving,
     errorMessage,

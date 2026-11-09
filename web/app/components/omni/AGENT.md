@@ -24,6 +24,13 @@ Estado emitido via `update:modelValue` (visibleKeys), `update:lockedKeys`, `upda
 
 Barra superior da tabela. Renderiza filtros declarados em `OmniFilterDefinition[]` + slot `actions` + integra o `OmniTableColumnsConfig`. Propaga `viewerUserType`, `lockedColumns`, `columnOrder` para o config.
 
+Suporta `type: 'multiselect'` com arrays de strings e reset para `[]`, via
+`OmniTagsInput.vue`. Esse input permite selecao multipla e criacao opcional;
+somente emite valores ao chamador, responsavel por persistir. Nao mantem catalogo,
+renomeacoes ou cores em estado paralelo ao banco.
+Aceita tamanho compacto (`size="sm"`) para uso em células densas; o componente
+preserva o tamanho padrão nos formulários e filtros que não passam essa prop.
+
 ### `overlay/OmniMinimalPopover.vue`
 
 Popover simples reutilizável. Emite `opened` quando abre (use isso para fetch lazy de detalhes em vez de `@click` no botão trigger — o popover engole o click).

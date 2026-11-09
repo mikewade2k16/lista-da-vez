@@ -150,6 +150,9 @@ func (a ChatAccess) canAccessSavedScope(scopeMode, scopeClientID string) bool {
 // dos clientes visiveis (access.VisibleClients) para o contexto da IA poder nomear todo
 // cliente visivel, nao so os que ja tem evento/perfil.
 func (s *Service) resolveChatAccess(ctx context.Context, principal auth.Principal, accountID string) (ChatAccess, error) {
+	if financeSurfaceContext(ctx) {
+		return financeChatAccess(principal, accountID)
+	}
 	access, clients, err := s.resolveChatContext(ctx, principal, accountID)
 	if err != nil {
 		return ChatAccess{}, err
@@ -240,7 +243,7 @@ func (s *Service) authorizeConversation(ctx context.Context, access ChatAccess, 
 	if err != nil {
 		return ChatConversation{}, mapNotFound(err)
 	}
-	if !access.IsAgency && conv.CreatedByUserID != strings.TrimSpace(requesterUserID) {
+	if (!access.IsAgency || conv.EntrySurface == AssistantSurfaceFinance) && conv.CreatedByUserID != strings.TrimSpace(requesterUserID) {
 		return ChatConversation{}, ErrNotFound
 	}
 	return conv, nil

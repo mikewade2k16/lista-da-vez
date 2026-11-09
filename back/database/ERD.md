@@ -1190,3 +1190,164 @@ core.accounts (agencia/resource owner)
   a dois clientes da conexao. A FK composta ancora o resource owner; desconectar remove os mappings.
 - O banco guarda apenas IDs e atribuicao. O service valida agencia/organizacao/cliente e cruza o par
   com a Graph atual antes de gravar e antes de liberar feed para um client scope.
+
+## Accounting — fundação CT-03 (migration 0310)
+
+Schema novo, sem mover tabelas pessoais Finance. Toda raiz possui account_id;
+filhos usam FKs compostas account_id/issuer_id e, na cadeia fiscal, document_id.
+Valores monetários NUMERIC(20,2), JSON de borda decimal string, sem blob/segredo.
+
+```mermaid
+erDiagram
+    core_accounts ||--o{ accounting_issuers : owns
+    accounting_issuers ||--o{ accounting_issuer_members : authorizes
+    core_users ||--o{ accounting_issuer_members : participates
+    accounting_issuers ||--o{ accounting_issuer_profiles : versions
+    accounting_issuer_profiles ||--o{ accounting_diagnoses : informs
+    accounting_diagnoses ||--o{ accounting_documents : prepares
+    accounting_documents ||--o{ accounting_document_reviews : reviews
+    accounting_document_reviews ||--o{ accounting_submission_authorizations : authorizes
+    accounting_submission_authorizations ||--o{ accounting_executions : commands
+    accounting_executions ||--o{ accounting_execution_events : audits
+    accounting_executions ||--o{ accounting_artifacts : references
+    core_accounts ||--o{ accounting_outbox : queues
+    core_accounts ||--o{ accounting_request_receipts : deduplicates
+```
+
+- `issuers`: status/version/access_version; `issuer_members`: grants/status/version,
+  UNIQUE(account,issuer,user); `issuer_profiles`: JSON declarado/version imutável.
+- `diagnoses`: intenção/competência/answers com origem/pendências/versionamento.
+- `documents`: tipo/estado/payload, content_version independente das transições,
+  amount, origem pessoal selecionada, contexto de validação e exclusão lógica.
+- `document_reviews`: snapshot/hash/ator/versões/revogação, sem segredo.
+- `submission_authorizations`: revisão/documento, conector/ambiente, validade,
+  consumo/revogação e access_version; revisão não implica autorização de envio.
+- `executions`: business_key única por conta/emitente/operação/ambiente, lease/fence,
+  referência remota/protocolo e artifacts_pending; uma execução ativa por documento.
+- `execution_events`: sequência append-only por execução; `artifacts`: referência
+  privada do storage/hash/tamanho, sem armazenar o original no banco.
+- `request_receipts`: conta+ator+emitente+operação+chave e hash de payload; `outbox`:
+  contrato platform/jobs, UNIQUE(account,idempotency_key), payload só executionId.
+
+Bindings e aplicabilidade de conhecimento pertencem a CT-06 e não foram criados.
+
+## CT-05 — Continuidade Plus (migration0311)
+
+Calendar conserva a fonte autoritativa de conversa: chat_conversations ganha
+assistant_mode (`legacy`/`plus`), issuer_id opcional e contract_version;
+chat_messages ganha plus_envelope JSONB; chat_ask_requests ganha assistant_mode.
+Índice por conta/criador/emitente/modo e índice único de mensagem por request/role.
+Recibo existente vincula hash/resultado para replay e quarentena de efeito incerto.
+Sem nova tabela de configuração/histórico e sem habilitação automática.
+
+## CT-06 — Conhecimento (migration0312)
+
+Corpus textual canônico permanece em messaging.knowledge_bases/documents/chunks.
+accounting.knowledge_bindings: account_id/issuer_id/knowledge_base_id, enabled,
+version, timestamps; FKs compostas e ownership de base por emitente.
+messaging.knowledge_document_applicability: account_id/document_id/version,
+metadata JSON tipado (órgão, jurisdição, regime, classificação, publicação, vigência
+e fonte), revisor/data/status, original_storage_id lógico privado, checksum e CAS.
+Chunks ganham location JSONB (offsets unicode); índice FTS existente é reutilizado.
+Triggers preservam texto/documento publicado; novas versões não substituem versões
+referenciadas. Não existe cópia de documentos, corpus global ou banco vetorial.
+
+## CT-07 — Ledger de uso IA (migration0313)
+
+finance.plus_llm_runs: id/account_id/actor_id/issuer_id lógico/request_id;
+provider/model/task_class; prompt_version/schema_version/policy_version/config_version;
+pricing_snapshot (tabela declarada sem segredo); evidence_refs (IDs/versões, sem trechos); status e timestamps; prompt_tokens/
+completion_tokens/total_tokens/latency_ms/cost_usd/reserved_cost_usd/pricing_version
+nullable; expires_at30dias. UNIQUE(account,actor,request); índices account/date e
+expiry. Nenhuma cópia de evidência, mensagem ou configuração de IA.
+
+## CT-08 — uso das tabelas existentes
+
+Sem migration/tabela de runtime nova. Adapter NFS-e usa motor/executions/artifacts
+existentes. Download resolve artifacts por account/issuer/execution/id e referencia
+Storage privado, sem duplicar binário. accounting.ct08_fixture_manifests é somente
+scaffold de teste em PostgreSQL descartável, não tabela/migration de produto.
+Producer do manifesto de DPS assinado/config/cofre ainda pendente de qualificação;
+nenhuma referência sintética foi ligada ao runtime.
+
+### CT-11 — obrigações (migration0314, estrutura sem regra ativa)
+
+- accounting.obligation_rules: account_id+issuer_id+code+version únicos; regime,
+  jurisdição, vigência, parâmetros fechados, fonte/revisão técnica/ator. Sem seed.
+- accounting.obligations: FK composta emitente/regra; identidade única
+  conta/emitente/código/competência; CAS, perfil, estado, base/valor NUMERIC(20,2),
+  vencimento nullable, pendências/memória e informação manual de pagamento.
+- accounting.obligation_events: FK composta obrigação e versão única; snapshots
+  preservados com ator/operação, sem sobrescrever histórico revisado.
+- finance.obligation_links: PK conta/emitente/obrigação; referência lógica de
+  sheet/line canônicos, valor NUMERIC(14,2), proveniência/versão/ator. Ausência de
+  linha após edição/exclusão gera conflito, não recriação nem pagamento confirmado.
+
+### CT-12 — ingestão Knowledge (migration0315)
+
+- messaging.knowledge_source_subscriptions: conta/emitente/base/fonte únicos,
+  FK composta binding/base, ator, revisão do catálogo, versão/opt-in/intervalo,
+  próxima coleta e último hash/documento canônico. Índice parcial de habilitadas.
+- messaging.knowledge_ingestion_runs: escopo/FK subscrição, versão e ator imutáveis
+  do comando, estado/attempts/recoveries/fence/lease, doc/hash/erro; índice único
+  parcial de run ativa por subscrição e índices de escopo/recuperação.
+- messaging.knowledge_ingestion_receipts: conta/emitente/ator/operação/key únicos,
+  hash e resultado JSON. Sem arquivo original ou segredo duplicado no banco.
+- Corpus/chunks/Storage e outbox Accounting existentes reutilizados; sem vetor,
+  extensão PostgreSQL, reindexação global ou alteração do FTS Omnichannel.
+
+### Finance — migration0316 (2026-11-06)
+
+finance.plus_llm_runs.issuer_id passa a aceitar NULL para classe conversation
+pessoal. Conta/ator/request continuam obrigatórios e únicos por conta/ator/request.
+source_summary empresarial preserva emitente explícito pelo serviço. Não há tabela
+nova de conversa; sem alteração de mensagens, senhas ou seeds. Finalização usa
+comparação NULL-safe pelo owner. Cadeia completa testada sem seeds em banco vazio.
+
+## Busca pública e evidências de conversa — 0317/0318
+
+`knowledge.public_sources`: UUID, chave de origem/versão única, título, origem HTTPS,
+excerto limitado1600, metadata, status draft/published/withdrawn, revisão e FTS GIN.
+Exceção global explícita: somente material público curado, nenhuma conta/upload
+privado. Publicação exige revisão; versão publicada imutável, retirada mantém ID.
+`finance.access_messages.public_evidence`: array JSONB de evidências públicas;
+histórico permanece conta+usuário e revalida fontes antes de retornar snapshot.
+0318 inclui acervo informativo inicial conforme manifesto público no módulo.
+
+## Clientes recorrentes do emitente pessoal — 0319
+
+`finance.fiscal_customers`: tomadores salvos por conta + usuário (mesmo escopo do perfil
+fiscal e dos templates). Documento normalizado único por escopo; nome, descrição do
+serviço, template usado e valor da última nota completa; `version` e `last_used_at`.
+`finance.fiscal_customer_versions`: histórico append-only (trigger bloqueia update) por
+versão, com `source_draft_id`. Escrita somente ao concluir um rascunho no chat; leitura
+em GET `/v1/finance/fiscal/customers` e `/{id}/versions`. Tomadores do emitente
+empresarial (Accounting) não estão nesta tabela.
+
+## Vínculo comprovante ↔ lançamento — 0320
+
+`finance.receipt_links`: PK conta+usuário+documento (um lançamento por comprovante) e
+unique conta+planilha+linha (um comprovante por lançamento). Guarda tipo entrada/saída,
+escopo pessoal/empresarial, valor e se a linha foi criada. Sem FK para `finance.lines`
+(linhas são regravadas pela edição): leitura revalida e devolve linked/amount_changed/
+line_removed. FKs para documento e planilha com cascade.
+
+## Originais de comprovantes e retenção — 0322
+
+`finance.document_originals`: PK documento (cascade de `document_drafts`), conta+usuário,
+`storage_ref` (`r2:`/`disk:` + UUID; nunca o binário), nome, MIME, tamanho, SHA-256,
+status stored/not_stored/purged/removed, motivo, datas de guarda/expurgo e tentativas.
+`finance.retention_settings`: prazo dos originais por conta (1–3650 dias, padrão 90
+quando ausente), versão para CAS e autor. `finance.retention_setting_events`:
+histórico append-only (trigger bloqueia update). A retenção apaga só o arquivo;
+documento extraído, vínculos e históricos permanecem.
+
+## Curadoria do acervo público — 0323
+
+`knowledge.public_collections`: coleta versionada por chave do catálogo (URL, tipo,
+SHA-256, bytes, páginas, quantidade de trechos, status collected/published/superseded/
+discarded, quem coletou/publicou). `knowledge.public_collection_attempts`: todas as
+tentativas (collected/unchanged/failed + código). `knowledge.public_sources` ganha
+`collection_id`/`chunk_index` (trechos coletados nascem draft). `knowledge.public_reviews`:
+revisões append-only (dono, IA, contador; aprovado/ajustes/reprovado), sem tenant porque
+o acervo é público global e curado só por platform_admin.

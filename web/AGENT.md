@@ -29,6 +29,14 @@ Plano canonico: [docs/MULTITENANT_COMPLETION_PLAN.md](../docs/MULTITENANT_COMPLE
 
 ## Workflow oficial
 
+Metadados macOS `._*` (AppleDouble) nunca sao codigo: sao ignorados pelo Git,
+contexto Docker, Compose watch e scanner Tailwind em `omni-design-system.css`.
+Em 2026-11-03, quatro `._*.vue` copiados para o container fizeram o Oxide
+abortar com `Utf8Error` e o painel inteiro responder 502. Ao usar arquivos tar
+no Mac para sincronizacao manual, definir `COPYFILE_DISABLE=1` na criacao do
+arquivo; nao copiar resource forks. Remover somente os metadados contaminantes,
+sem apagar volumes ou fontes Vue reais. Detalhes em `docs/SETUP_MAC.md`.
+
 O warmup do Vite deve abranger somente `app.vue`, a entrada `/` e o login.
 Nao usar globs de todos os componentes/paginas/layers: em dev, o Nuxt passa a
 incluir os estilos desses modulos no HTML inicial (458 CSS observados), elevando
@@ -331,3 +339,21 @@ npm run dev:down
 npm run build
 npm run preview
 ```
+
+Perfil fiscal (2026-11-02): `/perfil#fiscal` compõe a UI Finance com cadastro pessoal por conta, templates e acesso criptografado ao portal. Store `app/stores/fiscal-profile.ts`, editor `layers/finance/composables/useFiscalProfile.ts`. O card só aparece/busca quando a conta tem Finance e o usuário pode ler planilhas. Não há emissão ou login no portal nesta entrega.
+
+## Chat Finance (2026-11-02)
+
+Host compartilhado reconhece `/finance`; configuração abre `/finance?config=ia`. Chat usa surface Finance, mês/ID da planilha selecionada e escopo da conta ativa; backend revalida permissões e propriedade. Painel Finance tem configuração própria e cofre canônico condicionado à permissão transversal. Perfil tem seleção do Emissor Nacional/gov.br sem armazenamento da senha gov.br. Não há pipeline de extrato por imagem nem executor fiscal implementado.
+
+Finance: `FinanceDocumentIntake` no stream da surface Finance usa composable/store próprios para OCR e rascunhos pessoais; independe da disponibilidade da IA. Consulta prepara texto, sem enviar/emitir automaticamente. Roteiro em `docs/finance/COMPROVANTES_E_RASCUNHOS.md`.
+
+`downloadText` em `app/utils/report-export.ts` é exportado para reutilização em fichas JSON Finance; assinatura tipada, comportamento de download existente preservado.
+
+## Contexto de chat independente — 2026-11-06
+
+FinanceAssistantHost injeta conta/permissões próprias somente na árvore do chat.
+Não usar o switcher global para o seletor interno; página A e chat B coexistem.
+O recorder aceita resolvedor opcional de conta e captura X-Account-Id no início;
+troca da conta do chat invalida a resposta. A geometria do Crow/Plus usa a mesma
+âncora do workspace e medidas de sessão por conta; Finance não salva Calendar.

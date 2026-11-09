@@ -154,6 +154,9 @@ func (s *Service) resolveChatTarget(ctx context.Context, access ChatAccess, acco
 // chat tambem recebe as tasks reais do board configurado para poder propor CRUD por ID.
 // O retorno e `any` porque as duas formas tem shapes diferentes no payload.
 func (s *Service) buildChatContext(ctx context.Context, accountID string, principal auth.Principal, access ChatAccess, mode, clientID, month string, policy assistantContextPolicy) (any, error) {
+	if financeSurfaceContext(ctx) {
+		return map[string]any{}, nil
+	}
 	names := access.clientNameByID()
 	calendarAccountID := access.calendarAccountID(accountID)
 	if mode == chatScopeAll {
@@ -289,6 +292,9 @@ func (s *Service) ListChatConversations(ctx context.Context, accountID string, p
 	out := make([]ChatConversationSummary, 0, len(convs))
 	surfaceAccess := make(map[string]error, 3)
 	for _, c := range convs {
+		if financeSurfaceContext(ctx) && c.EntrySurface != AssistantSurfaceFinance {
+			continue
+		}
 		if !access.canAccessSavedScope(c.ScopeMode, ptrToStr(c.ScopeClientID)) {
 			continue
 		}
@@ -357,6 +363,9 @@ func (s *Service) GetChatConversation(ctx context.Context, accountID, id string,
 // normalizado server-side (validateScope) — cliente fora do visivel => ErrInvalidClient
 // (404), 'all' so p/ quem tem select. createdByName vem do Principal (sem re-consultar).
 func (s *Service) CreateChatConversation(ctx context.Context, accountID string, principal auth.Principal, req CreateChatConversationRequest) (ChatConversationSummary, error) {
+	if req.Surface == AssistantSurfaceFinance {
+		ctx = context.WithValue(ctx, financeSurfaceContextKey{}, true)
+	}
 	account := strings.TrimSpace(accountID)
 	access, err := s.resolveChatAccess(ctx, principal, account)
 	if err != nil {
@@ -562,6 +571,13 @@ func conversationHasPendingMetaActions(messages []ChatMessage) bool {
 // (derivados do acesso) + a lista NOMEADA de clientes visiveis. Uma UNICA ida ao tenants
 // scope via resolveChatContext (acesso + nomes juntos).
 func (s *Service) ChatScope(ctx context.Context, accountID string, principal auth.Principal) (ChatScopeView, error) {
+	if financeSurfaceContext(ctx) {
+		access, err := financeChatAccess(principal, strings.TrimSpace(accountID))
+		if err != nil {
+			return ChatScopeView{}, err
+		}
+		return ChatScopeView{LockedClientID: accountID, Clients: access.VisibleClients}, nil
+	}
 	access, clients, err := s.resolveChatContext(ctx, principal, strings.TrimSpace(accountID))
 	if err != nil {
 		return ChatScopeView{}, err

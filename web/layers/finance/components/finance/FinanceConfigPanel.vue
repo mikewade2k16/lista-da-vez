@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  OmniInputsOmniMoneyInput as OmniMoneyInput,
+  InputsOmniSelectMenuInput as OmniSelectMenuInput,
+} from '#components'
 // Slideover de configuracao financeira — port fiel do web-reference (mesma
 // estrutura, classes e estilos). Injeta o editor de config.
 import { FINANCE_CONFIG_KEY } from '../../composables/useFinanceConfigEditor'
@@ -8,17 +12,22 @@ import {
   KIND_OPTIONS,
 } from '../../utils/finance-helpers'
 
+import FinanceAssistantConfig from './FinanceAssistantConfig.vue'
+import FinanceReceiptsConfig from './FinanceReceiptsConfig.vue'
+import FinanceRetentionConfig from './FinanceRetentionConfig.vue'
+
 const config = inject(FINANCE_CONFIG_KEY)!
 
 const {
   configOpen,
   configDraft,
   clientRecurringEntries,
-  saving: configSaving,
+  canManageConfig,
+  canManageSheets,
+  canManageRecurring,
+  saveLabel,
+  retrySave,
   errorMessage: configErrorMessage,
-  editingCategoryId,
-  categoryEditDraft,
-  newCategory,
   editingFixedId,
   fixedEditDraft,
   newFixed,
@@ -26,11 +35,6 @@ const {
   resolveCategoryNameById,
   recurringEntryForTenant,
   queueConfigPersist,
-  addCategory,
-  startEditCategory,
-  finishEditCategory,
-  cancelEditCategory,
-  removeCategory,
   addFixedAccount,
   startEditFixed,
   finishEditFixed,
@@ -54,7 +58,13 @@ const {
     :ui="{ content: 'max-w-2xl' }"
   >
     <template #body>
-      <div class="finances-config space-y-4">
+      <UButton to="/perfil#fiscal" icon="i-lucide-file-text" color="neutral" variant="soft">
+        Dados fiscais e templates no meu perfil
+      </UButton>
+      <FinanceAssistantConfig :can-manage="canManageConfig" />
+      <FinanceReceiptsConfig :can-manage="canManageSheets" />
+      <FinanceRetentionConfig :can-manage="canManageConfig" />
+      <fieldset :disabled="!canManageConfig" class="finances-config space-y-4">
         <UAlert
           v-if="configErrorMessage"
           class="finances-config__alert finances-config__alert--error"
@@ -65,7 +75,7 @@ const {
           :description="configErrorMessage"
         />
 
-        <UCollapsible :default-open="true" class="finances-config__collapsible">
+        <UCollapsible :default-open="false" class="finances-config__collapsible">
           <template #default="{ open }">
             <div class="finances-config__collapsible-trigger">
               <div class="min-w-0">
@@ -127,6 +137,7 @@ const {
                   <div class="grid gap-2 md:grid-cols-[140px_minmax(0,1fr)]">
                     <UInput
                       class="finances-config__input finances-config__input--recurring-adjustment"
+                      :disabled="!canManageRecurring"
                       :model-value="
                         Number(recurringEntryForTenant(entry.id)?.adjustmentAmount || 0)
                       "
@@ -137,6 +148,7 @@ const {
                     />
                     <UInput
                       class="finances-config__input finances-config__input--recurring-notes"
+                      :disabled="!canManageRecurring"
                       :model-value="recurringEntryForTenant(entry.id)?.notes || ''"
                       placeholder="Motivo do ajuste do mes"
                       @update:model-value="setRecurringNotes(entry.id, String($event || ''))"
@@ -148,149 +160,9 @@ const {
           </template>
         </UCollapsible>
 
-        <UCollapsible :default-open="true" class="finances-config__collapsible">
-          <template #default="{ open }">
-            <div class="finances-config__collapsible-trigger">
-              <div class="min-w-0">
-                <p class="text-sm font-semibold">Categorias</p>
-                <p class="text-xs text-[rgb(var(--muted))]">
-                  Defina categorias para entradas e saidas.
-                </p>
-              </div>
-              <div class="flex items-center gap-2">
-                <UBadge class="finances-config__counter-badge" color="neutral" variant="soft">
-                  {{ configDraft.categories.length }} itens
-                </UBadge>
-                <UIcon
-                  :name="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-                  class="size-4"
-                />
-              </div>
-            </div>
-          </template>
+        <FinanceCategoryConfig />
 
-          <template #content>
-            <div class="finances-config__collapsible-content space-y-2">
-              <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px]">
-                <UInput
-                  v-model="newCategory.name"
-                  class="finances-config__input finances-config__input--category-name"
-                  placeholder="Nome da categoria"
-                />
-                <OmniSelectMenuInput
-                  v-model="newCategory.kind"
-                  class="finances-config__input finances-config__input--category-kind"
-                  :items="KIND_OPTIONS"
-                  item-display-mode="text"
-                  :searchable="false"
-                  :creatable="false"
-                  :clear="false"
-                  :badge-mode="true"
-                  option-edit-mode="none"
-                  color="neutral"
-                  variant="none"
-                  :highlight="false"
-                />
-              </div>
-              <UTextarea
-                v-model="newCategory.description"
-                class="finances-config__input finances-config__input--category-description"
-                :rows="2"
-                placeholder="Descricao (opcional)"
-              />
-              <div class="flex justify-end">
-                <UButton
-                  class="finances-config__action finances-config__action--add-category"
-                  icon="i-lucide-plus"
-                  size="sm"
-                  @click="addCategory"
-                >
-                  Adicionar categoria
-                </UButton>
-              </div>
-
-              <div class="mt-3 space-y-2">
-                <div
-                  v-for="category in configDraft.categories"
-                  :key="category.id"
-                  class="finances-config__item-row"
-                >
-                  <div class="min-w-0 w-full">
-                    <template v-if="editingCategoryId === category.id">
-                      <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px]">
-                        <UInput
-                          v-model="categoryEditDraft.name"
-                          class="finances-config__input finances-config__input--category-edit-name"
-                          placeholder="Nome da categoria"
-                        />
-                        <OmniSelectMenuInput
-                          v-model="categoryEditDraft.kind"
-                          class="finances-config__input finances-config__input--category-edit-kind"
-                          :items="KIND_OPTIONS"
-                          item-display-mode="text"
-                          :searchable="false"
-                          :creatable="false"
-                          :clear="false"
-                          :badge-mode="true"
-                          option-edit-mode="none"
-                          color="neutral"
-                          variant="none"
-                          :highlight="false"
-                        />
-                      </div>
-                      <div class="mt-2 flex justify-end gap-1">
-                        <UButton
-                          size="xs"
-                          color="neutral"
-                          variant="soft"
-                          class="finances-config__action finances-config__action--save-category"
-                          @click="finishEditCategory"
-                        >
-                          Salvar
-                        </UButton>
-                        <UButton
-                          size="xs"
-                          color="neutral"
-                          variant="ghost"
-                          class="finances-config__action finances-config__action--cancel-category"
-                          @click="cancelEditCategory"
-                        >
-                          Cancelar
-                        </UButton>
-                      </div>
-                    </template>
-                    <template v-else>
-                      <p class="truncate text-sm font-medium">{{ category.name }}</p>
-                      <p class="text-xs text-[rgb(var(--muted))]">
-                        {{ category.kind }} | {{ category.description || 'Sem descricao' }}
-                      </p>
-                    </template>
-                  </div>
-                  <div class="flex items-center gap-1">
-                    <UButton
-                      icon="i-lucide-pencil"
-                      color="neutral"
-                      variant="ghost"
-                      size="xs"
-                      class="finances-config__action finances-config__action--edit-category"
-                      @click="startEditCategory(category.id)"
-                    />
-                    <UButton
-                      icon="i-lucide-trash-2"
-                      color="error"
-                      variant="ghost"
-                      size="xs"
-                      class="finances-config__action finances-config__action--remove-category"
-                      @click="removeCategory(category.id)"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-        </UCollapsible>
-
-        <UCollapsible :default-open="true" class="finances-config__collapsible">
+        <UCollapsible :default-open="false" class="finances-config__collapsible">
           <template #default="{ open }">
             <div class="finances-config__collapsible-trigger">
               <div class="min-w-0">
@@ -372,7 +244,7 @@ const {
                 v-for="account in configDraft.fixedAccounts"
                 :key="account.id"
                 class="finances-config__fixed-collapsible"
-                :default-open="true"
+                :default-open="false"
               >
                 <template #default="{ open }">
                   <div class="finances-config__collapsible-trigger">
@@ -557,14 +429,22 @@ const {
             </div>
           </template>
         </UCollapsible>
-      </div>
+      </fieldset>
     </template>
 
     <template #footer>
       <div class="flex w-full items-center justify-between gap-2">
         <p class="text-xs text-[rgb(var(--muted))]">
-          {{ configSaving ? 'Salvando configuracoes...' : 'Salvo automaticamente' }}
+          {{ saveLabel }}
         </p>
+        <UButton
+          v-if="saveLabel.includes('Falha')"
+          color="error"
+          variant="soft"
+          @click="void retrySave()"
+        >
+          Tentar novamente
+        </UButton>
         <UButton
           color="neutral"
           variant="ghost"
@@ -578,8 +458,8 @@ const {
   </USlideover>
 </template>
 
-<style scoped>
-.finances-config :deep(.omni-select-menu-input) {
+<style>
+.finances-config .omni-select-menu-input {
   display: flex;
 }
 

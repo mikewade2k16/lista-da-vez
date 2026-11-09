@@ -1,0 +1,110 @@
+{
+  "date": "2026-11-05",
+  "command": "go test -race -count=1 -json ./internal/modules/calendar ./internal/modules/finance",
+  "databaseConfigured": false,
+  "packages": {
+    "github.com/mikewade2k16/lista-da-vez/back/internal/modules/calendar": {
+      "pass": 156,
+      "fail": 0,
+      "skip": 3,
+      "skippedTests": [
+        "TestPlusPersistentHistoryReplayPrivacyAndContext",
+        "TestPlusInFlightAndUnknownNeverRepeatTool",
+        "TestChatProposalExecutionPostgresIdempotencyAndSurfaceRevocation"
+      ],
+      "packageResult": "pass"
+    },
+    "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance": {
+      "pass": 74,
+      "fail": 0,
+      "skip": 61,
+      "skippedTests": [
+        "TestAccessConversationAndPortalCheckIsolation",
+        "TestAccountingSourceExplicitSharingAndOwnerIsolation",
+        "TestFinanceAssistantSettingsAndContext",
+        "TestDocumentDraftPersistenceAndIsolation",
+        "TestRealDebitReceiptOCR",
+        "TestRealPaymentReceiptOCR",
+        "TestPDFTextAndScannedFallback",
+        "TestDocumentRealPDF",
+        "TestDocumentPreparationUsesSavedDataAndExplicitConversationFields",
+        "TestReviewPersistenceConflictsAndScope",
+        "TestDocumentRealImageOCR",
+        "TestRealSmallReceiptOCR",
+        "TestFiscalProfileIsolationEncryptionAndRevision",
+        "TestGovBRProfileRejectsStoredPassword",
+        "TestKnowledgePDFUsesBoundedExtractorAndTreatsInstructionsAsData",
+        "TestPlusExplanationPortugueseEvaluation/resumo_de_fonte",
+        "TestPlusExplanationPortugueseEvaluation/explicação_de_fonte",
+        "TestPlusExplanationPortugueseEvaluation/sem_fonte",
+        "TestPlusExplanationPortugueseEvaluation/conflito",
+        "TestPlusExplanationPortugueseEvaluation/origem_truncada",
+        "TestPlusExplanationPortugueseEvaluation/imposto_sem_aplicabilidade",
+        "TestPlusExplanationPortugueseEvaluation/cálculo_não_inferido",
+        "TestPlusExplanationPortugueseEvaluation/regime_desconhecido",
+        "TestPlusExplanationPortugueseEvaluation/fonte_antiga_informativa",
+        "TestPlusExplanationPortugueseEvaluation/fonte_atual_informativa",
+        "TestPlusExplanationPortugueseEvaluation/competência_desconhecida",
+        "TestPlusExplanationPortugueseEvaluation/modelo_ausente",
+        "TestPlusExplanationPortugueseEvaluation/provider_não_suportado",
+        "TestPlusExplanationPortugueseEvaluation/kill_switch_IA",
+        "TestPlusExplanationPortugueseEvaluation/timeout",
+        "TestPlusExplanationPortugueseEvaluation/limite_429",
+        "TestPlusExplanationPortugueseEvaluation/falha_5xx",
+        "TestPlusExplanationPortugueseEvaluation/schema_inválido",
+        "TestPlusExplanationPortugueseEvaluation/citação_inventada",
+        "TestPlusExplanationPortugueseEvaluation/sem_citação",
+        "TestPlusExplanationPortugueseEvaluation/valor_inventado",
+        "TestPlusExplanationPortugueseEvaluation/url_inventada",
+        "TestPlusExplanationPortugueseEvaluation/regra_conclusiva_recusada",
+        "TestPlusExplanationPortugueseEvaluation/resposta_tardia",
+        "TestPlusExplanationPortugueseEvaluation/abstenção_do_modelo",
+        "TestPlusExplanationPortugueseEvaluation/preço_ausente_com_teto",
+        "TestPlusExplanationPortugueseEvaluation/custo_sem_tabela_honesto",
+        "TestPlusExplanationPortugueseEvaluation/negação_sem_tool",
+        "TestPlusExplanationPortugueseEvaluation/pedido_hipotético",
+        "TestPlusExplanationPortugueseEvaluation/injeção_do_usuário",
+        "TestPlusExplanationPortugueseEvaluation/anexo_não_é_comando",
+        "TestPlusExplanationPortugueseEvaluation/preparar_sem_documento",
+        "TestPlusExplanationPortugueseEvaluation/consulta_vencimento_pessoal_sem_IA",
+        "TestPlusExplanationPortugueseEvaluation/período_ambíguo_sem_IA",
+        "TestExplanationBudgetAndDuplicateNeverCallTwice",
+        "TestExplanationConcurrentAccountBudgetIsAtomic",
+        "TestExplanationKnownPriceAndMonetaryLimit",
+        "TestDeterministicFinanceIgnoresFailingLLM",
+        "TestPlusConfigAndFinancialToolsWorkWithoutAI",
+        "TestPlusRejectsUnregisteredAndForbiddenTools",
+        "TestPlusPersonalFlowReusesExistingConversationWithoutCopyingHistory",
+        "TestObligationDueDatesReadWithoutLLM",
+        "TestPortalSessionPersistenceReuseAndInvalidation",
+        "TestSheetsPersistenceDatesAndScope",
+        "TestFixedAccountsKeepAllMembers",
+        "TestClosedSheetAndConcurrentUpdate"
+      ],
+      "packageResult": "pass"
+    }
+  },
+  "limits": [
+    "DB-dependent tests skipped; historical PostgreSQL evidence does not qualify a new Calendar adapter.",
+    "No new Calendar runtime or rollout was implemented.",
+    "No browser/manual/model/provider test."
+  ],
+  "lint": {
+    "command": "GOLANGCI_LINT_CACHE=/tmp/ct13-lint-cache XDG_CACHE_HOME=/tmp/ct13-cache golangci-lint run --allow-parallel-runners ./internal/modules/finance",
+    "result": "failed-existing-issues",
+    "newHarnessIssues": 0,
+    "existingIssues": 6,
+    "details": [
+      "portal_probe.go:55,64 bodyclose",
+      "portal_session.go:112 bodyclose",
+      "portal_probe.go:105 errcheck",
+      "document_integration_test.go:135 whitespace",
+      "document_pdf_test.go:128 whitespace"
+    ],
+    "runnerAttempts": [
+      "Wrapper could not run: Git dubious ownership in /workspace; no global config changed.",
+      "Direct first attempt could not initialize cache at /.cache; retried with temporary writable cache."
+    ]
+  },
+  "documentationValidation": "15 canonical prompts and derived HTML identical; CT-13 dataset/router hashes match report; JSON parse and new local links passed"
+}

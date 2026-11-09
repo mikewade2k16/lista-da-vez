@@ -1,6 +1,26 @@
 # AGENT — Modulo Go `cardapio`
 
 Modulo plugavel (Module Registry) dos cardapios online (restaurantes) do painel Omni.
+
+Tags de produtos (2026-11-03): reutiliza `cardapio.products.tags` (JSONB da migration
+0153), sem nova tabela/migration. `ProductLean` e GET de produtos agora incluem
+`tags: string[]`, lidas na mesma query com account_id + restaurant_id. POST/PATCH e
+importacao normalizam espacos externos, descartam vazios e duplicados sem distinguir
+caixa; zero tags persiste como `[]`. Contratos full/publico e copia/exportacao ja
+preservavam tags. O painel filtra a lista lean por qualquer tag selecionada (OR),
+combinando com os demais filtros (AND). Atualizar API e painel juntos.
+Validacao de persistencia: `TestProductTagsPostgres` usa um banco vazio dedicado
+com prefixo `omni_cardapio_tags_test_`, informado por CARDAPIO_TAGS_TEST_DATABASE_URL.
+Aplica as migrations canonicas do catalogo e testa salvar/limpar tags, leitura full
+e lean, createdAt preservado e bloqueio cross-tenant no service e no repository.
+Nao apontar esse teste para o banco do aplicativo.
+
+Layout (2026-11-04): TestLayoutPublicationPostgres usa banco descartavel com
+prefixo omni_cardapio_layout_test_ e CARDAPIO_LAYOUT_TEST_DATABASE_URL. Verifica
+validacao canonica -> grava draft -> rele via outro repository -> publica ->
+leitura publicada; inclui remover sufixo, string vazia e isolamento por account.
+Nao altera API/schema e nunca deve rodar no banco do aplicativo.
+
 Tenant-aware (schema `cardapio.*`, `account_id` FK `core.accounts` em TODA tabela). O
 painel e o CRUD multitenant; a API publica (`/v1/public/*`) e consumida pelo **browser
 do visitante** de um front Nuxt **estatico** hospedado no site do cliente.

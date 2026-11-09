@@ -14,13 +14,17 @@ const chat = useCalendarChat()
 const surface = computed<AssistantChatSurface>(() => {
   const path = String(route.path || '')
   if (path === '/calendario' || path.startsWith('/calendario/')) return 'calendar'
+  if (path === '/finance' || path.startsWith('/finance/')) return 'finance'
   if (path === '/meta-ads' || path.startsWith('/meta-ads/')) return 'meta_ads'
   return 'global'
 })
 
-function openConfig(): void {
+function openConfig(surface: AssistantChatSurface): void {
   chat.closePanel()
-  void navigateTo({ path: '/calendario', query: { config: 'ia' } })
+  void navigateTo({
+    path: surface === 'finance' ? '/finance' : '/calendario',
+    query: { config: 'ia' },
+  })
 }
 </script>
 

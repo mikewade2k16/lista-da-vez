@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/automation"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bi"
@@ -26,6 +27,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/customerdata"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/customerintelligence"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/knowledge"
 	metaads "github.com/mikewade2k16/lista-da-vez/back/internal/modules/meta_ads"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel"
@@ -477,9 +479,32 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// createTask/vincular/desvincular + taskId no EventView). WithPublisher injeta o
 		// realtimeService como transporte do canal calendar:account:{id} (contrato C11:
 		// o Service publica create/update/delete evento, notas, day media, config e plano).
+		financeModule := finance.New(omnichannelSecretBox).WithAssistantResolver(financeCredentialResolver(automationModule)).WithOriginalFiles(financeOriginalFiles(storageModule, cfg))
+		accountingCatalog := core.NewModuleAccess(pool)
+		accountingChecker := auth.NewPostgresAccountMemberChecker(pool)
+		accountingModule := accounting.New(accountingPolicy{checker: accountingChecker, catalog: accountingCatalog}).WithPersonalReader(accountingPersonalReader{module: financeModule, catalog: accountingCatalog, checker: accountingChecker}).WithArtifacts(accountingStorage{module: storageModule}).WithArtifactReader(accountingStorage{module: storageModule}).WithKnowledgePorts(accountingKnowledgePorts(privateOriginals{storage: storageModule, dir: cfg.PrivateFilesDir})).WithObligationFinance(accountingObligationFinance{module: financeModule, authorize: plusAuthorizer(accountingChecker, accountingCatalog)})
+		publicSearch, publicValidation := publicKnowledgePorts(pool)
+		financeModule.WithPlusPorts(finance.PlusPorts{PublicKnowledge: publicSearch, ValidatePublicEvidence: publicValidation, Authorize: plusAuthorizer(accountingChecker, accountingCatalog), Accounting: accountingPlusPort(accountingModule), Knowledge: accountingKnowledgePlusPort(accountingModule), ValidateEvidence: accountingEvidenceValidator(accountingModule)})
 		var contentOperationsModule *contentoperations.Module
 		calendarModule = calendar.New(
 			calendarMediaStorage,
+			calendar.WithFinancePlus(calendarPlusPorts(financeModule)),
+			calendar.WithFinanceTranscriptionAuthorization(func(ctx context.Context, account string, p auth.Principal) error {
+				if err := plusAuthorizer(accountingChecker, accountingCatalog)(ctx, finance.PlusScope{AccountID: account, ActorID: p.UserID}, "finance.sheets.view"); err != nil {
+					return calendar.ErrAssistantNoCapability
+				}
+				return nil
+			}),
+			calendar.WithFinanceAssistant(financeRuntimeProvider(financeModule), func(ctx context.Context, account string, p auth.Principal, sheet, month string) (any, error) {
+				if financeModule.Assistant() == nil {
+					return nil, calendar.ErrAssistantRuntimeUnavailable
+				}
+				value, err := financeModule.Assistant().Context(ctx, account, p, sheet, month)
+				if errors.Is(err, finance.ErrSheetNotFound) || errors.Is(err, finance.ErrFiscalNotFound) {
+					return nil, calendar.ErrNotFound
+				}
+				return value, err
+			}),
 			calendar.WithTasksService(func() *tasks.Service { return tasksModule.Service() }),
 			calendar.WithPublisher(realtimeService),
 			calendar.WithContentOperationsBrief(func(ctx context.Context, accountID string, principal auth.Principal, clientIDs []string) (any, error) {
@@ -661,7 +686,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// finance: planilhas financeiras mensais por cliente (substitui o mock BFF
 		// Nitro — ADR 0002). Painel em /v1/finance (gating abaixo).
 		// Plano: docs/finance/PLANO_MODULO_FINANCE.md.
-		registry.MustRegister(finance.New())
+		registry.MustRegister(financeModule)
+		registry.MustRegister(accountingModule)
 		// tools: encurtador de link + gerador de QR Code (reconstroi os mocks do
 		// projeto antigo como back real). Painel em /v1/tools (gating abaixo);
 		// redirects publicos /s/{slug} e /q/{slug} fora do gate.
@@ -828,6 +854,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 			h.RegisterRoutes(mux)
 			h.RegisterEventHandlers(bus)
 		}
+		// Curadoria do acervo público do chat (somente platform_admin; CT-15 fase C).
+		knowledge.RegisterPublicCurationRoutes(mux, knowledge.NewService(knowledge.NewStore(pool), knowledge.Ports{ExtractPublicPDF: finance.ExtractPublicPDF}), authMiddleware)
 	}
 	if omnichannelModule != nil {
 		go transcriptionsAnalysisWorker.Run(context.Background())
@@ -918,6 +946,7 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		// finance (planilhas financeiras). platform_admin tem bypass; contas sem o
 		// modulo habilitado levam 403 module_disabled.
 		{Prefix: "/v1/finance", ModuleID: "finance"},
+		{Prefix: "/v1/accounting", ModuleID: "accounting"},
 		// tools (encurtador + QR). So o painel /v1/tools e gateado; os redirects
 		// publicos /s/{slug} e /q/{slug} NAO estao aqui (sao abertos).
 		{Prefix: "/v1/tools", ModuleID: "tools"},

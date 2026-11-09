@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-04",
+  "productionEnabled": false,
+  "homologationCompleted": false,
+  "realFiscalCalls": 0,
+  "pilot": {
+    "state": "SE",
+    "municipality": null,
+    "businessTypes": [
+      "MEI",
+      "non-MEI"
+    ],
+    "taxRegimesConfirmed": false
+  },
+  "sources": [
+    {
+      "name": "Página de documentação atual",
+      "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual",
+      "state": "public_page_read",
+      "advertisedPackage": "NFSe-ESQUEMAS_XSD-v1.01-20260209",
+      "sha256": null
+    },
+    {
+      "name": "Pacote XSD",
+      "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/nfse-esquemas_xsd-v1-01-20260209.zip",
+      "state": "collected_2026-11-06; HTTP 200 direct download",
+      "sha256": "e7935cbd9470527c6cc32984c1b2263e614183bf0139ce2733eaaed2de9a8072",
+      "officialFixtureValidated": false,
+      "versionedFiles": "xsd/1.01 (manifest xsd-1.01-manifest.json)"
+    },
+    {
+      "name": "Manual contribuintes API",
+      "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual/manual-contribuintes-emissor-publico-api-sistema-nacional-nfs-e-v1-2-out2025.pdf",
+      "state": "text_read_via_web; binary_download_http_403",
+      "fileVersionLabel": "v1-2-out2025",
+      "observedInternalHistory": "1.0 / 17-03-2025",
+      "sha256": null
+    },
+    {
+      "name": "Ambientes oficiais",
+      "url": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/apis-prod-restrita-e-producao",
+      "state": "public_page_read",
+      "sha256": null
+    },
+    {
+      "name": "Swagger homologação",
+      "url": "https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional/docs/index",
+      "state": "not_accessible; retried 2026-11-06: HTTP 403",
+      "sha256": null
+    },
+    {
+      "name": "Swagger produção",
+      "url": "https://sefin.nfse.gov.br/SefinNacional/docs/index",
+      "state": "not_accessible; direct_http_403; retried 2026-11-06: HTTP 403",
+      "sha256": null
+    }
+  ],
+  "fixtures": "synthetic only; official XSD 1.01 collected 2026-11-06 and used for offline structural validation of synthetic DPS"
+}

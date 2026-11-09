@@ -746,3 +746,59 @@ Ao subir a WAVE 3 pra producao, NAO basta o deploy da imagem. Fazer, em ordem:
   registry account/client-scoped, o workflow devolve somente `resourceIds`, e o Go sanitiza HTTPS,
   limita/deduplica/intersecta os IDs antes de persistir/expor. O history recebe apenas resumo curto,
   sem URL/metadata. Esses cards nao concedem escrita nem chamam o runner legado.
+
+## Surface Finance (2026-11-02)
+
+`WithFinanceAssistant` injeta runtime e contexto do módulo Finance; não herda o runtime global. Surface `finance` somente leitura, conversas pessoais com checagem de criador mesmo para agência/admin, queries filtradas por criador e conta. `surface=finance` nos endpoints compartilhados resolve acesso sem exigir Calendar; `/ask` inclui `financeSheetId`. Constraints de surfaces ampliadas em0305. Regressões em `assistant_finance_test.go`. Não há executor de portal fiscal.
+
+## Plus Finance — CT-05 (2026-11-04)
+
+Modo `plus`, contrato1.0, somente `/v1/assistant/chat/*` e surface Finance.
+`WithFinancePlus` injeta portas neutras; roteamento/negócio pertence ao Finance.
+Histórico nas tabelas existentes, isolado por conta, criador, modo e emitente
+imutável. Migration0311 adiciona contexto/envelope e recibo por modo. Replay
+retorna envelope persistido; conteúdo divergente conflita; execução incerta não
+repete efeito. História legada exclui Plus. Nenhum encaminhamento Plus ao n8n.
+Testes reais descartáveis: `PLUS_TEST_DATABASE_URL` com banco `plus_test*`.
+
+## Revalidação de evidências — CT-07
+
+AssistantPlusPorts.ValidateOutput é callback opcional do owner Finance. Runtime
+composto valida referências atuais antes de persistir/expor, no replay e ao ler
+histórico; fontes revogadas/desativadas impedem retornar envelope antigo. Receipts
+e mensagem mantêm IDs originais e replay autorizado segue idêntico, sem nova run.
+Calendar não consulta SQL privado de Knowledge. História legada preservada.
+
+## CT-14 — preparação da expansão (2026-11-05)
+
+Inventário e matriz em docs/accounting/CALENDAR_EXPANSAO.md. Integração pendente do
+aceite M1; nenhum adapter, flag, tabela, rota ou histórico novo implementado por CT-14.
+Preservar chat/voz/propostas e confirmação transacional. Novo caminho local deve
+resolver também o preflight, módulo/RBAC/cliente atuais e revogação no replay.
+Não tornar Calendar dependente do Accounting. P15-37 registra implementação/aceite.
+
+## Shell Finance — 2026-11-06
+
+Cabeçalho Finance marca Crow Assistant Plus e não oferece seletor IA/local.
+Fluxo principal é orquestrado pelo Finance. Histórico IA anterior segue consulta
+no shell, sem composer Finance legado; demais superfícies/voz/propostas continuam
+no contrato atual. Isto não implementa o adapter de leitura Calendar CT-14.
+
+## Paridade visual e Whisper local — 2026-11-06
+
+Referência aprovada pelo usuário: layout Crow original (imagem1). Não criar outro
+composer/estilo para Plus. CalendarChatComposer extrai o DOM aprovado de áudio/input
+e é usado tanto pelo CalendarChatPanel quanto pelo adapter FinanceConversationVoice.
+Reutiliza calendar/chat.css, modos Whisper/Ao vivo, waveform, timer, pausa, descarte,
+confirmação e botão enviar com ícone. FinanceConversation usa CalendarChatMessage
+e stream/empty state canônicos. Formulários só sob solicitação, sem ficha inicial.
+
+A transcrição Finance canônica resolve provider=local, sem consultar ativação/modelo
+de conversa ou chave paga. Usa o webhook existente para o Whisper compartilhado.
+WithFinanceTranscriptionAuthorization injeta a checagem viva de membership, módulo
+Finance e finance.sheets.view via composição; revalidada após transcrever. Nenhuma
+permissão concedida pela UI ou mudança em Calendar/Meta/global para transcrição paga.
+Serviço local Whisper ativo/healthy e rota de transcrição configurada foram conferidos,
+sem expor URL/env/credencial. Teste de áudio sintético cobre providerlocal/chavevazia
+e revogação antes/depois; microfone do usuário e comparação visual não executados.
+Não trocar modelo/baixar pesos ou ativar configuração de conta para corrigir áudio.

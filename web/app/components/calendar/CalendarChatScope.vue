@@ -17,6 +17,8 @@ const props = defineProps<{
   mode: CalendarChatScopeMode
   clientId: string
   disabled?: boolean
+  allowAll?: boolean
+  label?: string
 }>()
 
 const emit = defineEmits<{
@@ -44,12 +46,17 @@ function onChange(event: Event): void {
       class="calendar-chat-scope__select"
       :value="selected"
       :disabled="disabled"
-      aria-label="Escopo do contexto do assistente"
-      title="Contexto que a IA usa: todos os clientes ou um cliente especifico"
+      :aria-label="label || 'Escopo do contexto do assistente'"
+      :title="label || 'Contexto do assistente: todos os clientes ou um cliente específico'"
       @change="onChange"
     >
-      <option value="">Todos os clientes</option>
-      <option v-for="client in scope.clients" :key="client.id" :value="client.id">
+      <option v-if="allowAll !== false" value="">Todos os clientes</option>
+      <option
+        v-for="client in scope.clients"
+        :key="client.id"
+        :value="client.id"
+        :disabled="client.disabled"
+      >
         {{ client.name || 'Cliente sem nome' }}
       </option>
     </select>

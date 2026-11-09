@@ -862,3 +862,10 @@ badge quando ha `errorMessage`.
 - se for tabela ou card especializado, procurar primeiro na pasta de dominio correspondente
 - se for acao global de notificacao ou confirmacao, usar `uiStore` com os hosts de `ui`
 - se for filtro simples, nao criar novo `<select>` solto; encapsular em [AppSelectField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSelectField.vue) ou evoluir esse componente
+
+## Composer compartilhado do Crow — 2026-11-06
+
+calendar/CalendarChatComposer.vue é a fonte comum da UI de entrada/voz, extraída do
+layout aprovado CalendarChatPanel: mesmos controles e calendar/chat.css. Consumidores
+injetam estado e eventos; não duplicar HTML/CSS no Plus. CalendarChatMessage também
+é reutilizado no Finance; preservar tokens, acessibilidade, rolagem e entrada por teclado.

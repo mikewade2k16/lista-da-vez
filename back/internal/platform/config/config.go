@@ -21,6 +21,7 @@ type Config struct {
 	HTTPRateLimitWindow                 time.Duration
 	WebAppURL                           string
 	UploadsDir                          string
+	PrivateFilesDir                     string
 	R2Enabled                           bool
 	R2AccountID                         string
 	R2Bucket                            string
@@ -102,6 +103,7 @@ func Load() Config {
 		HTTPRateLimitWindow:                 getEnvDuration("HTTP_RATE_LIMIT_WINDOW", time.Minute),
 		WebAppURL:                           getEnv("WEB_APP_URL", "http://localhost:3003"),
 		UploadsDir:                          getEnv("UPLOADS_DIR", "data/uploads"),
+		PrivateFilesDir:                     getEnv("PRIVATE_FILES_DIR", ""),
 		R2Enabled:                           getEnvBool("R2_ENABLED", false),
 		R2AccountID:                         getEnv("R2_ACCOUNT_ID", ""),
 		R2Bucket:                            getEnv("R2_BUCKET", ""),

@@ -16,6 +16,7 @@ func CanConfigureAssistant(principal Principal) bool {
 		switch strings.TrimSpace(permission) {
 		case "automation.manage",
 			"calendar.manage",
+			"finance.config.manage",
 			"meta_ads.manage",
 			"omnichannel.agents.manage",
 			"core.account.manage",

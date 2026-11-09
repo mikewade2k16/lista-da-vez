@@ -47,9 +47,19 @@ do container no ultimo build/sync. O bind mount ./web:/app nao existe mais
 
 Stack Mac completa: `npm run dev:mac:up` usa o override Mac e os profiles
 automation, omnichannel e meta-ads-assistant explicitamente; serviços auxiliares
-ficam em localhost com saída para internet. Não remover volumes ao reparar rede.
+ficam em localhost com saída para internet. Após subir a stack, mantém
+`docker compose watch --no-up web` ativo no terminal para sincronizar cada edição.
+`npm run dev:mac:start` retoma os mesmos servicos ja criados sem rebuild e também
+mantém o watcher ativo; `npm run dev:mac:watch` ativa somente o watcher para uma
+stack já ligada. Ctrl-C encerra apenas o watcher. Não remover volumes ao reparar rede.
 `sync-agent-skills.mjs` mantém as cópias portáveis Claude/Codex idênticas;
 `npm run agents:check` detecta divergência sem escrever arquivos.
+
+Os hooks de commit executam `gofmt` e `golangci-lint` no container definido em
+`back/Dockerfile.devtools`. A imagem é montada uma vez pelo pre-commit; os
+scripts `go-tools-docker.sh`, `gofmt-staged-docker.sh` e
+`lint-go-staged-docker.sh` mantêm o uso de Go fora do host. Docker Desktop deve
+estar ativo quando houver arquivos Go staged.
 
 Mac Apple Silicon (2026-10-29): `setup-mac-tools.rb` instala Node/npm e PowerShell
 oficiais no home do usuario, verifica SHA-256, preserva configuracoes do shell com

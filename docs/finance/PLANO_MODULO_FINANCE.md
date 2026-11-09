@@ -249,3 +249,30 @@ para todas as contas. O `SyncCatalog` garante `finance` em `core.modules`/`permi
 - Padrao de modulo: `back/internal/modules/site/` + `back/internal/platform/modules/module.go`.
 - Roadmap: Fase 14 em `web/app/components/roadmap/roadmap-data.ts`.
 - Legado/mock: `docs/LEGADO.md` #6.
+
+## Correções validadas — 2026-11-01
+
+A implementação agora valida membership da conta e RBAC por operação no backend;
+usa datas PostgreSQL tipadas; preserva composição de múltiplas contas fixas; gera
+IDs de recorrência por planilha e mantém compatibilidade com os IDs legados.
+
+Gravações de planilha aceitam `expectedUpdatedAt`; uma versão desatualizada
+retorna 409 `sheet_conflict`. Planilha fechada retorna 409 `sheet_closed` para
+edição, efetivação e exclusão. Status/reabertura são operações explícitas em
+`PATCH /v1/finance/sheets/{id}/status`, com o mesmo controle de versão.
+
+Configurações inicializam novas planilhas. Alterar uma configuração não reescreve
+os snapshots existentes; reaplicação é uma ação explícita em planilha aberta.
+Autosave captura conta/planilha/payload por trabalho, aguarda navegação e mantém
+falhas pendentes para nova tentativa. Não há persistência prometida após o usuário
+forçar o fechamento do navegador ou desligar a máquina.
+
+Checklist, evidências e limites: [CORRECOES_FINANCE.md](CORRECOES_FINANCE.md).
+
+## Roteiro de QA
+
+Funcionalidades, preparação, passos e resultados esperados: `docs/finance/ROTEIRO_TESTES.md`. Resultados históricos: `docs/finance/TESTES_FUNCIONAIS_FINANCE.md`.
+
+## Cadastro fiscal pessoal (2026-11-02)
+
+Primeira entrega para preparar NFS-e: perfil fiscal, cofre write-only do portal e templates pessoais persistentes, editados no perfil do usuário. Sem integração API NFS-e, chat ou emissão nesta etapa. Contratos, testes e limites: [PERFIL_FISCAL_E_TEMPLATES.md](PERFIL_FISCAL_E_TEMPLATES.md).

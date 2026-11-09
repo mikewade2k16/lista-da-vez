@@ -85,3 +85,33 @@ func normalizeRecurring(in []RecurringEntry) []RecurringEntry {
 	}
 	return out
 }
+
+// ChangeStatus reabre/fecha explicitamente, sem reenviar ou reescrever as linhas.
+func (s *Service) ChangeStatus(ctx context.Context, accountID, id, status, expectedUpdatedAt string) (SheetDetail, error) {
+	if normalizeID(id) == "" {
+		return SheetDetail{}, ErrSheetNotFound
+	}
+	switch status {
+	case "aberta", "conferencia", "fechada":
+	default:
+		return SheetDetail{}, ErrInvalidStatus
+	}
+	return s.sheets.ChangeStatus(ctx, accountID, normalizeID(id), status, expectedUpdatedAt)
+}
+
+func sameRecurring(a, b []RecurringEntry) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[RecurringEntry]int)
+	for _, entry := range normalizeRecurring(a) {
+		counts[entry]++
+	}
+	for _, entry := range normalizeRecurring(b) {
+		counts[entry]--
+		if counts[entry] < 0 {
+			return false
+		}
+	}
+	return true
+}

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "frozenBeforeRun": "2026-11-05",
+  "requiredExactRouteAccuracy": 0.98,
+  "maxProhibitedToolSelections": 0,
+  "maxUnexpectedPreparations": 0,
+  "maxAIOnDeterministicQueries": 0,
+  "optionalModelTotalP95MsTarget": 250,
+  "requiredModelEvidence": "same held-out cases, exact artifacts/licences, same hardware, budget and current account policy; no rollout without M1/user acceptance"
+}

@@ -44,6 +44,9 @@ func NewWithHTTPClient(hc *http.Client, logger *slog.Logger) Client {
 
 // chatRequest e o corpo OpenAI-compatible enviado aos tres provedores.
 type chatRequest struct {
+	MaxTokens           int `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
+
 	Model          string        `json:"model"`
 	Messages       []chatMessage `json:"messages"`
 	Temperature    float64       `json:"temperature"`
@@ -66,10 +69,10 @@ type chatResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+	Usage *struct {
+		PromptTokens     *int `json:"prompt_tokens"`
+		CompletionTokens *int `json:"completion_tokens"`
+		TotalTokens      *int `json:"total_tokens"`
 	} `json:"usage"`
 }
 
@@ -81,11 +84,21 @@ func (c *client) Complete(ctx context.Context, req Request) (Response, error) {
 		return Response{}, err // ErrInvalidProvider/ErrInvalidModel/ErrKeyMissing/ErrBaseURLNotAllowed
 	}
 	provider := normalizeProvider(req.Provider)
+	if req.MaxOutputTokens < 0 || req.MaxOutputTokens > 16384 {
+		return Response{}, ErrInvalidModel
+	}
 
 	body := chatRequest{
 		Model:       req.Model,
 		Temperature: req.Temperature,
 		Messages:    messagesFor(req),
+	}
+	if req.MaxOutputTokens > 0 {
+		if provider == "openai" {
+			body.MaxCompletionTokens = req.MaxOutputTokens
+		} else {
+			body.MaxTokens = req.MaxOutputTokens
+		}
 	}
 	if req.Schema != nil {
 		// JSON mode + validacao no Go. Sem isto, o modelo pode devolver prosa em
@@ -102,7 +115,7 @@ func (c *client) Complete(ctx context.Context, req Request) (Response, error) {
 	// Alguns modelos OpenAI-compatible legados aparecem em /models e aceitam chat,
 	// mas rejeitam response_format=json_object com 400. A validacao autoritativa
 	// continua no Go; por isso uma unica repeticao sem a dica do provider e segura.
-	if statusCode == http.StatusBadRequest && body.ResponseFormat != nil {
+	if statusCode == http.StatusBadRequest && body.ResponseFormat != nil && !req.NoFormatFallback {
 		body.ResponseFormat = nil
 		raw, statusCode, err = c.doChatRequest(ctx, endpoint, req.APIKey, body)
 		if err != nil {
@@ -129,18 +142,17 @@ func (c *client) Complete(ctx context.Context, req Request) (Response, error) {
 		Text:      content,
 		Model:     req.Model,
 		LatencyMs: elapsedMs(start),
-		Usage: Usage{
-			PromptTokens:     parsed.Usage.PromptTokens,
-			CompletionTokens: parsed.Usage.CompletionTokens,
-			TotalTokens:      parsed.Usage.TotalTokens,
-		},
 	}
 
+	if parsed.Usage != nil && parsed.Usage.PromptTokens != nil && parsed.Usage.CompletionTokens != nil && parsed.Usage.TotalTokens != nil {
+		out.UsageKnown = true
+		out.Usage = Usage{PromptTokens: *parsed.Usage.PromptTokens, CompletionTokens: *parsed.Usage.CompletionTokens, TotalTokens: *parsed.Usage.TotalTokens}
+	}
 	if req.Schema != nil {
 		trimmed := json.RawMessage(strings.TrimSpace(content))
 		if err := Validate(req.Schema, trimmed); err != nil {
 			// Entregar JSON nao validado ao dominio e o que a spec proibe.
-			return Response{}, fmt.Errorf("%w: %v", ErrSchemaViolation, err)
+			return Response{Usage: out.Usage, UsageKnown: out.UsageKnown, Model: out.Model, LatencyMs: out.LatencyMs}, fmt.Errorf("%w: %v", ErrSchemaViolation, err)
 		}
 		out.JSON = trimmed
 	}

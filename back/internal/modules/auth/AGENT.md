@@ -226,3 +226,19 @@ Nesse caso, o host precisa apenas conseguir entregar para os modulos do core:
 Referencia:
 
 - `../../CORE_MODULES_PORTABILITY.md`
+
+## Configuração IA Finance (2026-11-02)
+
+`finance.config.manage` concede leitura do catálogo mascarado de credenciais do assistente. Não concede mutações no cofre nem configuração global; estas continuam sob `CanManageAssistantCredentials`/`CanManageAssistantConfiguration`.
+
+## Autorização Finance por conta — 2026-11-06
+
+`ResolveAccountPrincipal` revalida visibilidade da conta, usuário ativo, papéis e
+RBAC efetiva no owner Auth. O adapter Finance usa a política canônica
+`CanFinancePermission`: admin transversal e owner com `core.account.manage`
+seguem o mesmo contrato das rotas Finance; custom precisa da permissão efetiva.
+Módulo Finance habilitado continua obrigatório neste adapter. Accounting
+mantém membership e grants de negócio explícitos. Teste PostgreSQL descartável
+em `finance_scope_test.go` cobre permissões, revogação e módulo desabilitado.
+O cliente selecionado no chat é enviado em header, validado no middleware e
+revalidado no serviço; não muda a conta global da página.

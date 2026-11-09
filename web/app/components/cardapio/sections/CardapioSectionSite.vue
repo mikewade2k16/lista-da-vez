@@ -5,6 +5,8 @@ import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
 import type { SiteLayout } from '~/domain/cardapio/types'
+import { createStudioSnapshotRequest } from '~/domain/cardapio/studio-draft'
+import { resolveCardapioStudioUrl } from '~/domain/cardapio/studio-url'
 
 // Aba Site (Site Builder, desenho B4): embute o Studio do TAVOLA num iframe e
 // SALVA/PUBLICA o layout pela API do painel — o painel detem o JWT; o iframe
@@ -36,7 +38,13 @@ const store = useCardapioStore()
 const ui = useUiStore()
 const runtimeConfig = useRuntimeConfig()
 
-const studioUrl = computed(() => String(runtimeConfig.public.studioUrl || '').trim())
+const studioUrl = computed(() =>
+  resolveCardapioStudioUrl(
+    store.primaryDomain,
+    String(runtimeConfig.public.studioUrl || ''),
+    import.meta.dev,
+  ),
+)
 
 // Origem aceita nas mensagens do iframe. Derivada da studioUrl; vazia se a URL
 // for invalida (nesse caso nenhuma mensagem e aceita — fail-safe).
@@ -67,6 +75,8 @@ const iframeRef = ref<HTMLIFrameElement | null>(null)
 const layout = ref<SiteLayout | null>(null)
 const version = ref(0)
 const dirty = ref(false)
+let editRevision = 0
+const initialized = ref(false)
 
 const studioReady = ref(false)
 const saving = ref(false)
@@ -95,12 +105,12 @@ const canRedo = ref(false)
 
 const canSave = computed(
   () =>
-    !!store.restaurantId && studioReady.value && dirty.value && !saving.value && !publishing.value,
+    !!store.restaurantId && initialized.value && dirty.value && !saving.value && !publishing.value,
 )
 const canPublish = computed(
   () =>
     !!store.restaurantId &&
-    studioReady.value &&
+    initialized.value &&
     !!layout.value &&
     !saving.value &&
     !publishing.value,
@@ -135,6 +145,26 @@ function postToStudio(message: Record<string, unknown>) {
   )
 }
 
+const snapshots = createStudioSnapshotRequest(postToStudio)
+
+watch(iframeSrc, () => {
+  snapshots.cancel()
+  initialized.value = false
+  studioReady.value = false
+  layout.value = null
+  version.value = 0
+  dirty.value = false
+  canUndo.value = false
+  canRedo.value = false
+  editRevision += 1
+})
+
+async function captureStudioDraft() {
+  const current = await snapshots.request()
+  layout.value = current
+  return { layout: current, revision: editRevision }
+}
+
 function restaurantTheme() {
   return store.restaurant?.theme ?? null
 }
@@ -167,8 +197,12 @@ async function sendInitLayout() {
       restaurantTheme: restaurantTheme(),
     })
   } catch (caught) {
-    postToStudio({ type: 'init', layout: null, restaurantTheme: restaurantTheme() })
-    ui.error(getApiErrorMessage(caught, 'Nao foi possivel carregar o rascunho do site.'))
+    ui.error(
+      getApiErrorMessage(
+        caught,
+        'Nao foi possivel carregar o rascunho do site. Reabra a aba Site para tentar novamente.',
+      ),
+    )
   }
 }
 
@@ -215,20 +249,30 @@ function onMessage(event: MessageEvent) {
   switch (data.type) {
     case 'ready':
       studioReady.value = true
+      initialized.value = false
       void sendInitLayout()
       break
     case 'loaded':
       // Layout inicial que o Studio exibe (carregado do back OU o default).
       // Guarda SEM marcar "nao salvo": ja e publicavel como esta.
-      if (data.layout && typeof data.layout === 'object') {
+      if (!initialized.value && data.layout && typeof data.layout === 'object') {
         layout.value = data.layout
         dirty.value = false
+        initialized.value = true
       }
+      break
+    case 'snapshot':
+      snapshots.accept(data.requestId, data.layout)
+      break
+    case 'editing':
+      dirty.value = true
+      editRevision += 1
       break
     case 'change':
       if (data.layout && typeof data.layout === 'object') {
         layout.value = data.layout
         dirty.value = true
+        editRevision += 1
       }
       break
     case 'history': {
@@ -260,10 +304,13 @@ async function onSaveDraft() {
   }
   saving.value = true
   try {
-    const result = await store.putDraftLayout(id, layout.value, version.value)
-    layout.value = result.layout
+    const snapshot = await captureStudioDraft()
+    const result = await store.putDraftLayout(id, snapshot.layout, version.value)
     version.value = result.version
-    dirty.value = false
+    if (snapshot.revision === editRevision) {
+      layout.value = result.layout
+      dirty.value = false
+    }
     ui.success('Rascunho salvo.')
   } catch (caught) {
     // 412 = outro editor salvou no meio (conflito de versao).
@@ -290,15 +337,16 @@ async function onPublish() {
   try {
     // Garante que ha um rascunho gravado (cria/atualiza a linha) ANTES de publicar
     // — o publish promove o rascunho; sem linha daria 404.
-    if (layout.value) {
-      const draft = await store.putDraftLayout(id, layout.value, version.value)
+    const snapshot = await captureStudioDraft()
+    const draft = await store.putDraftLayout(id, snapshot.layout, version.value)
+    version.value = draft.version
+    if (snapshot.revision === editRevision) {
       layout.value = draft.layout
-      version.value = draft.version
       dirty.value = false
     }
     const result = await store.publishLayout(id)
-    layout.value = result.layout
     version.value = result.version
+    if (snapshot.revision === editRevision) layout.value = result.layout
     ui.success('Site publicado.')
   } catch (caught) {
     if (errorStatus(caught) === 412) {
@@ -317,6 +365,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  snapshots.cancel()
   window.removeEventListener('message', onMessage)
   window.removeEventListener('keydown', onFullscreenKey)
 })
@@ -338,7 +387,7 @@ onBeforeUnmount(() => {
           Rascunho nao salvo
         </span>
         <span
-          v-else-if="studioReady"
+          v-else-if="initialized"
           class="cardapio-site__status cardapio-site__status--saved"
           aria-live="polite"
         >
@@ -384,7 +433,7 @@ onBeforeUnmount(() => {
     </header>
 
     <p v-if="!studioUrl" class="cardapio-site__empty">
-      O endereco do Studio nao esta configurado (NUXT_PUBLIC_STUDIO_URL). Fale com o suporte.
+      Cadastre um dominio valido na aba Dominios para abrir o Studio deste estabelecimento.
     </p>
     <p v-else-if="!slug" class="cardapio-site__empty">Carregando estabelecimento...</p>
 
@@ -414,6 +463,7 @@ onBeforeUnmount(() => {
         Sair
       </button>
       <iframe
+        :key="iframeSrc"
         ref="iframeRef"
         :src="iframeSrc"
         class="cardapio-site__frame"

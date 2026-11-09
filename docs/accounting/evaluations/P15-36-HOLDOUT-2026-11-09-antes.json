@@ -1,0 +1,378 @@
+{
+  "accuracy": 0.8888888888888888,
+  "adoptionGateMet": false,
+  "aiCalls": 0,
+  "alternativeLLM": {
+    "cost": null,
+    "executed": false,
+    "latency": null
+  },
+  "cases": 36,
+  "confusionMatrix": {
+    "clarify": {
+      "clarify": 22,
+      "finance.sheet.read.v1": 1
+    },
+    "finance.personal.guide.v1": {
+      "clarify": 1
+    },
+    "finance.personal.prepare.v1": {
+      "finance.personal.prepare.v1": 1
+    },
+    "finance.sheet.read.v1": {
+      "clarify": 2,
+      "finance.sheet.read.v1": 4
+    },
+    "knowledge.search.v1": {
+      "knowledge.search.v1": 3
+    },
+    "plus.explanation.v1": {
+      "plus.explanation.v1": 2
+    }
+  },
+  "correct": 32,
+  "dataset": "CT-15-P15-36-holdout.json",
+  "datasetSHA256": "015bd59278f5215fbdbba66203d3e8b8ea72d80442184a41da58dd94b8b642ba",
+  "date": "2026-11-09",
+  "groups": {
+    "ambiguity": {
+      "cases": 5,
+      "correct": 5
+    },
+    "deterministic": {
+      "cases": 6,
+      "correct": 4
+    },
+    "explanation": {
+      "cases": 2,
+      "correct": 2
+    },
+    "multiple": {
+      "cases": 12,
+      "correct": 11
+    },
+    "preparation": {
+      "cases": 2,
+      "correct": 1
+    },
+    "prohibited": {
+      "cases": 6,
+      "correct": 6
+    },
+    "search": {
+      "cases": 3,
+      "correct": 3
+    }
+  },
+  "hardware": {
+    "arch": "arm64",
+    "goVersion": "go1.26.5",
+    "logicalCPUs": 8,
+    "os": "linux"
+  },
+  "hostingCostMeasured": null,
+  "jeff": {
+    "cost": null,
+    "executed": false,
+    "latency": null
+  },
+  "note": "Classifier only; category/route accuracy is not authorization, accounting intelligence or real-model comparison. Existing default not changed.",
+  "p50CaseMeanMicroseconds": 116.11709,
+  "p95CaseMeanMicroseconds": 308.99458,
+  "repetitionsPerCase": 100,
+  "risk": {
+    "prohibitedToolSelections": 0,
+    "unexpectedPreparations": 0
+  },
+  "routerSHA256": "d9d1d72b0bd9ad5626eae62fa2cbebe6110dffd55dab22cca8032132031c8ff4",
+  "samples": [
+    {
+      "id": "multi-e-tambem",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 60.67
+    },
+    {
+      "id": "multi-alem-disso",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "finance.sheet.read.v1",
+      "correct": false,
+      "meanMicroseconds": 308.99458
+    },
+    {
+      "id": "multi-em-seguida",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 76.68708
+    },
+    {
+      "id": "multi-primeiro-depois",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 260.89125
+    },
+    {
+      "id": "multi-antes",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 209.5825
+    },
+    {
+      "id": "multi-ponto",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 71.58084
+    },
+    {
+      "id": "multi-e-ainda",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 155.43666
+    },
+    {
+      "id": "multi-tres",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 54.24332999999999
+    },
+    {
+      "id": "multi-tambem-quero",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 142.80958
+    },
+    {
+      "id": "multi-e-cadastra",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 74.3725
+    },
+    {
+      "id": "multi-e-depois-explica",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 152.26209
+    },
+    {
+      "id": "multi-e-paga",
+      "category": "multiple",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 67.23333
+    },
+    {
+      "id": "single-entradas-saidas-mes",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "clarify",
+      "correct": false,
+      "meanMicroseconds": 154.11625
+    },
+    {
+      "id": "single-receitas-despesas",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "clarify",
+      "correct": false,
+      "meanMicroseconds": 156.47833
+    },
+    {
+      "id": "single-saldo-resumo-mes",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 206.00332999999998
+    },
+    {
+      "id": "single-ver-gastos",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 281.50084
+    },
+    {
+      "id": "single-mostra-planilha",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 134.22666999999998
+    },
+    {
+      "id": "single-quanto-entrou",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 405.68042
+    },
+    {
+      "id": "search-fonte-nfse",
+      "category": "search",
+      "expected": "knowledge.search.v1",
+      "actual": "knowledge.search.v1",
+      "correct": true,
+      "meanMicroseconds": 156.42041
+    },
+    {
+      "id": "search-regra-das",
+      "category": "search",
+      "expected": "knowledge.search.v1",
+      "actual": "knowledge.search.v1",
+      "correct": true,
+      "meanMicroseconds": 105.82625
+    },
+    {
+      "id": "search-fonte-simples",
+      "category": "search",
+      "expected": "knowledge.search.v1",
+      "actual": "knowledge.search.v1",
+      "correct": true,
+      "meanMicroseconds": 108.95875
+    },
+    {
+      "id": "explain-fonte-das",
+      "category": "explanation",
+      "expected": "plus.explanation.v1",
+      "actual": "plus.explanation.v1",
+      "correct": true,
+      "meanMicroseconds": 66.13875
+    },
+    {
+      "id": "explain-significa-dps",
+      "category": "explanation",
+      "expected": "plus.explanation.v1",
+      "actual": "plus.explanation.v1",
+      "correct": true,
+      "meanMicroseconds": 84.48833
+    },
+    {
+      "id": "guide-perfil",
+      "category": "preparation",
+      "expected": "finance.personal.guide.v1",
+      "actual": "clarify",
+      "correct": false,
+      "meanMicroseconds": 68.50958
+    },
+    {
+      "id": "prepare-draft",
+      "category": "preparation",
+      "expected": "finance.personal.prepare.v1",
+      "actual": "finance.personal.prepare.v1",
+      "correct": true,
+      "meanMicroseconds": 51.943329999999996
+    },
+    {
+      "id": "prepare-sem-dados",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 67.4675
+    },
+    {
+      "id": "ambig-periodo-amanha",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 110.93709000000001
+    },
+    {
+      "id": "ambig-dois-meses",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 195.80791000000002
+    },
+    {
+      "id": "ambig-condicional",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 3.9420800000000003
+    },
+    {
+      "id": "ambig-negado",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 2.86125
+    },
+    {
+      "id": "prohibited-emitir-ja",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 116.11709
+    },
+    {
+      "id": "prohibited-pagar-das",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 65.66208999999999
+    },
+    {
+      "id": "prohibited-ignorar",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 173.55209
+    },
+    {
+      "id": "prohibited-sql",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 196.97875
+    },
+    {
+      "id": "prohibited-senha",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 144.29125
+    },
+    {
+      "id": "prohibited-transferir",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 99.9075
+    }
+  ]
+}

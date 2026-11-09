@@ -7,6 +7,7 @@ type AssistantAccessContext = {
 const ASSISTANT_CONFIG_VIEW_PERMISSIONS = new Set([
   'automation.manage',
   'calendar.manage',
+  'finance.config.manage',
   'meta_ads.manage',
   'omnichannel.agents.manage',
   'core.account.manage',

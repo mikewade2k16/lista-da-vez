@@ -45,7 +45,26 @@ Manter dois sistemas em sync é band-aid temporário e precisa estar marcado par
 Em produção, dados que o cálculo usa vão faltar. A tela nunca pode mascarar isso nem obrigar o usuário a caçar a página de config. Onde a ausência muda o resultado: mostrar aviso honesto ali mesmo ("Sem meta cadastrada — penalidade desligada"). Se o usuário pode editar aquilo, o aviso abre um editor inline na própria tela, gravando pela MESMA API canônica do recurso. A fonte continua única; muda só o ponto de entrada da edição.
 
 ### 6. Validar local antes de propor commit ou deploy
-Sempre rodar e testar local antes. Mudança de UI precisa de teste no browser, não só type-check — type-check e testes validam corretude de código, não de feature.
+Sempre rodar e testar local antes. Mudança de UI precisa de teste no browser, não só type-check — type-check e testes validam corretude de código, não de feature. A validação visual respeita a autorização exigida abaixo; sem ela, deixar essa etapa pendente e orientar o usuário a testar.
+
+### Ambiente de trabalho — sempre local por padrão
+- **Toda implementação, correção, investigação e validação acontece no ambiente local.** Não cogitar VPS, staging ou produção como destino da tarefa sem pedido explícito do usuário para aquele ambiente.
+- Não perguntar repetidamente se o trabalho é local ou remoto, nem tratar publicação na VPS como pendência de uma tarefa local. Uma referência a erro observado online não autoriza acesso ou alteração remota; reproduzir e corrigir localmente.
+- O procedimento é: implementar localmente → testar localmente → usuário aprova → **usuário faz o deploy** → testar na VPS quando o usuário solicitar explicitamente essa etapa.
+- Não acessar VPS, executar deploy ou iniciar testes remotos por iniciativa própria. Pedido para "resolver", "finalizar" ou "deixar pronto" mantém o escopo local. A aprovação dos testes locais não autoriza publicação.
+- Sincronizar os arquivos e atualizar os serviços locais necessários à tarefa faz parte do desenvolvimento local; não confundir isso com deploy na VPS. Continuar respeitando as regras de preservação de dados, senhas e volumes.
+
+### Reinício local após alterações — preferência do usuário
+- Quando alterações de banco, backend ou frontend exigirem reiniciar serviços Docker locais, avisar brevemente e executar o comando mínimo de reinício dos serviços afetados, sem devolver apenas instruções ao usuário. Essa ação local está autorizada; preservar dados, senhas, seeds e volumes.
+- Ao concluir o comando, informar o resultado e encerrar a tarefa. Não iniciar inspeções, logs, testes, monitoramento ou tentativas de correção após o reinício; se houver erro, reportá-lo de forma breve e aguardar o usuário.
+- Reiniciar containers não atualiza imagens nem sincroniza código ausente. Não afirmar que mudanças foram aplicadas apenas pelo restart. Rebuild, sincronização e migrations são operações distintas e devem respeitar o escopo autorizado.
+- Exemplo no ambiente Mac: `docker compose -f docker-compose.yml -f compose.mac-local.yaml restart api web local-access`. Ajustar os serviços ao que foi alterado; não reiniciar o daemon Docker Desktop nem remover volumes.
+
+### Uso do Work e acesso ao computador — somente com autorização explícita
+- **Nunca usar o Work, Computer Use/CUA ou automação de navegador/computador sem permissão explícita prévia do usuário para esse uso na tarefa.** Isso inclui descobrir/listar aplicativos e abas, ler a aba ativa, inspecionar conteúdo, capturar telas, abrir páginas e clicar/digitar. A restrição vale também para ações somente de leitura, por privacidade e consumo de créditos.
+- Pedidos para implementar, corrigir, investigar ou testar uma página **não autorizam automaticamente** acessar o navegador ou o computador do usuário. A exigência de teste visual desta skill também não concede essa autorização.
+- Antes de usar, explicar brevemente o que será acessado, para qual finalidade e que haverá consumo de créditos; aguardar a autorização. Respeitar o escopo autorizado, sem explorar outras abas ou aplicativos.
+- Sem autorização, continuar com arquivos, terminal, logs e testes focados dentro do escopo da tarefa; entregar ao usuário os passos da validação visual. Não recorrer a outra ferramenta de automação para contornar a restrição.
 
 ### 7. Higiene de processo
 - Documentar antes de implementar: para tarefa não-trivial (3+ passos ou múltiplas camadas), apresentar o plano ao usuário antes de codar.
@@ -54,6 +73,11 @@ Sempre rodar e testar local antes. Mudança de UI precisa de teste no browser, n
 - Sem `Co-Authored-By` do agente em commits. Atribuição fica com o desenvolvedor humano.
 - Sem emojis em UI, código, comentários ou commits, salvo pedido explícito.
 - Ao planejar trabalho com 2+ partes independentes, oferecer a opção de rodar em paralelo com múltiplos agentes (não assumir sequencial por padrão). Não compensa para keystones de design onde o prompt custa quase tanto quanto fazer, nem quando uma parte depende do resultado da outra.
+
+### 8. Metadados do sistema operacional nunca entram como código
+- No Mac, arquivos `._*` são metadados binários AppleDouble, mesmo quando terminam em `.vue` ou `.ts`. Nunca copiá-los, sincronizá-los ou empacotá-los como fonte. Preservar as exclusões no Git, contexto Docker, Compose watch e scanner Tailwind; excluir também `.DS_Store` do transporte.
+- Ao criar tar para transferir fontes no macOS, usar `COPYFILE_DISABLE=1` no processo de criação e conferir o conteúdo antes de extrair no container. Não presumir que `.gitignore` protege uma cópia manual ou arquivos já presentes no runtime.
+- **Por quê:** metadados de componentes do Cardápio causaram `Utf8Error` no Tailwind/Oxide, abortaram o Nuxt e deixaram o painel inteiro em branco com 502. Antes de alterar cópia/sync/empacotamento, ou investigar essa assinatura, ler [registro-de-falhas.md, caso 15](references/registro-de-falhas.md#15-metadados-appledouble-do-macos-derrubam-o-painel-inteiro).
 
 ---
 

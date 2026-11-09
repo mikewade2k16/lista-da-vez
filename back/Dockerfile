@@ -16,7 +16,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/migrate ./c
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg tzdata \
+  && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg tzdata tesseract-ocr tesseract-ocr-por poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

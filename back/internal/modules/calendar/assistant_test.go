@@ -10,7 +10,7 @@ import (
 
 func TestNormalizeAssistantSurface(t *testing.T) {
 	t.Parallel()
-	for _, surface := range []string{AssistantSurfaceCalendar, AssistantSurfaceMetaAds, AssistantSurfaceGlobal} {
+	for _, surface := range []string{AssistantSurfaceCalendar, AssistantSurfaceMetaAds, AssistantSurfaceGlobal, AssistantSurfaceFinance} {
 		got, err := normalizeAssistantSurface("  " + surface + "  ")
 		if err != nil || got != surface {
 			t.Fatalf("normalizeAssistantSurface(%q) = %q, %v", surface, got, err)

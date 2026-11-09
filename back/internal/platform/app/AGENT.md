@@ -82,3 +82,96 @@ Gateados: `queue` (`/v1/operations,/v1/alerts,/v1/reports,/v1/analytics,/v1/feed
 - Erro permanente de contrato/configuracao e classificado por reason code e nao
   entra em retry; indisponibilidade de qualquer fonte permanece isolada do
   runtime de chat.
+
+Finance recebe a instância já inicializada de `secretbox.Box` no registro do módulo (2026-11-02), para o cofre write-only de credenciais fiscais pessoais. Não foi criada outra chave/env nem alterado o pipeline de autenticação.
+
+## Chat Finance (2026-11-02)
+
+Bootstrap injeta resolvedor do cofre Automation no Finance e runtime/contexto Finance no Calendar via `WithFinanceAssistant`. Dependência por funções, sem importar Calendar dentro do Finance. Erros de planilha/perfil fora do escopo mapeados para404.
+
+## Accounting — CT-03
+
+Registro `accounting.New(...)`, prefixo `/v1/accounting` no gating. `accounting.go`
+compõe Policy de Auth/Core, fonte pessoal owner Finance e storage privado. Nenhum
+conector fiscal/fake é registrado em runtime. Módulo permanece opt-in por conta;
+não semear habilitação ou permissões do usuário. A configuração Plus continua no
+owner Finance e não faz parte desta entrega de domínio.
+
+## Wiring Plus — CT-05
+
+`finance_plus.go` conecta portas Calendar → Finance → Accounting. Accounting
+instanciado uma vez. Autorização reconsulta associação ativa, módulo e permissões
+efetivas; grants de emitente/recurso continuam no owner. Sem SQL de negócio aqui.
+Porta Knowledge ausente até CT-06: indisponibilidade explícita. Teste HTTP real
+com fixture sintética em `PLUS_APP_TEST_DATABASE_URL` (`plus_test_app*`).
+
+## Wiring conhecimento — CT-06
+
+accounting_knowledge.go conecta Storage privado e extrator PDF Finance por portas
+a Accounting/knowledge; Plus recebe a busca escopada. Regras/SQL continuam nos
+owners. Instância de Accounting única, sem dependência comercial de Omnichannel.
+Teste HTTP Plus usa PostgreSQL descartável e verifica evidência real/revogação.
+
+## Composição IA Plus — CT-07
+
+Finance usa llm.Client nativo; credencial/modelo Plus resolvidos pela mesma porta
+Automation existente. accountingEvidenceValidator injeta validação em lote do
+owner Knowledge; Calendar delega ValidateOutput para Finance. Sem lógica fiscal
+ou SQL de outro módulo em platform/app. Teste real HTTP usa somente cliente fake
+e PostgreSQL descartável, inclusive replay e histórico após revogação.
+
+## Artefatos privados — CT-08
+
+accountingStorage também implementa ArtifactReader pela API pública
+Storage.DownloadForSource(account,object,"accounting",""). Accounting valida grant/
+referência/hash antes de expor e revalida após leitura. Wiring na instância única
+de Accounting. Nenhum connector NFS-e/fake foi registrado em runtime: pré-requisitos
+e estado parcial em docs/accounting/handoffs/CT-08.md. Não altera sessão Finance.
+
+## Transcrição local Finance — 2026-11-06
+
+Composição injeta WithFinanceTranscriptionAuthorization pelo authorizer canônico
+Finance/Core existente (associação, módulo, finance.sheets.view). Calendar controla
+a política de transcrição local e revalida antes/depois; platform não contém regra
+de emissão ou chave/modelo de conversa. Whisper local não depende de cfg.Enabled.
+
+## Autorização Finance por conta — 2026-11-06
+
+`ResolveAccountPrincipal` revalida visibilidade da conta, usuário ativo, papéis e
+RBAC efetiva no owner Auth. O adapter Finance usa a política canônica
+`CanFinancePermission`: admin transversal e owner com `core.account.manage`
+seguem o mesmo contrato das rotas Finance; custom precisa da permissão efetiva.
+Módulo Finance habilitado continua obrigatório neste adapter. Accounting
+mantém membership e grants de negócio explícitos. Teste PostgreSQL descartável
+em `finance_scope_test.go` cobre permissões, revogação e módulo desabilitado.
+O cliente selecionado no chat é enviado em header, validado no middleware e
+revalidado no serviço; não muda a conta global da página.
+
+## Busca pública no chat — pacotes 1/2, 2026-11-06
+
+0317 cria `knowledge.public_sources`: acervo global exclusivamente público,
+curado e informativo; não possui tenant porque não recebe uploads ou dados privados.
+Não copia nem abre `messaging.knowledge_*`/bindings Accounting. Sem endpoint de
+publicação pública, sem scraping no chat. Versões publicadas imutáveis (trigger),
+retirada por status; nova busca seleciona versão publicada mais recente. Referências
+históricas publicadas permanecem válidas; retiradas são ocultadas em lote no GET.
+0318 adiciona cinco sínteses curtas com origem/revisão/limites em manifesto, sem
+alterar configurações, contas, credenciais ou seeds anteriores. Vigência fiscal
+não confirmada; são evidências informativas, nunca regra de cálculo do emitente.
+
+SearchPublic → Store, FTS simple com normalização de acentos, até12termos e3trechos.
+Aliases de vocabulário no roteador não contêm valores fiscais. Finance usa portas
+PublicKnowledge/ValidatePublicEvidence, autorizadas pelo Finance canônico antes/
+depois. Não exige Accounting contratado, emitente, modelo, cofre, Jeff ou API paga
+para ler material público. Corpus privado empresarial conserva todos os gates.
+
+finance.access_messages.public_evidence persiste snapshot estruturado separado do
+texto; List revalida até180IDs e oculta fontes retiradas/indisponíveis. Conta/usuário
+continuam filtrados no SQL. Perguntas fiscais explícitas no chat chamam busca antes
+de qualquer modelo. Falta de fonte difere de falta de serviço. Nenhuma resposta é
+marcada como confirmação jurídica ou execução de nota/declaração.
+
+Frontend reutiliza AccountingEvidence e cartões/mensagens do Crow; mostra título,
+trecho, fonte HTTPS e versão. Roteiro manual em docs/finance/ROTEIRO_TESTES.md.
+Testes PostgreSQL sintéticos, corpus público inicial e regressões de conversa
+passaram. Comparação visual, microfone real e aceite do usuário não executados.

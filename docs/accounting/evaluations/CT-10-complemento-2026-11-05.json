@@ -1,0 +1,135 @@
+{
+  "date": "2026-11-05",
+  "scope": "Complementação técnica CT-10; não representa aprovação do usuário",
+  "runtimeChanges": false,
+  "userAcceptance": "not_performed",
+  "realLLMCalls": 0,
+  "realFiscalCalls": 0,
+  "postgres": "16-alpine, temporário, sem volumes ou portas públicas",
+  "fullMigrations": "TestAllMigrationsApply com SkipDataSeeds=true em banco novo accounting_test_ct10_full",
+  "runs": [
+    {
+      "suite": "migrations",
+      "tests": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/database",
+          "test": "TestAllMigrationsApply",
+          "status": "pass",
+          "seconds": 3.43
+        }
+      ],
+      "packages": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/database",
+          "status": "pass",
+          "seconds": 4.474
+        }
+      ]
+    },
+    {
+      "suite": "calendar",
+      "tests": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/calendar",
+          "test": "TestChatProposalExecutionPostgresIdempotencyAndSurfaceRevocation",
+          "status": "pass",
+          "seconds": 0.21
+        }
+      ],
+      "packages": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/calendar",
+          "status": "pass",
+          "seconds": 1.236
+        }
+      ]
+    },
+    {
+      "suite": "parsers",
+      "tests": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+          "test": "TestPDFTextAndScannedFallback",
+          "status": "pass",
+          "seconds": 0.36
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+          "test": "TestKnowledgePDFUsesBoundedExtractorAndTreatsInstructionsAsData",
+          "status": "pass",
+          "seconds": 0.13
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting/connectors/nfse",
+          "test": "TestOfflineSchemaValidatorWithSyntheticSchema",
+          "status": "pass",
+          "seconds": 0.01
+        }
+      ],
+      "packages": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+          "status": "pass",
+          "seconds": 1.5390000000000001
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting/connectors/nfse",
+          "status": "pass",
+          "seconds": 1.028
+        }
+      ]
+    }
+  ],
+  "secretbox": {
+    "command": "go test -json -race -count=1 ./internal/platform/secretbox",
+    "exitCode": 0,
+    "credentials": "somente fixtures sintéticas",
+    "rawLog": "efêmero no container; sem contagem individual recuperada"
+  },
+  "frontend": {
+    "files": 11,
+    "testsPassed": 89,
+    "durationSeconds": 5.91,
+    "browserExecuted": false,
+    "includes": "fila de autosave Finance, controllers, componentes compilados, histórico/contexto e evidências"
+  },
+  "remainingUnexecutedLiveTests": [
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealDebitReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealPaymentReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestDocumentRealPDF"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestDocumentRealImageOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealSmallReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+      "test": "TestR2PendingUploadReconciliationLive"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+      "test": "TestR2MediaAdaptersLive"
+    }
+  ],
+  "blocked": [
+    "aceite visual/manual do usuário não realizado",
+    "emissão real: pendências CT-08 de contrato oficial, assinatura/cofre, cobertura e homologação"
+  ],
+  "notes": [
+    "XSD testado é sintético: não comprova schema oficial ou habilitação fiscal.",
+    "PDF testado é sintético; OCR privado e R2 live não executados.",
+    "Nenhum serviço ou dado do painel foi alterado nesta complementação."
+  ]
+}

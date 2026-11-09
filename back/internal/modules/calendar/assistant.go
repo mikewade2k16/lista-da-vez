@@ -102,6 +102,7 @@ type assistantCapabilitySpec struct {
 }
 
 var assistantCapabilitySpecs = []assistantCapabilitySpec{
+	{module: "finance", label: "Finance", moduleID: "finance", maxMode: assistantModeRead, readPermissions: []string{"finance.sheets.view"}},
 	{
 		module: "calendar", label: "Calendario", moduleID: "calendar", maxMode: assistantModeWrite,
 		readPermissions: []string{"calendar.view", "calendar.manage"}, writePermissions: []string{"calendar.manage"},
@@ -216,6 +217,8 @@ func normalizeAssistantSurface(value string) (string, error) {
 		return AssistantSurfaceCalendar, nil
 	case AssistantSurfaceMetaAds:
 		return AssistantSurfaceMetaAds, nil
+	case AssistantSurfaceFinance:
+		return AssistantSurfaceFinance, nil
 	case AssistantSurfaceGlobal:
 		return AssistantSurfaceGlobal, nil
 	default:
@@ -257,10 +260,14 @@ func (s *Service) resolveAssistantRuntime(
 	accountID, surface string,
 	principal auth.Principal,
 ) (AssistantRuntime, []AssistantCapability, error) {
-	if s.assistantRuntimeProvider == nil {
+	provider := s.assistantRuntimeProvider
+	if surface == AssistantSurfaceFinance {
+		provider = s.financeAssistantRuntime
+	}
+	if provider == nil {
 		return AssistantRuntime{}, nil, ErrAssistantRuntimeUnavailable
 	}
-	runtime, err := s.assistantRuntimeProvider(ctx, strings.TrimSpace(accountID))
+	runtime, err := provider(ctx, strings.TrimSpace(accountID))
 	if err != nil {
 		return AssistantRuntime{}, nil, err
 	}
@@ -385,6 +392,8 @@ func assistantSurfaceCapabilityAllowed(surface string, capabilities []AssistantC
 	switch surface {
 	case AssistantSurfaceCalendar:
 		return assistantCapabilityMode(capabilities, "calendar") != assistantModeOff
+	case AssistantSurfaceFinance:
+		return assistantCapabilityMode(capabilities, "finance") != assistantModeOff
 	case AssistantSurfaceMetaAds:
 		return assistantCapabilityMode(capabilities, "meta_ads") != assistantModeOff
 	case AssistantSurfaceGlobal:
@@ -405,7 +414,7 @@ func assistantContextModules(capabilities []AssistantCapability) []string {
 }
 
 func sanitizeAssistantContextModules(modules []string) []string {
-	allowed := map[string]bool{"calendar": true, "tasks": true, "meta_ads": true, "users": true}
+	allowed := map[string]bool{"calendar": true, "tasks": true, "meta_ads": true, "users": true, "finance": true}
 	out := make([]string, 0, min(len(modules), len(allowed)))
 	seen := make(map[string]bool, len(allowed))
 	for _, raw := range modules {

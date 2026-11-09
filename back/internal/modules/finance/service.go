@@ -24,6 +24,7 @@ type SheetStore interface {
 	Create(ctx context.Context, accountID string, d SheetDetail) (SheetDetail, error)
 	Update(ctx context.Context, accountID string, d SheetDetail) (SheetDetail, error)
 	Delete(ctx context.Context, accountID, id string) error
+	ChangeStatus(ctx context.Context, accountID, id, status, expectedUpdatedAt string) (SheetDetail, error)
 	PatchLine(ctx context.Context, accountID, sheetID, lineID string, effective bool, effectiveDate string) (Line, string, error)
 }
 
@@ -279,6 +280,7 @@ func (s *Service) UpdateSheet(ctx context.Context, accountID, id string, in Shee
 	}
 	period := normalizePeriod(strVal(in.Period))
 	d := SheetDetail{
+		ExpectedUpdatedAt: in.ExpectedUpdatedAt,
 		SheetListItem: SheetListItem{
 			ID:           sid,
 			Title:        normText(strVal(in.Title), 180),
@@ -337,9 +339,13 @@ func (s *Service) PatchLine(ctx context.Context, accountID, sheetID, lineID stri
 	if err != nil {
 		return LineMutationData{}, err
 	}
-	// Recalcula summary sobre o detalhe com a linha ja atualizada.
-	applyLine(&detail, line)
-	summary := computeSummary(detail.Entradas, detail.Saidas)
+	// Rele a fonte autoritativa apos o commit: outra linha pode ter sido
+	// efetivada enquanto este request aguardava o lock da planilha.
+	detail, err = s.sheets.Get(ctx, accountID, sid)
+	if err != nil {
+		return LineMutationData{}, err
+	}
+	summary := detail.Summary
 	return LineMutationData{
 		SheetID:   sid,
 		LineID:    line.ID,
@@ -364,22 +370,6 @@ func findLine(d SheetDetail, lineID string) *Line {
 		}
 	}
 	return nil
-}
-
-// applyLine substitui a linha correspondente no detalhe (para recomputar summary).
-func applyLine(d *SheetDetail, line Line) {
-	for i := range d.Entradas {
-		if d.Entradas[i].ID == line.ID {
-			d.Entradas[i] = line
-			return
-		}
-	}
-	for i := range d.Saidas {
-		if d.Saidas[i].ID == line.ID {
-			d.Saidas[i] = line
-			return
-		}
-	}
 }
 
 // strVal desreferencia um *string opcional para ” quando nil.

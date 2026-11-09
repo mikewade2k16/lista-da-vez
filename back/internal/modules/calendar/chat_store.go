@@ -167,7 +167,7 @@ func (s *Store) CreateConversation(ctx context.Context, accountID, createdByUser
 func (s *Store) GetConversation(ctx context.Context, id, accountID string) (ChatConversation, error) {
 	const q = `select ` + chatConversationCols + `
 		from calendar.chat_conversations
-		where id = $1::uuid and account_id = $2::uuid and deleted_at is null`
+		where id = $1::uuid and account_id = $2::uuid and deleted_at is null and coalesce(to_jsonb(calendar.chat_conversations)->>'assistant_mode','legacy')='legacy'`
 	return scanChatConversation(s.pool.QueryRow(ctx, q, id, accountID))
 }
 
@@ -180,8 +180,9 @@ func (s *Store) ListConversations(ctx context.Context, accountID, requesterUserI
 			coalesce(nullif(trim(u.display_name), ''), u.email, '')
 		from calendar.chat_conversations c
 		left join core.users u on u.id = c.created_by_user_id
-		where c.account_id = $1::uuid and c.deleted_at is null`
-	args := []any{accountID}
+		where c.account_id = $1::uuid and c.deleted_at is null and coalesce(to_jsonb(c)->>'assistant_mode','legacy')='legacy'`
+	args := []any{accountID, requesterUserID}
+	q += " and (c.entry_surface <> 'finance' or c.created_by_user_id=$2::uuid)"
 	if !isAgency {
 		args = append(args, requesterUserID)
 		q += " and c.created_by_user_id = $" + strconv.Itoa(len(args)) + "::uuid"

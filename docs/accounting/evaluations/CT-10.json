@@ -1,0 +1,238 @@
+{
+  "date": "2026-11-04",
+  "timezone": "America/Maceio",
+  "revisionBase": "5d6ef3b",
+  "workingTree": "alterações locais CT-03 a CT-08 + CT-10; não é checkout limpo",
+  "realFiscalCalls": 0,
+  "realLLMCalls": 0,
+  "ui": {
+    "vitestFiles": 10,
+    "vitestTests": 85,
+    "browserExecuted": false
+  },
+  "runs": [
+    {
+      "id": "CT-10-go",
+      "testEvents": {
+        "pass": 388,
+        "skip": 20
+      },
+      "packageResults": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting",
+          "status": "pass",
+          "seconds": 1.7229999999999999
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting/connectors/nfse",
+          "status": "pass",
+          "seconds": 1.192
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+          "status": "pass",
+          "seconds": 2.439
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/calendar",
+          "status": "pass",
+          "seconds": 1.649
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/knowledge",
+          "status": "pass",
+          "seconds": 1.245
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+          "status": "pass",
+          "seconds": 1.4
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/llm",
+          "status": "pass",
+          "seconds": 1.02
+        }
+      ]
+    },
+    {
+      "id": "CT-10-policy-jobs",
+      "testEvents": {
+        "pass": 5
+      },
+      "packageResults": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/jobs",
+          "status": "pass",
+          "seconds": 47.76
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+          "status": "pass",
+          "seconds": 1.081
+        }
+      ]
+    },
+    {
+      "id": "CT-10-pilot",
+      "testEvents": {
+        "pass": 1,
+        "fail": 1
+      },
+      "packageResults": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting",
+          "status": "fail",
+          "seconds": 0.079
+        }
+      ]
+    },
+    {
+      "id": "CT-10-additional",
+      "testEvents": {
+        "pass": 15,
+        "fail": 1
+      },
+      "packageResults": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting",
+          "status": "fail",
+          "seconds": 0.025
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting/connectors/nfse",
+          "status": "pass",
+          "seconds": 1.455
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/jobs",
+          "status": "pass",
+          "seconds": 1.027
+        },
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel",
+          "status": "pass",
+          "seconds": 1.044
+        }
+      ]
+    },
+    {
+      "id": "CT-10-pilot-final",
+      "testEvents": {
+        "pass": 2
+      },
+      "packageResults": [
+        {
+          "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting",
+          "status": "pass",
+          "seconds": 1.042
+        }
+      ]
+    }
+  ],
+  "finalUniqueTestEvents": {
+    "pass": 407,
+    "skip": 11
+  },
+  "pendingSkippedTests": [
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting/connectors/nfse",
+      "test": "TestOfflineSchemaValidatorWithSyntheticSchema"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealDebitReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealPaymentReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestPDFTextAndScannedFallback"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestDocumentRealPDF"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestDocumentRealImageOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealSmallReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestKnowledgePDFUsesBoundedExtractorAndTreatsInstructionsAsData"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/calendar",
+      "test": "TestChatProposalExecutionPostgresIdempotencyAndSurfaceRevocation"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+      "test": "TestR2PendingUploadReconciliationLive"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+      "test": "TestR2MediaAdaptersLive"
+    }
+  ],
+  "unresolvedFailedTests": [],
+  "httpPublicProbes": [
+    {
+      "path": "/finance",
+      "port": 3003,
+      "status": 200,
+      "seconds": 0.039492
+    },
+    {
+      "path": "/healthz",
+      "port": 8080,
+      "status": 200,
+      "seconds": 0.007973
+    },
+    {
+      "path": "/v1/accounting/issuers",
+      "port": 8080,
+      "status": 404,
+      "seconds": 0.007313
+    }
+  ],
+  "notes": [
+    "Contagens incluem subtestes; não são cenários fiscais homologados.",
+    "Segunda execução habilita NFSE_TEST_DATABASE_URL, sem repetir o pacote Accounting completo.",
+    "Fixture nova falhou por origin=operator; corrigida para declaration, conforme contrato.",
+    "A sondagem /health inicial retornou404 porque a rota correta é /healthz; sondagens sem escalada falharam pelo sandbox.",
+    "Interface Accounting ausente no container web em uso; não houve atualização desse ambiente.",
+    "Relatórios brutos removidos; conservados somente resultados agregados sem payloads."
+  ],
+  "userAcceptance": {
+    "status": "not_performed",
+    "confirmedOn": "2026-11-05",
+    "approvedCapabilities": []
+  },
+  "localRecheck20261105": {
+    "dockerStartedByUser": true,
+    "frontendComponentPresent": true,
+    "financeHTTP": 200,
+    "accountingHTTPBeforeAPIUpdate": 404,
+    "coreV2Enabled": true,
+    "frontendFocusedTestsPassed": 39,
+    "frontendFocusedFiles": 3,
+    "apiImageUpdate": "build_succeeded",
+    "browserExecuted": false,
+    "runtimeVerificationAfterRestart": "not_performed_per_user_preference"
+  },
+  "technicalSupplement20261105": {
+    "artifact": "CT-10-complemento-2026-11-05.json",
+    "goAdditionalCasesPassed": 5,
+    "secretboxPackagePassed": true,
+    "frontendFiles": 11,
+    "frontendTestsPassed": 89,
+    "remainingLiveTestsNotExecuted": 7,
+    "userAcceptance": "not_performed"
+  }
+}

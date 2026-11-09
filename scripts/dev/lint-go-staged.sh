@@ -57,8 +57,8 @@ if [ "${#packages[@]}" -eq 0 ]; then
 fi
 
 if ! command -v golangci-lint >/dev/null 2>&1; then
-  echo "✖ golangci-lint não encontrado no PATH; o lint do backend não pôde ser executado." >&2
-  echo "  Instale a ferramenta ou adicione \$(go env GOPATH)/bin ao PATH e tente novamente." >&2
+  echo "✖ golangci-lint não está disponível na imagem omni-go-tools." >&2
+  echo "  Reconstrua a imagem: bash scripts/dev/go-tools-docker.sh ensure" >&2
   exit 127
 fi
 

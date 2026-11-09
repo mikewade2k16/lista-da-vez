@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-06",
+  "scope": "Approved Crow layout parity and Finance local Whisper",
+  "frontendDistinctTests": 36,
+  "goTranscriptionTests": "passed with -race: local provider/no key/no conversation model; revocation before and after; legacy transcription regressions",
+  "calendarGoLint": "0 issues",
+  "frontendLint": "0 errors; existing CalendarChatPanel max-lines warning",
+  "typecheck": {
+    "globalErrors": 410,
+    "changedFilesErrors": 0
+  },
+  "localWhisper": "running and healthy; API transcription route configured; workflow export has local provider branch",
+  "notExecuted": [
+    "browser visual comparison",
+    "real microphone transcription",
+    "paid model or fiscal service"
+  ],
+  "changes": [
+    "CalendarChatComposer shared by Calendar and Finance",
+    "CalendarChatMessage reused by Finance",
+    "Finance local transcription authorization independent of chat model",
+    "No config, credential, volume, seed or model download change"
+  ]
+}

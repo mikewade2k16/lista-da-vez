@@ -1,0 +1,301 @@
+{
+  "datasetSHA256": "6544cd0ebb3905d3955c7ec056edc3942493458ae3732013ddc6d9984684f250",
+  "decision": "retain_fts_simple; Portuguese candidate is offline only, no production-scale/index or embeddings benchmark",
+  "developmentQuestions": 4,
+  "documents": 7,
+  "embeddingCalls": 0,
+  "embeddingCost": null,
+  "holdoutQuestions": 16,
+  "realLLMCalls": 0,
+  "results": [
+    {
+      "mode": "fts_simple",
+      "recallAt5": 0.46153846153846156,
+      "p50Ms": 0.209,
+      "p95Ms": 1.631,
+      "samples": [
+        {
+          "id": "flexao_notas",
+          "expected": [
+            "D1"
+          ],
+          "found": [],
+          "milliseconds": 1.631
+        },
+        {
+          "id": "flexao_emitentes",
+          "expected": [
+            "D2"
+          ],
+          "found": [],
+          "milliseconds": 0.712
+        },
+        {
+          "id": "flexao_pagamentos",
+          "expected": [
+            "D3"
+          ],
+          "found": [],
+          "milliseconds": 0.785
+        },
+        {
+          "id": "flexao_declaracoes",
+          "expected": [
+            "D4"
+          ],
+          "found": [],
+          "milliseconds": 0.778
+        },
+        {
+          "id": "flexao_revisoes",
+          "expected": [
+            "D5"
+          ],
+          "found": [],
+          "milliseconds": 0.714
+        },
+        {
+          "id": "sigla",
+          "expected": [
+            "D6"
+          ],
+          "found": [
+            "D6"
+          ],
+          "milliseconds": 0.783
+        },
+        {
+          "id": "sinonimo_nao_lexical",
+          "expected": [
+            "D6"
+          ],
+          "found": [],
+          "milliseconds": 0.12
+        },
+        {
+          "id": "sinonimo_quitar",
+          "expected": [
+            "D3"
+          ],
+          "found": [],
+          "milliseconds": 0.108
+        },
+        {
+          "id": "frase_artigo",
+          "expected": [
+            "D1"
+          ],
+          "found": [
+            "D1"
+          ],
+          "milliseconds": 0.274
+        },
+        {
+          "id": "identificacao",
+          "expected": [
+            "D2"
+          ],
+          "found": [
+            "D2"
+          ],
+          "milliseconds": 0.209
+        },
+        {
+          "id": "competencia_antiga",
+          "expected": [
+            "D1"
+          ],
+          "found": [
+            "D1"
+          ],
+          "milliseconds": 0.222
+        },
+        {
+          "id": "competencia_nova",
+          "expected": [
+            "D1NEW"
+          ],
+          "found": [
+            "D1NEW"
+          ],
+          "milliseconds": 0.195
+        },
+        {
+          "id": "sem_correspondencia",
+          "expected": [],
+          "found": [],
+          "milliseconds": 0.105
+        },
+        {
+          "id": "jurisdicao_alheia",
+          "expected": [],
+          "found": [],
+          "milliseconds": 0.124
+        },
+        {
+          "id": "regime_alheio",
+          "expected": [],
+          "found": [],
+          "milliseconds": 0.131
+        },
+        {
+          "id": "limite_vigencia",
+          "expected": [
+            "D1NEW"
+          ],
+          "found": [
+            "D1NEW"
+          ],
+          "milliseconds": 0.205
+        }
+      ]
+    },
+    {
+      "mode": "portuguese_offline_candidate",
+      "recallAt5": 0.6153846153846154,
+      "p50Ms": 0.27,
+      "p95Ms": 1.672,
+      "samples": [
+        {
+          "id": "flexao_notas",
+          "expected": [
+            "D1"
+          ],
+          "found": [
+            "D1"
+          ],
+          "milliseconds": 1.672
+        },
+        {
+          "id": "flexao_emitentes",
+          "expected": [
+            "D2"
+          ],
+          "found": [
+            "D2"
+          ],
+          "milliseconds": 0.824
+        },
+        {
+          "id": "flexao_pagamentos",
+          "expected": [
+            "D3"
+          ],
+          "found": [
+            "D3"
+          ],
+          "milliseconds": 0.803
+        },
+        {
+          "id": "flexao_declaracoes",
+          "expected": [
+            "D4"
+          ],
+          "found": [],
+          "milliseconds": 0.794
+        },
+        {
+          "id": "flexao_revisoes",
+          "expected": [
+            "D5"
+          ],
+          "found": [],
+          "milliseconds": 0.73
+        },
+        {
+          "id": "sigla",
+          "expected": [
+            "D6"
+          ],
+          "found": [],
+          "milliseconds": 0.756
+        },
+        {
+          "id": "sinonimo_nao_lexical",
+          "expected": [
+            "D6"
+          ],
+          "found": [],
+          "milliseconds": 0.164
+        },
+        {
+          "id": "sinonimo_quitar",
+          "expected": [
+            "D3"
+          ],
+          "found": [],
+          "milliseconds": 0.15
+        },
+        {
+          "id": "frase_artigo",
+          "expected": [
+            "D1"
+          ],
+          "found": [
+            "D1"
+          ],
+          "milliseconds": 0.306
+        },
+        {
+          "id": "identificacao",
+          "expected": [
+            "D2"
+          ],
+          "found": [
+            "D2"
+          ],
+          "milliseconds": 0.259
+        },
+        {
+          "id": "competencia_antiga",
+          "expected": [
+            "D1"
+          ],
+          "found": [
+            "D1"
+          ],
+          "milliseconds": 0.253
+        },
+        {
+          "id": "competencia_nova",
+          "expected": [
+            "D1NEW"
+          ],
+          "found": [
+            "D1NEW"
+          ],
+          "milliseconds": 0.27
+        },
+        {
+          "id": "sem_correspondencia",
+          "expected": [],
+          "found": [],
+          "milliseconds": 0.186
+        },
+        {
+          "id": "jurisdicao_alheia",
+          "expected": [],
+          "found": [],
+          "milliseconds": 0.201
+        },
+        {
+          "id": "regime_alheio",
+          "expected": [],
+          "found": [],
+          "milliseconds": 0.2
+        },
+        {
+          "id": "limite_vigencia",
+          "expected": [
+            "D1NEW"
+          ],
+          "found": [
+            "D1NEW"
+          ],
+          "milliseconds": 0.271
+        }
+      ]
+    }
+  ],
+  "topK": 5
+}

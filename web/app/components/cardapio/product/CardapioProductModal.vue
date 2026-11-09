@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import CardapioMoneyInput from '~/components/cardapio/CardapioMoneyInput.vue'
+import OmniTagsInput from '~/components/omni/OmniTagsInput.vue'
+import { normalizeProductTags, productTagOptions } from '~/domain/cardapio/product-tags'
 import CardapioProductVariations from '~/components/cardapio/product/CardapioProductVariations.vue'
 import CardapioProductAddons from '~/components/cardapio/product/CardapioProductAddons.vue'
 import CardapioProductGallery from '~/components/cardapio/product/CardapioProductGallery.vue'
@@ -34,6 +36,10 @@ const store = useCardapioStore()
 const ui = useUiStore()
 
 const form = ref(emptyProductForm())
+const tagOptions = computed(() => productTagOptions([...store.products, { tags: form.value.tags }]))
+function updateTags(value: string[]) {
+  form.value.tags = normalizeProductTags(value)
+}
 const loading = ref(false)
 const saving = ref(false)
 const uploadingGallery = ref(false)
@@ -260,15 +266,19 @@ async function onSave() {
               placeholder="gluten, leite"
             />
           </label>
-          <label class="cardapio-pm__field cardapio-pm__field--full">
-            <span class="cardapio-pm__label">Tags (virgula)</span>
-            <input
-              v-model="form.tags"
-              type="text"
-              class="cardapio-pm__input"
-              placeholder="novo, picante"
+          <div class="cardapio-pm__field cardapio-pm__field--full">
+            <span class="cardapio-pm__label">Tags</span>
+            <OmniTagsInput
+              :model-value="form.tags"
+              :options="tagOptions"
+              creatable
+              placeholder="Selecionar ou criar tags"
+              @update:model-value="updateTags"
             />
-          </label>
+            <span class="cardapio-pm__hint">
+              Opcional. Selecione varias tags ou digite para criar.
+            </span>
+          </div>
           <div class="cardapio-pm__toggles cardapio-pm__field--full">
             <label class="cardapio-pm__toggle">
               <input v-model="form.isAvailable" type="checkbox" />

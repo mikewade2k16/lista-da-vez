@@ -297,18 +297,18 @@ Configurado a partir de 2026-05-18:
 - `golangci-lint` v2 (config em [.golangci.yml](.golangci.yml))
 - Linters habilitados: `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused` (standard) + `bodyclose`, `gocritic`, `gosec`, `noctx`, `unconvert`, `whitespace`
 
-Instalacao (uma vez):
+O pre-commit executa o linter dentro do container `omni-go-tools`, sem exigir Go
+ou golangci-lint no host. Para preparar manualmente a imagem:
 
 ```bash
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+bash scripts/dev/go-tools-docker.sh ensure
 ```
 
 Comandos:
 
 ```bash
-cd back
-golangci-lint run ./...        # ver issues
-golangci-lint run --fix ./...  # auto-fix do que da
+bash scripts/dev/go-tools-docker.sh run golangci-lint run ./...        # ver issues
+bash scripts/dev/go-tools-docker.sh run golangci-lint run --fix ./...  # auto-fix do que da
 ```
 
 Baseline registrada em 2026-05-18 (apos `--fix`): **94 issues**. Top categorias: `unused` (18 — valida codigo morto da Fase 3), `gocritic` (18), `errcheck` (16 — sobrou Close fora de defer), `noctx` (14 — HTTP sem context), `gosec` (12 — seguranca real, vai para Fase 8).

@@ -958,3 +958,12 @@ e depois `up -d api`. Portas são fixas (api=9091) — não alterar.
   por esses agentes. Adicionar Anthropic ao cofre compartilhado não altera o brain/outbox/canais.
 - A listagem de modelos Anthropic usa `GET /v1/models` com `x-api-key` e
   `anthropic-version: 2023-06-01`; nunca envia `Authorization: Bearer` para esse provider.
+
+## Conhecimento compartilhado — CT-06
+
+knowledge_bridge.go delega corpus/FTS ao repositório owner `modules/knowledge`;
+knowledge_model mantém aliases compatíveis e store_knowledge só bindings do agente.
+Rotas/permissões/knowledge.search preservadas. Base fiscal não aparece nem pode
+ser acessada por ID/binding legado. Documento publicado/arquivado é imutável;
+chunks publicados não podem ser substituídos. Nenhuma mudança em atendimento,
+dispatch, canais, n8n ou credenciais.

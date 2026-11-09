@@ -2,6 +2,9 @@
 // Janela de chat do Calendario (SPEC-F2/F10, CHATUI/D3): abre CENTRALIZADA (Teleport),
 // MINIMIZAR/FECHAR/resize (useCalendarChatWindow), menu "Conversas" + escopo (wave 4).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import FinanceAssistantSurface from '../../../layers/finance/components/accounting/FinanceAssistantHost.vue'
+import FinanceDocumentIntake from '../../../layers/finance/components/fiscal/FinanceDocumentIntake.vue'
+import CalendarChatComposer from '~/components/calendar/CalendarChatComposer.vue'
 import CalendarChatConversations from '~/components/calendar/CalendarChatConversations.vue'
 import CalendarChatMessage from '~/components/calendar/CalendarChatMessage.vue'
 import CalendarChatScope from '~/components/calendar/CalendarChatScope.vue'
@@ -20,6 +23,11 @@ const props = defineProps<{ surface: AssistantChatSurface }>()
 const emit = defineEmits<{ 'open-config': [surface: AssistantChatSurface] }>()
 
 const chat = useCalendarChat()
+const financeArchive = ref(false)
+const financeLocal = computed(() => props.surface === 'finance' && !financeArchive.value)
+function discussFinance() {
+  financeArchive.value = false
+}
 // A conversa persistida tem uma surface imutavel. Ao navegar entre modulos, ela continua
 // autoritativa ate o usuario iniciar uma nova conversa; copy, voz, configuracao e layout
 // precisam seguir o mesmo contexto que o /ask realmente executara.
@@ -46,6 +54,11 @@ const surfaceCopy: Record<AssistantChatSurface, { aria: string; empty: string }>
     empty:
       'Pergunte sobre campanhas, desempenho ou ativos do Meta Ads. O assistente respeita o cliente e a conta de anúncios selecionados.',
   },
+  finance: {
+    aria: 'Crow Assistant Plus do Finance',
+    empty:
+      'Pergunte sobre a planilha selecionada, entradas, saídas e templates fiscais. O assistente consulta os dados da conta e do seu perfil. Nenhuma nota é emitida pelo chat.',
+  },
   global: {
     aria: 'Crow Assistant da plataforma',
     empty:
@@ -56,8 +69,11 @@ const surfaceLabels: Record<AssistantChatSurface, string> = {
   calendar: 'Calendário',
   meta_ads: 'Meta Ads',
   global: 'Visão 360',
+  finance: 'Finance',
 }
-const panelAriaLabel = computed(() => surfaceCopy[effectiveSurface.value].aria)
+const panelAriaLabel = computed(() =>
+  financeLocal.value ? surfaceCopy.finance.aria : surfaceCopy[effectiveSurface.value].aria,
+)
 const emptyStateText = computed(() => surfaceCopy[effectiveSurface.value].empty)
 const surfaceMismatch = computed(() => effectiveSurface.value !== props.surface)
 const effectiveSurfaceLabel = computed(() => surfaceLabels[effectiveSurface.value])
@@ -77,12 +93,12 @@ function prepareResourceInstruction(resource: AssistantResource): void {
   void nextTick(() => inputRef.value?.focus())
 }
 function chatAnchorSelector(): string {
-  if (effectiveSurface.value === 'calendar') return '.calendar-page'
-  if (effectiveSurface.value === 'meta_ads') return '.meta-ads'
-  return '.module-workspace-full'
+  return '.module-workspace-full, .workspace'
 }
 const { localChat, resizing, panelStyle, resizeFromLeft, measureArea, setPosition, startResize } =
-  useCalendarChatWindow(chatAnchorSelector, () => effectiveSurface.value)
+  useCalendarChatWindow(chatAnchorSelector, () =>
+    financeLocal.value ? 'finance' : effectiveSurface.value,
+  )
 
 // Modo de voz (persistido por usuario): 'whisper' usa o servico compartilhado (grava ->
 // para -> transcreve); 'live' = ditado ao vivo pelo navegador (Web Speech API, palavras
@@ -125,10 +141,6 @@ const voiceReason = computed(() => {
 const voiceAvailable = computed(() => voiceReason.value === '')
 
 // Modo de voz: opcoes do toggle no header.
-const VOICE_MODES: { value: VoiceMode; label: string }[] = [
-  { value: 'whisper', label: 'Whisper compartilhado' },
-  { value: 'live', label: 'Ao vivo' },
-]
 
 // Estado unificado (mic + indicador) por modo.
 const isCapturing = computed(() =>
@@ -197,11 +209,6 @@ function cancelCapture(): void {
     voice.cancel()
   }
   void nextTick(() => inputRef.value?.focus())
-}
-
-// Confirmar: reusa o fluxo do mic (Whisper para+transcreve; ao vivo para e mantem o texto).
-async function confirmCapture(): Promise<void> {
-  await onMic()
 }
 
 // Pausa/retoma a gravacao do Whisper.
@@ -467,7 +474,9 @@ useCalendarShortcuts([
           @click="chat.openPanel()"
         >
           <UIcon name="i-lucide-sparkles" aria-hidden="true" />
-          <span class="calendar-chat-pill__label">Crow Assistant</span>
+          <span class="calendar-chat-pill__label">
+            {{ props.surface === 'finance' ? 'Crow Assistant Plus' : 'Crow Assistant' }}
+          </span>
           <span
             v-if="chat.errorMessage.value"
             class="calendar-chat-pill__badge"
@@ -491,9 +500,9 @@ useCalendarShortcuts([
         <header class="calendar-chat__header">
           <strong class="calendar-chat__title">
             <UIcon name="i-lucide-sparkles" aria-hidden="true" />
-            Crow Assistant
+            {{ props.surface === 'finance' ? 'Crow Assistant Plus' : 'Crow Assistant' }}
             <span
-              v-if="chat.aiOffline.value"
+              v-if="chat.aiOffline.value && !financeLocal"
               class="calendar-chat__aistatus"
               title="A IA está indisponível no momento"
             >
@@ -508,16 +517,27 @@ useCalendarShortcuts([
               class="calendar-chat__icon-btn"
               :aria-label="`Configurar ${panelAriaLabel}`"
               title="Configurar assistente"
-              @click="emit('open-config', effectiveSurface)"
+              @click="emit('open-config', financeLocal ? 'finance' : effectiveSurface)"
             >
               <UIcon name="i-lucide-settings" aria-hidden="true" />
             </button>
+            <button
+              v-if="props.surface === 'finance'"
+              type="button"
+              class="calendar-chat__icon-btn"
+              :title="financeArchive ? 'Voltar à conversa' : 'Histórico anterior'"
+              :aria-label="financeArchive ? 'Voltar à conversa' : 'Histórico anterior'"
+              @click="financeArchive = !financeArchive"
+            >
+              <UIcon name="i-lucide-history" />
+            </button>
             <CalendarChatConversations
+              v-if="!financeLocal"
               :conversations="chat.conversations.value"
               :active-id="chat.conversationId.value"
               :loading="chat.loadingConversations.value"
               @select="openConversation"
-              @new="startConversationForCurrentPage"
+              @new="financeArchive ? (financeArchive = false) : startConversationForCurrentPage()"
               @delete="removeConversation"
             />
             <div class="calendar-chat__pos" role="group" aria-label="Posicao da janela">
@@ -536,6 +556,7 @@ useCalendarShortcuts([
               </button>
             </div>
             <button
+              v-if="!financeLocal && !financeArchive"
               type="button"
               class="calendar-chat__icon-btn"
               :disabled="!chat.messages.value.length && !chat.sending.value"
@@ -566,242 +587,132 @@ useCalendarShortcuts([
           </div>
         </header>
 
-        <div v-if="surfaceMismatch" class="calendar-chat__surface-notice" role="status">
-          <UIcon name="i-lucide-info" aria-hidden="true" />
-          <span>
-            Esta conversa continua em
-            <strong>{{ effectiveSurfaceLabel }}</strong>
-            .
-          </span>
-          <button
-            type="button"
-            class="calendar-chat__surface-switch"
-            :disabled="chat.sending.value || chat.loadingConversation.value || isTranscribing"
-            @click="startConversationForCurrentPage"
-          >
-            Nova conversa em {{ routeSurfaceLabel }}
-          </button>
-        </div>
+        <FinanceAssistantSurface v-if="financeLocal" @discuss="discussFinance" />
+        <template v-else>
+          <p v-if="financeArchive" class="calendar-chat__empty">
+            Histórico anterior, somente leitura. Volte à conversa para enviar novos pedidos.
+          </p>
+          <div v-if="surfaceMismatch" class="calendar-chat__surface-notice" role="status">
+            <UIcon name="i-lucide-info" aria-hidden="true" />
+            <span>
+              Esta conversa continua em
+              <strong>{{ effectiveSurfaceLabel }}</strong>
+              .
+            </span>
+            <button
+              type="button"
+              class="calendar-chat__surface-switch"
+              :disabled="chat.sending.value || chat.loadingConversation.value || isTranscribing"
+              @click="startConversationForCurrentPage"
+            >
+              Nova conversa em {{ routeSurfaceLabel }}
+            </button>
+          </div>
 
-        <!-- Escopo do contexto (SPEC-F11): so aparece p/ agencia/multi-cliente
+          <!-- Escopo do contexto (SPEC-F11): so aparece p/ agencia/multi-cliente
              (canSelect=true); usuario-cliente fica travado no lockedClientId. A escolha
              viaja no ask() e fica salva na conversa. -->
-        <CalendarChatScope
-          :scope="chat.chatScope.value"
-          :mode="chat.scopeMode.value"
-          :client-id="chat.scopeClientId.value"
-          :disabled="
-            chat.sending.value ||
-            chat.loadingConversation.value ||
-            Boolean(chat.conversationId.value) ||
-            Boolean(chat.messages.value.length) ||
-            isTranscribing
-          "
-          @change="chat.setScope"
-        />
-
-        <div ref="streamRef" class="calendar-chat__stream">
-          <p v-if="chat.loadingConversation.value" class="calendar-chat__empty">
-            Carregando conversa...
-          </p>
-          <p v-else-if="!chat.messages.value.length" class="calendar-chat__empty">
-            {{ emptyStateText }}
-          </p>
-
-          <template v-else>
-            <CalendarChatMessage
-              v-for="message in chat.messages.value"
-              :key="message.id"
-              :message="message"
-              :busy="chat.proposalBusyId.value === message.id"
-              :clients="chat.chatScope.value.clients"
-              :scope-mode="chat.scopeMode.value"
-              :scope-client-id="chat.scopeClientId.value"
-              @accept-selected="chat.confirmSelectedProposals"
-              @reject-selected="chat.rejectSelectedProposals"
-              @reconcile-meta="chat.reconcileMetaAction"
-              @use-resource="prepareResourceInstruction"
-            />
-          </template>
-
-          <div
-            v-if="chat.sending.value"
-            class="calendar-chat__msg calendar-chat__msg--assistant calendar-chat__typing"
-            aria-live="polite"
-          >
-            digitando...
-          </div>
-        </div>
-
-        <!-- Estado "IA fora do ar" (WAVE 5): visual DISTINTO (nunca um balao normal) sempre que
-             a IA nao responder — 503/cota/chave/timeout/kill switch. A pergunta fica salva. -->
-        <div
-          v-if="chat.aiOffline.value"
-          class="calendar-chat__aioff"
-          role="alert"
-          aria-live="assertive"
-        >
-          <UIcon name="i-lucide-plug-zap" class="calendar-chat__aioff-icon" aria-hidden="true" />
-          <div class="calendar-chat__aioff-body">
-            <strong>IA fora do ar</strong>
-            <span>{{ chat.aiOfflineReason.value || 'A IA não respondeu agora.' }}</span>
-          </div>
-          <button
-            type="button"
-            class="calendar-chat__aioff-retry"
-            :disabled="chat.sending.value || chat.checkingAvailability.value"
-            @click="retryLast"
-          >
-            <UIcon name="i-lucide-rotate-cw" aria-hidden="true" />
-            Repetir
-          </button>
-        </div>
-
-        <p v-if="chat.errorMessage.value" class="calendar-chat__error" role="alert">
-          {{ chat.errorMessage.value }}
-        </p>
-        <p v-if="voiceError" class="calendar-chat__error" role="alert">
-          {{ voiceError }}
-        </p>
-        <!-- Voz indisponivel: aviso honesto (so quando NAO capturando). -->
-        <p
-          v-if="!isCapturing && !voiceAvailable"
-          class="calendar-chat__recording calendar-chat__recording--muted"
-        >
-          <UIcon name="i-lucide-mic-off" aria-hidden="true" />
-          {{ voiceReason }}
-        </p>
-        <!-- Transcrevendo (apos parar no Whisper). -->
-        <p v-else-if="isTranscribing" class="calendar-chat__recording" aria-live="polite">
-          <UIcon name="i-lucide-loader-circle" class="calendar-chat__spin" aria-hidden="true" />
-          Transcrevendo o áudio...
-        </p>
-
-        <!-- Toggle do modo de voz: escondido enquanto grava. -->
-        <div
-          v-if="!isCapturing"
-          class="calendar-chat__voicemode"
-          role="group"
-          aria-label="Modo de voz"
-        >
-          <button
-            v-for="m in VOICE_MODES"
-            :key="m.value"
-            type="button"
-            class="calendar-chat__voicemode-btn"
-            :class="{ 'is-active': voiceMode === m.value }"
-            :title="
-              m.value === 'live'
-                ? 'Ditado ao vivo pelo navegador (Chrome/Edge; audio passa pelo Google)'
-                : 'Serviço Whisper compartilhado; transcreve ao parar'
-            "
-            @click="setVoiceMode(m.value)"
-          >
-            {{ m.label }}
-          </button>
-        </div>
-
-        <!-- Barra de gravacao (estilo WhatsApp): lixeira + timer + waveform + pausar +
-             confirmar. Substitui o input no Whisper; no modo ao vivo aparece ACIMA do
-             input (o texto continua surgindo no campo enquanto a pessoa fala). -->
-        <div v-if="isCapturing" class="calendar-chat__recbar" aria-live="polite">
-          <button
-            type="button"
-            class="calendar-chat__recbtn calendar-chat__recbtn--trash"
-            aria-label="Descartar gravação"
-            title="Descartar"
-            @click="cancelCapture"
-          >
-            <UIcon name="i-lucide-trash-2" aria-hidden="true" />
-          </button>
-
-          <span class="calendar-chat__rectime">
-            <span
-              class="calendar-chat__rec-dot"
-              :class="{ 'is-paused': isPaused }"
-              aria-hidden="true"
-            ></span>
-            {{ recTimeLabel }}
-          </span>
-
-          <span class="calendar-chat__wave calendar-chat__wave--bar" aria-hidden="true">
-            <span
-              v-for="(lvl, i) in captureLevels"
-              :key="i"
-              :style="{ height: `${Math.round((0.12 + lvl * 0.88) * 100)}%` }"
-            ></span>
-          </span>
-
-          <button
-            v-if="voiceMode === 'whisper'"
-            type="button"
-            class="calendar-chat__recbtn"
-            :aria-label="isPaused ? 'Retomar' : 'Pausar'"
-            :title="isPaused ? 'Retomar' : 'Pausar'"
-            @click="togglePause"
-          >
-            <UIcon :name="isPaused ? 'i-lucide-mic' : 'i-lucide-pause'" aria-hidden="true" />
-          </button>
-
-          <button
-            type="button"
-            class="calendar-chat__recbtn calendar-chat__recbtn--confirm"
-            :disabled="isTranscribing"
-            :aria-label="voiceMode === 'whisper' ? 'Parar e transcrever' : 'Concluir'"
-            :title="voiceMode === 'whisper' ? 'Parar e transcrever' : 'Concluir'"
-            @click="confirmCapture"
-          >
-            <UIcon name="i-lucide-check" aria-hidden="true" />
-          </button>
-        </div>
-
-        <!-- Input: escondido no Whisper enquanto grava; no modo ao vivo continua visivel
-             (o texto ditado aparece aqui). Mic/enviar somem durante a captura. -->
-        <div v-if="!isCapturing || voiceMode === 'live'" class="calendar-chat__input">
-          <button
-            v-if="!isCapturing"
-            type="button"
-            class="calendar-chat__mic"
-            :class="{ 'calendar-chat__mic--busy': isTranscribing }"
-            :disabled="isTranscribing || !voiceAvailable"
-            aria-label="Falar"
-            :title="!voiceAvailable ? voiceReason : 'Falar'"
-            @click="onMic"
-          >
-            <UIcon
-              v-if="isTranscribing"
-              name="i-lucide-loader-circle"
-              class="calendar-chat__spin"
-              aria-hidden="true"
-            />
-            <UIcon v-else name="i-lucide-mic" aria-hidden="true" />
-          </button>
-          <textarea
-            ref="inputRef"
-            v-model="chat.draft.value"
-            class="calendar-chat__field"
-            rows="1"
-            :placeholder="
-              isCapturing ? 'Fale que o texto aparece aqui...' : 'Pergunte ao assistente...'
-            "
-            @input="onInput"
-            @keydown.enter="onEnter"
-          ></textarea>
-          <button
-            v-if="!isCapturing"
-            type="button"
-            class="calendar-chat__send"
+          <CalendarChatScope
+            :scope="chat.chatScope.value"
+            :mode="chat.scopeMode.value"
+            :client-id="chat.scopeClientId.value"
             :disabled="
-              chat.sending.value || chat.checkingAvailability.value || !chat.draft.value.trim()
+              chat.sending.value ||
+              chat.loadingConversation.value ||
+              Boolean(chat.conversationId.value) ||
+              Boolean(chat.messages.value.length) ||
+              isTranscribing
             "
-            aria-label="Enviar"
-            :title="chat.checkingAvailability.value ? 'Verificando IA...' : 'Enviar'"
-            @click="chat.send()"
-          >
-            <UIcon name="i-lucide-send" aria-hidden="true" />
-          </button>
-        </div>
+            @change="chat.setScope"
+          />
 
+          <div ref="streamRef" class="calendar-chat__stream">
+            <FinanceDocumentIntake
+              v-if="effectiveSurface === 'finance' && !financeArchive"
+              @discuss="chat.draft.value = $event"
+            />
+            <p v-if="chat.loadingConversation.value" class="calendar-chat__empty">
+              Carregando conversa...
+            </p>
+            <p v-else-if="!chat.messages.value.length" class="calendar-chat__empty">
+              {{ emptyStateText }}
+            </p>
+
+            <template v-else>
+              <CalendarChatMessage
+                v-for="message in chat.messages.value"
+                :key="message.id"
+                :message="message"
+                :busy="financeArchive || chat.proposalBusyId.value === message.id"
+                :clients="chat.chatScope.value.clients"
+                :scope-mode="chat.scopeMode.value"
+                :scope-client-id="chat.scopeClientId.value"
+                @accept-selected="chat.confirmSelectedProposals"
+                @reject-selected="chat.rejectSelectedProposals"
+                @reconcile-meta="chat.reconcileMetaAction"
+                @use-resource="prepareResourceInstruction"
+              />
+            </template>
+
+            <div
+              v-if="chat.sending.value"
+              class="calendar-chat__msg calendar-chat__msg--assistant calendar-chat__typing"
+              aria-live="polite"
+            >
+              digitando...
+            </div>
+          </div>
+
+          <!-- Estado "IA fora do ar" (WAVE 5): visual DISTINTO (nunca um balao normal) sempre que
+             a IA nao responder — 503/cota/chave/timeout/kill switch. A pergunta fica salva. -->
+          <div
+            v-if="chat.aiOffline.value && !financeArchive"
+            class="calendar-chat__aioff"
+            role="alert"
+            aria-live="assertive"
+          >
+            <UIcon name="i-lucide-plug-zap" class="calendar-chat__aioff-icon" aria-hidden="true" />
+            <div class="calendar-chat__aioff-body">
+              <strong>IA fora do ar</strong>
+              <span>{{ chat.aiOfflineReason.value || 'A IA não respondeu agora.' }}</span>
+            </div>
+            <button
+              type="button"
+              class="calendar-chat__aioff-retry"
+              :disabled="chat.sending.value || chat.checkingAvailability.value"
+              @click="retryLast"
+            >
+              <UIcon name="i-lucide-rotate-cw" aria-hidden="true" />
+              Repetir
+            </button>
+          </div>
+
+          <p v-if="chat.errorMessage.value" class="calendar-chat__error" role="alert">
+            {{ chat.errorMessage.value }}
+          </p>
+          <CalendarChatComposer
+            v-if="!financeArchive"
+            v-model="chat.draft.value"
+            :voice-mode="voiceMode"
+            :is-capturing="isCapturing"
+            :is-transcribing="isTranscribing"
+            :is-paused="isPaused"
+            :rec-time-label="recTimeLabel"
+            :capture-levels="captureLevels"
+            :voice-available="voiceAvailable"
+            :voice-reason="voiceReason"
+            :voice-error="voiceError"
+            :sending="chat.sending.value || chat.checkingAvailability.value"
+            @mode="setVoiceMode"
+            @mic="onMic"
+            @pause="togglePause"
+            @cancel="cancelCapture"
+            @send="chat.send()"
+            @input="onInput"
+            @enter="onEnter"
+            @input-element="inputRef = $event"
+          />
+        </template>
         <!-- Handle de resize (canto inferior): arrasto redimensiona a janela. -->
         <button
           type="button"

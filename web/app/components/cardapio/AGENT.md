@@ -6,6 +6,58 @@ Estas instrucoes valem para `web/app/components/cardapio/` (painel `/cardapio`).
 
 ## Responsabilidade
 
+Correcao local (2026-11-04): sidebar do editor reduzida para 132px; coluna Tags
+limita o controle com wrapper de 144px e permite quebra das tags, sem alterar
+OmniTagsInput compartilhado. A imagem da tabela nao exibe hint de arrastar.
+
+Salvamento Site (2026-11-04): a espera fixa de 250ms foi substituida por
+snapshot-request/requestId -> snapshot no canal omni-studio. Sair do iframe pode
+nao disparar blur no contenteditable; o Studio confirma o campo ativo e aguarda
+nextTick antes de responder com o documento atual. Sem resposta em 5s, nada e
+salvo/publicado; o painel pede atualizar o Studio/TAVOLA. editing marca dirty
+ainda durante a digitacao. As mensagens continuam validadas por origin + source.
+Respostas da API preservam edicoes recebidas durante o envio por editRevision.
+O hero do TAVOLA respeita string vazia explicita, sem restaurar o default.
+Esta correcao exige publicar painel E Studio/TAVOLA; publicar somente Omni nao
+atualiza o editor embutido. Sem mudanca no contrato HTTP, schema ou credenciais.
+Testes sem navegador cobrem campo ativo sem blur, handshake, timeout e texto vazio.
+Validacao visual permanece pendente por orientacao do usuario (sem navegador).
+
+Layout da tabela de Produtos: a célula de imagem é compacta e sobrepõe o botão
+de adicionar à miniatura; categorias e tags têm limites de largura; o input de
+tags usa tamanho compacto nessa tabela. A própria tabela limita a altura a 65vh
+(máximo 44rem) e rola nos dois eixos dentro do painel, mantendo o cabeçalho fixo.
+
+Upload de imagem da tabela (2026-11-03): `applyImageUpload` carrega o produto
+completo e usa seu `restaurantId` em POST `/restaurants/{id}/media`, nunca o ID
+do produto (regressao que causava 404 em qualquer formato). Depois grava imageUrl
+no produto via PATCH canonico e reload da lista, preservando tambem pairing.
+Falha no upload ou URL vazia nao altera o produto. `CardapioProductImageCell`
+reutiliza OmniMediaGrid para clique, previa e drop de uma imagem por produto;
+aceita JPEG/PNG/WebP/GIF, mostra envio por linha e impede reenvio simultaneo.
+Sem alteracao de rota, schema ou allowlist de formatos no backend. Correcao online
+depende de publicacao do painel; arquivos locais nao alteram producao.
+
+Colunas do catalogo (2026-11-03): Tags e Data de cadastro (`createdAt`, somente
+leitura, data/hora local pt-BR) entram aditivamente na preferencia antiga via
+forceVisibleColumnKeys, sem apagar a ordem ou as demais escolhas. Data ausente
+e exibida como traco, nunca inventada. Ambiente Mac usa codigo copiado no
+container web: sincronizar os arquivos e manter Compose watch ativo; alterar
+somente o host sem sync nao muda a pagina servida.
+
+Tags de produtos (2026-11-03): formulario usa `string[]` (zero a N tags), com
+multiselect e criacao no modal e na coluna Tags. `OmniTagsInput` nao possui
+renomeacao/cor local: alteracoes passam pelo PATCH canonico e reloadProducts.
+Opcoes derivadas dos produtos do restaurante aberto; sem catalogo global/localStorage.
+Filtro Tags multiselect inclui produtos com qualquer tag selecionada, combinado
+com busca/categoria/disponibilidade/foto/data. Limpar restaura lista sem filtro de
+tags. API lean precisa incluir `tags`; banco ja possui JSONB desde a migration 0153.
+Publico TAVOLA continua no repositorio separado.
+
+O formulario canonico preserva `pairing` ao carregar e montar o payload, inclusive
+em edicoes inline de tags. Testes verificam selecao multipla/limpeza sem apagar
+harmonizacao e demais campos; nao enviar um payload parcial para o PATCH full-replace.
+
 Deploy 2026-10-29 concluido via npm run deploy: API/painel na tag
 `local-20261029-160432`, healthy e HTTP 200; filtros de data/foto, fechamento da
 importacao e links por aba incluidos. Backups principal/Evolution verificados.
@@ -228,3 +280,10 @@ Plano: `docs/cardapio/PLANO_CARDAPIO_GESTAO_UX.md`. Reusa o que ja existe (sem l
 - O wiring de menu ja foi aplicado (workspace `cardapio_web` em `workspaces.ts` + `permissions.ts`;
   gating em `module-enabled.global.ts`); a pagina aparece no menu. Nao existe `nav.config.ts` neste
   repo — o nav deriva de `workspaces.ts`/`permissions.ts`.
+
+Studio por estabelecimento (2026-11-04): em producao, iframe/origin derivam de
+store.primaryDomain (dominios carregados da API no escopo do editor), sem usar
+a URL fixa de outro cliente. Bari abre Bari; Mostarda abre Mostarda. Sem dominio
+valido, a aba orienta cadastrar em Dominios. Em dev, mantem studioUrl local.
+Troca de dominio recria iframe e invalida handshake/snapshot anterior. Sem
+alteracao de dados do restaurante, banco, rotas HTTP ou configuracao global.

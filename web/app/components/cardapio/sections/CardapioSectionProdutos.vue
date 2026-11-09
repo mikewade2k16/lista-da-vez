@@ -2,10 +2,12 @@
 import { computed, ref, watch } from 'vue'
 
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
+import OmniTagsInput from '~/components/omni/OmniTagsInput.vue'
 import OmniDataTable from '../../../../layers/tasks/components/omni/table/OmniDataTable.vue'
 import CardapioProductImportModal from '~/components/cardapio/product/CardapioProductImportModal.vue'
 import CardapioProductDateRange from '~/components/cardapio/product/CardapioProductDateRange.vue'
 import CardapioProductModal from '~/components/cardapio/product/CardapioProductModal.vue'
+import CardapioProductImageCell from '~/components/cardapio/product/CardapioProductImageCell.vue'
 import {
   useCardapioProductColumns,
   type CardapioProductFilters,
@@ -20,7 +22,7 @@ import {
   type ProductImportResult,
 } from '~/domain/cardapio/product-transfer'
 import type { ProductBulkAction } from '~/domain/cardapio/types'
-import type { OmniTableCellUpdate, OmniTableImageUpload } from '~/types/omni/collection'
+import type { OmniTableCellUpdate } from '~/types/omni/collection'
 
 const store = useCardapioStore()
 const ui = useUiStore()
@@ -28,6 +30,7 @@ const ui = useUiStore()
 const modalOpen = ref(false)
 const editingId = ref('')
 const busyId = ref('')
+const uploadingIds = ref<string[]>([])
 const selectedIds = ref<Array<string | number>>([])
 const bulkBusy = ref(false)
 const importOpen = ref(false)
@@ -57,6 +60,7 @@ const filtersState = ref<CardapioProductFilters & Record<string, unknown>>({
   search: '',
   categoryId: '',
   availability: '',
+  tags: [],
 })
 
 const {
@@ -64,6 +68,7 @@ const {
   filteredRows,
   allTableColumns,
   filterDefinitions,
+  tagOptions,
   onCellInput,
   applyImageUpload,
 } = useCardapioProductColumns(() => filtersState.value, {
@@ -132,6 +137,7 @@ const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToD
     preferenceKey: 'cardapio.editor.products',
     allColumns: allTableColumns,
     columnExcludeKeys,
+    forceVisibleColumnKeys: ['tags', 'createdAt'],
   })
 
 function toRow(row: Record<string, unknown>): CardapioProductRow {
@@ -161,17 +167,16 @@ function onCellUpdate(payload: OmniTableCellUpdate) {
 
 // Upload de imagem inline: sobe pela mesma API de midia e grava a url via PATCH
 // full-replace (mecanica encapsulada no composable).
-async function onImageUpload(payload: OmniTableImageUpload) {
-  const id = String(payload.rowId).trim()
-  if (!id) return
-  busyId.value = id
+async function onImageUpload(id: string, file: File) {
+  if (!id || bulkBusy.value || uploadingIds.value.includes(id)) return
+  uploadingIds.value = [...uploadingIds.value, id]
   try {
-    await applyImageUpload(id, payload.file)
+    await applyImageUpload(id, file)
     ui.success('Imagem atualizada.')
   } catch (caught) {
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel enviar a imagem.'))
   } finally {
-    busyId.value = ''
+    uploadingIds.value = uploadingIds.value.filter((value) => value !== id)
   }
 }
 
@@ -279,7 +284,7 @@ async function importProducts(input: ProductImportInput) {
 }
 
 function onResetFilters() {
-  filtersState.value = { search: '', categoryId: '', availability: '' }
+  filtersState.value = { search: '', categoryId: '', availability: '', tags: [] }
 }
 </script>
 
@@ -359,8 +364,30 @@ function onResetFilters() {
       row-key="id"
       empty-text="Nenhum produto encontrado com os filtros atuais."
       @update:cell="onCellUpdate"
-      @upload:image="onImageUpload"
     >
+      <template #cell-imageSrc="{ row }">
+        <CardapioProductImageCell
+          :product-id="rowId(row)"
+          :name="toRow(row).name"
+          :src="toRow(row).imageSrc"
+          :uploading="uploadingIds.includes(rowId(row))"
+          :disabled="bulkBusy"
+          @upload="onImageUpload(rowId(row), $event)"
+        />
+      </template>
+      <template #cell-tags="{ row }">
+        <div class="cardapio-prod__tags">
+          <OmniTagsInput
+            :model-value="toRow(row).tags ?? []"
+            :options="tagOptions"
+            size="sm"
+            :disabled="bulkBusy"
+            placeholder="Adicionar tags"
+            creatable
+            @update:model-value="onCellInput(rowId(row), 'tags', $event)"
+          />
+        </div>
+      </template>
       <template #cell-actions="{ row }">
         <div class="cardapio-prod__actions">
           <UButton
@@ -411,6 +438,8 @@ function onResetFilters() {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  min-width: 0;
+  min-height: 0;
 }
 
 .cardapio-prod__head {
@@ -436,5 +465,41 @@ function onResetFilters() {
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
+}
+
+.cardapio-prod__tags {
+  width: 144px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.cardapio-prod__tags :deep(.omni-tags-input),
+.cardapio-prod__tags :deep([data-slot='base']) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  max-height: none;
+}
+
+.cardapio-prod__tags :deep(input) {
+  min-width: 0;
+  width: 4rem;
+  max-width: 100%;
+  flex: 1;
+}
+
+:deep(.omni-data-table) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(65vh, 44rem);
+  overflow: auto;
+}
+
+:deep(.omni-data-table__head-cell),
+:deep(.omni-data-table__cell) {
+  overflow: hidden;
 }
 </style>

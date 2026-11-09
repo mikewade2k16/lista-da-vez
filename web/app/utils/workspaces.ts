@@ -86,6 +86,7 @@ export const WORKSPACES = [
     path: '/manage/role-templates',
   },
   { id: 'storage_admin', label: 'Storage R2', icon: 'cloud', path: '/manage/storage' },
+  { id: 'knowledge_admin', label: 'Base pública', icon: 'menu_book', path: '/manage/base-publica' },
   { id: 'manage', label: 'Manage', icon: 'layout_panel_left', path: '/manage/users' },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/configuracoes' },
   { id: 'menu_layout', label: 'Organização do Menu', icon: 'tune', path: '/manage/menu-layout' },

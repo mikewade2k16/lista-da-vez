@@ -85,7 +85,7 @@ func requireAssistantAccess(next http.HandlerFunc) http.HandlerFunc {
 				httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Permissoes da conta indisponiveis.")
 				return
 			}
-			allowed := []string{
+			allowed := []string{"finance.sheets.view",
 				"calendar.view", "calendar.manage",
 				"tasks.boards.view", "tasks.tasks.view", "tasks.tasks.create", "tasks.tasks.edit",
 				"meta_ads.view", "meta_ads.manage",
@@ -102,6 +102,9 @@ func requireAssistantAccess(next http.HandlerFunc) http.HandlerFunc {
 				httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para usar o assistente nesta conta.")
 				return
 			}
+		}
+		if r.URL.Query().Get("surface") == AssistantSurfaceFinance {
+			r = r.WithContext(context.WithValue(r.Context(), financeSurfaceContextKey{}, true))
 		}
 		next(w, r)
 	}
@@ -173,6 +176,24 @@ func handleChatAsk(svc *Service, defaultSurface string, assistantRoute bool) htt
 		if strings.TrimSpace(req.Surface) == "" && strings.TrimSpace(req.ConversationID) == "" {
 			req.Surface = defaultSurface
 		}
+
+		if req.Mode != "" {
+			if !assistantRoute || req.Mode != "plus" || svc.plus == nil {
+				writePlusError(w, r, plusChatError("capability_unavailable", 503))
+				return
+			}
+			out, e := svc.plus.Ask(r.Context(), AssistantPlusScope{AccountID: accountID, ActorID: principal.UserID}, req)
+			if e != nil {
+				writePlusError(w, r, e)
+				return
+			}
+			httpapi.WriteJSON(w, 200, out)
+			return
+		}
+		if req.IssuerID != "" || req.Action != nil || req.ContractVersion != "" {
+			writePlusError(w, r, plusChatError("invalid_input", 400))
+			return
+		}
 		res, err := svc.ChatAsk(r.Context(), accountID, principal, req)
 		if err != nil {
 			writeChatError(w, r, err)
@@ -243,6 +264,10 @@ func handleConfirmChatProposal(svc *Service) http.HandlerFunc {
 // cliente-side so as suas. Resposta { conversations: [...] }.
 func handleListChatConversations(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("mode") == "plus" {
+			svc.handlePlusHistory(w, r, "")
+			return
+		}
 		accountID, principal, ok := chatAuth(w, r)
 		if !ok {
 			return
@@ -260,6 +285,10 @@ func handleListChatConversations(svc *Service) http.HandlerFunc {
 // fora disso 404.
 func handleGetChatConversation(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("mode") == "plus" {
+			svc.handlePlusHistory(w, r, r.PathValue("id"))
+			return
+		}
 		accountID, principal, ok := chatAuth(w, r)
 		if !ok {
 			return
@@ -308,6 +337,10 @@ func handleCreateChatConversation(svc *Service, defaultSurface string, assistant
 // fora disso 404. 204 No Content no sucesso.
 func handleDeleteChatConversation(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("mode") == "plus" {
+			svc.handlePlusHistory(w, r, r.PathValue("id"))
+			return
+		}
 		accountID, principal, ok := chatAuth(w, r)
 		if !ok {
 			return

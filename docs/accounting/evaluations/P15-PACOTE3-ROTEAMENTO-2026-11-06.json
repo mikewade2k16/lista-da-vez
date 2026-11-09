@@ -1,0 +1,25 @@
+{
+  "package": "3",
+  "items": ["P15-02", "P15-06", "P15-36"],
+  "status": "implemented, awaiting manual acceptance",
+  "passed": [
+    "CT-15-P3 synthetic regression: 38 cases (kind, route, reason, period)",
+    "PostgreSQL disposable -race: natural preparation, side read during pending field, composed request, answer, cancel, resume; no extra draft, pending field not overwritten",
+    "finance and platform/app suites with disposable databases (Plus HTTP, account RBAC scope)",
+    "CT-13 baseline 40/40 as side effect (not a new holdout)",
+    "Go lint Finance back to 6 pre-existing issues"
+  ],
+  "failed_baseline": ["6 existing Finance lint issues (portal_probe/portal_session/old tests)"],
+  "not_executed": [
+    "browser/layout",
+    "real user phrases from captures (not available in repository)",
+    "independent new holdout for P15-36",
+    "real user acceptance"
+  ],
+  "known_gaps": [
+    "details inside the request (value/client) are not extracted yet; package 4",
+    "a new 'criar nota' after a completed draft reuses the conversation draft; package 4"
+  ],
+  "aiCalls": 0,
+  "dataset": "../experiments/CT-15-P3-regressao.json"
+}

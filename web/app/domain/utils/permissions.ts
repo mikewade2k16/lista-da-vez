@@ -284,6 +284,14 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: '',
   },
   {
+    id: 'knowledge_admin',
+    label: 'Base pública',
+    description:
+      'Curadoria das fontes oficiais consultadas pelo chat do Finance (so platform_admin).',
+    viewPermission: '',
+    editPermission: '',
+  },
+  {
     id: 'manage',
     label: 'Manage',
     description: 'Agrupa rotas administrativas internas do painel.',
@@ -424,6 +432,7 @@ const ROLE_WORKSPACES = {
     'organizations_admin',
     'role_templates_admin',
     'storage_admin',
+    'knowledge_admin',
     'manage',
     'configuracoes',
     'menu_layout',

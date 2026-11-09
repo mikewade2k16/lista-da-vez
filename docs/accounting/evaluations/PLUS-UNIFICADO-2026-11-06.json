@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-06",
+  "scope": "Finance main entry orchestration; enterprise context and legacy archives preserved",
+  "frontendTests": {
+    "passed": 37,
+    "files": 4
+  },
+  "postgres": "16, disposable, synthetic fixtures",
+  "go": [
+    "TestUnifiedConversationChoosesToolsAIAndFallback: passed with race, including budget and in-flight revocation",
+    "Conversation questions/access/preparation regression: passed with race",
+    "Calendar surface/capabilities/transcription regression: passed with race",
+    "TestAllMigrationsApply: passed on empty disposable DB with SkipDataSeeds=true",
+    "TestConversationDoesNotOpenFormsForInformationalQuestions: passed with race",
+    "TestUnifiedConversationMapsScopeAndPermissionErrors: passed, foreign sheet 404 and permission denied 403"
+  ],
+  "aiProvider": "fake only; zero paid/live requests",
+  "lint": {
+    "newGoIssues": 0,
+    "existingGoIssues": 6,
+    "frontendErrors": 0,
+    "existingShellMaxLinesWarning": 1
+  },
+  "notExecuted": [
+    "browser/layout",
+    "real voice",
+    "real model/cost",
+    "fiscal emission",
+    "user acceptance"
+  ],
+  "migration": "0316_finance_unified_conversation_runs.sql",
+  "limits": [
+    "Unification applies to main Finance conversation, not a migration/merge of every historical conversation.",
+    "Corporate tools keep explicit issuer context and existing contracts.",
+    "CT-14 Calendar adapter remains pending."
+  ],
+  "typecheck": {
+    "globalDiagnostics": 410,
+    "changedFilesDiagnostics": 0,
+    "result": "failed-existing-debt"
+  }
+}

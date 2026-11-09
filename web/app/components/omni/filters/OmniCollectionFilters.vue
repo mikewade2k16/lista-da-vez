@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import OmniTagsInput from '~/components/omni/OmniTagsInput.vue'
 import OmniSwitchInput from '../../../../layers/tasks/components/omni/inputs/OmniSwitchInput.vue'
 import OmniTableColumnsConfig from '~/components/omni/table/OmniTableColumnsConfig.vue'
 import type {
@@ -145,7 +146,12 @@ function hasFilterValue(key: string) {
 }
 
 function clearFilter(key: string) {
-  onFilterChange(key, '')
+  onFilterChange(key, Array.isArray(props.modelValue[key]) ? [] : '')
+}
+
+function multiselectModelValue(key: string): string[] {
+  const value = props.modelValue[key]
+  return Array.isArray(value) ? value.map(String) : []
 }
 
 const resolvedVisibleColumns = computed(() => {
@@ -173,7 +179,7 @@ function onReset() {
         return [filter.key, switchOffValue(filter)]
       }
 
-      return [filter.key, '']
+      return [filter.key, filter.type === 'multiselect' ? [] : '']
     }),
   )
 
@@ -242,6 +248,16 @@ function onReset() {
           />
         </div>
 
+        <div v-else-if="filter.type === 'multiselect'" class="omni-collection-filters__multi">
+          <OmniTagsInput
+            :model-value="multiselectModelValue(filter.key)"
+            :options="normalizeSelectItems(filter.options)"
+            :placeholder="filter.placeholder || filter.label"
+            :disabled="props.loading"
+            @update:model-value="onFilterChange(filter.key, $event)"
+          />
+        </div>
+
         <div
           v-else-if="filter.type === 'switch'"
           class="omni-collection-filters__field omni-collection-filters__field--switch flex h-9 items-center gap-2 rounded-[var(--radius-sm)] border border-[rgb(var(--border))] px-3"
@@ -288,3 +304,10 @@ function onReset() {
     <slot name="below"></slot>
   </div>
 </template>
+
+<style scoped>
+.omni-collection-filters__multi {
+  width: 220px;
+  max-width: 100%;
+}
+</style>

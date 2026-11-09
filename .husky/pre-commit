@@ -12,6 +12,11 @@ if [ -z "${BASH_VERSION:-}" ] || shopt -oq posix; then exec bash "$0" "$@"; fi
 #
 # Mantem os formatadores/lints web seriais para limitar consumo em commits grandes.
 node scripts/dev/sync-agent-skills.mjs --check || exit $?
+if git diff --cached --quiet -- ':(glob)back/**/*.go'; then
+  :
+else
+  bash scripts/dev/go-tools-docker.sh ensure || exit $?
+fi
 npx lint-staged --concurrent 1
 LINT_STATUS=$?
 
@@ -23,7 +28,7 @@ if [ "$LINT_STATUS" -eq 0 ]; then
   done < <(git diff --cached --name-only --diff-filter=ACMR -z -- ':(glob)back/**/*.go')
 
   if [ "${#GO_FILES[@]}" -gt 0 ]; then
-    scripts/dev/lint-go-staged.sh "${GO_FILES[@]}"
+    bash scripts/dev/lint-go-staged-docker.sh "${GO_FILES[@]}"
     GO_LINT_STATUS=$?
   fi
 fi

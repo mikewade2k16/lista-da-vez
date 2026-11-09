@@ -170,6 +170,19 @@ func (s *PostgresStore) buildQueries() {
 // unique GLOBAL a conta A mandaria `abc`, a conta B mandaria `abc` e a colisao
 // suprimiria o envio de B. Seria vazamento cross-tenant (principio 2).
 func (s *PostgresStore) Enqueue(ctx context.Context, job NewJob) (string, bool, error) {
+	return s.enqueue(ctx, s.pool, job)
+}
+
+// EnqueueTx shares the caller transaction without changing the Store interface.
+func (s *PostgresStore) EnqueueTx(ctx context.Context, tx pgx.Tx, job NewJob) (string, bool, error) {
+	return s.enqueue(ctx, tx, job)
+}
+
+type enqueueQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func (s *PostgresStore) enqueue(ctx context.Context, q enqueueQuerier, job NewJob) (string, bool, error) {
 	if job.AccountID == "" || job.OrderingKey == "" || job.Kind == "" {
 		return "", false, ErrInvalidJob
 	}
@@ -187,7 +200,7 @@ func (s *PostgresStore) Enqueue(ctx context.Context, job NewJob) (string, bool, 
 	}
 
 	var id string
-	err := s.pool.QueryRow(ctx, s.enqueueSQL,
+	err := q.QueryRow(ctx, s.enqueueSQL,
 		job.AccountID, job.OrderingKey, job.IdempotencyKey, job.Kind, payload, maxAttempts, runAfter,
 	).Scan(&id)
 	if err != nil {

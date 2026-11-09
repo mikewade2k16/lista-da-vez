@@ -1,0 +1,122 @@
+{
+  "date": "2026-11-05",
+  "state": "partial_structure_only",
+  "userRequested": "Estrutura para MEI e não MEI; definir regras depois",
+  "userAcceptance": "not_performed",
+  "realFiscalCalculations": false,
+  "realFiscalOrPaymentCalls": 0,
+  "realLLMCalls": 0,
+  "go": {
+    "flags": "-race -p 1 -count=1",
+    "finalDistinctTestEvents": {
+      "pass": 178,
+      "skip": 10
+    },
+    "packages": [
+      {
+        "name": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting",
+        "status": "pass",
+        "seconds": 1.7530000000000001
+      },
+      {
+        "name": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+        "status": "pass",
+        "seconds": 2.047
+      },
+      {
+        "name": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+        "status": "pass",
+        "seconds": 1.142
+      },
+      {
+        "name": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/database",
+        "status": "pass",
+        "seconds": 3.9459999999999997
+      }
+    ],
+    "skipped": [
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+        "test": "TestAccountingHostPolicyUsesLiveMembershipModuleAndRBAC"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+        "test": "TestR2PendingUploadReconciliationLive"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+        "test": "TestR2MediaAdaptersLive"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+        "test": "TestRealDebitReceiptOCR"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+        "test": "TestRealPaymentReceiptOCR"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+        "test": "TestPDFTextAndScannedFallback"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+        "test": "TestDocumentRealPDF"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+        "test": "TestDocumentRealImageOCR"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+        "test": "TestRealSmallReceiptOCR"
+      },
+      {
+        "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+        "test": "TestKnowledgePDFUsesBoundedExtractorAndTreatsInstructionsAsData"
+      }
+    ],
+    "syntheticRuleOnlyTests": [
+      "TestObligationFinanceAtomicReplayAndClosure",
+      "TestObligationFinanceManualAssociationAndStaleSource",
+      "TestObligationHTTPStrictScopeHistoryAndRevocation",
+      "TestObligationExactMemoryAndRounding",
+      "TestObligationPendingReplayIsolationAndConcurrentBusinessIdentity",
+      "TestObligationQualificationValidityAndImmutableReviewedHistory",
+      "TestObligationsRoutingUsesReadOnlyAccountingTool",
+      "TestObligationDueDatesReadWithoutLLM"
+    ]
+  },
+  "frontend": {
+    "files": 6,
+    "passed": 59,
+    "browserExecuted": false,
+    "eslint": "pass",
+    "vueTscGlobalErrors": 410,
+    "vueTscErrorsInCT11Files": 0
+  },
+  "lint": {
+    "accountingApp": "0 issues",
+    "migration": "pass",
+    "financeBaseline": "6 preexisting issues in portal_probe/session and document tests; no CT-11 issue remaining"
+  },
+  "migration": "0314_accounting_obligations.sql: applied twice in isolated fixture and with complete migration set in a fresh database",
+  "correctionsDuringValidation": [
+    "Compiler: routed issuer-scoped due dates in PlusService rather than absent PlusInvocation.IssuerID.",
+    "Fixture minimal core.accounts lacked name required by real Finance; completed synthetic fixture.",
+    "Historical due-date evaluation now explicitly tests personal scope; new enterprise read has separate zero-LLM test.",
+    "Removed one redundant RawMessage conversion flagged by lint."
+  ],
+  "limitations": [
+    "No reviewed real fiscal rule/calendar/context qualifier registered.",
+    "Rule management/activation workflow not implemented; no public rule write API.",
+    "Guide/declaration submission/bank settlement not implemented.",
+    "Visual/user acceptance and production not performed."
+  ],
+  "localUpdate": {
+    "apiImageBuild": "passed",
+    "frontendFilesSynchronized": 4,
+    "disposablePostgresRemoved": true,
+    "postRestartInspection": "not_performed_per_user_instruction"
+  }
+}

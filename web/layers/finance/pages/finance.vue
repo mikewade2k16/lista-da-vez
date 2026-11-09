@@ -1,20 +1,16 @@
 <script setup lang="ts">
+import { InputsOmniSelectMenuInput as OmniSelectMenuInput } from '#components'
 // Pagina /finance — port fiel de web-reference/app/pages/admin/finance.vue.
 // O layout (UDashboardGroup + sidebar redimensionavel + painel) e os estilos sao
 // reproduzidos identicos; a logica vive nos composables (config + sheet). O
 // slideover de configuracao esta em FinanceConfigPanel. FONTE: API Go real
 // (/v1/finance/*) — mock BFF removido em AC-12.
 import { useCoreAccountStore } from '../../core/stores/account'
+import FinanceAccountScope from '../components/fiscal/FinanceAccountScope.vue'
 import AdminPageHeader from '../../core/components/admin/AdminPageHeader.vue'
 import { useFinanceConfigEditor, FINANCE_CONFIG_KEY } from '../composables/useFinanceConfigEditor'
 import { useFinanceSheetEditor } from '../composables/useFinanceSheetEditor'
-import {
-  STATUS_OPTIONS,
-  formatMoney,
-  formatSignedMoney,
-  formatAdjustmentInputHint,
-  lineTotal,
-} from '../utils/finance-helpers'
+import { STATUS_OPTIONS, formatMoney, formatSignedMoney } from '../utils/finance-helpers'
 
 definePageMeta({
   layout: 'dashboard',
@@ -22,6 +18,7 @@ definePageMeta({
   pageLabel: 'Finance',
 })
 
+const route = useRoute()
 const coreAccount = useCoreAccountStore()
 const config = useFinanceConfigEditor()
 const editor = useFinanceSheetEditor({
@@ -45,35 +42,6 @@ const {
   onDeleteSheet,
   selectSheet,
   entradaDisplayItems,
-  categoryOptions,
-  resolveFixedById,
-  isLineDetailsOpen,
-  isEffectiveDateModalOpen,
-  isAdjustmentModalOpen,
-  isAdjustmentHistoryOpen,
-  ensureAdjustmentDraft,
-  onLineCardClick,
-  onEffectiveToggle,
-  setEffectiveDateModalOpen,
-  onEffectiveDateChanged,
-  onEffectiveDateSubmitShortcut,
-  onEffectiveDateCancelShortcut,
-  setEffectiveToday,
-  clearEffectiveDate,
-  closeEffectiveDateModal,
-  onLineTotalInput,
-  setAdjustmentModalOpen,
-  onAdjustmentSubmitShortcut,
-  onAdjustmentCancelShortcut,
-  addLineAdjustment,
-  closeAdjustmentModal,
-  toggleLineDetails,
-  removeRow,
-  toggleAdjustmentHistory,
-  setAdjustmentSign,
-  setAdjustmentAbsoluteAmount,
-  onAdjustmentHistoryChanged,
-  removeLineAdjustment,
   onRecurringGroupEffectiveToggle,
   onRecurringGroupEffectiveDateChange,
   onRecurringStoreEffectiveToggle,
@@ -84,26 +52,33 @@ const {
   exitsEffective,
   balanceExpected,
   balanceEffective,
-  activeSheetSaving,
+  canManageSheets,
+  isClosed,
+  onStatusChange,
+  saveLabel,
+  retrySave,
 } = editor
 
 const { openConfigPanel, loading: configLoading } = config
-
-// Config carregada -> re-hidrata rascunho e sincroniza linhas fixas/recorrentes.
+const assistantContext = useState<{ accountId: string; sheetId: string; month: string }>(
+  'assistant:finance-context',
+  () => ({ accountId: '', sheetId: '', month: '' }),
+)
 watch(
-  () => config.config.value,
-  () => {
-    config.syncConfigDraft()
-    editor.syncAllFixedRows(false)
+  [() => coreAccount.activeAccountId, selectedSheetId, () => draft.period],
+  ([accountId, sheetId, month]) => {
+    assistantContext.value = { accountId, sheetId: sheetId || '', month }
   },
-  { deep: true },
+  { immediate: true, flush: 'post' },
 )
 watch(
-  () => config.configDraft,
-  () => editor.syncAllFixedRows(true),
-  { deep: true },
+  () => route.query.config,
+  (value) => {
+    if (value === 'ia') openConfigPanel()
+  },
+  { immediate: true },
 )
-watch(config.clientRecurringEntries, () => editor.syncAllFixedRows(true), { deep: true })
+
 watch(
   () => coreAccount.activeAccountId,
   () => {
@@ -114,6 +89,16 @@ watch(
 onMounted(async () => {
   await Promise.all([editor.fetchSheets(), config.loadConfig()])
 })
+async function applyCurrentConfig() {
+  if (
+    !window.confirm(
+      'Aplicar os valores e recorrências atuais nesta planilha? Isso substitui os valores das linhas vinculadas.',
+    )
+  )
+    return
+  if (!(await retrySave())) return
+  editor.syncAllFixedRows(true)
+}
 </script>
 
 <template>
@@ -122,6 +107,10 @@ onMounted(async () => {
       eyebrow="Finance"
       title="Finance v2"
       description="Planilhas mensais com entradas e saidas."
+    />
+
+    <FinanceAccountScope
+      :disabled="detailLoading || configLoading || creating || editor.activeSheetSaving.value"
     />
 
     <UAlert
@@ -133,6 +122,27 @@ onMounted(async () => {
       title="Erro"
       :description="errorMessage"
     />
+
+    <div class="finances-page__mobile-navigation">
+      <label for="finance-mobile-sheet">Planilha</label>
+      <select
+        id="finance-mobile-sheet"
+        :value="selectedSheetId || ''"
+        @change="selectSheet(($event.target as HTMLSelectElement).value)"
+      >
+        <option value="" disabled>Selecione uma planilha</option>
+        <option v-for="sheet in filteredSheets" :key="sheet.id" :value="sheet.id">
+          {{ sheet.title }} — {{ sheet.period }}
+        </option>
+      </select>
+      <UButton
+        icon="i-lucide-plus"
+        aria-label="Nova planilha"
+        :loading="creating"
+        :disabled="!canManageSheets"
+        @click="onCreateSheet"
+      />
+    </div>
 
     <UDashboardGroup class="finances-page__group !static !inset-auto !h-auto !w-full">
       <UDashboardSidebar
@@ -161,6 +171,7 @@ onMounted(async () => {
                 variant="soft"
                 :square="collapsed"
                 :loading="creating"
+                :disabled="!canManageSheets"
                 @click="onCreateSheet"
               />
               <UDashboardSidebarCollapse
@@ -201,6 +212,7 @@ onMounted(async () => {
                 variant="ghost"
                 size="xs"
                 :loading="deletingId === sheet.id"
+                :disabled="!canManageSheets || sheet.status === 'fechada'"
                 @click.stop="onDeleteSheet(sheet.id)"
               />
             </div>
@@ -232,6 +244,7 @@ onMounted(async () => {
             >
               <input
                 v-model="draft.title"
+                :disabled="!canManageSheets || isClosed"
                 class="finances-page__title finances-page__title-input w-full max-w-[620px]"
                 placeholder="Titulo da planilha"
                 @input="queuePersist()"
@@ -239,12 +252,14 @@ onMounted(async () => {
               <div class="finances-page__editor-actions flex items-center gap-2">
                 <UInput
                   v-model="draft.period"
+                  :disabled="!canManageSheets || isClosed"
                   class="finances-page__period-input"
                   type="month"
                   @update:model-value="queuePersist()"
                 />
                 <OmniSelectMenuInput
-                  v-model="draft.status"
+                  :model-value="draft.status"
+                  :disabled="!canManageSheets"
                   class="finances-page__status-select"
                   :items="STATUS_OPTIONS"
                   item-display-mode="text"
@@ -256,7 +271,7 @@ onMounted(async () => {
                   color="neutral"
                   variant="none"
                   :highlight="false"
-                  @update:model-value="queuePersist()"
+                  @update:model-value="onStatusChange"
                 />
                 <UButton
                   class="finances-page__editor-action finances-page__editor-action--config"
@@ -274,12 +289,29 @@ onMounted(async () => {
                   color="error"
                   variant="soft"
                   :loading="deletingId === selectedSheetId"
+                  :disabled="!canManageSheets || isClosed"
                   @click="selectedSheetId && onDeleteSheet(selectedSheetId)"
                 />
               </div>
             </div>
 
-            <div class="finances-page__tables grid gap-3 lg:grid-cols-2">
+            <p v-if="isClosed" class="text-sm text-[rgb(var(--muted))]">
+              Planilha fechada. Altere o status para Aberta antes de editar.
+            </p>
+            <UButton
+              v-if="canManageSheets && !isClosed"
+              class="finances-page__apply-config mb-3"
+              size="xs"
+              variant="soft"
+              color="neutral"
+              @click="applyCurrentConfig"
+            >
+              Aplicar configurações atuais nesta planilha
+            </UButton>
+            <fieldset
+              :disabled="!canManageSheets || isClosed"
+              class="finances-page__tables grid gap-3 lg:grid-cols-2"
+            >
               <UCard class="finances-page__table-card finances-page__table-card--entrada">
                 <template #header>
                   <div class="finances-page__table-header flex items-center justify-between">
@@ -328,69 +360,12 @@ onMounted(async () => {
                       "
                     />
 
-                    <FinanceLineCard
+                    <FinanceEditableLine
                       v-else
                       kind="entrada"
                       :row="item.row"
                       :index="item.index"
-                      :category-options="categoryOptions('entrada')"
-                      :details-open="isLineDetailsOpen('entrada', item.row, item.index)"
-                      :effective-date-modal-open="
-                        isEffectiveDateModalOpen('entrada', item.row, item.index)
-                      "
-                      :adjustment-modal-open="
-                        isAdjustmentModalOpen('entrada', item.row, item.index)
-                      "
-                      :adjustment-history-open="
-                        isAdjustmentHistoryOpen('entrada', item.row, item.index)
-                      "
-                      :adjustment-draft="ensureAdjustmentDraft('entrada', item.row, item.index)"
-                      :adjustment-input-hint="formatAdjustmentInputHint()"
-                      :line-total="lineTotal(item.row)"
-                      :fixed-account="resolveFixedById(item.row.fixedAccountId)"
-                      :format-money="formatMoney"
-                      :format-signed-money="formatSignedMoney"
-                      @line-card-click="onLineCardClick('entrada', item.row, item.index, $event)"
-                      @persist="queuePersist()"
-                      @effective-toggle="onEffectiveToggle('entrada', item.row, item.index, $event)"
-                      @effective-date-open="
-                        setEffectiveDateModalOpen('entrada', item.row, item.index, $event)
-                      "
-                      @effective-date-changed="onEffectiveDateChanged(item.row)"
-                      @effective-date-submit-shortcut="
-                        onEffectiveDateSubmitShortcut('entrada', item.row, item.index, $event)
-                      "
-                      @effective-date-cancel-shortcut="
-                        onEffectiveDateCancelShortcut('entrada', item.row, item.index)
-                      "
-                      @effective-today="setEffectiveToday(item.row)"
-                      @effective-clear="clearEffectiveDate(item.row)"
-                      @effective-close="closeEffectiveDateModal('entrada', item.row, item.index)"
-                      @line-total-input="onLineTotalInput(item.row, $event)"
-                      @adjustment-open="
-                        setAdjustmentModalOpen('entrada', item.row, item.index, $event)
-                      "
-                      @adjustment-submit-shortcut="
-                        onAdjustmentSubmitShortcut('entrada', item.row, item.index, $event)
-                      "
-                      @adjustment-cancel-shortcut="
-                        onAdjustmentCancelShortcut('entrada', item.row, item.index)
-                      "
-                      @adjustment-add="addLineAdjustment('entrada', item.row, item.index)"
-                      @adjustment-close="closeAdjustmentModal('entrada', item.row, item.index)"
-                      @toggle-details="toggleLineDetails('entrada', item.row, item.index)"
-                      @remove-line="removeRow('entrada', item.index)"
-                      @toggle-adjustment-history="
-                        toggleAdjustmentHistory('entrada', item.row, item.index)
-                      "
-                      @set-adjustment-sign="
-                        setAdjustmentSign(item.row, $event.adjustment, $event.sign)
-                      "
-                      @set-adjustment-absolute="
-                        setAdjustmentAbsoluteAmount(item.row, $event.adjustment, $event.value)
-                      "
-                      @adjustment-history-changed="onAdjustmentHistoryChanged(item.row)"
-                      @remove-adjustment="removeLineAdjustment(item.row, $event)"
+                      :editor="editor"
                     />
                   </template>
                 </div>
@@ -416,54 +391,13 @@ onMounted(async () => {
                   </div>
                 </template>
                 <div class="space-y-2">
-                  <FinanceLineCard
+                  <FinanceEditableLine
                     v-for="(row, index) in draft.saidas"
                     :key="row.id"
                     kind="saida"
                     :row="row"
                     :index="index"
-                    :category-options="categoryOptions('saida')"
-                    :details-open="isLineDetailsOpen('saida', row, index)"
-                    :effective-date-modal-open="isEffectiveDateModalOpen('saida', row, index)"
-                    :adjustment-modal-open="isAdjustmentModalOpen('saida', row, index)"
-                    :adjustment-history-open="isAdjustmentHistoryOpen('saida', row, index)"
-                    :adjustment-draft="ensureAdjustmentDraft('saida', row, index)"
-                    :adjustment-input-hint="formatAdjustmentInputHint()"
-                    :line-total="lineTotal(row)"
-                    :fixed-account="resolveFixedById(row.fixedAccountId)"
-                    :format-money="formatMoney"
-                    :format-signed-money="formatSignedMoney"
-                    @line-card-click="onLineCardClick('saida', row, index, $event)"
-                    @persist="queuePersist()"
-                    @effective-toggle="onEffectiveToggle('saida', row, index, $event)"
-                    @effective-date-open="setEffectiveDateModalOpen('saida', row, index, $event)"
-                    @effective-date-changed="onEffectiveDateChanged(row)"
-                    @effective-date-submit-shortcut="
-                      onEffectiveDateSubmitShortcut('saida', row, index, $event)
-                    "
-                    @effective-date-cancel-shortcut="
-                      onEffectiveDateCancelShortcut('saida', row, index)
-                    "
-                    @effective-today="setEffectiveToday(row)"
-                    @effective-clear="clearEffectiveDate(row)"
-                    @effective-close="closeEffectiveDateModal('saida', row, index)"
-                    @line-total-input="onLineTotalInput(row, $event)"
-                    @adjustment-open="setAdjustmentModalOpen('saida', row, index, $event)"
-                    @adjustment-submit-shortcut="
-                      onAdjustmentSubmitShortcut('saida', row, index, $event)
-                    "
-                    @adjustment-cancel-shortcut="onAdjustmentCancelShortcut('saida', row, index)"
-                    @adjustment-add="addLineAdjustment('saida', row, index)"
-                    @adjustment-close="closeAdjustmentModal('saida', row, index)"
-                    @toggle-details="toggleLineDetails('saida', row, index)"
-                    @remove-line="removeRow('saida', index)"
-                    @toggle-adjustment-history="toggleAdjustmentHistory('saida', row, index)"
-                    @set-adjustment-sign="setAdjustmentSign(row, $event.adjustment, $event.sign)"
-                    @set-adjustment-absolute="
-                      setAdjustmentAbsoluteAmount(row, $event.adjustment, $event.value)
-                    "
-                    @adjustment-history-changed="onAdjustmentHistoryChanged(row)"
-                    @remove-adjustment="removeLineAdjustment(row, $event)"
+                    :editor="editor"
                   />
                 </div>
                 <template #footer>
@@ -473,7 +407,7 @@ onMounted(async () => {
                   </div>
                 </template>
               </UCard>
-            </div>
+            </fieldset>
 
             <div
               class="finances-page__balance mt-4 rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-4"
@@ -495,7 +429,7 @@ onMounted(async () => {
                 Esperado: {{ formatMoney(balanceExpected) }}
               </p>
               <UBadge color="neutral" variant="soft" class="finances-page__balance-status mt-2">
-                {{ activeSheetSaving ? 'Salvando...' : 'Salvo automaticamente' }}
+                {{ saveLabel }}
               </UBadge>
             </div>
           </template>
@@ -503,42 +437,16 @@ onMounted(async () => {
       </UDashboardPanel>
     </UDashboardGroup>
 
+    <UButton
+      v-if="saveLabel.includes('Falha')"
+      color="error"
+      variant="soft"
+      @click="void retrySave()"
+    >
+      Tentar salvar novamente
+    </UButton>
     <FinanceConfigPanel />
   </section>
 </template>
 
-<style scoped>
-.finances-page :deep(.omni-select-menu-input) {
-  display: flex;
-}
-.finances-page__group {
-  display: flex;
-  width: 100%;
-  min-height: 680px;
-  gap: 12px;
-}
-
-.finances-page__panel {
-  min-width: 0;
-  min-height: 50svh;
-}
-
-.finances-page__title {
-  border: none;
-  border-bottom: 1px solid rgb(var(--border));
-  border-radius: 0;
-  background: transparent;
-  color: rgb(var(--text));
-  font-size: 1.7rem;
-  font-weight: 700;
-  padding: 2px 0 8px;
-  outline: none;
-}
-
-@media (max-width: 1024px) {
-  .finances-page__group {
-    min-height: 0;
-    flex-direction: column;
-  }
-}
-</style>
+<style scoped src="../assets/finance-page.css"></style>

@@ -12,7 +12,7 @@ import type {
 import { isFinanceUuid, normalizeFinanceEntityId } from '../utils/finance-ids'
 import { useCoreAccountStore } from '../../core/stores/account'
 import { useAuthStore } from '~/stores/auth'
-import { createApiRequest } from '~/utils/api-client'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 interface FinanceConfigState {
   categories: FinanceCategoryConfig[]
@@ -51,17 +51,19 @@ export function useFinancesConfigManager() {
   }
 
   async function fetchConfig(coreTenantId?: string) {
+    const accountId = coreAccount.activeAccountId
     loading.value = true
     errorMessage.value = ''
 
     try {
       const resolvedCoreTenantId = resolveScopedCoreTenantId(coreTenantId)
       const response = (await apiRequest(FINANCE_CONFIG_API_BASE, {
+        headers: { 'X-Account-Id': accountId },
         query: {
           coreTenantId: resolvedCoreTenantId || undefined,
         },
       })) as FinanceConfigResponse
-      config.value = response.data
+      if (accountId === coreAccount.activeAccountId) config.value = response.data
       return response.data
     } catch {
       errorMessage.value = 'Falha ao carregar configuracoes financeiras.'
@@ -71,12 +73,15 @@ export function useFinancesConfigManager() {
     }
   }
 
-  async function saveConfig(payload: {
-    coreTenantId?: string
-    categories?: FinanceCategoryConfig[]
-    fixedAccounts?: FinanceFixedAccountConfig[]
-    recurringEntries?: FinanceRecurringEntryConfig[]
-  }) {
+  async function saveConfig(
+    payload: {
+      coreTenantId?: string
+      categories?: FinanceCategoryConfig[]
+      fixedAccounts?: FinanceFixedAccountConfig[]
+      recurringEntries?: FinanceRecurringEntryConfig[]
+    },
+    accountId = coreAccount.activeAccountId,
+  ) {
     saving.value = true
     errorMessage.value = ''
 
@@ -100,6 +105,7 @@ export function useFinancesConfigManager() {
 
       const response = (await apiRequest(FINANCE_CONFIG_API_BASE, {
         method: 'PUT',
+        headers: { 'X-Account-Id': accountId },
         body: {
           coreTenantId: coreTenantId || undefined,
           categories: normalizedCategories
@@ -143,10 +149,10 @@ export function useFinancesConfigManager() {
         },
       })) as FinanceConfigResponse
 
-      config.value = response.data
+      if (accountId === coreAccount.activeAccountId) config.value = response.data
       return response.data
-    } catch {
-      errorMessage.value = 'Falha ao salvar configuracoes financeiras.'
+    } catch (error) {
+      errorMessage.value = getApiErrorMessage(error, 'Falha ao salvar configuracoes financeiras.')
       return null
     } finally {
       saving.value = false

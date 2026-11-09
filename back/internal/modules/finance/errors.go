@@ -8,5 +8,8 @@ var (
 	// (404, nao 403 — nao vaza existencia cross-tenant).
 	ErrSheetNotFound = errors.New("finance: sheet not found")
 	// ErrLineNotFound: linha inexistente na planilha alvo (404).
-	ErrLineNotFound = errors.New("finance: line not found")
+	ErrLineNotFound  = errors.New("finance: line not found")
+	ErrSheetClosed   = errors.New("finance: sheet closed")
+	ErrSheetConflict = errors.New("finance: sheet changed")
+	ErrInvalidStatus = errors.New("finance: invalid status")
 )

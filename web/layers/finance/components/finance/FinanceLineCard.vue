@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import {
+  OmniInputsOmniMoneyInput as OmniMoneyInput,
+  OmniInputsOmniSwitchInput as OmniSwitchInput,
+  InputsOmniSelectMenuInput as OmniSelectMenuInput,
+  OmniOverlayOmniMinimalPopover as OmniMinimalPopover,
+} from '#components'
 // Portado de web-reference/app/components/admin/finance/FinanceLineCard.vue.
 // Componentes Omni (OmniSelectMenuInput/OmniMoneyInput/OmniMinimalPopover/
 // OmniSwitchInput) sao auto-importados entre layers pelo Nuxt — sem import explicito.
@@ -71,6 +77,11 @@ const emit = defineEmits<{
   'remove-adjustment': [adjustmentId: string]
 }>()
 
+function clearCategory() {
+  rowModel.value.category = ''
+  emit('persist')
+}
+
 const adjustmentSignOptions = [
   { label: '+', value: '+' },
   { label: '-', value: '-' },
@@ -114,30 +125,41 @@ function adjustmentSignValue(adjustment: FinanceLineAdjustment) {
         </div>
       </div>
 
-      <OmniSelectMenuInput
-        v-model="rowModel.category"
-        class="finances-page__line-category-input"
-        :items="categoryOptions"
-        placeholder="Categoria"
-        searchable
-        creatable
-        clear
-        :disabled="Boolean(row.fixedAccountId)"
-        item-display-mode="text"
-        :badge-mode="true"
-        option-edit-mode="color"
-        color="neutral"
-        variant="none"
-        :highlight="false"
-        @update:model-value="emit('persist')"
-      />
+      <div class="finances-page__line-category">
+        <OmniSelectMenuInput
+          v-model="rowModel.category"
+          class="finances-page__line-category-input"
+          :items="categoryOptions"
+          placeholder="Categoria"
+          searchable
+          creatable
+          :disabled="Boolean(row.fixedAccountId)"
+          item-display-mode="text"
+          :badge-mode="true"
+          option-edit-mode="color"
+          color="neutral"
+          variant="none"
+          :highlight="false"
+          @update:model-value="emit('persist')"
+        />
+        <UButton
+          v-if="row.category && !row.fixedAccountId"
+          icon="i-lucide-x"
+          aria-label="Limpar categoria"
+          title="Limpar categoria"
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          @click.stop="clearCategory"
+        />
+      </div>
 
       <div
         class="finances-page__line-col finances-page__line-col--effective finances-page__effective-cell"
         @click.stop
       >
         <OmniSwitchInput
-          v-model="rowModel.effective"
+          :model-value="row.effective"
           class="finances-page__line-effective-switch"
           aria-label="Efetivado"
           @update:model-value="emit('effective-toggle', Boolean($event))"
@@ -412,161 +434,4 @@ function adjustmentSignValue(adjustment: FinanceLineAdjustment) {
   </div>
 </template>
 
-<style scoped>
-.finances-page__line-card {
-  border: 1px solid rgb(var(--border));
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface));
-  padding: 10px;
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.finances-page__line-card:hover {
-  border-color: rgb(var(--primary));
-  box-shadow: inset 0 0 0 1px rgba(var(--primary), 0.24);
-}
-
-.finances-page__effective-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.finances-page__line-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-}
-
-.finances-page__popover-trigger {
-  flex-shrink: 0;
-}
-
-.finances-page__inline-modal-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.finances-page__line-details {
-  margin-top: 8px;
-  display: grid;
-  gap: 8px;
-  border-top: 1px dashed rgb(var(--border));
-  padding-top: 8px;
-}
-
-.finances-page__line-values {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.finances-page__line-value-card {
-  border: 1px solid rgb(var(--border));
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface-2));
-  padding: 8px;
-  display: grid;
-  gap: 6px;
-}
-
-.finances-page__line-value-label {
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: rgb(var(--muted));
-  font-weight: 600;
-}
-
-.finances-page__line-value-badge {
-  width: fit-content;
-}
-
-.finances-page__line-fixed-meta {
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.finances-page__line-fixed-details {
-  border: 1px dashed rgb(var(--border));
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface-2));
-  padding: 8px;
-  display: grid;
-  gap: 6px;
-}
-
-.finances-page__line-fixed-member {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 1px solid rgb(var(--border));
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface));
-  padding: 6px 8px;
-}
-
-.finances-page__line-adjustments {
-  border: 1px dashed rgb(var(--border));
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface-2));
-  padding: 8px;
-  display: grid;
-  gap: 8px;
-}
-
-.finances-page__line-adjustments-title {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: rgb(var(--muted));
-}
-
-.finances-page__line-adjustments-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.finances-page__line-adjustments-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: rgb(var(--muted));
-}
-
-.finances-page__line-adjustments-content {
-  display: grid;
-  gap: 8px;
-}
-
-.finances-page__line-adjustment-item {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: 72px minmax(120px, 150px) minmax(130px, 150px) minmax(0, 1fr) auto;
-  align-items: center;
-}
-
-@media (max-width: 1024px) {
-  .finances-page__line-values {
-    grid-template-columns: 1fr;
-  }
-
-  .finances-page__line-adjustment-item {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+<style scoped src="../../assets/finance-line-card.css"></style>

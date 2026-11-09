@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "frozenBeforeRun": "2026-11-09",
+  "dataOrigin": "Perguntas sintéticas em português escritas antes da coleta real e antes de medir a busca. Fonte esperada definida pelo assunto de cada documento do catálogo, não pelo conteúdo coletado. Não usar para afinar sinônimos/radicais; nova medição exige outro conjunto.",
+  "metric": "acerto@3: algum dos 3 trechos retornados pertence a uma das fontes aceitas. Perguntas sem fonte no catálogo esperam nenhum trecho.",
+  "cases": [
+    {"id": "mei-das-vencimento", "terms": ["vencimento", "das", "mei"], "accept": ["simples-perguntao-mei", "lc-123-2006"]},
+    {"id": "mei-empregado", "terms": ["mei", "contratar", "empregado"], "accept": ["simples-perguntao-mei", "lc-123-2006", "mei-dasn-servico"]},
+    {"id": "mei-dasn-prazo", "terms": ["prazo", "declaracao", "anual", "mei"], "accept": ["mei-dasn-servico", "simples-perguntao-mei"]},
+    {"id": "mei-limite-receita", "terms": ["limite", "receita", "mei"], "accept": ["mei-teto-memp", "simples-perguntao-mei", "lc-123-2006"]},
+    {"id": "mei-desenquadramento", "terms": ["desenquadramento", "mei"], "accept": ["simples-perguntao-mei", "lc-123-2006"]},
+    {"id": "mei-atividades", "terms": ["atividades", "permitidas", "mei"], "accept": ["simples-perguntao-mei", "lc-123-2006"]},
+    {"id": "mei-nota-obrigatoria", "terms": ["mei", "emitir", "nota", "fiscal"], "accept": ["simples-perguntao-mei", "nfse-guia-emissor-web"]},
+    {"id": "sn-anexos-aliquota", "terms": ["aliquota", "anexo", "simples", "nacional"], "accept": ["simples-perguntao-sn", "lc-123-2006"]},
+    {"id": "sn-fator-r", "terms": ["fator", "folha", "salarios", "receita"], "accept": ["simples-perguntao-sn", "lc-123-2006"]},
+    {"id": "sn-exclusao-debitos", "terms": ["exclusao", "simples", "debitos"], "accept": ["simples-perguntao-sn", "lc-123-2006"]},
+    {"id": "sn-opcao-prazo", "terms": ["opcao", "simples", "nacional", "janeiro"], "accept": ["simples-perguntao-sn", "lc-123-2006"]},
+    {"id": "sn-sublimite", "terms": ["sublimite", "icms", "iss"], "accept": ["simples-perguntao-sn", "lc-123-2006"]},
+    {"id": "nfse-cancelar", "terms": ["cancelar", "nfse"], "accept": ["nfse-guia-emissor-web", "nfse-manual-api"]},
+    {"id": "nfse-substituir", "terms": ["substituir", "nota", "emitida"], "accept": ["nfse-guia-emissor-web", "nfse-manual-api"]},
+    {"id": "nfse-tomador-cadastro", "terms": ["tomador", "cadastro", "emissor"], "accept": ["nfse-guia-emissor-web"]},
+    {"id": "nfse-certificado-api", "terms": ["certificado", "digital", "api"], "accept": ["nfse-manual-api", "nfse-guia-emissor-web"]},
+    {"id": "nfse-dps", "terms": ["dps", "declaracao", "prestacao", "servico"], "accept": ["nfse-manual-api", "nfse-guia-emissor-web"]},
+    {"id": "lc-microempresa-definicao", "terms": ["microempresa", "receita", "bruta", "superior"], "accept": ["lc-123-2006", "simples-perguntao-sn"]},
+    {"id": "dasn-extincao", "terms": ["dasn", "extincao", "baixa"], "accept": ["mei-dasn-servico", "simples-perguntao-mei"]},
+    {"id": "sem-fonte-iptu", "terms": ["iptu", "imovel", "aracaju"], "accept": []},
+    {"id": "sem-fonte-irpf", "terms": ["restituicao", "irpf", "dependentes"], "accept": []},
+    {"id": "sem-fonte-fgts", "terms": ["fgts", "saque", "aniversario"], "accept": []}
+  ]
+}

@@ -1,3 +1,6 @@
 @import 'tailwindcss';
 @import '@nuxt/ui';
 @import './omni-tokens.css';
+
+/* Metadados AppleDouble sao binarios, mesmo quando terminam em .vue. */
+@source not '../../../**/._*';

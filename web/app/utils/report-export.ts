@@ -17,7 +17,7 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;')
 }
 
-function downloadText(content, filename, mimeType) {
+export function downloadText(content: string, filename: string, mimeType: string) {
   if (typeof window === 'undefined') {
     return
   }

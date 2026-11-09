@@ -1,0 +1,116 @@
+{
+  "date": "2026-11-05",
+  "state": "local_implementation_and_evaluation; manual acceptance pending",
+  "goTestEvents": {
+    "pass": 193,
+    "skip": 10
+  },
+  "packages": [
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/knowledge",
+      "status": "pass",
+      "seconds": 1.373
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/accounting",
+      "status": "pass",
+      "seconds": 1.634
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "status": "pass",
+      "seconds": 2.012
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+      "status": "pass",
+      "seconds": 1.18
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/database",
+      "status": "pass",
+      "seconds": 3.386
+    }
+  ],
+  "skippedTests": [
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealDebitReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealPaymentReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestPDFTextAndScannedFallback"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestDocumentRealPDF"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestDocumentRealImageOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestRealSmallReceiptOCR"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance",
+      "test": "TestKnowledgePDFUsesBoundedExtractorAndTreatsInstructionsAsData"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+      "test": "TestAccountingHostPolicyUsesLiveMembershipModuleAndRBAC"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+      "test": "TestR2PendingUploadReconciliationLive"
+    },
+    {
+      "package": "github.com/mikewade2k16/lista-da-vez/back/internal/platform/app",
+      "test": "TestR2MediaAdaptersLive"
+    }
+  ],
+  "frontend": {
+    "files": 4,
+    "passed": 31,
+    "eslint": "passed",
+    "vueTscGlobalErrors": 410,
+    "ct12Diagnostics": 0,
+    "browserExecuted": false
+  },
+  "lint": "0 issues in knowledge/accounting/app; migration lint passed",
+  "postgres": {
+    "version": "16.15",
+    "vectorAvailableInDisposableImage": false,
+    "backupRestore": "passed pg_dump -Fc / pg_restore to fresh disposable database",
+    "restoredDocuments": 34,
+    "restoredRuns": 16
+  },
+  "retrievalArtifact": "CT-12-retrieval.json",
+  "runtimeDecision": "retain fts_simple; no pgvector or embeddings",
+  "pipelineLiveSourceFetches": 0,
+  "realLLMOrEmbeddingCalls": 0,
+  "userAcceptance": "not_performed",
+  "corrections": [
+    "Removed unused import from scheduler.",
+    "Made fake HTTP server request counter atomic after -race found a fixture race.",
+    "Added bounded recovery for jobs abandoned before claim and transactional guard for pause during import.",
+    "Temporary authorization outages defer/retry instead of disabling source; normalized owner status codes and added regression."
+  ],
+  "pending": [
+    "runtime source/Storage/PDF smoke under authorized test account",
+    "visual and user acceptance",
+    "large-document ingestion and source catalogue expansion",
+    "retention/cleanup policy for ingestion metadata and orphan originals",
+    "larger lexical benchmark preserving acronyms; embeddings only with demonstrated benefit"
+  ],
+  "localUpdate": {
+    "apiImageBuild": "passed",
+    "sourceSubscriptionsEnabledForUser": 0,
+    "postRestartInspection": "not_performed_per_user_instruction"
+  }
+}

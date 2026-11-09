@@ -10,9 +10,16 @@ try {
     $webContainer = (& docker compose ps -q web).Trim()
     if (-not $webContainer) { throw 'Inicie o container web local para validar o release.' }
     foreach ($source in $sources) {
+      # docker cp nao cria diretorios pais para arquivos novos no container.
+      $parent = [System.IO.Path]::GetDirectoryName($source).Replace('\', '/')
+      & docker exec $webContainer mkdir -p -- "/app/$parent"
+      if ($LASTEXITCODE -ne 0) { throw "Falha ao criar diretorio para $source na validacao." }
       & docker cp (Join-Path $root "web/$source") "${webContainer}:/app/$source"
       if ($LASTEXITCODE -ne 0) { throw "Falha ao sincronizar $source para validacao." }
     }
+    # A configuracao do ESLint depende de .nuxt; aguarde a geracao completa.
+    & docker compose exec -T web npx nuxt prepare
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar a configuracao Nuxt para o lint.' }
     & docker compose exec -T web npx eslint --no-warn-ignored @sources
     if ($LASTEXITCODE -ne 0) { throw 'Lint dos arquivos alterados falhou.' }
   }
@@ -26,9 +33,14 @@ try {
     $architecture = if ($platform -in @('aarch64', 'arm64')) { 'arm64' } else { 'amd64' }
     & docker build --target build --platform "linux/$architecture" -t omni-deploy-go-check back
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar verificacoes Go.' }
-    & docker run --rm --network none omni-deploy-go-check go test @packages
+    $automationPath = (Resolve-Path (Join-Path $root 'automation')).Path
+    # Os testes do Calendar leem exports versionados no repositorio irmão de back/.
+    # A imagem Go é construída com contexto back/, então monte automation no caminho
+    # esperado pelo teste sem empacotar os workflows no binário ou na imagem de produção.
+    $automationMount = "type=bind,source=$automationPath,target=/automation,readonly"
+    & docker run --rm --network none --mount $automationMount omni-deploy-go-check go test @packages
     if ($LASTEXITCODE -ne 0) { throw 'Testes dos pacotes Go alterados falharam.' }
-    & docker run --rm --network none omni-deploy-go-check go vet @packages
+    & docker run --rm --network none --mount $automationMount omni-deploy-go-check go vet @packages
     if ($LASTEXITCODE -ne 0) { throw 'go vet dos pacotes alterados falhou.' }
   }
 } finally { Pop-Location }

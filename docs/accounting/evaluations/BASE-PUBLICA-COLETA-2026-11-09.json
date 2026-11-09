@@ -1,0 +1,391 @@
+{
+  "aiCalls": 0,
+  "cases": [
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-mei",
+        "simples-perguntao-mei"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-mei",
+        "mei-dasn-servico",
+        "simples-perguntao-mei"
+      ],
+      "conceptsHit": true,
+      "id": "mei-das-vencimento"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-mei",
+        "simples-perguntao-mei"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "mei-dasn-servico",
+        "simples-perguntao-mei",
+        "simples-perguntao-mei"
+      ],
+      "conceptsHit": true,
+      "id": "mei-empregado"
+    },
+    {
+      "baseline": [
+        "mei-dasn-servico",
+        "simples-perguntao-mei",
+        "simples-perguntao-mei"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "mei-dasn-servico",
+        "simples-perguntao-mei",
+        "mei-dasn-servico"
+      ],
+      "conceptsHit": true,
+      "id": "mei-dasn-prazo"
+    },
+    {
+      "baseline": [
+        "mei-teto-memp",
+        "simples-perguntao-sn",
+        "simples-perguntao-mei"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "mei-teto-memp",
+        "mei-teto-memp",
+        "simples-perguntao-mei"
+      ],
+      "conceptsHit": true,
+      "id": "mei-limite-receita"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-mei",
+        "simples-perguntao-mei"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-mei",
+        "simples-perguntao-mei",
+        "simples-perguntao-mei"
+      ],
+      "conceptsHit": true,
+      "id": "mei-desenquadramento"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-sn",
+        "mei-teto-memp"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-mei",
+        "mei-teto-memp",
+        "simples-perguntao-mei"
+      ],
+      "conceptsHit": true,
+      "id": "mei-atividades"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-mei",
+        "simples-perguntao-mei"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-mei",
+        "nfse-guia-emissor-web",
+        "simples-perguntao-mei"
+      ],
+      "conceptsHit": true,
+      "id": "mei-nota-obrigatoria"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "conceptsHit": true,
+      "id": "sn-anexos-aliquota"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "conceptsHit": true,
+      "id": "sn-fator-r"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "conceptsHit": true,
+      "id": "sn-exclusao-debitos"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-sn",
+        "simples-perguntao-mei",
+        "simples-perguntao-sn"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "conceptsHit": true,
+      "id": "sn-opcao-prazo"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "conceptsHit": true,
+      "id": "sn-sublimite"
+    },
+    {
+      "baseline": [
+        "nfse-guia-emissor-web",
+        "simples-perguntao-sn",
+        "nfse-guia-emissor-web"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web"
+      ],
+      "conceptsHit": true,
+      "id": "nfse-cancelar"
+    },
+    {
+      "baseline": [
+        "nfse-guia-emissor-web",
+        "simples-perguntao-mei",
+        "nfse-guia-emissor-web"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web"
+      ],
+      "conceptsHit": true,
+      "id": "nfse-substituir"
+    },
+    {
+      "baseline": [
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web"
+      ],
+      "conceptsHit": true,
+      "id": "nfse-tomador-cadastro"
+    },
+    {
+      "baseline": [
+        "nfse-guia-emissor-web",
+        "nfse-manual-api",
+        "nfse-manual-api"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "nfse-manual-api",
+        "nfse-manual-api",
+        "nfse-guia-emissor-web"
+      ],
+      "conceptsHit": true,
+      "id": "nfse-certificado-api"
+    },
+    {
+      "baseline": [
+        "mei-dasn-servico",
+        "nfse-manual-api",
+        "nfse-guia-emissor-web"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web"
+      ],
+      "conceptsHit": true,
+      "id": "nfse-dps"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-sn",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "conceptsHit": true,
+      "id": "lc-microempresa-definicao"
+    },
+    {
+      "baseline": [
+        "mei-dasn-servico",
+        "simples-perguntao-mei",
+        "simples-perguntao-mei"
+      ],
+      "baselineHit": true,
+      "concepts": [
+        "simples-perguntao-mei",
+        "mei-dasn-servico",
+        "simples-perguntao-mei"
+      ],
+      "conceptsHit": true,
+      "id": "dasn-extincao"
+    },
+    {
+      "baseline": [
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web",
+        "nfse-guia-emissor-web"
+      ],
+      "baselineHit": false,
+      "concepts": [],
+      "conceptsHit": true,
+      "id": "sem-fonte-iptu"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-mei",
+        "simples-perguntao-sn"
+      ],
+      "baselineHit": false,
+      "concepts": [],
+      "conceptsHit": true,
+      "id": "sem-fonte-irpf"
+    },
+    {
+      "baseline": [
+        "simples-perguntao-mei",
+        "simples-perguntao-sn",
+        "simples-perguntao-sn"
+      ],
+      "baselineHit": false,
+      "concepts": [],
+      "conceptsHit": true,
+      "id": "sem-fonte-fgts"
+    }
+  ],
+  "collections": {
+    "lc-123-2006": {
+      "errorCode": "source_fetch_unavailable",
+      "outcome": "failed"
+    },
+    "mei-dasn-servico": {
+      "bytes": 122081,
+      "chunks": 7,
+      "errorCode": "",
+      "outcome": "collected",
+      "pages": null,
+      "sha256": "45de7d8e896f8380e5cde51913a039b8bb60712c4f0ec9cd0fa73c24b5fa9392",
+      "version": 1
+    },
+    "mei-teto-memp": {
+      "bytes": 355252,
+      "chunks": 6,
+      "errorCode": "",
+      "outcome": "collected",
+      "pages": null,
+      "sha256": "1f8ac503c6865c23b728eb6dafd74c1205a921afe759b3e540de5ad2766faf39",
+      "version": 1
+    },
+    "nfse-guia-emissor-web": {
+      "bytes": 7079652,
+      "chunks": 153,
+      "errorCode": "",
+      "outcome": "collected",
+      "pages": 130,
+      "sha256": "83feac65df5f2bf47511f2b654ec08aaf249ada9bfcb67568c436be36d222ffb",
+      "version": 1
+    },
+    "nfse-manual-api": {
+      "bytes": 188158,
+      "chunks": 11,
+      "errorCode": "",
+      "outcome": "collected",
+      "pages": 6,
+      "sha256": "ac2f36e34ff565cc36d67c5d67415c33cc09f27b2dea006e8da9bcd2ddce5581",
+      "version": 1
+    },
+    "simples-perguntao-mei": {
+      "bytes": 472496,
+      "chunks": 45,
+      "errorCode": "",
+      "outcome": "collected",
+      "pages": 24,
+      "sha256": "1077686dd7a1332283a765f815e4b0e2db8f4ecc788a3ce386f50811a50aa757",
+      "version": 1
+    },
+    "simples-perguntao-sn": {
+      "bytes": 1759275,
+      "chunks": 207,
+      "errorCode": "",
+      "outcome": "collected",
+      "pages": 106,
+      "sha256": "08667b6c34527f12bce5db5391b377e3ed84f8dff6ba37b142427bb05a50d73f",
+      "version": 1
+    }
+  },
+  "database": "disposable accounting_test_*",
+  "date": "2026-11-09T15:27:34Z",
+  "note": "publicação automática apenas no banco descartável para medir a busca; na conta real exige aprovação do dono",
+  "score": {
+    "baseline": 19,
+    "concepts": 22
+  },
+  "total": 22
+}

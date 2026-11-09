@@ -54,6 +54,7 @@ type SheetListItem struct {
 
 // SheetDetail e a planilha completa (list item + linhas).
 type SheetDetail struct {
+	ExpectedUpdatedAt string `json:"-"`
 	SheetListItem
 	Entradas []Line `json:"entradas"`
 	Saidas   []Line `json:"saidas"`
@@ -63,13 +64,14 @@ type SheetDetail struct {
 // no create caem no default do service. coreTenantId nunca escapa do escopo da
 // account (e apenas filtro/rotulo do cliente).
 type SheetInput struct {
-	Title        *string `json:"title"`
-	Period       *string `json:"period"`
-	Status       *string `json:"status"`
-	Notes        *string `json:"notes"`
-	Entradas     []Line  `json:"entradas"`
-	Saidas       []Line  `json:"saidas"`
-	CoreTenantID *string `json:"coreTenantId"`
+	ExpectedUpdatedAt string  `json:"expectedUpdatedAt,omitempty"`
+	Title             *string `json:"title"`
+	Period            *string `json:"period"`
+	Status            *string `json:"status"`
+	Notes             *string `json:"notes"`
+	Entradas          []Line  `json:"entradas"`
+	Saidas            []Line  `json:"saidas"`
+	CoreTenantID      *string `json:"coreTenantId"`
 }
 
 // LinePatchInput efetiva/des-efetiva uma linha (PATCH). Campos ausentes ficam

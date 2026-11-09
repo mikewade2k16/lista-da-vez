@@ -168,7 +168,15 @@ export function useCalendarChat() {
   const auth = useAuthStore()
   const store = useCalendarStore()
   const accountStore = useCoreAccountStore()
-  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
+  const baseApi = createApiRequest(runtimeConfig, () => auth.accessToken)
+  const apiRequest: typeof baseApi = (path, options = {}) =>
+    activeSurface() === 'finance'
+      ? baseApi(path, { ...options, query: { ...options.query, surface: 'finance' } })
+      : baseApi(path, options)
+  const financeContext = useState<{ accountId: string; sheetId: string; month: string }>(
+    'assistant:finance-context',
+    () => ({ accountId: '', sheetId: '', month: '' }),
+  )
 
   // Chaves unicas do useState = o singleton. Qualquer componente que chamar
   // useCalendarChat() recebe as MESMAS refs.
@@ -521,7 +529,18 @@ export function useCalendarChat() {
     const generation = identityGeneration.value
 
     const requestSurface = activeSurface()
-    const month = requestSurface === 'calendar' ? store.focusMonthKey || '' : ''
+    const month =
+      requestSurface === 'calendar'
+        ? store.focusMonthKey || ''
+        : requestSurface === 'finance' &&
+            financeContext.value.accountId === accountStore.activeAccountId
+          ? financeContext.value.month
+          : ''
+    const financeSheetId =
+      requestSurface === 'finance' &&
+      financeContext.value.accountId === accountStore.activeAccountId
+        ? financeContext.value.sheetId
+        : ''
     const fingerprint = JSON.stringify({
       question: trimmed,
       conversationId: conversationId.value,
@@ -529,6 +548,7 @@ export function useCalendarChat() {
       scopeMode: scopeMode.value,
       scopeClientId: scopeMode.value === 'client' ? scopeClientId.value : '',
       month,
+      ...(financeSheetId ? { financeSheetId } : {}),
     })
     const previousAttempt = pendingAskAttempt.value
     const retryAttempt = previousAttempt?.fingerprint === fingerprint ? previousAttempt : null
@@ -575,6 +595,7 @@ export function useCalendarChat() {
         viaVoice,
       }
       if (month) body.month = month
+      if (financeSheetId) body.financeSheetId = financeSheetId
 
       const response = (await apiRequest('/v1/assistant/chat/ask', {
         method: 'POST',

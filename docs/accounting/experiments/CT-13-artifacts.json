@@ -1,0 +1,61 @@
+{
+  "collectedOn": "2026-11-05",
+  "artifactPolicy": "Metadata/cards/licences only; no weights or execution.",
+  "artifacts": [
+    {
+      "kind": "jeff-code-LICENSE",
+      "url": "https://raw.githubusercontent.com/firelex/jeff/3720e7c66d73b79a6e90189f3d5b0d6ecf03ddc0/LICENSE",
+      "status": 200,
+      "sha256": "ab061adada2c603bdd6d7773bd89a0c48af32f9ddb3c5a12086b6f5c7c364bdb",
+      "licenseHeader": "MIT License"
+    },
+    {
+      "kind": "jeff-code-pyproject.toml",
+      "url": "https://raw.githubusercontent.com/firelex/jeff/3720e7c66d73b79a6e90189f3d5b0d6ecf03ddc0/pyproject.toml",
+      "status": 200,
+      "sha256": "06528f933ebfd1943e81aa3690cbb8016b0c6a0a7805ebb3e5d2c813d87440c4",
+      "declaredVersion": "0.2.0"
+    },
+    {
+      "kind": "jeff-code-README.md",
+      "url": "https://raw.githubusercontent.com/firelex/jeff/3720e7c66d73b79a6e90189f3d5b0d6ecf03ddc0/README.md",
+      "status": 200,
+      "sha256": "09586e92b036204edf976148c2a317426c451c8a0314d13a49c228cd7069bc50"
+    },
+    {
+      "kind": "mstrasser/jeff-base",
+      "requestedRevision": "v1.3",
+      "metadataURL": "https://huggingface.co/api/models/mstrasser/jeff-base/revision/v1.3",
+      "status": 200,
+      "weightsDownloaded": false,
+      "weightsSHA256": null,
+      "resolvedRevision": "3cf045d8a52dc3ac2c6d0c842071235984d5fdf5",
+      "licenseDeclared": "apache-2.0",
+      "languagesDeclared": [
+        "en"
+      ],
+      "metadataSHA256": "742bf42c07940bd7df6718d475666125b2072f98f19158dd39d76ab6cf56ea4c",
+      "modelCardURL": "https://huggingface.co/mstrasser/jeff-base/raw/3cf045d8a52dc3ac2c6d0c842071235984d5fdf5/README.md",
+      "modelCardStatus": 200,
+      "modelCardSHA256": "c026df1d06b0495fc47561dc0cd42c6312629bae966206dacc131a2f912f2fc1"
+    },
+    {
+      "kind": "mstrasser/jeff-adapter-tools",
+      "requestedRevision": "v1.3",
+      "metadataURL": "https://huggingface.co/api/models/mstrasser/jeff-adapter-tools/revision/v1.3",
+      "status": 200,
+      "weightsDownloaded": false,
+      "weightsSHA256": null,
+      "resolvedRevision": "cdb22106aa699572347193aa8f1921964b545f08",
+      "licenseDeclared": "apache-2.0",
+      "languagesDeclared": [
+        "en"
+      ],
+      "metadataSHA256": "898bd8da2c3f0d7fbb019915b9bc2447814fca946ce4a243c5c35e39c1ec8edb",
+      "modelCardURL": "https://huggingface.co/mstrasser/jeff-adapter-tools/raw/cdb22106aa699572347193aa8f1921964b545f08/README.md",
+      "modelCardStatus": 200,
+      "modelCardSHA256": "9845b5683bcee86fc04e3eab53a49b8b35ead57aa692040c7b16d1c360c8ad66"
+    }
+  ],
+  "jeffCodeRevision": "3720e7c66d73b79a6e90189f3d5b0d6ecf03ddc0"
+}

@@ -241,6 +241,7 @@ export interface Product {
 
 // Projecao lean da listagem de produtos (GET .../products).
 export interface ProductListItem {
+  tags: string[]
   createdAt: string
   id: string
   restaurantId: string

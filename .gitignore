@@ -12,6 +12,7 @@ back/api.exe
 .tmp-gocache/
 .tmp-go-cache-*/
 back/.gocache/
+back/.gomodcache/
 *.exe
 qa-bot/.venv/
 qa-bot/artifacts/
@@ -53,6 +54,7 @@ web-reference/
 .codex/auth.json
 .codex/sessions/
 .DS_Store
+._*
 # Infra Mac portavel (tambem supera excludes locais de clones antigos).
 !compose.mac-local.yaml
 !compose.mac-api.Dockerfile

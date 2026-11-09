@@ -14,13 +14,16 @@ import type {
   FinanceMutationResponse,
 } from '../types/finances'
 import {
-  isFinanceUuid,
-  normalizeFinanceEntityId,
-  normalizeFinanceLinkedUuid,
-} from '../utils/finance-ids'
+  normalizeFinanceApiText as normalizeText,
+  normalizePeriod,
+  normalizeCoreTenantId,
+  normalizeDate,
+  normalizeRows,
+  normalizeSheetId,
+} from '../utils/finance-api-normalize'
 import { useCoreAccountStore } from '../../core/stores/account'
 import { useAuthStore } from '~/stores/auth'
-import { createApiRequest } from '~/utils/api-client'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 interface FinancesFetchOptions {
   q?: string
@@ -39,6 +42,7 @@ interface FinanceCreatePayload {
 }
 
 interface FinanceUpdatePayload {
+  expectedUpdatedAt?: string
   title?: string
   period?: string
   status?: string
@@ -56,118 +60,6 @@ interface FinanceLinePatchPayload {
 const DEFAULT_FETCH_LIMIT = 240
 const FINANCE_SHEETS_API_BASE = '/v1/finance/sheets'
 const COLLECTION_KEY = '__collection__'
-
-function normalizeText(value: unknown, max = 12000) {
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max)
-}
-
-function normalizePeriod(value: unknown) {
-  const raw = String(value ?? '').trim()
-  return /^\d{4}-\d{2}$/.test(raw) ? raw : ''
-}
-
-function normalizeCoreTenantId(value: unknown) {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-}
-
-function normalizeDate(value: unknown) {
-  const raw = String(value ?? '').trim()
-  if (!raw) return ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
-  return ''
-}
-
-function normalizeSheetId(value: unknown) {
-  const raw = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  return isFinanceUuid(raw) ? raw : ''
-}
-
-function normalizeAmount(value: unknown, allowNegative = false) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const rounded = Number(value.toFixed(2))
-    return allowNegative ? rounded : Math.max(0, rounded)
-  }
-
-  const raw = String(value ?? '').trim()
-  if (!raw) return 0
-
-  let normalized = raw
-    .replace(/\s+/g, '')
-    .replace(/^R\$/i, '')
-    .replace(/[^\d,.-]/g, '')
-
-  const hasComma = normalized.includes(',')
-  const hasDot = normalized.includes('.')
-  if (hasComma && hasDot) {
-    if (normalized.lastIndexOf(',') > normalized.lastIndexOf('.')) {
-      normalized = normalized.replace(/\./g, '').replace(',', '.')
-    } else {
-      normalized = normalized.replace(/,/g, '')
-    }
-  } else if (hasComma) {
-    normalized = normalized.replace(/\./g, '').replace(',', '.')
-  }
-
-  const parsed = Number(normalized)
-  if (!Number.isFinite(parsed)) return 0
-  const rounded = Number(parsed.toFixed(2))
-  return allowNegative ? rounded : Math.max(0, rounded)
-}
-
-function normalizeAdjustments(value: unknown) {
-  if (!Array.isArray(value)) return []
-
-  return value.map((item) => {
-    const source =
-      item && typeof item === 'object'
-        ? (item as {
-            id?: unknown
-            amount?: unknown
-            note?: unknown
-            date?: unknown
-          })
-        : {}
-
-    return {
-      id: normalizeFinanceEntityId(source.id),
-      amount: normalizeAmount(source.amount, true),
-      note: normalizeText(source.note, 240),
-      date: normalizeDate(source.date),
-    }
-  })
-}
-
-function normalizeRows(value: FinanceLineItem[] | undefined, _kind: 'entrada' | 'saida') {
-  if (!Array.isArray(value)) return undefined
-
-  return value.map((item) => {
-    const adjustments = normalizeAdjustments(item?.adjustments)
-    const adjustmentAmount =
-      adjustments.length > 0
-        ? Number(adjustments.reduce((sum, adjustment) => sum + adjustment.amount, 0).toFixed(2))
-        : normalizeAmount(item?.adjustmentAmount, true)
-
-    return {
-      adjustments,
-      id: normalizeFinanceEntityId(item?.id),
-      description: normalizeText(item?.description, 260),
-      category: normalizeText(item?.category, 120),
-      effective: Boolean(item?.effective),
-      effectiveDate: normalizeDate(item?.effectiveDate),
-      amount: normalizeAmount(item?.amount, false),
-      adjustmentAmount,
-      fixedAccountId: normalizeFinanceLinkedUuid(item?.fixedAccountId),
-      details: normalizeText(item?.details, 600),
-    }
-  })
-}
 
 export function useFinancesManager() {
   const coreAccount = useCoreAccountStore()
@@ -198,7 +90,9 @@ export function useFinancesManager() {
     if (value) {
       next[key] = true
     } else {
-      delete next[key]
+      const remaining = Object.fromEntries(Object.entries(next).filter(([name]) => name !== key))
+      savingMap.value = remaining
+      return
     }
     savingMap.value = next
   }
@@ -276,13 +170,16 @@ export function useFinancesManager() {
 
     detailLoading.value = true
     errorMessage.value = ''
+    const accountId = coreAccount.activeAccountId
     const requestId = activeDetailRequestId + 1
     activeDetailRequestId = requestId
 
     try {
       const path = `${FINANCE_SHEETS_API_BASE}/${sheetId}`
-      const response = (await apiRequest(path)) as FinanceDetailResponse
-      if (requestId !== activeDetailRequestId) {
+      const response = (await apiRequest(path, {
+        headers: { 'X-Account-Id': accountId },
+      })) as FinanceDetailResponse
+      if (requestId !== activeDetailRequestId || accountId !== coreAccount.activeAccountId) {
         return response.data
       }
 
@@ -306,10 +203,12 @@ export function useFinancesManager() {
     errorMessage.value = ''
     setSaving(keyFor(COLLECTION_KEY, 'fetch'), true)
 
+    const accountId = coreAccount.activeAccountId
     const coreTenantId = scopedCoreTenantId(options.coreTenantId)
 
     try {
       const response = (await apiRequest(FINANCE_SHEETS_API_BASE, {
+        headers: { 'X-Account-Id': accountId },
         query: {
           page: 1,
           limit: DEFAULT_FETCH_LIMIT,
@@ -318,6 +217,7 @@ export function useFinancesManager() {
           period: normalizePeriod(options.period),
         },
       })) as FinancesListResponse
+      if (accountId !== coreAccount.activeAccountId) return
       sheets.value = Array.isArray(response.data) ? response.data : []
       if (activeSheet.value && !sheets.value.some((item) => item.id === activeSheet.value?.id)) {
         activeSheet.value = null
@@ -361,7 +261,11 @@ export function useFinancesManager() {
     }
   }
 
-  async function updateSheet(id: string, payload: FinanceUpdatePayload) {
+  async function updateSheet(
+    id: string,
+    payload: FinanceUpdatePayload,
+    accountId = coreAccount.activeAccountId,
+  ) {
     const sheetId = normalizeSheetId(id)
     if (!sheetId) return null
 
@@ -371,24 +275,27 @@ export function useFinancesManager() {
     try {
       const response = (await apiRequest(`${FINANCE_SHEETS_API_BASE}/${sheetId}`, {
         method: 'PUT',
+        headers: { 'X-Account-Id': accountId },
         body: {
+          expectedUpdatedAt: payload.expectedUpdatedAt,
           title: normalizeText(payload.title, 180),
           period: normalizePeriod(payload.period),
           status: normalizeText(payload.status, 120),
           notes: normalizeText(payload.notes, 12000),
           entradas: normalizeRows(payload.entradas, 'entrada') || [],
           saidas: normalizeRows(payload.saidas, 'saida') || [],
-          coreTenantId: scopedCoreTenantId(payload.coreTenantId) || undefined,
+          coreTenantId: payload.coreTenantId || undefined,
         },
       })) as FinanceMutationResponse
 
+      if (coreAccount.activeAccountId !== accountId) return response.data
       upsertSheet(response.data)
       if (activeSheet.value?.id === response.data.id) {
         activeSheet.value = response.data
       }
       return response.data
-    } catch {
-      errorMessage.value = 'Falha ao salvar planilha financeira.'
+    } catch (error) {
+      errorMessage.value = getApiErrorMessage(error, 'Falha ao salvar planilha financeira.')
       return null
     } finally {
       setSaving(keyFor(sheetId, 'update'), false)
@@ -422,7 +329,12 @@ export function useFinancesManager() {
     }
   }
 
-  async function updateSheetLine(id: string, lineId: string, payload: FinanceLinePatchPayload) {
+  async function updateSheetLine(
+    id: string,
+    lineId: string,
+    payload: FinanceLinePatchPayload,
+    accountId = coreAccount.activeAccountId,
+  ) {
     const sheetId = normalizeSheetId(id)
     if (!sheetId) return null
 
@@ -432,6 +344,7 @@ export function useFinancesManager() {
     try {
       const response = (await apiRequest(`${FINANCE_SHEETS_API_BASE}/${sheetId}/lines/${lineId}`, {
         method: 'PATCH',
+        headers: { 'X-Account-Id': accountId },
         body: {
           effective: Object.prototype.hasOwnProperty.call(payload, 'effective')
             ? Boolean(payload.effective)
@@ -442,6 +355,8 @@ export function useFinancesManager() {
         },
       })) as FinanceLineMutationResponse
 
+      if (accountId !== coreAccount.activeAccountId || activeSheet.value?.id !== id)
+        return response.data
       replaceActiveSheetLine(
         response.data.line,
         response.data.summary,
@@ -457,9 +372,20 @@ export function useFinancesManager() {
     }
   }
 
+  async function changeSheetStatus(id: string, status: string) {
+    const response = (await apiRequest(`${FINANCE_SHEETS_API_BASE}/${id}/status`, {
+      method: 'PATCH',
+      body: { status, expectedUpdatedAt: activeSheet.value?.updatedAt },
+    })) as FinanceMutationResponse
+    upsertSheet(response.data)
+    return response.data
+  }
+
   watch(
     () => coreAccount.activeAccountId,
     () => {
+      activeDetailRequestId++
+      sheets.value = []
       activeSheet.value = null
       void fetchSheets()
     },
@@ -478,6 +404,7 @@ export function useFinancesManager() {
     fetchSheetDetail,
     createSheet,
     updateSheet,
+    changeSheetStatus,
     updateSheetLine,
     deleteSheet,
   }

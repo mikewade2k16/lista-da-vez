@@ -119,13 +119,22 @@ type chatConfig struct {
 // scopeClientId quando este vem vazio. O escopo e SEMPRE normalizado server-side pela
 // permissao (validateScope) — o body nunca decide sozinho o cliente/modo.
 type ChatAskRequest struct {
-	Question       string `json:"question"`
-	ConversationID string `json:"conversationId"`
-	Surface        string `json:"surface"`
-	ClientID       string `json:"clientId"`
-	Month          string `json:"month"`
-	ScopeMode      string `json:"scopeMode"`
-	ScopeClientID  string `json:"scopeClientId"`
+	CompetenceDate  string               `json:"competenceDate,omitempty"`
+	Mode            string               `json:"mode,omitempty"`
+	ContractVersion string               `json:"contractVersion,omitempty"`
+	IssuerID        string               `json:"issuerId,omitempty"`
+	FinanceDraftID  string               `json:"financeDraftId,omitempty"`
+	DiagnosisID     string               `json:"diagnosisId,omitempty"`
+	DocumentID      string               `json:"documentId,omitempty"`
+	Action          *AssistantPlusAction `json:"action,omitempty"`
+	Question        string               `json:"question"`
+	FinanceSheetID  string               `json:"financeSheetId,omitempty"`
+	ConversationID  string               `json:"conversationId"`
+	Surface         string               `json:"surface"`
+	ClientID        string               `json:"clientId"`
+	Month           string               `json:"month"`
+	ScopeMode       string               `json:"scopeMode"`
+	ScopeClientID   string               `json:"scopeClientId"`
 	// AssistantRuntime e marcado apenas pelo alias /v1/assistant/chat. Nao vem do JSON.
 	// Requests legadas continuam usando a configuracao historica do Calendar.
 	AssistantRuntime bool `json:"-"`
@@ -495,6 +504,9 @@ func (s *Service) AssistantChatStatus(
 	if !s.chatConfigured() {
 		return AssistantStatusView{}, ErrChatNotConfigured
 	}
+	if surface == AssistantSurfaceFinance {
+		ctx = context.WithValue(ctx, financeSurfaceContextKey{}, true)
+	}
 	account := strings.TrimSpace(accountID)
 	surface, err := normalizeAssistantSurface(surface)
 	if err != nil {
@@ -622,6 +634,12 @@ func (s *Service) pingChatHealthOnce(ctx context.Context, healthURL string) erro
 //     + updated_at. Responde {answer, conversationId, title}. O payload NUNCA vai para log
 //     (contem ai.apiKey).
 func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.Principal, req ChatAskRequest) (ChatAskResult, error) {
+	if req.Mode != "" {
+		return ChatAskResult{}, ErrInvalidQuestion
+	}
+	if req.Surface == AssistantSurfaceFinance {
+		ctx = context.WithValue(ctx, financeSurfaceContextKey{}, true)
+	}
 	if !s.chatConfigured() {
 		return ChatAskResult{}, ErrChatNotConfigured
 	}
@@ -783,6 +801,16 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if useAssistantRuntime {
 		contextBlock = attachAssistantContext(contextBlock, capabilities, metaResult.Context, resourceRegistry)
 		effAI.SystemPrompt = assistantSystemPrompt(effAI.SystemPrompt, capabilities, metaResult.Context, resourceRegistry)
+	}
+	if target.surface == AssistantSurfaceFinance {
+		if s.financeAssistantContext == nil {
+			return ChatAskResult{}, ErrAssistantRuntimeUnavailable
+		}
+		financeContext, financeErr := s.financeAssistantContext(ctx, account, principal, req.FinanceSheetID, contextMonth)
+		if financeErr != nil {
+			return ChatAskResult{}, financeErr
+		}
+		contextBlock = map[string]any{"capabilities": capabilities, "finance": financeContext}
 	}
 	// WAVE 14: mes alvo primeiro; titulo citado que NAO esta no mes em foco (tela em outro
 	// mes/ano) e buscado em janela ampla e anexado ao contexto ANTES do LLM.
@@ -961,12 +989,13 @@ func chatAskRequestHash(
 		ScopeMode               string `json:"scopeMode"`
 		ScopeClientID           string `json:"scopeClientId"`
 		Month                   string `json:"month"`
+		FinanceSheetID          string `json:"financeSheetId,omitempty"`
 		ViaVoice                bool   `json:"viaVoice"`
 	}{
 		AccountID: accountID, ActorUserID: actorUserID, Question: question,
 		RequestedConversationID: strings.TrimSpace(req.ConversationID),
 		Surface:                 target.surface, ScopeMode: target.mode, ScopeClientID: target.clientID,
-		Month: strings.TrimSpace(req.Month), ViaVoice: req.ViaVoice,
+		Month: strings.TrimSpace(req.Month), ViaVoice: req.ViaVoice, FinanceSheetID: strings.TrimSpace(req.FinanceSheetID),
 	})
 }
 
@@ -1430,13 +1459,23 @@ func (s *Service) AssistantChatTranscribe(
 	if !s.transcribeConfigured() {
 		return "", ErrTranscribeNotConfigured
 	}
+	surface = strings.ToLower(strings.TrimSpace(surface))
 	provider, apiKey, model, err := s.resolveAssistantTranscription(
 		ctx, strings.TrimSpace(accountID), surface, principal,
 	)
 	if err != nil {
 		return "", err
 	}
-	return s.postTranscription(ctx, provider, apiKey, model, fileName, contentType, content)
+	text, err := s.postTranscription(ctx, provider, apiKey, model, fileName, contentType, content)
+	if err != nil {
+		return "", err
+	}
+	if surface == AssistantSurfaceFinance {
+		if err = s.financeTranscriptionAuthorize(ctx, strings.TrimSpace(accountID), principal); err != nil {
+			return "", err
+		}
+	}
+	return text, nil
 }
 
 func (s *Service) resolveAssistantTranscription(
@@ -1447,6 +1486,18 @@ func (s *Service) resolveAssistantTranscription(
 	surface, err := normalizeAssistantSurface(surface)
 	if err != nil {
 		return "", "", "", err
+	}
+	if surface == AssistantSurfaceFinance {
+		if _, err = financeChatAccess(principal, accountID); err != nil {
+			return "", "", "", err
+		}
+		if s.financeTranscriptionAuthorize == nil {
+			return "", "", "", ErrAssistantNoCapability
+		}
+		if err = s.financeTranscriptionAuthorize(ctx, accountID, principal); err != nil {
+			return "", "", "", err
+		}
+		return "local", "", "", nil
 	}
 	runtime, capabilities, err := s.resolveAssistantRuntime(ctx, accountID, surface, principal)
 	if err != nil {

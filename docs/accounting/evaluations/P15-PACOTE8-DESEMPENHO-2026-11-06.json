@@ -1,0 +1,36 @@
+{
+  "aiCalls": 0,
+  "date": "2026-11-06T20:13:20Z",
+  "note": "local disposable PostgreSQL in Docker; not an SLA",
+  "repetitions": 15,
+  "results": {
+    "carregar histórico (60 mensagens)": {
+      "meanMs": 0.08473333333333333
+    },
+    "consulta lateral com pergunta pendente": {
+      "p50ms": 1.904,
+      "p95ms": 3.567
+    },
+    "escolha numerada + leitura": {
+      "p50ms": 1.863,
+      "p95ms": 2.323
+    },
+    "leitura com período (20 planilhas no mês → escolha)": {
+      "p50ms": 1.887,
+      "p95ms": 2.236
+    },
+    "pedido composto": {
+      "p50ms": 0.691,
+      "p95ms": 1.614
+    },
+    "pedido de nota com cliente salvo (500 clientes)": {
+      "p50ms": 2.464,
+      "p95ms": 12.08
+    }
+  },
+  "volume": {
+    "customers": 500,
+    "linesPerSheet": 40,
+    "sheets": 240
+  }
+}

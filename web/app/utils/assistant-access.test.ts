@@ -3,6 +3,15 @@ import { describe, expect, it } from 'vitest'
 import { canManageAssistantConfiguration, canViewAssistantConfiguration } from './assistant-access'
 
 describe('assistant config access', () => {
+  it('allows finance managers to view shared credentials without changing other surfaces', () => {
+    const p = {
+      role: 'member',
+      effectivePermissionKeys: ['finance.config.manage'],
+      effectivePermissionsResolved: true,
+    }
+    expect(canViewAssistantConfiguration(p)).toBe(true)
+    expect(canManageAssistantConfiguration(p)).toBe(false)
+  })
   it('allows a module manager to view but not change cross-domain configuration', () => {
     const context = {
       role: 'member',

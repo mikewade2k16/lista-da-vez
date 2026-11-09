@@ -11,6 +11,31 @@ npm run dev:mac:ps
 npm run dev:mac:stop
 ```
 
+`dev:mac:up` sobe a stack em segundo plano e mantém o Compose Watch ativo no
+terminal para sincronizar automaticamente as alterações de `web/` ao salvar.
+Deixe esse terminal aberto enquanto trabalha; Ctrl-C encerra apenas o watcher,
+os containers continuam ligados. Para reativar o watcher da stack já ligada,
+use `npm run dev:mac:watch`. `npm run dev:mac:start` também retoma os containers
+e inicia o watcher automaticamente.
+
+Para retomar a stack ja criada, sem rebuild nem recriacao:
+
+```bash
+npm run dev:mac:start
+```
+
+Esse comando preserva a configuracao e o codigo dos containers existentes. Use
+`dev:mac:up` na primeira instalacao ou quando precisar reconstruir/reconciliar
+imagens e configuracoes. `start` nao sincroniza alteracoes de codigo.
+
+O acesso segue `localhost:3003 → local-access → web` e
+`localhost:8080 → local-access → api → postgres`. Portanto, ligar somente
+`web` e `api` no Docker Desktop nao publica as portas no Mac: `local-access`
+tambem precisa estar ativo. Redis/n8n executam automacoes; WAHA/Evolution
+atendem integracoes WhatsApp; Whisper faz transcricao. Esses auxiliares nao
+substituem o proxy do painel. Estado `running` nao significa `healthy`:
+aguarde os healthchecks e consulte `npm run dev:mac:ps`.
+
 O comando sobe API, web, proxy local, PostgreSQL, Redis, n8n, WAHA, Whisper,
 Evolution e seu banco, além do runner de compatibilidade Meta Ads. Usa os profiles
 explicitamente; `docker compose up -d` sozinho não ativa serviços com profiles.
@@ -22,6 +47,24 @@ As portas dos auxiliares são locais (`127.0.0.1`): n8n 5680, WAHA 3010,
 Whisper 8010, Evolution 8085, Redis 6380 e runner 8765, salvo override no `.env`.
 Painel: http://localhost:3003; API: http://localhost:8080/healthz.
 Volumes persistem durante recriações; nunca apagar volumes para corrigir rede.
+
+### Tela branca com 502 nos arquivos `/_nuxt/`
+
+Incidente de 2026-11-03: metadados AppleDouble do macOS foram encontrados no
+container como `._CardapioProductModal.vue`, `._CardapioSectionProdutos.vue`,
+`._OmniTagsInput.vue` e `._OmniCollectionFilters.vue`, alem de seis metadados
+de arquivos TypeScript (10 AppleDouble removidos). Sao arquivos binarios,
+nao componentes. O scanner Vue do Tailwind/Oxide 4.3.0 abortou com
+`Utf8Error` em `pre_processors/vue.rs:17:59`, interrompendo o servidor web;
+o proxy local devolveu 502 para CSS e JavaScript e o painel ficou em branco.
+
+Git, contexto Docker e Compose watch excluem `._*` e o stylesheet principal
+tambem os exclui da deteccao Tailwind. Para sincronizacao manual com tar no Mac,
+usar `COPYFILE_DISABLE=1 tar ...` ao criar o arquivo para nao gerar AppleDouble.
+Um watch ja em execucao precisa ser reaberto para ler as novas exclusoes.
+Se o container ja estiver contaminado, remover somente esses metadados binarios;
+as exclusoes nao apagam arquivos que ja entraram. Nao apagar volumes, caches,
+fontes reais nem alterar dependencias para resolver esse incidente.
 
 `crow-nuxt` depende do repositório irmão `../crow-nuxt`, não incluído neste projeto.
 Fica no profile `bio` do override Mac; só iniciá-lo explicitamente com esse
@@ -97,6 +140,10 @@ Cores exigem um terminal interativo com suporte ANSI; execucoes automatizadas co
 O Node do host permite executar os atalhos npm e ferramentas de orquestracao.
 O desenvolvimento do app continua Docker-first; nao e preciso instalar as dependencias
 do frontend no host para usar os atalhos de deploy.
+
+Go e `golangci-lint` também não precisam ser instalados no Mac: quando há arquivos
+Go staged, o pre-commit prepara e usa `omni-go-tools` pelo Docker. Mantenha o Docker
+Desktop ativo para executar esse hook.
 
 ## Deploy
 

@@ -7,6 +7,7 @@ import ProfileAccessCard from '~/components/profile/ProfileAccessCard.vue'
 import ProfileSecurityCard from '~/components/profile/ProfileSecurityCard.vue'
 import ProfileStoresCard from '~/components/profile/ProfileStoresCard.vue'
 import ProfileFeedbackCard from '~/components/profile/ProfileFeedbackCard.vue'
+import FiscalProfileCard from '../../layers/finance/components/fiscal/FiscalProfileCard.vue'
 import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import { getApiBase, getApiErrorMessage } from '~/utils/api-client'
@@ -323,6 +324,7 @@ async function handleAvatarChange(event) {
             </form>
           </article>
 
+          <FiscalProfileCard />
           <ProfileStoresCard />
           <ProfileFeedbackCard />
         </div>

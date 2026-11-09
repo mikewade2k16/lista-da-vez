@@ -10,6 +10,15 @@ const product = {
   createdAt: new Date(2026, 9, 29, 10).toISOString(),
 }
 describe('filtros de cadastro e foto dos produtos', () => {
+  it('filtra por qualquer tag selecionada e combina com os outros filtros', () => {
+    const tagged = { ...product, tags: ['Novo', 'Picante'] }
+    expect(productMatchesFilters(tagged, { tags: [] })).toBe(true)
+    expect(productMatchesFilters(product, { tags: ['Novo'] })).toBe(false)
+    expect(productMatchesFilters(tagged, { tags: ['vegano', 'novo'] })).toBe(true)
+    expect(productMatchesFilters(tagged, { tags: ['vegano', 'doce'] })).toBe(false)
+    expect(productMatchesFilters(tagged, { tags: ['Novo'], categoryId: 'outra' })).toBe(false)
+    expect(productMatchesFilters(tagged, { tags: ['Novo'], availability: false })).toBe(false)
+  })
   it.each([
     ['today', 29],
     ['yesterday', 28],

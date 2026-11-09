@@ -235,7 +235,7 @@ Invoke-RemoteCommand -Description 'Preservando configuracao anterior para rollba
 
 if ($ImageArchive) {
   . (Join-Path $scriptDir 'image-archive.ps1')
-  Send-DeployImageArchive -Archive $ImageArchive -Tag $Tag -RemoteTarget $remoteTarget -RemotePath $remotePath -ScpExe $ScpExe -ScpArguments $scpBaseArgs
+  Send-DeployImageArchive -Archive $ImageArchive -Tag $Tag -RemoteTarget $remoteTarget -RemotePath $remotePath -SftpArguments $scpBaseArgs
 }
 
 $evolutionBackup = if ($DeployOmnichannel) { @"

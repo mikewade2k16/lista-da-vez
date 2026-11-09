@@ -38,7 +38,7 @@ quando afetado e go test/vet dos pacotes Go alterados. Usa o Compose local efeti
 Os stages de compilacao usam a arquitetura nativa e as imagens finais sao linux/amd64.
 
 Transporte `-Transport auto` (padrao): GHCR quando ha credencial local, ou arquivo
-docker save + gzip + SCP/SSH quando ausente. `-Transport registry` exige credencial;
+docker save + gzip + SFTP/SSH quando ausente. `-Transport registry` exige credencial;
 `-Transport ssh` escolhe a transferencia direta. SSH exige ambas as imagens (-Service both).
 O arquivo recebe verificacao SHA256 na VPS antes do docker load; a VPS nunca compila.
 A imagem web tambem e iniciada isoladamente e precisa responder HTTP 200 antes da entrega.
@@ -812,3 +812,23 @@ mas buildam o Nuxt **na VPS** (lento, risco de OOM) — use so em ultimo caso:
 - `scripts/deploy/deploy-ship.ps1` — build local + `docker save | ssh 'docker load'` (sem registry).
 
 O caminho normal e' sempre GHCR (`deploy:fast:prod` / `deploy:prod`).
+
+
+### Transferência interrompida de imagens
+
+O transporte SSH usa SFTP com retomada (`reput`), até três tentativas por execução.
+O destino é criado e validado antes de enviar; arquivos `.part` só são promovidos
+após SHA256 válido. O parcial usa tag + hash para não misturar builds diferentes.
+O cliente `sftp` precisa estar no PATH e é checado antes do build rápido.
+
+Se a conexão continuar falhando, o erro informa o arquivo local preservado.
+Para retomar sem compilar novamente, usar `npm run deploy:prod -- -Tag TAG -ImageArchive "ARQUIVO_LOCAL"`
+(ou `deploy:staging`), repetindo as opções originais de ambiente, acesso, backup e
+profiles, especialmente `-DeployOmnichannel` quando utilizado. Não usar novamente
+`npm run deploy` para apenas retomar: esse atalho inicia o build rápido.
+
+Falha de SHA256 interrompe antes de `docker load`. Investigar o arquivo e, se houver
+parcial corrompido, remover somente aquele `.part` identificado por tag/hash antes
+de retransmitir, com autorização para acesso remoto. Não remover volumes, env ou
+backups. Testes locais com transporte simulado não comprovam a estabilidade da
+conexão ou o suporte SFTP remoto; isso será observado no próximo deploy autorizado.

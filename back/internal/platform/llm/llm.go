@@ -44,6 +44,9 @@ type Usage struct {
 // Request e a chamada ao provedor. Provider/Model/BaseURL/APIKey vem do painel/banco,
 // resolvidos pelo caller — nunca de env, nunca supostos.
 type Request struct {
+	MaxOutputTokens  int  // optional; zero preserves legacy provider behavior
+	NoFormatFallback bool // paid bounded calls must never retry internally
+
 	Provider string // openai | gemini | glm
 	Model    string
 	BaseURL  string // validado contra a allowlist (SSRF)
@@ -64,6 +67,8 @@ type Request struct {
 
 // Response e o resultado da chamada.
 type Response struct {
+	UsageKnown bool
+
 	Text      string
 	JSON      json.RawMessage // preenchido so com Schema != nil, e so apos validar
 	Usage     Usage

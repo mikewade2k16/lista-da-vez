@@ -216,3 +216,11 @@ e leitura de objetos R2 existentes continuam disponiveis.
   instalar Worker assinado (plano Free) ou WAF HMAC (Pro+) e provar que URL ausente/expirada falha.
 - URLs de objetos sao imutaveis. O cache pode armazenar o original completo e responder Range a
   partir dele, mas nao pode comprimir, transcodificar, remuxar ou criar variantes do video.
+
+## Remoção por origem — CT-15, 2026-11-09
+
+`Service.DeleteForSource(account, objectID, sourceModule)` remove do R2 apenas objeto
+`available` da mesma conta e do mesmo módulo de origem e marca `deleted` (a linha
+permanece). Pendente/em entrega não é removido. DeleteObject é gratuito no R2 e não
+reserva cota. Interfaces opcionais `DeleteObjectClient`/`DeletableRepository`. Usado pela
+retenção dos originais de comprovantes do Finance (adapter privateOriginals no app).

@@ -1,0 +1,23 @@
+{
+  "packages": {
+    "1": "implemented, awaiting manual acceptance",
+    "2": "initial corpus implemented; broader coverage pending"
+  },
+  "passed": [
+    "PostgreSQL main conversation public retrieval, persistence, permission denial, withdrawal and account isolation",
+    "full migrations with SkipDataSeeds=true",
+    "public corpus queries without account, issuer or LLM",
+    "39 frontend tests"
+  ],
+  "failed_baseline": [
+    "410 existing vue-tsc diagnostics",
+    "6 existing Finance lint issues"
+  ],
+  "not_executed": [
+    "browser/layout",
+    "real user acceptance",
+    "private issuer configuration",
+    "fiscal calculation or submission"
+  ],
+  "sources": "../corpus/publico-inicial-2026-11-06.json"
+}

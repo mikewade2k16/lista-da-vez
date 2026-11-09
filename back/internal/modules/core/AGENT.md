@@ -442,3 +442,10 @@ curl "http://localhost:8080/v2/me/context?accountId=<uuid>" -H "Cookie: AUTH_TOK
 - Sempre que adicionar/remover endpoint v2.
 - Quando uma das fases do roadmap mudar de status (atualizar tabela "Estado por fase").
 - Quando o contrato de algum DTO publico mudar.
+
+## Fachada de catálogo para Accounting — CT-03
+
+`module_access.go` expõe Enabled e ActiveMember para a composition root, evitando
+SQL de core dentro de Accounting. ActiveMember exige membership explícita,
+usuário e conta ativos, sem bypass por admin/agência. A resolução de permissões
+continua no AccountPermissionResolver canônico do Auth; não há catálogo paralelo.

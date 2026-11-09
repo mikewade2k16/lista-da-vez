@@ -17,8 +17,9 @@ import (
 // Agenda de conteudo por cliente: o painel Omni faz o CRUD dos eventos (por
 // account) e das notas por mes. Plano: docs/CALENDARIO_PLAN.md.
 type Module struct {
-	handle  *handle
-	storage MediaStorage
+	plusPorts AssistantPlusPorts
+	handle    *handle
+	storage   MediaStorage
 	// tasksProvider resolve o Service do modulo tasks de forma LAZY (contrato C10).
 	// Injetado via WithTasksService no app.go; nil = integracao calendario<->tasks
 	// desligada. Ver task_link.go.
@@ -29,6 +30,9 @@ type Module struct {
 	publisher                               Publisher
 	contentOperationsProvider               ContentOperationsBriefProvider
 	assistantRuntimeProvider                AssistantRuntimeProvider
+	financeTranscriptionAuthorize           FinanceTranscriptionAuthorizer
+	financeAssistantRuntime                 AssistantRuntimeProvider
+	financeAssistantContext                 FinanceAssistantContextProvider
 	assistantExecutionCapabilityProvider    AssistantExecutionCapabilityProvider
 	metaAssistantContextProvider            MetaAssistantContextProvider
 	metaAssistantActionProvider             MetaAssistantActionProvider
@@ -134,6 +138,9 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		WithPublisher(m.publisher).
 		WithClientScope(clientScope).
 		WithAssistantRuntimeProvider(m.assistantRuntimeProvider).
+		WithFinanceAssistant(m.financeAssistantRuntime, m.financeAssistantContext).
+		WithFinanceTranscriptionAuthorization(m.financeTranscriptionAuthorize).
+		WithPlus(m.plusPorts, deps.Pool).
 		WithAssistantExecutionCapabilityProvider(m.assistantExecutionCapabilityProvider).
 		WithMetaAssistantContextProvider(m.metaAssistantContextProvider).
 		WithMetaAssistantActionProvider(m.metaAssistantActionProvider, m.metaAssistantActionStatusProvider).

@@ -293,8 +293,8 @@ onMounted(loadActive)
 
 .cardapio-editor__body {
   display: grid;
-  grid-template-columns: 188px minmax(0, 1fr);
-  gap: 1.5rem;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 1rem;
   align-items: start;
   flex: 1;
   min-height: 0;

@@ -111,6 +111,7 @@ type calendarStore interface {
 // quando ela e um cliente, ResolveCalendarScope localiza a agenda da conta-agencia da
 // mesma organization e trava toda operacao de evento no client_id da account ativa.
 type Service struct {
+	plus    *AssistantPlusService
 	store   calendarStore
 	storage MediaStorage
 	ai      AIDispatchConfig
@@ -130,7 +131,10 @@ type Service struct {
 	contentOperationsProvider ContentOperationsBriefProvider
 	// assistantRuntimeProvider resolve a configuracao/credencial canonica do
 	// Omni Chat somente quando uma request compartilhada informa surface.
-	assistantRuntimeProvider AssistantRuntimeProvider
+	assistantRuntimeProvider      AssistantRuntimeProvider
+	financeTranscriptionAuthorize FinanceTranscriptionAuthorizer
+	financeAssistantRuntime       AssistantRuntimeProvider
+	financeAssistantContext       FinanceAssistantContextProvider
 	// assistantExecutionCapabilityProvider repete a leitura da matriz canonica na
 	// mesma transacao que confirma cards locais, fechando revogacoes entre /ask e PATCH.
 	assistantExecutionCapabilityProvider AssistantExecutionCapabilityProvider

@@ -362,3 +362,13 @@ normalizacao e regra de calculo reais.
 - [ ] Auditar front por mocks/localStorage remanescentes e listar aqui (+ plugar LegacyMarker).
 - [x] Estágios U2–U4 (auth lê core, operacao lê core, dropar `user_*_roles`) — concluído (0135).
 - [x] Itens 2&3 — dropar views `public.users/stores/consultants` + tabela `public.tenants` (0136, repontando FKs p/ `core.accounts`) — concluído.
+
+## Históricos Finance anteriores à entrada Plus unificada — ativo (2026-11-06)
+
+Conversa principal passa a reunir respostas locais/IA em finance.access_messages.
+Históricos IA Calendar/Plus anteriores continuam em seus owners, acessíveis como
+histórico anterior, sem sincronização/cópia e sem composer IA legado no Finance.
+Contexto empresarial Plus permanece ativo e separado por emitente/permissões.
+Critério de remoção: plano explícito de compatibilidade/migração e aceite de
+históricos/contextos/voz; não apagar ou mesclar registros por iniciativa própria.
+Ver docs/finance/PLUS_UNIFICADO.md e pendências P15-06/25/27/37.

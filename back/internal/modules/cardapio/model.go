@@ -173,6 +173,7 @@ type Product struct {
 
 // ProductLean e a projecao enxuta da listagem de produtos do painel.
 type ProductLean struct {
+	Tags                []string  `json:"tags"`
 	CreatedAt           time.Time `json:"createdAt"`
 	ID                  string    `json:"id"`
 	CategoryID          *string   `json:"categoryId"`

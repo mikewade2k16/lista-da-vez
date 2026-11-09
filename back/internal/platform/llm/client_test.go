@@ -205,3 +205,53 @@ func TestComplete_ChaveNuncaVazaNoErro(t *testing.T) {
 		t.Fatalf("a chave vazou no erro: %v", err)
 	}
 }
+
+func TestBoundedRequestDoesNotRetryAndSendsTokenCap(t *testing.T) {
+	for _, provider := range []string{"openai", "gemini", "glm"} {
+		t.Run(provider, func(t *testing.T) {
+			calls := 0
+			c := NewWithHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				var body map[string]any
+				if e := json.NewDecoder(r.Body).Decode(&body); e != nil {
+					t.Fatal(e)
+				}
+				key := "max_tokens"
+				if provider == "openai" {
+					key = "max_completion_tokens"
+				}
+				if body[key] != float64(256) {
+					t.Fatal("output cap missing", body)
+				}
+				return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}}, nil
+			})}, nil)
+			req := baseReq()
+			req.Provider = provider
+			req.MaxOutputTokens = 256
+			req.NoFormatFallback = true
+			req.Schema = &Schema{Name: "bounded", Version: 1, Definition: json.RawMessage(`{"type":"object"}`)}
+			if _, e := c.Complete(context.Background(), req); e == nil || calls != 1 {
+				t.Fatal("bounded paid call retried", e, calls)
+			}
+		})
+	}
+}
+func TestInvalidStructuredResponsePreservesUsageWithoutText(t *testing.T) {
+	c := clientWith(t, nil, 200, `{"choices":[{"message":{"content":"not json"}}],"usage":{"prompt_tokens":9,"completion_tokens":2,"total_tokens":11}}`)
+	req := baseReq()
+	req.Schema = &Schema{Name: "bounded", Version: 1, Definition: json.RawMessage(`{"type":"object"}`)}
+	out, e := c.Complete(context.Background(), req)
+	if !errors.Is(e, ErrSchemaViolation) || !out.UsageKnown || out.Usage.TotalTokens != 11 || out.Text != "" || len(out.JSON) != 0 {
+		t.Fatal("schema rejection lost cost metadata or leaked text", e, out)
+	}
+}
+
+func TestMissingUsageFieldsAreUnknown(t *testing.T) {
+	for _, usage := range []string{``, `,"usage":{}`, `,"usage":{"prompt_tokens":1}`} {
+		c := clientWith(t, nil, 200, `{"choices":[{"message":{"content":"ok"}}]`+usage+`}`)
+		out, e := c.Complete(context.Background(), baseReq())
+		if e != nil || out.UsageKnown {
+			t.Fatal("unknown usage presented as known zero", e)
+		}
+	}
+}

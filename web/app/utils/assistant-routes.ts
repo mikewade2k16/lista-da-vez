@@ -1,6 +1,8 @@
 export function isAssistantRoute(path: unknown): boolean {
   const normalizedPath = String(path || '')
   return (
+    normalizedPath === '/finance' ||
+    normalizedPath.startsWith('/finance/') ||
     normalizedPath === '/calendario' ||
     normalizedPath.startsWith('/calendario/') ||
     normalizedPath === '/meta-ads' ||

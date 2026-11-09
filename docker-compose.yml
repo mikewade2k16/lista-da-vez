@@ -46,6 +46,9 @@ services:
       APP_ADDR: :8080
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3003}
       UPLOADS_DIR: /app/data/uploads
+      # Originais privados sem R2 (comprovantes/fontes). Vazio = desligado. Se definir,
+      # monte um volume proprio no caminho; nunca dentro de UPLOADS_DIR (publico).
+      PRIVATE_FILES_DIR: ${PRIVATE_FILES_DIR:-}
       R2_ENABLED: ${R2_ENABLED:-false}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_BUCKET: ${R2_BUCKET:-}
@@ -292,6 +295,8 @@ services:
           path: ./web
           target: /app
           ignore:
+            - "**/._*"
+            - "**/.DS_Store"
             - node_modules/
             - .nuxt/
             - .output/

@@ -57,22 +57,28 @@ export function createFinanceUuid() {
   ].join('-')
 }
 
-export function financeRecurringRowId(sourceCoreTenantId: string) {
+export function financeRecurringRowId(sourceCoreTenantId: string, sheetId = '') {
   const normalized = normalizeDeterministicSeed(sourceCoreTenantId)
   if (!normalized) return ''
 
-  const hash = hashSeedToHex(normalized).slice(0, 12)
+  const hash = hashSeedToHex(sheetId ? `${sheetId}:${normalized}` : normalized).slice(0, 12)
   return `00000000-0000-4000-8000-${hash}`
 }
 
-export function financeRecurringStoreRowId(sourceCoreTenantId: string, storeName: string) {
+export function financeRecurringStoreRowId(
+  sourceCoreTenantId: string,
+  storeName: string,
+  sheetId = '',
+) {
   const normalizedClientId = normalizeDeterministicSeed(sourceCoreTenantId)
   const normalizedStoreName = normalizeDeterministicSeed(storeName)
   if (!normalizedClientId || !normalizedStoreName) {
     return ''
   }
 
-  const hash = hashSeedToHex(`${normalizedClientId}:${normalizedStoreName}`).slice(0, 12)
+  const hash = hashSeedToHex(
+    `${sheetId ? sheetId + ':' : ''}${normalizedClientId}:${normalizedStoreName}`,
+  ).slice(0, 12)
   return `11111111-1111-4111-8111-${hash}`
 }
 

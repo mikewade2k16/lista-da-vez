@@ -77,7 +77,7 @@ export interface OmniTableImageUpload {
   file: File
 }
 
-export type OmniFilterType = 'text' | 'select' | 'switch'
+export type OmniFilterType = 'text' | 'select' | 'multiselect' | 'switch'
 
 export interface OmniFilterDefinition {
   key: string

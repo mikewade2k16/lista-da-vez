@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  OmniInputsOmniMoneyInput as OmniMoneyInput,
+  OmniInputsOmniSwitchInput as OmniSwitchInput,
+  OmniOverlayOmniMinimalPopover as OmniMinimalPopover,
+} from '#components'
 // Portado de web-reference/app/components/admin/finance/FinanceRecurringGroupCard.vue.
 // OmniMoneyInput/OmniMinimalPopover/OmniSwitchInput sao auto-importados entre layers.
 

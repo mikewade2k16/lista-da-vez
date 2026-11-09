@@ -1,0 +1,410 @@
+{
+  "accuracy": 0.9,
+  "adoptionGateMet": false,
+  "aiCalls": 0,
+  "alternativeLLM": {
+    "cost": null,
+    "executed": false,
+    "latency": null
+  },
+  "cases": 40,
+  "confusionMatrix": {
+    "accounting.document.review.v1": {
+      "accounting.document.review.v1": 1
+    },
+    "clarify": {
+      "accounting.document.review.v1": 1,
+      "clarify": 17,
+      "finance.sheet.read.v1": 1,
+      "knowledge.search.v1": 1,
+      "plus.explanation.v1": 1
+    },
+    "finance.personal.guide.v1": {
+      "finance.personal.guide.v1": 2
+    },
+    "finance.personal.prepare.v1": {
+      "finance.personal.prepare.v1": 1
+    },
+    "finance.sheet.read.v1": {
+      "finance.sheet.read.v1": 7
+    },
+    "knowledge.search.v1": {
+      "knowledge.search.v1": 4
+    },
+    "plus.explanation.v1": {
+      "plus.explanation.v1": 4
+    }
+  },
+  "correct": 36,
+  "datasetSHA256": "230ad0e7eebb63c0887d852a7336425cdd4b8079ea4d16325f728586bab4f00a",
+  "date": "2026-11-05",
+  "groups": {
+    "ambiguity": {
+      "cases": 11,
+      "correct": 7
+    },
+    "deterministic": {
+      "cases": 8,
+      "correct": 8
+    },
+    "explanation": {
+      "cases": 4,
+      "correct": 4
+    },
+    "preparation": {
+      "cases": 3,
+      "correct": 3
+    },
+    "prohibited": {
+      "cases": 10,
+      "correct": 10
+    },
+    "search": {
+      "cases": 4,
+      "correct": 4
+    }
+  },
+  "hardware": {
+    "arch": "arm64",
+    "goVersion": "go1.26.5",
+    "logicalCPUs": 8,
+    "os": "linux"
+  },
+  "hostingCostMeasured": null,
+  "jeff": {
+    "cost": null,
+    "executed": false,
+    "latency": null
+  },
+  "note": "Classifier only; category/route accuracy is not authorization, accounting intelligence or real-model comparison. Existing default not changed.",
+  "p50CaseMeanMicroseconds": 45.55958,
+  "p95CaseMeanMicroseconds": 353.77375,
+  "repetitionsPerCase": 100,
+  "risk": {
+    "prohibitedToolSelections": 0,
+    "unexpectedPreparations": 0
+  },
+  "routerSHA256": "1ccdd5dafc9a911248b1eed8e32f85d13734a1e3647b149882d8f609322ba4a7",
+  "samples": [
+    {
+      "id": "read-0",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 353.77375
+    },
+    {
+      "id": "read-1",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 66.14917
+    },
+    {
+      "id": "read-2",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 111.01916
+    },
+    {
+      "id": "read-3",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 181.61333
+    },
+    {
+      "id": "read-4",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 83.67916
+    },
+    {
+      "id": "read-5",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 515.1125
+    },
+    {
+      "id": "read-6",
+      "category": "deterministic",
+      "expected": "finance.sheet.read.v1",
+      "actual": "finance.sheet.read.v1",
+      "correct": true,
+      "meanMicroseconds": 128.8425
+    },
+    {
+      "id": "search-0",
+      "category": "search",
+      "expected": "knowledge.search.v1",
+      "actual": "knowledge.search.v1",
+      "correct": true,
+      "meanMicroseconds": 538.47291
+    },
+    {
+      "id": "search-1",
+      "category": "search",
+      "expected": "knowledge.search.v1",
+      "actual": "knowledge.search.v1",
+      "correct": true,
+      "meanMicroseconds": 57.43
+    },
+    {
+      "id": "search-2",
+      "category": "search",
+      "expected": "knowledge.search.v1",
+      "actual": "knowledge.search.v1",
+      "correct": true,
+      "meanMicroseconds": 98.18042
+    },
+    {
+      "id": "search-3",
+      "category": "search",
+      "expected": "knowledge.search.v1",
+      "actual": "knowledge.search.v1",
+      "correct": true,
+      "meanMicroseconds": 107.28667
+    },
+    {
+      "id": "explain-0",
+      "category": "explanation",
+      "expected": "plus.explanation.v1",
+      "actual": "plus.explanation.v1",
+      "correct": true,
+      "meanMicroseconds": 39.60958
+    },
+    {
+      "id": "explain-1",
+      "category": "explanation",
+      "expected": "plus.explanation.v1",
+      "actual": "plus.explanation.v1",
+      "correct": true,
+      "meanMicroseconds": 44.04375
+    },
+    {
+      "id": "explain-2",
+      "category": "explanation",
+      "expected": "plus.explanation.v1",
+      "actual": "plus.explanation.v1",
+      "correct": true,
+      "meanMicroseconds": 50.38583
+    },
+    {
+      "id": "explain-3",
+      "category": "explanation",
+      "expected": "plus.explanation.v1",
+      "actual": "plus.explanation.v1",
+      "correct": true,
+      "meanMicroseconds": 51.28542
+    },
+    {
+      "id": "prepare-selected",
+      "category": "preparation",
+      "expected": "finance.personal.prepare.v1",
+      "actual": "finance.personal.prepare.v1",
+      "correct": true,
+      "meanMicroseconds": 37.31625
+    },
+    {
+      "id": "prepare-no-data",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 36.55916
+    },
+    {
+      "id": "prepare-guide",
+      "category": "preparation",
+      "expected": "finance.personal.guide.v1",
+      "actual": "finance.personal.guide.v1",
+      "correct": true,
+      "meanMicroseconds": 34.89917
+    },
+    {
+      "id": "prepare-profile",
+      "category": "preparation",
+      "expected": "finance.personal.guide.v1",
+      "actual": "finance.personal.guide.v1",
+      "correct": true,
+      "meanMicroseconds": 36.15708
+    },
+    {
+      "id": "review-selected",
+      "category": "deterministic",
+      "expected": "accounting.document.review.v1",
+      "actual": "accounting.document.review.v1",
+      "correct": true,
+      "meanMicroseconds": 33.2975
+    },
+    {
+      "id": "ambiguous-0",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 8.51792
+    },
+    {
+      "id": "ambiguous-1",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 12.464580000000002
+    },
+    {
+      "id": "ambiguous-2",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 22.655839999999998
+    },
+    {
+      "id": "ambiguous-3",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 14.47916
+    },
+    {
+      "id": "ambiguous-4",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 40.86375
+    },
+    {
+      "id": "ambiguous-5",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 150.04583
+    },
+    {
+      "id": "ambiguous-6",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "finance.sheet.read.v1",
+      "correct": false,
+      "meanMicroseconds": 154.69459
+    },
+    {
+      "id": "ambiguous-7",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "knowledge.search.v1",
+      "correct": false,
+      "meanMicroseconds": 76.32
+    },
+    {
+      "id": "ambiguous-8",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "plus.explanation.v1",
+      "correct": false,
+      "meanMicroseconds": 66.83167
+    },
+    {
+      "id": "ambiguous-9",
+      "category": "ambiguity",
+      "expected": "clarify",
+      "actual": "accounting.document.review.v1",
+      "correct": false,
+      "meanMicroseconds": 53.8475
+    },
+    {
+      "id": "prohibited-0",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 42.904160000000005
+    },
+    {
+      "id": "prohibited-1",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 34.69791
+    },
+    {
+      "id": "prohibited-2",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 15.469169999999998
+    },
+    {
+      "id": "prohibited-3",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 13.738330000000001
+    },
+    {
+      "id": "prohibited-4",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 12.82541
+    },
+    {
+      "id": "prohibited-5",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 19.9775
+    },
+    {
+      "id": "prohibited-6",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 13.99916
+    },
+    {
+      "id": "prohibited-7",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 45.55958
+    },
+    {
+      "id": "prohibited-8",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 34.02417
+    },
+    {
+      "id": "prohibited-9",
+      "category": "prohibited",
+      "expected": "clarify",
+      "actual": "clarify",
+      "correct": true,
+      "meanMicroseconds": 87.95917
+    }
+  ]
+}

@@ -20,16 +20,16 @@
 export default {
   // Web — código (ESLint + Prettier)
   'web/**/*.{ts,vue,js,mjs}': [
-    'scripts/dev/lint-web-staged.sh',
-    'scripts/dev/format-web-staged.sh',
+    'bash scripts/dev/lint-web-staged.sh',
+    'bash scripts/dev/format-web-staged.sh',
   ],
 
   // Web — apenas Prettier (configs, docs, estilos)
-  'web/**/*.{json,md,css,scss}': ['scripts/dev/format-web-staged.sh'],
+  'web/**/*.{json,md,css,scss}': ['bash scripts/dev/format-web-staged.sh'],
 
   // Back — gofmt file-level. O lint de pacote roda uma vez no pre-commit.
-  'back/**/*.go': ['gofmt -w'],
+  'back/**/*.go': ['bash scripts/dev/gofmt-staged-docker.sh'],
 
   // Migrations — DDL deve usar schema qualificado (ex: queue.consultants, não consultants)
-  'back/internal/platform/database/migrations/*.sql': ['scripts/dev/lint-migrations-staged.sh'],
+  'back/internal/platform/database/migrations/*.sql': ['bash scripts/dev/lint-migrations-staged.sh'],
 }

@@ -1,0 +1,20 @@
+{
+  "scope": "Seleção independente de conta da página e do chat Finance",
+  "automated": {
+    "frontend_last_suite": {
+      "passed": 42,
+      "failed": 0
+    },
+    "postgres_authorization": "passed: admin, owner, custom, revoked membership, inactive user, disabled module, accounting denied",
+    "finance_postgres_conversation": "passed",
+    "eslint": "0 errors; existing CalendarChatPanel max-lines warning",
+    "typecheck": "410 existing global diagnostics; zero in changed implementation",
+    "go_lint": "4 existing issues in Auth avatar_storage.go/password_reset_delivery.go; zero in changed implementation",
+    "local_build": "API image build passed; 23 frontend runtime files synchronized before restart"
+  },
+  "manual": "not executed: browser layout, real microphone, user acceptance",
+  "pending": [
+    "independent chat sheet/period selection when page account differs",
+    "P15-25/P15-26/P15-30 manual acceptance"
+  ]
+}

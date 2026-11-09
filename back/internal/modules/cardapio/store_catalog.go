@@ -115,7 +115,7 @@ func scanProduct(row rowScanner) (Product, error) {
 // ListProductsLean retorna a projecao enxuta de produtos de um restaurante.
 func (s *Store) ListProductsLean(ctx context.Context, accountID, restaurantID string) ([]ProductLean, error) {
 	const q = `select id, category_id, slug, name, price_cents, compare_at_price_cents, image_url,
-			is_available, is_featured, sort_order, created_at
+			is_available, is_featured, sort_order, created_at, tags
 		from cardapio.products
 		where restaurant_id = $1 and account_id = $2
 		order by sort_order, name`
@@ -127,10 +127,12 @@ func (s *Store) ListProductsLean(ctx context.Context, accountID, restaurantID st
 	out := make([]ProductLean, 0)
 	for rows.Next() {
 		var p ProductLean
+		var tags []byte
 		if err := rows.Scan(&p.ID, &p.CategoryID, &p.Slug, &p.Name, &p.PriceCents,
-			&p.CompareAtPriceCents, &p.ImageURL, &p.IsAvailable, &p.IsFeatured, &p.SortOrder, &p.CreatedAt); err != nil {
+			&p.CompareAtPriceCents, &p.ImageURL, &p.IsAvailable, &p.IsFeatured, &p.SortOrder, &p.CreatedAt, &tags); err != nil {
 			return nil, err
 		}
+		p.Tags = stringsx.DecodeJSONStringSlice(tags)
 		out = append(out, p)
 	}
 	return out, rows.Err()

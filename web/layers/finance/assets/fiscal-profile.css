@@ -1,0 +1,117 @@
+.fiscal-profile {
+  scroll-margin-top: 80px;
+}
+.fiscal-profile__fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.fiscal-profile__section {
+  border-top: 1px solid var(--line-soft);
+  padding: 12px 0;
+}
+.fiscal-profile__section > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.fiscal-profile__section > summary span {
+  margin-left: 8px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.fiscal-profile__form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.fiscal-profile__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 10px;
+}
+.fiscal-profile__field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 0.8rem;
+}
+.fiscal-profile__field--wide {
+  grid-column: 1 / -1;
+}
+.fiscal-profile__field input,
+.fiscal-profile__field select,
+.fiscal-profile__field textarea {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: rgb(var(--text));
+  background: rgb(var(--surface));
+  box-sizing: border-box;
+  font: inherit;
+}
+.fiscal-profile__field textarea {
+  resize: vertical;
+}
+.fiscal-profile__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+.fiscal-profile__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 0.8rem;
+}
+.fiscal-profile__hint,
+.fiscal-profile__notice {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.fiscal-profile__error {
+  color: rgb(var(--danger));
+}
+.fiscal-profile__success {
+  color: var(--accent-success);
+}
+.fiscal-profile__templates {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 10px;
+}
+.fiscal-profile__templates li {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  overflow-wrap: anywhere;
+}
+.fiscal-profile__preview {
+  margin-top: 16px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 12px;
+}
+.fiscal-profile__preview-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 12px;
+}
+.fiscal-profile__preview-fields dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.fiscal-profile__preview-fields dd {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}

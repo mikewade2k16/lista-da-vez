@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "notice": "Corpus e referências sintéticos, não são legislação ou parecer fiscal. Nenhum ajuste lexical usa as perguntas holdout.",
+  "documents": [
+    {
+      "id": "D1",
+      "body": "A emissão de nota de serviço exige cadastro e revisão do tomador. Fonte fictícia para avaliação.",
+      "from": "2020-01-01",
+      "to": "2025-01-01",
+      "source": "nota"
+    },
+    {
+      "id": "D1NEW",
+      "body": "A emissão de nota de serviço exige cadastro e revisão do tomador. Versão nova fictícia para avaliação.",
+      "from": "2025-01-01",
+      "to": null,
+      "source": "nota"
+    },
+    {
+      "id": "D2",
+      "body": "O cadastro do emitente guarda identificação e município. Fonte sintética.",
+      "from": "2020-01-01",
+      "to": null,
+      "source": "cadastro"
+    },
+    {
+      "id": "D3",
+      "body": "Pagamento informado manualmente não é conciliação bancária. Exemplo sintético.",
+      "from": "2020-01-01",
+      "to": null,
+      "source": "pagamento"
+    },
+    {
+      "id": "D4",
+      "body": "Declaração anual organiza receita bruta fictícia. Nenhuma regra fiscal oficial.",
+      "from": "2020-01-01",
+      "to": null,
+      "source": "declaracao"
+    },
+    {
+      "id": "D5",
+      "body": "A regra exige revisão com vigência e referência da fonte. Exemplo sintético.",
+      "from": "2020-01-01",
+      "to": null,
+      "source": "regra"
+    },
+    {
+      "id": "D6",
+      "body": "Sigla DAS nomeia um documento fictício para testes. Nenhuma instrução legal.",
+      "from": "2020-01-01",
+      "to": null,
+      "source": "sigla"
+    }
+  ],
+  "developmentQueries": [
+    "emissão nota",
+    "cadastro emitente",
+    "pagamento informado",
+    "declaração anual"
+  ],
+  "holdout": [
+    {
+      "id": "flexao_notas",
+      "query": "notas serviços",
+      "expected": [
+        "D1"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "flexao_emitentes",
+      "query": "cadastros emitentes",
+      "expected": [
+        "D2"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "flexao_pagamentos",
+      "query": "pagamentos informados",
+      "expected": [
+        "D3"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "flexao_declaracoes",
+      "query": "declarações anuais",
+      "expected": [
+        "D4"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "flexao_revisoes",
+      "query": "regras revisões",
+      "expected": [
+        "D5"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "sigla",
+      "query": "DAS",
+      "expected": [
+        "D6"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "sinonimo_nao_lexical",
+      "query": "documento arrecadação",
+      "expected": [
+        "D6"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "sinonimo_quitar",
+      "query": "quitar",
+      "expected": [
+        "D3"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "frase_artigo",
+      "query": "a emissão de nota de serviço",
+      "expected": [
+        "D1"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "identificacao",
+      "query": "identificação município",
+      "expected": [
+        "D2"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "competencia_antiga",
+      "query": "nota serviço",
+      "expected": [
+        "D1"
+      ],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "competencia_nova",
+      "query": "nota serviço",
+      "expected": [
+        "D1NEW"
+      ],
+      "competenceDate": "2026-01-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "sem_correspondencia",
+      "query": "astronomia galáctica",
+      "expected": [],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    },
+    {
+      "id": "jurisdicao_alheia",
+      "query": "nota serviço",
+      "expected": [],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "OTHER",
+      "regime": "synthetic"
+    },
+    {
+      "id": "regime_alheio",
+      "query": "DAS",
+      "expected": [],
+      "competenceDate": "2024-06-01",
+      "jurisdiction": "ZZ",
+      "regime": "other"
+    },
+    {
+      "id": "limite_vigencia",
+      "query": "nota serviço",
+      "expected": [
+        "D1NEW"
+      ],
+      "competenceDate": "2025-01-01",
+      "jurisdiction": "ZZ",
+      "regime": "synthetic"
+    }
+  ]
+}

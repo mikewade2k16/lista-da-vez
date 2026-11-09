@@ -101,7 +101,7 @@ func (r *PostgresConfigStore) loadFixedAccounts(ctx context.Context, accountID, 
 		return err
 	}
 	ids := make([]string, 0)
-	byID := make(map[string]*FixedAccount)
+	byID := make(map[string]int)
 	func() {
 		defer rows.Close()
 		for rows.Next() {
@@ -111,7 +111,7 @@ func (r *PostgresConfigStore) loadFixedAccounts(ctx context.Context, accountID, 
 			}
 			a.Members = []FixedAccountMember{}
 			out.FixedAccounts = append(out.FixedAccounts, a)
-			byID[a.ID] = &out.FixedAccounts[len(out.FixedAccounts)-1]
+			byID[a.ID] = len(out.FixedAccounts) - 1
 			ids = append(ids, a.ID)
 		}
 		err = rows.Err()
@@ -135,7 +135,8 @@ func (r *PostgresConfigStore) loadFixedAccounts(ctx context.Context, accountID, 
 		if err := mRows.Scan(&faID, &m.ID, &m.Name, &m.Amount); err != nil {
 			return err
 		}
-		if a := byID[faID]; a != nil {
+		if index, ok := byID[faID]; ok {
+			a := &out.FixedAccounts[index]
 			a.Members = append(a.Members, m)
 		}
 	}

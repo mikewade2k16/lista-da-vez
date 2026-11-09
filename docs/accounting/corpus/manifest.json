@@ -1,0 +1,54 @@
+{
+  "contractVersion": "1.0",
+  "collectedOn": "2026-11-04",
+  "destination": null,
+  "state": "selected_informational_not_loaded",
+  "scope": "Trechos curtos de navegação/metodologia, sem alíquota ou regra fiscal; não são cópias integrais de manuais. Nenhum tenant foi criado ou carregado.",
+  "usage": "Citações curtas atribuídas para referência e teste de recuperação. Não se presume licença para republicação integral; revisar condições do original antes de ampliar o corpus.",
+  "entries": [
+    {
+      "id": "nfse-documentacao",
+      "title": "Documentação Atual",
+      "sourceRef": "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual",
+      "fileName": "nfse-documentacao.txt",
+      "contentType": "text/plain",
+      "selectedBytesSHA256": "fbf8aca3562c96bc13e66fbc24b8f8309c18a6f7d8be33118709016845468f3e",
+      "selection": "nfse-documentacao.txt",
+      "fullOriginalCollected": false,
+      "reviewer": null,
+      "state": "selected_pending_destination_review",
+      "metadata": {
+        "authority": "Portal Nacional NFS-e",
+        "jurisdiction": "BR",
+        "regime": "unknown",
+        "classification": "informational_navigation",
+        "publishedOn": "2025-12-10",
+        "validFrom": null,
+        "validTo": null,
+        "validitySource": ""
+      }
+    },
+    {
+      "id": "receita-pesquisa",
+      "title": "Pesquisa normativa oficial",
+      "sourceRef": "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/legislacao/como-fazer-suas-pesquisas-no-sistema-normas",
+      "fileName": "receita-pesquisa.txt",
+      "contentType": "text/plain",
+      "selectedBytesSHA256": "564e2349fcd7e045c1959023dac4a6541bdecc78e98dadd0c005153c335fb548",
+      "selection": "receita-pesquisa.txt",
+      "fullOriginalCollected": false,
+      "reviewer": null,
+      "state": "selected_pending_destination_review",
+      "metadata": {
+        "authority": "Receita Federal",
+        "jurisdiction": "BR",
+        "regime": "unknown",
+        "classification": "informational_navigation",
+        "publishedOn": null,
+        "validFrom": null,
+        "validTo": null,
+        "validitySource": ""
+      }
+    }
+  ]
+}

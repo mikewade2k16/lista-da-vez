@@ -16,7 +16,7 @@ import (
 // RequireModuleByPath no Chain; aqui exigimos apenas autenticacao.
 func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+		return panelAuth(svc, middleware, h)
 	}
 
 	mux.Handle("GET /v1/cardapio/restaurants", wrap(handleListRestaurants(svc)))
@@ -36,6 +36,7 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 	mux.Handle("DELETE /v1/cardapio/delivery-zones/{id}", wrap(handleDeleteZone(svc)))
 
 	mux.Handle("POST /v1/cardapio/restaurants/{id}/media", wrap(handleUploadMedia(svc)))
+	registerPhotoRoutes(mux, wrap, svc)
 }
 
 // scopedAccountID resolve o accountId efetivo da requisicao validado contra o
@@ -62,16 +63,18 @@ func scopedAccountID(r *http.Request) (string, bool, error) {
 		return requested, true, nil
 	}
 
-	own := strings.TrimSpace(principal.AccountID)
-	if own == "" {
-		own = strings.TrimSpace(principal.TenantID)
+	own := principalOwnAccount(r, principal)
+	if requested != "" && requested != own {
+		// Outro cliente do proprio usuario (membro ativo, validado no middleware)
+		// e aceito; o gate por handler ainda exige a permissao naquela account.
+		if verifiedCrossAccount(r) == requested {
+			return requested, false, nil
+		}
+		// escopo forjado => 404 uniforme (nao revelar existencia de outra account).
+		return "", false, ErrNotFound
 	}
 	if own == "" {
 		return "", false, errNoAccount
-	}
-	if requested != "" && requested != own {
-		// escopo forjado => 404 uniforme (nao revelar existencia de outra account).
-		return "", false, ErrNotFound
 	}
 	return own, false, nil
 }
@@ -106,15 +109,15 @@ func listScopeAccountID(r *http.Request) (string, error) {
 	if principal.Role == auth.RolePlatformAdmin {
 		return requested, nil
 	}
-	own := strings.TrimSpace(principal.AccountID)
-	if own == "" {
-		own = strings.TrimSpace(principal.TenantID)
+	own := principalOwnAccount(r, principal)
+	if requested != "" && requested != own {
+		if verifiedCrossAccount(r) == requested {
+			return requested, nil
+		}
+		return "", ErrNotFound
 	}
 	if own == "" {
 		return "", errNoAccount
-	}
-	if requested != "" && requested != own {
-		return "", ErrNotFound
 	}
 	return own, nil
 }
@@ -147,6 +150,18 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 
 func handleListRestaurants(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Nao-admin sem filtro: lista os estabelecimentos de TODOS os clientes em
+		// que e membro (cardapio ligado + cardapio.view em cada um).
+		if principal, ok := auth.PrincipalFromContext(r.Context()); ok &&
+			principal.Role != auth.RolePlatformAdmin && strings.TrimSpace(r.URL.Query().Get("accountId")) == "" {
+			items, err := svc.ListMemberRestaurants(r.Context(), principal, r.URL.Query().Get("q"))
+			if err != nil {
+				writeServiceError(w, r, err)
+				return
+			}
+			httpapi.WriteJSON(w, http.StatusOK, map[string]any{"restaurants": items})
+			return
+		}
 		accountID, err := listScopeAccountID(r)
 		if err != nil {
 			writeServiceError(w, r, err)

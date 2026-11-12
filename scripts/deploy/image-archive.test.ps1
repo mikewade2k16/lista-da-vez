@@ -32,6 +32,7 @@ try {
     Assert ($failed -eq ($failures -eq 3)) 'Resultado incorreto na falha de transporte'
     Assert ($script:attempts -eq [Math]::Min(3, $failures + 1)) 'Limite de tentativas incorreto'
     Assert ($script:commands[0].Contains('mkdir -p --') -and $script:commands[0].Contains('test -w')) 'Diretorio deve ser preparado e validado antes do envio'
+    Assert ($script:commands[0].Contains('touch --') -and $script:commands[0].Contains('.tar.gz.part')) 'Parcial deve existir sem truncar antes do reput'
     Assert ($script:batchContent.StartsWith('reput "')) 'Envio precisa retomar o parcial'
     Assert ($script:batchContent.Contains('.tar.gz.part"')) 'Envio precisa usar arquivo parcial'
     Assert (-not (Test-Path $script:batchPath)) 'Batch temporario nao foi removido'

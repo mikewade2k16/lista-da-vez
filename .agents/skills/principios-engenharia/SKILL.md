@@ -96,7 +96,7 @@ Sempre rodar e testar local antes. Mudança de UI precisa de teste no browser, n
 
 Leia o arquivo de referência **antes** de mexer na área correspondente:
 
-- **`references/frontend.md`** — criar/alterar componente, página, workspace, estilo. Design system e tokens de cor, classes semânticas BEM, layout compacto, blocos colapsáveis, overflow de página, dropdown/popover (fechar no clique-fora/Esc), cabeçalho de página admin, esconder página não-pronta, checklist de criar página nova (falhas silenciosas de rota/gating/workspace).
+- **`references/frontend.md`** — criar/alterar componente, página, workspace, estilo. Busca obrigatória em toda lista (`AppSearchInput`), design system e tokens de cor, classes semânticas BEM, layout compacto, blocos colapsáveis, overflow de página, dropdown/popover (fechar no clique-fora/Esc), cabeçalho de página admin, esconder página não-pronta, checklist de criar página nova (falhas silenciosas de rota/gating/workspace).
 - **`references/backend.md`** — criar/alterar módulo, handler, service, repository. Padrão de módulo, IDs como string, scan de NULL, RBAC dinâmico (permissões no banco), injeção de dependência, tratamento de erro.
 - **`references/database.md`** — migration, schema, tabela, view, mexer em dados de usuário/senha. Migration idempotente, schema-per-módulo, `account_id` em tabela tenant-scoped, view de compat ao mover tabela, e a regra crítica de nunca sobrescrever senha/seed sem permissão explícita.
 - **`references/seguranca-multitenant.md`** — qualquer endpoint, fetch, ou checagem de permissão. Inventário de camadas de defesa, gaps conhecidos (RLS, security headers), e "pedir só o necessário" (sem N+1, paginação, projeção lean, gatear fetch por permissão).

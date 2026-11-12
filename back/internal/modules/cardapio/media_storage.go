@@ -27,6 +27,10 @@ type MediaStorage interface {
 // DiskMediaStorage grava no disco local sob rootDir/cardapio/{accountId}/.
 type DiskMediaStorage struct {
 	rootDir string
+	// encoder converte fotos de produto (media_photo.go); nil = sem conversao.
+	encoder photoEncoder
+	// logf registra falhas de conversao (nao derrubam o upload).
+	logf func(event string, err error)
 }
 
 // NewDiskMediaStorage cria o storage. rootDir vazio => uploads (relativo ao
@@ -36,7 +40,13 @@ func NewDiskMediaStorage(rootDir string) *DiskMediaStorage {
 	if root == "" {
 		root = "uploads"
 	}
-	return &DiskMediaStorage{rootDir: root}
+	return &DiskMediaStorage{rootDir: root, encoder: newFFmpegPhotoEncoder()}
+}
+
+// WithLogger define o registro de falhas de conversao de foto de produto.
+func (s *DiskMediaStorage) WithLogger(logf func(event string, err error)) *DiskMediaStorage {
+	s.logf = logf
+	return s
 }
 
 // Save valida tamanho/mime e grava o arquivo com permissoes restritas. O teto de

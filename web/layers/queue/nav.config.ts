@@ -168,7 +168,7 @@ export default {
               icon: 'script',
               path: '/tools/scripts',
               workspaceId: 'tools',
-              hidden: true,
+              moduleId: 'tools',
             },
           ],
         },

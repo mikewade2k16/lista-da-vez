@@ -114,11 +114,16 @@ func scanProduct(row rowScanner) (Product, error) {
 
 // ListProductsLean retorna a projecao enxuta de produtos de um restaurante.
 func (s *Store) ListProductsLean(ctx context.Context, accountID, restaurantID string) ([]ProductLean, error) {
-	const q = `select id, category_id, slug, name, price_cents, compare_at_price_cents, image_url,
-			is_available, is_featured, sort_order, created_at, tags
-		from cardapio.products
-		where restaurant_id = $1 and account_id = $2
-		order by sort_order, name`
+	// thumb_url vem do registro da foto convertida (mesma account); sem registro,
+	// a tabela do painel usa a propria image_url.
+	const q = `select p.id, p.category_id, p.slug, p.name, p.price_cents, p.compare_at_price_cents,
+			p.image_url, coalesce(ph.thumb_url, ''),
+			p.is_available, p.is_featured, p.sort_order, p.created_at, p.tags
+		from cardapio.products p
+		left join cardapio.product_photos ph
+			on ph.account_id = p.account_id and ph.url = p.image_url and p.image_url <> ''
+		where p.restaurant_id = $1 and p.account_id = $2
+		order by p.sort_order, p.name`
 	rows, err := s.pool.Query(ctx, q, restaurantID, accountID)
 	if err != nil {
 		return nil, err
@@ -129,7 +134,7 @@ func (s *Store) ListProductsLean(ctx context.Context, accountID, restaurantID st
 		var p ProductLean
 		var tags []byte
 		if err := rows.Scan(&p.ID, &p.CategoryID, &p.Slug, &p.Name, &p.PriceCents,
-			&p.CompareAtPriceCents, &p.ImageURL, &p.IsAvailable, &p.IsFeatured, &p.SortOrder, &p.CreatedAt, &tags); err != nil {
+			&p.CompareAtPriceCents, &p.ImageURL, &p.ThumbURL, &p.IsAvailable, &p.IsFeatured, &p.SortOrder, &p.CreatedAt, &tags); err != nil {
 			return nil, err
 		}
 		p.Tags = stringsx.DecodeJSONStringSlice(tags)
@@ -404,7 +409,7 @@ func (s *Store) DeleteProduct(ctx context.Context, accountID, id string) error {
 // BulkProducts valida a selecao e aplica a mutacao na mesma transacao. A
 // contagem previa evita alteracao parcial quando algum ID saiu do escopo ou
 // ficou stale entre a selecao e o comando.
-func (s *Store) BulkProducts(ctx context.Context, accountID, restaurantID string, ids []string, action ProductBulkAction) (int, error) {
+func (s *Store) BulkProducts(ctx context.Context, accountID, restaurantID string, ids []string, action ProductBulkAction, value string) (int, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -431,8 +436,25 @@ func (s *Store) BulkProducts(ctx context.Context, accountID, restaurantID string
 		return 0, ErrNotFound
 	}
 
+	if action == ProductBulkSetCategory {
+		var exists bool
+		err = tx.QueryRow(ctx, `select exists(select 1 from cardapio.categories where account_id = $1 and restaurant_id = $2 and id::text = $3)`, accountID, restaurantID, value).Scan(&exists)
+		if err != nil {
+			return 0, err
+		}
+		if !exists {
+			return 0, ErrNotFound
+		}
+	}
 	var commandTag pgconn.CommandTag
 	switch action {
+	case ProductBulkAddTag:
+		commandTag, err = tx.Exec(ctx, `update cardapio.products
+			set tags = case when exists (select 1 from jsonb_array_elements_text(tags) as t(tag) where lower(trim(t.tag)) = lower($4)) then tags else tags || jsonb_build_array($4::text) end, updated_at = now()
+			where account_id = $1 and restaurant_id = $2 and id = any($3)`, accountID, restaurantID, ids, value)
+	case ProductBulkSetCategory:
+		commandTag, err = tx.Exec(ctx, `update cardapio.products set category_id = $4::uuid, updated_at = now()
+			where account_id = $1 and restaurant_id = $2 and id = any($3)`, accountID, restaurantID, ids, value)
 	case ProductBulkDelete:
 		commandTag, err = tx.Exec(ctx, `delete from cardapio.products
 			where account_id = $1 and restaurant_id = $2 and id = any($3)`, accountID, restaurantID, ids)

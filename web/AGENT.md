@@ -248,6 +248,8 @@ No auth:
 
 ## Regras de implementacao
 
+- `Tools > Scripts` aparece no menu conforme o layout global e o acesso ao módulo Tools. A rota usa o workspace próprio de roteiros (ver seção abaixo); os documentos do Omni PHP não foram importados (`docs/LEGADO.md`).
+
 - Preferir composicao por dominio, nao um store gigante.
 - Manter classes CSS semanticas.
 - Reaproveitar componentes existentes antes de criar variacoes paralelas.
@@ -357,3 +359,28 @@ Não usar o switcher global para o seletor interno; página A e chat B coexistem
 O recorder aceita resolvedor opcional de conta e captura X-Account-Id no início;
 troca da conta do chat invalida a resposta. A geometria do Crow/Plus usa a mesma
 âncora do workspace e medidas de sessão por conta; Finance não salva Calendar.
+
+## Tools > Scripts
+
+`app/pages/tools/scripts.vue` é a rota estática canônica (vence `[tool].vue`), com workspace
+`tools` e o gating de módulo existente. `ToolsScriptsWorkspace.vue` usa `useScriptsManager.ts`
+para listagem paginada de resumos, leitura individual e CRUD da API Go `/v1/tools/scripts`.
+Port fiel da página PHP (`omni-php/app/views/admin/pages/scripts/content.php` + `_script.scss`):
+papel branco de 960 px em Courier Prime, células Quill (`ScriptQuillCell.vue`) com uma única
+barra flutuante (`ScriptFloatingToolbar.vue`), miniaturas de altura fixa (112 px, 3 linhas de
+prévia; faixa horizontal de 140 px abaixo de 768 px) na lateral, busca por título/texto
+(`AppSearchInput` → `?q=` na API) e filtro por cliente no topo da lateral (`ScriptSidebar.vue`; só clientes com roteiro, via
+`scriptCount`;
+arrastar fica desativado com filtro ativo). Na conta-agência, o canto superior direito da folha marca o
+cliente e a visibilidade (olho), fora do PDF; roteiros compartilhados abrem somente leitura.
+O seletor da barra é "Tamanho da fonte" (formato inline `size`, só no texto selecionado).
+A barra flutuante só aparece com texto selecionado ou cursor em linha vazia (inserir imagem) e
+some após 3 s sem o mouse sobre ela. Realtime simples por invalidação
+(`useScriptsRealtime.ts`, canal `/v1/realtime/scripts`). Arrastar para ordenar
+linhas e documentos (`ScriptSortable.vue`, ordem por usuário em `tools.script_orders`), imagens
+privadas por conta (`useScriptImages.ts`) e download direto do PDF via html2canvas + jsPDF
+(`useScriptPdf.ts`). Autosave com debounce de 400 ms sem bloquear a digitação nem recriar células;
+o título contenteditable só é semeado ao trocar de documento (binding reativo move o cursor).
+Controles e fetch respeitam `.view`/`.manage`; escritas reidratam o retorno do banco. PUT carrega
+`updatedAt` para detectar conflito (409), sem sobrescrever edição concorrente. Dados antigos não
+foram importados. Validação visual requer autorização explícita para automação do navegador.

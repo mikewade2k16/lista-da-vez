@@ -22,7 +22,7 @@ import (
 // demais GETs do painel, que reusam a permissao cardapio.view do mesmo mecanismo).
 func RegisterAnalyticsRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+		return panelAuth(svc, middleware, h)
 	}
 	const base = "/v1/cardapio/restaurants/{id}/analytics/"
 	mux.Handle("GET "+base+"overview", wrap(handleAnalyticsOverview(svc)))

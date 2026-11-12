@@ -11,7 +11,7 @@ import (
 // RegisterOrderRoutes monta os endpoints de pedidos e eventos do painel.
 func RegisterOrderRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+		return panelAuth(svc, middleware, h)
 	}
 
 	mux.Handle("GET /v1/cardapio/restaurants/{id}/orders", wrap(handleListOrders(svc)))

@@ -53,8 +53,26 @@ func (unimplementedStore) UpdateCategory(context.Context, string, string, Catego
 	return Category{}, nil
 }
 func (unimplementedStore) DeleteCategory(context.Context, string, string) error { return nil }
+func (unimplementedStore) ListRestaurantsLeanForAccounts(context.Context, []string, string) ([]RestaurantLean, error) {
+	return nil, nil
+}
+func (unimplementedStore) IsCardapioMember(context.Context, string, string) (bool, error) {
+	return false, nil
+}
+func (unimplementedStore) CardapioMemberAccounts(context.Context, string) ([]string, error) {
+	return nil, nil
+}
 func (unimplementedStore) ListProductsLean(context.Context, string, string) ([]ProductLean, error) {
 	return nil, nil
+}
+func (unimplementedStore) InsertProductPhoto(_ context.Context, _, _ string, photo ProductPhoto, _ string) (ProductPhoto, error) {
+	return photo, nil
+}
+func (unimplementedStore) ListLargeProductPhotos(context.Context, string, string, int64) ([]ProductPhotoReview, error) {
+	return nil, nil
+}
+func (unimplementedStore) MarkProductPhotoReviewed(context.Context, string, string, string) error {
+	return nil
 }
 func (unimplementedStore) ListProductsFull(context.Context, string, string) ([]Product, error) {
 	return nil, nil
@@ -72,7 +90,7 @@ func (unimplementedStore) UpdateProduct(context.Context, string, string, Product
 	return Product{}, nil
 }
 func (unimplementedStore) DeleteProduct(context.Context, string, string) error { return nil }
-func (unimplementedStore) BulkProducts(context.Context, string, string, []string, ProductBulkAction) (int, error) {
+func (unimplementedStore) BulkProducts(context.Context, string, string, []string, ProductBulkAction, string) (int, error) {
 	return 0, nil
 }
 func (unimplementedStore) ListReviewsByProduct(context.Context, string, string) ([]Review, error) {

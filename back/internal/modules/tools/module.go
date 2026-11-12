@@ -18,12 +18,17 @@ import (
 // redirects publicos /s/{slug} e /q/{slug} fora do gate.
 // Plano: docs/tools/PLANO_MODULO_TOOLS.md.
 type Module struct {
-	handle *handle
+	handle          *handle
+	scriptPublisher ScriptPublisher
 }
 
 // New cria um Module pronto para registrar no Registry.
-func New() *Module {
-	return &Module{}
+func New(options ...Option) *Module {
+	m := &Module{scriptPublisher: noopScriptPublisher{}}
+	for _, option := range options {
+		option(m)
+	}
+	return m
 }
 
 func (m *Module) ID() string { return "tools" }
@@ -44,6 +49,8 @@ func (m *Module) Permissions() []modules.PermissionDef {
 		{Key: "tools.shortlinks.manage", Label: "Gerenciar links curtos", Scope: "account"},
 		{Key: "tools.qr.view", Label: "Ver QR Codes", Scope: "account"},
 		{Key: "tools.qr.manage", Label: "Gerenciar QR Codes", Scope: "account"},
+		{Key: "tools.scripts.view", Label: "Ver roteiros", Scope: "account"},
+		{Key: "tools.scripts.manage", Label: "Gerenciar roteiros", Scope: "account"},
 	}
 }
 
@@ -52,23 +59,26 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 		{
 			ID:          "tools.manager",
 			Label:       "Gestor de Tools",
-			Description: "CRUD completo de links curtos e QR Codes.",
+			Description: "CRUD completo de links curtos, QR Codes e roteiros.",
 			SortOrder:   100,
 			Permissions: []string{
 				"tools.shortlinks.view",
 				"tools.shortlinks.manage",
 				"tools.qr.view",
 				"tools.qr.manage",
+				"tools.scripts.view",
+				"tools.scripts.manage",
 			},
 		},
 		{
 			ID:          "tools.viewer",
 			Label:       "Leitor de Tools",
-			Description: "Apenas leitura de links curtos e QR Codes.",
+			Description: "Apenas leitura de links curtos, QR Codes e roteiros.",
 			SortOrder:   110,
 			Permissions: []string{
 				"tools.shortlinks.view",
 				"tools.qr.view",
+				"tools.scripts.view",
 			},
 		},
 	}
@@ -90,8 +100,12 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		NewPostgresQrCodeStore(deps.Pool),
 		toolsPublicBase(),
 	)
+	scripts := newScriptService(newScriptStore(deps.Pool))
+	scripts.imageRoot = strings.TrimSpace(os.Getenv("PRIVATE_FILES_DIR"))
+	scripts.publisher = m.scriptPublisher
 	m.handle = &handle{
 		service:        svc,
+		scripts:        scripts,
 		authMiddleware: deps.AuthMiddleware,
 		accountChecker: auth.NewPostgresAccountMemberChecker(deps.Pool),
 	}
@@ -104,6 +118,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 
 type handle struct {
 	service        *Service
+	scripts        *scriptService
 	authMiddleware *auth.Middleware
 	accountChecker auth.AccountMemberChecker
 }
@@ -114,6 +129,7 @@ func (h *handle) ID() string { return "tools" }
 // redirects publicos (/s/{slug}, /q/{slug}, sem JWT e fora do gating).
 func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterRoutes(mux, h.service, h.authMiddleware, h.accountChecker)
+	registerScriptRoutes(mux, h.scripts, h.authMiddleware)
 	RegisterPublicRoutes(mux, h.service)
 }
 

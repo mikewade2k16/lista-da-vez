@@ -11,7 +11,7 @@ import (
 // produtos e avaliacoes).
 func RegisterCatalogRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+		return panelAuth(svc, middleware, h)
 	}
 
 	mux.Handle("GET /v1/cardapio/restaurants/{id}/categories", wrap(handleListCategories(svc)))

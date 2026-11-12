@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/cardapio"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/database"
 )
@@ -127,6 +128,18 @@ func main() {
 			slog.String("storeId", result.StoreID),
 			slog.String("storeCode", result.StoreCode),
 		)
+	case "cardapio-optimize-media":
+		// Converte as fotos de produto ja publicadas para AVIF (site + miniatura).
+		// --dry-run so mede. Nao apaga arquivos antigos. Ajustar MIGRATION_TIMEOUT
+		// (ex.: 60m) quando houver muitas fotos.
+		dryRun := len(os.Args) > 2 && os.Args[2] == "--dry-run"
+		report, err := cardapio.OptimizeProductPhotos(ctx, pool, cfg.UploadsDir, dryRun,
+			func(msg string, args ...any) { logger.Info(msg, args...) })
+		if err != nil {
+			logger.Error("cardapio_optimize_media_failed", slog.Any("error", err), slog.Any("report", report))
+			os.Exit(1)
+		}
+		logger.Info("cardapio_optimize_media_ok", slog.Any("report", report))
 	case "status":
 		applied, err := database.ListAppliedMigrations(ctx, pool)
 		if err != nil {

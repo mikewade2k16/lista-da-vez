@@ -15,24 +15,34 @@ export type SectionId =
 export interface SectionTab {
   id: SectionId
   label: string
+  // Icone usado no mobile, onde as abas viram so icone.
+  icon: string
   gate: 'all' | 'platform'
 }
 
 export const CARDAPIO_SECTIONS: SectionTab[] = [
-  { id: 'dados', label: 'Dados', gate: 'all' },
-  { id: 'categorias', label: 'Categorias', gate: 'all' },
-  { id: 'produtos', label: 'Produtos', gate: 'all' },
-  { id: 'avaliacoes', label: 'Avaliacoes', gate: 'all' },
-  { id: 'pedidos', label: 'Pedidos', gate: 'all' },
-  { id: 'relatorios', label: 'Relatorios', gate: 'all' },
-  { id: 'entrega', label: 'Entrega', gate: 'all' },
-  { id: 'dominios', label: 'Dominios', gate: 'platform' },
-  { id: 'aparencia', label: 'Aparencia', gate: 'all' },
-  { id: 'site', label: 'Site', gate: 'platform' },
+  { id: 'dados', label: 'Dados', icon: 'i-lucide-store', gate: 'all' },
+  { id: 'categorias', label: 'Categorias', icon: 'i-lucide-folder', gate: 'all' },
+  { id: 'produtos', label: 'Produtos', icon: 'i-lucide-utensils', gate: 'all' },
+  { id: 'avaliacoes', label: 'Avaliacoes', icon: 'i-lucide-star', gate: 'all' },
+  { id: 'pedidos', label: 'Pedidos', icon: 'i-lucide-receipt', gate: 'all' },
+  { id: 'relatorios', label: 'Relatorios', icon: 'i-lucide-chart-column', gate: 'all' },
+  { id: 'entrega', label: 'Entrega', icon: 'i-lucide-truck', gate: 'all' },
+  { id: 'dominios', label: 'Dominios', icon: 'i-lucide-globe', gate: 'platform' },
+  { id: 'aparencia', label: 'Aparencia', icon: 'i-lucide-palette', gate: 'all' },
+  { id: 'site', label: 'Site', icon: 'i-lucide-layout-template', gate: 'platform' },
 ]
 
+// Aba aberta quando a URL nao informa ?aba=: Produtos (fluxo principal do
+// cliente, que cadastra as fotos), se estiver liberada.
+export const DEFAULT_CARDAPIO_SECTION: SectionId = 'produtos'
+
 export function resolveCardapioSection(value: unknown, allowed: readonly SectionId[]): SectionId {
-  return allowed.find((id) => id === value) ?? allowed[0] ?? 'dados'
+  const requested = allowed.find((id) => id === value)
+  if (requested) return requested
+  return allowed.includes(DEFAULT_CARDAPIO_SECTION)
+    ? DEFAULT_CARDAPIO_SECTION
+    : (allowed[0] ?? 'dados')
 }
 
 export function cardapioSectionLocation(

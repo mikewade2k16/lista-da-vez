@@ -2,6 +2,7 @@ package cardapio
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -53,7 +54,12 @@ func (g *cardapioGate) Authorize(ctx context.Context, principal auth.Principal, 
 	// idioma de access/tenants/users, que gateiam owner por Principal.Role); manager/
 	// marketing/director precisam da permissao fina cardapio.* ou do papel
 	// cardapio.viewer/manager. agency_owner resolve no banco mais abaixo.
-	if principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner {
+	if principal.Role == auth.RolePlatformAdmin {
+		return nil
+	}
+	// owner so tem atalho na PROPRIA account: em outro cliente (usuario membro
+	// de varios) vale a permissao fina daquela account.
+	if principal.Role == auth.RoleOwner && ownPrincipalAccount(principal) == accountID {
 		return nil
 	}
 	if g != nil && g.perms != nil {
@@ -95,4 +101,12 @@ func (g *cardapioGate) isAgencyOwner(ctx context.Context, accountID, userID stri
 		return false, err
 	}
 	return ok, nil
+}
+
+// ownPrincipalAccount e a account do Principal resolvida no login.
+func ownPrincipalAccount(principal auth.Principal) string {
+	if own := strings.TrimSpace(principal.AccountID); own != "" {
+		return own
+	}
+	return strings.TrimSpace(principal.TenantID)
 }

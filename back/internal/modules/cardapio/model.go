@@ -97,6 +97,7 @@ type RestaurantLean struct {
 	Name          string    `json:"name"`
 	IsActive      bool      `json:"isActive"`
 	PrimaryDomain string    `json:"primaryDomain"`
+	CoverURL      string    `json:"coverUrl"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
@@ -182,9 +183,11 @@ type ProductLean struct {
 	PriceCents          int64     `json:"priceCents"`
 	CompareAtPriceCents int64     `json:"compareAtPriceCents,omitempty"`
 	ImageURL            string    `json:"imageUrl"`
-	IsAvailable         bool      `json:"isAvailable"`
-	IsFeatured          bool      `json:"isFeatured"`
-	SortOrder           int       `json:"sortOrder"`
+	// ThumbURL e a miniatura AVIF da foto convertida (vazia sem conversao).
+	ThumbURL    string `json:"thumbUrl"`
+	IsAvailable bool   `json:"isAvailable"`
+	IsFeatured  bool   `json:"isFeatured"`
+	SortOrder   int    `json:"sortOrder"`
 }
 
 // Review e o DTO de avaliacao curada. productId e opcional (F2): vazio/null = review
@@ -360,6 +363,8 @@ const (
 	ProductBulkDisable       ProductBulkAction = "disable"
 	ProductBulkFeature       ProductBulkAction = "feature"
 	ProductBulkRemoveFeature ProductBulkAction = "remove_feature"
+	ProductBulkAddTag        ProductBulkAction = "add_tag"
+	ProductBulkSetCategory   ProductBulkAction = "set_category"
 )
 
 // ProductBulkInput aplica uma unica acao a produtos explicitamente
@@ -367,6 +372,7 @@ const (
 type ProductBulkInput struct {
 	IDs    []string          `json:"ids"`
 	Action ProductBulkAction `json:"action"`
+	Value  string            `json:"value,omitempty"`
 }
 
 // ProductBulkResult informa quantos produtos foram alterados.

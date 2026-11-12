@@ -1,0 +1,704 @@
+/* Port of the original Omni PHP Scripts page. The paper palette is intentionally fixed for document/PDF fidelity. */
+.page-script .script-table {
+  border-collapse: collapse;
+  width: 100%;
+  color: #000;
+}
+.page-script .script-table thead {
+  position: inherit !important;
+  background: rgba(0, 0, 0, 0) !important;
+  box-shadow: none;
+  border: none !important;
+}
+.page-script .script-table thead tr {
+  background: rgba(0, 0, 0, 0) !important;
+}
+.page-script .document-script {
+  max-width: 960px;
+  min-width: 960px;
+  min-height: calc(100vh - 135px);
+  background: #fff !important;
+  color: #000 !important;
+  font-family: 'Courier Prime', monospace !important;
+  padding: 20px 30px;
+  border-radius: 2px;
+}
+.page-script .document-script h1,
+.page-script .document-script p {
+  font-family: 'Courier Prime', monospace !important;
+}
+.page-script .document-script .script-table td {
+  border: none;
+  padding: 0;
+  vertical-align: top;
+}
+.page-script .document-script .script-table tr + tr td {
+  padding-top: 1.2rem;
+}
+.page-script .document-script .script-table td:first-child {
+  width: 50%;
+}
+.page-script .document-script .script-table td + td {
+  width: 50%;
+  position: relative;
+  padding-left: 1rem;
+}
+.page-script .document-script .script-table td + td:before {
+  content: '';
+  position: absolute;
+  left: -0.5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #b9b9b9;
+}
+.page-script .document-script .script-table .ql-container {
+  border: none;
+  padding: 0;
+  background: rgba(0, 0, 0, 0);
+}
+.page-script .document-script .script-table .ql-editor {
+  padding: 0.4rem 0.6rem;
+  line-height: 1.4;
+  color: #e7e7e7;
+  font-size: 1rem;
+  font-family: 'Courier Prime', monospace !important;
+  font-size: 16px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+.page-script .document-script .script-title {
+  font-size: 25px;
+  margin-bottom: 15px !important;
+}
+.page-script .document-script .script-floating-toolbar {
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  color: #000;
+  border-radius: 4px;
+}
+.page-script .document-script .script-floating-toolbar .ql-stroke {
+  stroke: #fff;
+}
+.page-script .document-script .script-floating-toolbar .ql-fill {
+  fill: #fff;
+}
+.page-script .document-script .add-row {
+  margin: 2rem 0;
+  color: #0af;
+  cursor: pointer;
+  font-weight: bold;
+}
+.page-script .document-script tbody tr {
+  border-bottom: 1px solid #1c1c1c;
+}
+.page-script .document-script tbody tr:hover {
+  background: rgba(0, 0, 0, 0) !important;
+}
+.page-script .document-script .ql-editor {
+  background: rgba(0, 0, 0, 0) !important;
+  color: #000 !important;
+  padding: 0.4rem 0.6rem !important;
+}
+.page-script .script-row {
+  position: relative;
+}
+.page-script .row-remove,
+.page-script .row-drag {
+  position: absolute;
+  top: 4px;
+  color: #000 !important;
+  z-index: 2;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+}
+.page-script .row-remove {
+  right: 0;
+}
+.page-script .row-drag {
+  left: 0;
+  cursor: grab !important;
+}
+.page-script .row-drag:active {
+  cursor: grabbing !important;
+}
+.page-script .document-script .doc-editor .ql-container {
+  border: none;
+  background: rgba(0, 0, 0, 0);
+}
+.page-script .document-script .doc-editor .ql-editor {
+  padding: 0.4rem 0.6rem !important;
+  min-height: 120px;
+  font-family: 'Courier Prime', monospace !important;
+  font-size: 12pt;
+  line-height: 1.15;
+  color: #000 !important;
+}
+.page-script .document-script .row-remove {
+  background: rgba(0, 0, 0, 0);
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.page-script .document-script .row-remove:hover {
+  opacity: 0.7;
+}
+.page-script .script-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.page-script .script-table td {
+  width: 50%;
+  vertical-align: top;
+}
+.page-script .script-table .quill-cell,
+.page-script .script-table .ql-container {
+  width: 100%;
+  min-width: 0;
+}
+.page-script .script-table .ql-editor {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.page-script .script-table .ql-editor img,
+.page-script .script-table .ql-editor video,
+.page-script .script-table .ql-editor iframe {
+  max-width: 100%;
+  height: auto;
+}
+.page-script .script-table .ql-editor .ql-indent-1 {
+  padding-left: 1.5rem;
+}
+.page-script {
+  position: relative;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow {
+  background: rgba(0, 0, 0, 0) !important;
+  border: none !important;
+  padding: 8px !important;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow button,
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow .ql-picker {
+  color: #000 !important;
+  stroke: #000 !important;
+  fill: #000 !important;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow button svg,
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow .ql-picker svg {
+  stroke: #000 !important;
+  fill: #000 !important;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow select.ql-header,
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow select.ql-align {
+  background: rgba(0, 0, 0, 0) !important;
+  color: #000 !important;
+  border: 1px solid #000 !important;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow select {
+  -webkit-text-fill-color: #000 !important;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow .ql-picker-label,
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow .ql-picker-item {
+  color: #000 !important;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow .ql-active {
+  background: rgba(0, 0, 0, 0.1) !important;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow button:hover,
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow .ql-picker-label:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+.page-script .ql-toolbar.ql-snow .ql-formats {
+  margin-right: 0 !important;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  column-gap: 15px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+  background: hsla(0, 0%, 100%, 0.8) !important;
+  border-radius: 25px;
+  padding: 6px 20px !important;
+  position: fixed;
+  top: 100px;
+  left: 50%;
+  transform: translatex(-50%);
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+  backdrop-filter: blur(15px);
+}
+.page-script .toolbar-host {
+  position: relative;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow {
+  opacity: 0;
+  transition: all 0.3s ease-in-out;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow::after {
+  display: none;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow .ql-formats {
+  flex-wrap: nowrap;
+  display: flex;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow.toolbar-floating {
+  opacity: 1;
+  position: absolute;
+  top: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  column-gap: 12px;
+  width: fit-content;
+  padding: 6px 16px !important;
+  border-radius: 24px;
+  background: hsla(0, 0%, 100%, 0.85) !important;
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+  backdrop-filter: blur(10px);
+}
+.page-script .script-card {
+  background: transparent !important;
+  border: 1px solid hsla(0, 0%, 100%, 0.06);
+  border-radius: 5px;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+  padding: 6px;
+}
+.page-script .script-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+/* Thumbnail = the document in miniature: white sheet, Courier, Áudio | Vídeo columns. */
+.page-script .script-thumb {
+  background: #fff !important;
+  border-radius: 3px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  width: 100%;
+  height: 112px;
+  overflow: hidden;
+  padding: 8px 6px;
+  font-family: 'Courier Prime', monospace;
+  color: #222;
+}
+.page-script .script-thumb .thumb-title {
+  font-weight: 700;
+  font-size: 10px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+.page-script .script-thumb .thumb-client {
+  font-family: inherit;
+  font-size: 8px;
+  text-align: center;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: -4px 0 5px;
+}
+.page-script .script-thumb .thumb-head,
+.page-script .script-thumb .thumb-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.page-script .script-thumb .thumb-rows {
+  padding-bottom: 5px;
+}
+.page-script .script-thumb .thumb-head span {
+  font-size: 7px;
+  font-weight: 700;
+  padding: 0 4px 3px;
+}
+.page-script .script-thumb .thumb-rows p {
+  font-size: 7px;
+  line-height: 1.25;
+  color: #333 !important;
+  margin: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.page-script .script-thumb .thumb-head span + span,
+.page-script .script-thumb .thumb-rows p + p {
+  border-left: 1px solid #b9b9b9;
+}
+@media (max-width: 1200px) {
+  .page-script .script-floating-toolbar.ql-toolbar.ql-snow {
+    padding: 4px 12px !important;
+    left: 0;
+  }
+  .page-script .content {
+    padding: 0;
+  }
+  .page-script .content .document-script {
+    max-width: 100% !important;
+    min-width: 100% !important;
+    padding: 5px;
+  }
+  .page-script .content .document-script h1 {
+    font-size: 20px;
+  }
+  .page-script .content .document-script .cell {
+    padding: 4px 8px !important;
+    font-size: 12px;
+  }
+}
+.page-script {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 24px;
+}
+.page-script .scripts-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+.page-script .scripts-sidebar {
+  flex: 0 0 235px;
+  min-width: 0;
+}
+.page-script .scripts-sidebar-tools {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.page-script .scripts-sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.page-script .scripts-sidebar-row .scripts-search {
+  flex: 1;
+  min-width: 0;
+}
+.page-script .scripts-create {
+  flex: 0 0 auto;
+}
+.page-script .scripts-create {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgb(var(--ring) / 0.16);
+  border-radius: 0.55rem;
+  background: rgb(var(--surface-2) / 0.88);
+  color: rgb(var(--text));
+}
+/* Cliente do roteiro: discreto no canto superior direito da folha, fora do título e do PDF. */
+.page-script .document-script {
+  position: relative;
+}
+.page-script .script-client-corner {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.page-script .script-client-select {
+  width: 170px;
+}
+/* Faz parte da folha: quadrado, preto e na fonte do editor, como o resto do papel. */
+.page-script .script-client-corner .app-select-field__trigger {
+  min-height: 30px !important;
+  padding: 0 8px !important;
+  border: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  color: #000 !important;
+  font-family: 'Courier Prime', monospace !important;
+  font-size: 13px !important;
+}
+.page-script .script-client-corner .app-select-field__trigger * {
+  color: #000 !important;
+  font-family: inherit !important;
+}
+.page-script .script-client-visibility {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #000;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+}
+.page-script .script-client-visibility.is-hidden {
+  color: #000;
+  background: #e9e9e9;
+}
+/* Seleção sempre visível no papel branco, independente do tema do sistema. */
+.page-script .document-script .ql-editor ::selection,
+.page-script .document-script .script-title::selection {
+  background: rgb(99 102 241 / 0.3);
+  color: inherit;
+}
+.page-script .script-floating-toolbar .script-size-select {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  color: #000;
+  font-size: 13px;
+}
+.page-script .script-shared-notice {
+  width: 100%;
+  max-width: 960px;
+}
+/* Busca acima da lista; o termo vai para a API (lista paginada). */
+.page-script .scripts-search-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: rgb(var(--muted));
+}
+/* Lateral com tamanho fixo: o card mostra só uma prévia, nunca o documento inteiro. */
+.page-script .sidebar-document {
+  padding: 12px;
+  background: #20232c;
+  border-radius: 10px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.page-script .script-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.page-script .script-col {
+  min-width: 0;
+}
+.page-script .scripts-content {
+  flex: 1;
+  min-width: 0;
+}
+.page-script .content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 0 24px;
+}
+.page-script .document-heading {
+  position: relative;
+  z-index: 11; /* title stays clickable above the floating toolbar */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.page-script .document-heading .script-title {
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 16px 0;
+  text-align: center;
+  min-width: 80px;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+.page-script .document-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-script .script-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.page-script .script-icon-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.page-script .script-card {
+  position: relative;
+  cursor: pointer;
+}
+.page-script .script-card--active {
+  outline: 1px solid rgb(var(--primary));
+}
+.page-script .buttons-script-card {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+  z-index: 2;
+}
+.page-script .script-col .script-drag,
+.page-script .script-col .btn-delete {
+  padding: 3px;
+  opacity: 0;
+}
+.page-script .script-col:hover .script-drag,
+.page-script .script-col:focus-within .script-drag {
+  opacity: 1;
+  background: #000;
+  color: #fff;
+}
+.page-script .script-col:hover .btn-delete,
+.page-script .script-col:focus-within .btn-delete {
+  opacity: 1;
+  background: red;
+  color: #fff;
+}
+.page-script .script-drag,
+.page-script .row-drag {
+  cursor: grab;
+  touch-action: none;
+}
+.page-script .script-drag:active,
+.page-script .row-drag:active {
+  cursor: grabbing;
+}
+.page-script .sortable-ghost {
+  opacity: 0.5;
+}
+.page-script .document-script .add-row {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.page-script .script-table .ql-editor p {
+  margin: 0 !important;
+}
+.page-script .script-table .ql-editor {
+  min-height: 36px;
+}
+.page-script .script-table .ql-clipboard {
+  position: absolute !important;
+  left: -100000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.page-script .script-floating-toolbar {
+  white-space: nowrap;
+}
+.page-script .script-floating-toolbar.ql-toolbar.ql-snow.toolbar-floating {
+  opacity: 1;
+  position: absolute;
+  top: auto;
+  /* Just above the active cell; -80px (PHP) covered the title when editing row 1. */
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  padding: 6px 16px !important;
+  border-radius: 24px;
+  background: hsla(0, 0%, 100%, 0.85) !important;
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+  backdrop-filter: blur(10px);
+}
+.page-script .script-floating-toolbar .ql-formats {
+  display: flex;
+  flex-wrap: nowrap;
+}
+.page-script .script-floating-toolbar.ql-toolbar button {
+  width: 28px;
+  height: 24px;
+  padding: 3px 5px;
+}
+.page-script .script-floating-toolbar select {
+  display: block;
+  height: 24px;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 13px;
+}
+.page-script .scripts-error {
+  color: rgb(var(--danger));
+  padding: 8px 0;
+}
+.page-script .scripts-notice,
+.page-script .scripts-save-status {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.page-script .scripts-save-status {
+  align-self: flex-end;
+  margin: 6px 0;
+}
+.page-script .pdf-exporting table.script-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.page-script .pdf-exporting table.script-table td {
+  border: 1px solid #ddd;
+  vertical-align: top;
+}
+.page-script .pdf-exporting h1[contenteditable] {
+  outline: none;
+}
+@media (max-width: 1200px) {
+  .page-script .scripts-sidebar {
+    flex-basis: 200px;
+  }
+}
+@media (max-width: 767px) {
+  /* Sem espaço lateral no celular: o cliente fica numa linha própria, acima do título. */
+  .page-script .script-client-corner {
+    position: static;
+    justify-content: flex-end;
+  }
+  .page-script {
+    padding: 12px;
+  }
+  .page-script .scripts-layout {
+    flex-direction: column;
+  }
+  .page-script .scripts-sidebar,
+  .page-script .scripts-content {
+    width: 100%;
+    flex-basis: auto;
+  }
+  /* Em coluna única a lista vira uma faixa horizontal de cards do mesmo tamanho. */
+  .page-script .sidebar-document {
+    max-height: none;
+    overflow: visible;
+  }
+  .page-script .script-list {
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-auto-columns: 140px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .page-script .script-floating-toolbar.ql-toolbar.ql-snow.toolbar-floating {
+    gap: 4px;
+    padding: 6px 8px !important;
+    max-width: calc(100vw - 24px);
+  }
+}

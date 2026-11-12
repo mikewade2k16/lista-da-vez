@@ -406,3 +406,9 @@ Ambiente esperado:
 - Toda alteração runtime trava a instância, compara `access_revision`, mantém pelo menos um
   `manage`, incrementa a revisão da instância uma vez e grava
   `WHATSAPP_INSTANCE_ACCESS_CHANGED` na mesma transação.
+
+## Roteiros de Tools
+
+Migration `0325_tools_scripts.sql`: tabela `tools.scripts`, com FK `account_id` em
+`core.accounts` e índice por conta/atualização. Persistência exclusiva dos documentos novos;
+nenhum backfill ou importação do sistema PHP. Contrato detalhado no AGENT do módulo tools.

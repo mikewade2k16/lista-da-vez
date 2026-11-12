@@ -15,7 +15,7 @@ import (
 // http_public.go. Mesmo auth dos demais /v1/cardapio/* (JWT + scopedAccountID).
 func RegisterLayoutRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+		return panelAuth(svc, middleware, h)
 	}
 	mux.Handle("GET /v1/cardapio/restaurants/{id}/layout", wrap(handleGetLayout(svc)))
 	mux.Handle("PUT /v1/cardapio/restaurants/{id}/layout", wrap(handlePutLayout(svc)))

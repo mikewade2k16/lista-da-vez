@@ -162,6 +162,8 @@ export interface RestaurantListItem {
   name: string
   isActive: boolean
   primaryDomain: string
+  // Capa do card na lista: banner do site (ou o logo, na falta).
+  coverUrl?: string
   updatedAt: string
 }
 
@@ -251,12 +253,42 @@ export interface ProductListItem {
   priceCents: number
   compareAtPriceCents?: number
   imageUrl: string
+  // Miniatura AVIF da foto convertida (vazia sem conversao: usar imageUrl).
+  thumbUrl?: string
   isAvailable: boolean
   isFeatured: boolean
   sortOrder: number
 }
 
-export type ProductBulkAction = 'delete' | 'enable' | 'disable' | 'feature' | 'remove_feature'
+// Resultado do upload de foto de produto (original guardado + AVIF do site).
+export interface ProductPhotoUpload {
+  id?: string
+  url: string
+  thumbUrl: string
+  originalUrl: string
+  originalBytes: number
+  converted: boolean
+}
+
+// Original grande (>= 15MB) aguardando revisao do admin.
+export interface ProductPhotoReview {
+  id: string
+  url: string
+  thumbUrl: string
+  originalUrl: string
+  originalBytes: number
+  productNames: string[]
+  createdAt: string
+}
+
+export type ProductBulkAction =
+  | 'delete'
+  | 'enable'
+  | 'disable'
+  | 'feature'
+  | 'remove_feature'
+  | 'add_tag'
+  | 'set_category'
 
 export interface Review {
   id: string

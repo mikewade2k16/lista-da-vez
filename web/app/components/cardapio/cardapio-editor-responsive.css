@@ -1,0 +1,75 @@
+/* Editor do cardapio: abas com icone e barra compacta no mobile. */
+
+/* Desktop: abas so com texto; mobile: so icone (nome no title/aria-label). */
+.cardapio-editor__tab-icon,
+.cardapio-editor__back-icon {
+  display: none;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.cardapio-editor__back {
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .cardapio-editor {
+    padding: 0 0.5rem 0.75rem;
+  }
+
+  .cardapio-editor__panel {
+    padding-top: 0.6rem;
+  }
+
+  .cardapio-editor__top {
+    gap: 0.4rem;
+    margin: 0 -0.5rem;
+    padding: 0.35rem 0.5rem;
+    min-height: 2.9rem;
+  }
+
+  .cardapio-editor__crumbs {
+    flex: 0 1 auto;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+  }
+
+  .cardapio-editor__back-label,
+  .cardapio-editor__sep,
+  .cardapio-editor__tab-label {
+    display: none;
+  }
+
+  .cardapio-editor__tab-icon,
+  .cardapio-editor__back-icon {
+    display: inline-block;
+  }
+
+  /* Todas as abas (so icones) numa 2a linha rolavel, abaixo do nome/acoes. */
+  .cardapio-editor__top {
+    flex-wrap: wrap;
+    row-gap: 0.15rem;
+  }
+
+  .cardapio-editor__tabs {
+    order: 3;
+    flex: 1 0 100%;
+    gap: 0;
+    justify-content: space-between;
+  }
+
+  .cardapio-editor__tab {
+    padding: 0.45rem 0.55rem;
+  }
+
+  /* "Fora do ar" vira um ponto vermelho (texto no title). */
+  .cardapio-editor__offline {
+    width: 0.55rem;
+    height: 0.55rem;
+    padding: 0;
+    overflow: hidden;
+    background: rgb(var(--danger));
+    font-size: 0;
+  }
+}

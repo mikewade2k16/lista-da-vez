@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 
 import CardapioCreateModal from '~/components/cardapio/CardapioCreateModal.vue'
 import CardapioDuplicateModal from '~/components/cardapio/CardapioDuplicateModal.vue'
+import CardapioRestaurantCards from '~/components/cardapio/CardapioRestaurantCards.vue'
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
 import OmniDataTable from '../../../layers/tasks/components/omni/table/OmniDataTable.vue'
 import { useCardapioStore } from '~/stores/cardapio'
@@ -23,6 +24,21 @@ const auth = useAuthStore()
 const ui = useUiStore()
 
 const isAdmin = computed(() => String(auth.role || '').trim() === 'platform_admin')
+
+// Duas visoes: cards (padrao, so o basico) e "Detalhes" (tabela com filtros e
+// acoes de gestao). A escolha fica na URL (?vista=detalhes).
+const route = useRoute()
+const showDetails = computed(() => route.query.vista === 'detalhes')
+function setView(details: boolean) {
+  void navigateTo(
+    { query: { ...route.query, vista: details ? 'detalhes' : undefined } },
+    { replace: true },
+  )
+}
+// Cliente no card so quando ha mais de um cliente na lista.
+const multipleClients = computed(
+  () => new Set(store.restaurants.map((item) => item.accountId)).size > 1,
+)
 const viewerUserType = computed<'admin' | 'client'>(() => (isAdmin.value ? 'admin' : 'client'))
 
 const createOpen = ref(false)
@@ -187,6 +203,8 @@ function onResetFilters() {
   filtersState.value = { query: '', accountFilter: '' }
 }
 
+// A account vai na URL do editor: usuario de varios clientes abre o
+// estabelecimento de outro cliente (o back confirma o vinculo).
 function openEditor(id: string, accountId = '') {
   const account = String(accountId || '').trim()
   void navigateTo(`/cardapio/${id}${account ? `?account=${encodeURIComponent(account)}` : ''}`)
@@ -342,41 +360,42 @@ onMounted(async () => {
     await tenantsStore.ensureLoaded()
   }
   await refresh()
+  // Quem so tem acesso a um estabelecimento entra direto nele (sem a lista).
+  // platform_admin sempre ve a lista para escolher o cliente.
+  const only = store.restaurants.length === 1 ? store.restaurants[0] : null
+  if (!isAdmin.value && only && !store.listError) {
+    void navigateTo(
+      `/cardapio/${encodeURIComponent(only.id)}?account=${encodeURIComponent(only.accountId)}`,
+      { replace: true },
+    )
+  }
 })
 </script>
 
 <template>
   <section class="cardapio-list flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-    <AdminPageHeader
-      eyebrow="Presence"
-      title="Estabelecimentos"
-      description="Gerencie o site de cada estabelecimento: visual, cardapio, pedidos e dominios."
-    />
-
-    <OmniCollectionFilters
-      v-model="filtersState"
-      v-model:visible-columns="visibleColumnKeys"
-      v-model:locked-columns="lockedColumnKeys"
-      v-model:column-order="columnOrder"
-      :viewer-user-type="viewerUserType"
-      :filters="filterDefinitions"
-      :table-columns="allTableColumns"
-      :column-exclude-keys="columnExcludeKeys"
-      :loading="store.listPending"
-      @reset="onResetFilters"
-      @reset-columns="resetToDefaults"
-    >
-      <template #actions>
-        <UButton
-          icon="i-lucide-plus"
-          label="Novo estabelecimento"
-          color="primary"
-          :loading="creating"
-          :disabled="creating"
-          @click="openCreate"
-        />
-      </template>
-    </OmniCollectionFilters>
+    <header class="cardapio-list__bar">
+      <nav class="cardapio-list__tabs" aria-label="Visao da lista">
+        <button
+          type="button"
+          :class="{ 'is-active': !showDetails }"
+          :aria-pressed="!showDetails"
+          @click="setView(false)"
+        >
+          <UIcon name="i-lucide-layout-grid" />
+          <span>Estabelecimentos</span>
+        </button>
+        <button
+          type="button"
+          :class="{ 'is-active': showDetails }"
+          :aria-pressed="showDetails"
+          @click="setView(true)"
+        >
+          <UIcon name="i-lucide-table-2" />
+          <span>Detalhes</span>
+        </button>
+      </nav>
+    </header>
 
     <UAlert
       v-if="store.listError"
@@ -387,62 +406,98 @@ onMounted(async () => {
       :description="store.listError"
     />
 
-    <div class="cardapio-list__table-scroll min-h-0 flex-1 overflow-y-auto">
-      <OmniDataTable
-        v-model="selectedIds"
-        :rows="tableRows"
-        :columns="tableColumns"
-        :viewer-user-type="viewerUserType"
-        row-key="id"
+    <div v-if="!showDetails" class="min-h-0 flex-1 overflow-y-auto">
+      <CardapioRestaurantCards
+        :restaurants="store.restaurants"
         :loading="store.listPending"
-        :focus-cell="focusCell"
-        empty-text="Nenhum estabelecimento encontrado com os filtros atuais."
-        @update:cell="onCellUpdate"
-      >
-        <template #cell-slug="{ row }">
-          <button
-            type="button"
-            class="cardapio-list__link cardapio-list__link--mono"
-            @click="openEditor(toRestaurant(row).id, toRestaurant(row).accountId)"
-          >
-            {{ toRestaurant(row).slug || '—' }}
-          </button>
-        </template>
-
-        <template #cell-actions="{ row }">
-          <div class="flex items-center justify-end gap-1">
-            <UButton
-              icon="i-lucide-pencil"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              title="Abrir editor"
-              aria-label="Abrir editor"
-              @click="openEditor(toRestaurant(row).id, toRestaurant(row).accountId)"
-            />
-            <UButton
-              v-if="isAdmin"
-              icon="i-lucide-copy"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              title="Duplicar estabelecimento"
-              aria-label="Duplicar estabelecimento"
-              @click="openDuplicate(row)"
-            />
-            <UButton
-              icon="i-lucide-trash-2"
-              color="error"
-              variant="ghost"
-              size="sm"
-              title="Excluir estabelecimento"
-              aria-label="Excluir estabelecimento"
-              @click="onDelete(row)"
-            />
-          </div>
-        </template>
-      </OmniDataTable>
+        :show-client="isAdmin || multipleClients"
+        @open="openEditor($event.id, $event.accountId)"
+      />
     </div>
+
+    <template v-else>
+      <OmniCollectionFilters
+        v-model="filtersState"
+        v-model:visible-columns="visibleColumnKeys"
+        v-model:locked-columns="lockedColumnKeys"
+        v-model:column-order="columnOrder"
+        :viewer-user-type="viewerUserType"
+        :filters="filterDefinitions"
+        :table-columns="allTableColumns"
+        :column-exclude-keys="columnExcludeKeys"
+        :loading="store.listPending"
+        @reset="onResetFilters"
+        @reset-columns="resetToDefaults"
+      >
+        <template #actions>
+          <UButton
+            icon="i-lucide-plus"
+            label="Novo estabelecimento"
+            color="primary"
+            :loading="creating"
+            :disabled="creating"
+            @click="openCreate"
+          />
+        </template>
+      </OmniCollectionFilters>
+
+      <div class="cardapio-list__table-scroll min-h-0 flex-1 overflow-y-auto">
+        <OmniDataTable
+          v-model="selectedIds"
+          :rows="tableRows"
+          :columns="tableColumns"
+          :viewer-user-type="viewerUserType"
+          row-key="id"
+          :loading="store.listPending"
+          :focus-cell="focusCell"
+          empty-text="Nenhum estabelecimento encontrado com os filtros atuais."
+          @update:cell="onCellUpdate"
+        >
+          <template #cell-slug="{ row }">
+            <button
+              type="button"
+              class="cardapio-list__link cardapio-list__link--mono"
+              @click="openEditor(toRestaurant(row).id, toRestaurant(row).accountId)"
+            >
+              {{ toRestaurant(row).slug || '—' }}
+            </button>
+          </template>
+
+          <template #cell-actions="{ row }">
+            <div class="flex items-center justify-end gap-1">
+              <UButton
+                icon="i-lucide-pencil"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                title="Abrir editor"
+                aria-label="Abrir editor"
+                @click="openEditor(toRestaurant(row).id, toRestaurant(row).accountId)"
+              />
+              <UButton
+                v-if="isAdmin"
+                icon="i-lucide-copy"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                title="Duplicar estabelecimento"
+                aria-label="Duplicar estabelecimento"
+                @click="openDuplicate(row)"
+              />
+              <UButton
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="ghost"
+                size="sm"
+                title="Excluir estabelecimento"
+                aria-label="Excluir estabelecimento"
+                @click="onDelete(row)"
+              />
+            </div>
+          </template>
+        </OmniDataTable>
+      </div>
+    </template>
 
     <CardapioCreateModal
       :open="createOpen"
@@ -478,5 +533,39 @@ onMounted(async () => {
 .cardapio-list__link--mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.84rem;
+}
+
+.cardapio-list__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cardapio-list__tabs {
+  display: inline-flex;
+  padding: 0.15rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+
+.cardapio-list__tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.cardapio-list__tabs button.is-active {
+  background: rgb(var(--primary) / 0.16);
+  color: var(--text-main);
+  font-weight: 600;
 }
 </style>

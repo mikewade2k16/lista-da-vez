@@ -339,7 +339,7 @@ o painel passa `?accountId=` ao abrir restaurante de outra account (front: `?acc
   /v1/cardapio/products/{id}` (full; PATCH faz **replace-all transacional** de `variations[]`/`addons[]`).
   A listagem lean inclui `compareAtPriceCents`. Gestao em massa/importacao/exportacao:
   - `POST /v1/cardapio/restaurants/{id}/products/bulk-action` body
-    `{ids[],action}`; acoes `delete|enable|disable|feature|remove_feature`, maximo
+    `{ids[],action,value?}`; acoes `delete|enable|disable|feature|remove_feature|add_tag|set_category`. `add_tag` acrescenta a tag sem duplicar ou remover tags existentes; `set_category` exige categoria da mesma conta e restaurante. Ambas exigem `value`; maximo
     500 IDs, validacao + mutacao atomicas e sempre filtradas por `account_id` +
     `restaurant_id`;
   - `GET /v1/cardapio/restaurants/{id}/products/export` devolve documento JSON
@@ -412,6 +412,59 @@ duracoes em segundos. **Exige rebuild api** (mudanca Go). Arquivos: `model_analy
   catalogo/restaurante/layout/zona => `manage`; mutacao de pedido => `orders.manage`.
   `platform_admin`/`agency_owner` em curto-circuito; falha => 404 uniforme. Antes desta
   fase os handlers so exigiam `RequireAuth` + gating de modulo (sem permissao fina).
+
+## Fotos de produto (2026-11-11, `media_photo.go`, `store_photos.go`, `http_photos.go`)
+
+So as fotos de PRODUTO da aba Produtos (tabela + foto principal/galeria do modal).
+Logo, banner, categoria, Studio e video continuam no endpoint generico `/media`, sem
+conversao. Endpoints:
+- `POST /v1/cardapio/restaurants/{id}/product-photos` (multipart `file`, `cardapio.manage`):
+  so imagem real (sniff do conteudo: jpeg/png/webp/gif; header nao basta), teto **20MB**
+  (celular e PC iguais). Grava `{base}.orig.{ext}` (original preservado), gera
+  `{base}.avif` (site, cabe em 1200x1500, nunca amplia, crf 24) e `{base}.thumb.avif`
+  (192x192 recorte central, crf 32) via ffmpeg/libaom (ja na imagem da API; aplica
+  orientacao EXIF). Transparencia vira fundo branco. GIF nao converte (animacao).
+  Maximo de 2 conversoes simultaneas por processo, timeout 90s. Falha de conversao NAO
+  derruba o upload: devolve o original (comportamento anterior). Resposta:
+  `{id,url,thumbUrl,originalUrl,originalBytes,converted}`; o painel grava `url` no
+  produto pelo PATCH canonico.
+- `GET .../product-photos/large` e `POST .../product-photos/{photoId}/reviewed`: lembrete
+  SO de platform_admin (demais => 404) dos originais >= 15MB ainda nao tratados.
+- Tabela `cardapio.product_photos` (migration 0324, account_id FK, unique account+url).
+  `ListProductsLean` faz left join por (account_id, url = image_url) e devolve `thumbUrl`
+  (vazio sem registro: o painel usa a propria imageUrl).
+- Backfill das fotos existentes: `migrate cardapio-optimize-media [--dry-run]` (no
+  container da API; definir `MIGRATION_TIMEOUT=30m`). Converte image_url + galeria
+  locais (`/uploads/cardapio/*.jpg|png|webp`), grava ao lado do arquivo antigo, troca a
+  url do produto e registra a foto. NUNCA apaga arquivo antigo (sites/caches com a url
+  anterior seguem funcionando). Idempotente: segunda rodada encontra 0 fotos. Local
+  2026-11-11: 206 fotos, 803 produtos, 52MB -> 12.5MB (site), miniaturas do Bari 725KB.
+
+Escopo de conta para papel so do cardapio (2026-11-11, `account_member.go`): usuario
+sem papel-coarse de fila (ex.: so `cardapio.manager`) loga sem conta padrao e todo
+endpoint do painel dava 404. `panelAuth` (wrapper de TODAS as rotas do painel) aplica
+`withMemberAccount`: se o Principal nao e platform_admin e nao tem AccountID/TenantID,
+e o `X-Account-Id` aponta para account onde ele e membro ativo
+(`auth.PostgresAccountMemberChecker`), essa account vira o escopo. Quem ja tinha conta
+no Principal ou e admin segue exatamente o fluxo anterior; permissao fina continua no
+gate por handler. Validado: Junior (Bari) le/edita Bari, 404 em Mostarda/Crow e no
+lembrete de admin, 403 nos demais modulos.
+
+## Usuario de varios clientes (2026-11-11, `store_members.go`, `account_member.go`)
+
+Nao-admin pode ser membro de mais de um cliente (ex.: Junior em Bari e Mostarda).
+- `GET /v1/cardapio/restaurants` de nao-admin SEM `?accountId=` lista os restaurantes de
+  TODAS as accounts em que ele e membro ativo, com o modulo cardapio ligado e
+  `cardapio.view` em cada uma (`ListMemberRestaurants` passa cada account pelo gate).
+- `?accountId=` de OUTRO cliente so e aceito se o middleware confirmar no banco o vinculo
+  (`IsCardapioMember`: account_users ativo + account ativa + cardapio ligado). Sem isso,
+  404 uniforme como antes; a permissao fina continua no gate por handler.
+- Gate: o atalho de `owner` vale SO na propria account (TenantID/AccountID do Principal).
+  Em outro cliente vale a permissao fina daquela account (antes o escopo travado na
+  propria account tornava isso irrelevante).
+- `RestaurantLean.coverUrl` = banner_url (ou logo_url) para os cards da lista.
+Testes: `multi_account_test.go`. Validado pela API: lista Bari+Mostarda, abre Mostarda
+com `?accountId=`, 404 forjando Crow e abrindo restaurante sem a account certa.
 
 ## Media (`media_storage.go`)
 

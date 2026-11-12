@@ -1,5 +1,8 @@
 import { normalizeProductSearch } from './product-search'
 
+export const PRODUCT_WITHOUT_TAGS = 'without-tags'
+export const productTagFilterValue = (tag: string) => `tag:${tag}`
+
 export interface CardapioProductFilters {
   search?: unknown
   categoryId?: unknown
@@ -15,6 +18,14 @@ export function productDateRange(filters: CardapioProductFilters, now = new Date
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const end = new Date(start)
   end.setDate(end.getDate() + 1)
+  if (
+    typeof filters.createdPeriod === 'string' &&
+    /^month:\d{4}-\d{2}$/.test(filters.createdPeriod)
+  ) {
+    const [year, month] = filters.createdPeriod.slice(6).split('-').map(Number)
+    if (month! >= 1 && month! <= 12)
+      return { from: new Date(year!, month! - 1, 1), to: new Date(year!, month!, 1) }
+  }
   switch (filters.createdPeriod) {
     case 'today':
       break
@@ -66,10 +77,14 @@ export function productMatchesFilters(
   if (query && !normalizeProductSearch(product.name).includes(query)) return false
   if (category && product.categoryId !== category) return false
   const selectedTags = Array.isArray(filters.tags) ? filters.tags.map(String) : []
+  const productTags = (product.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
   if (
     selectedTags.length &&
     !selectedTags.some((tag) =>
-      product.tags?.some((value) => value.trim().toLowerCase() === tag.trim().toLowerCase()),
+      tag === PRODUCT_WITHOUT_TAGS
+        ? productTags.length === 0
+        : tag.startsWith('tag:') &&
+          productTags.some((value) => value.toLowerCase() === tag.slice(4).trim().toLowerCase()),
     )
   )
     return false
@@ -113,3 +128,19 @@ export const productExtraFilters = [
     ],
   },
 ]
+
+export function productMonthOptions(products: { createdAt?: string }[]) {
+  const months = new Map<string, Date>()
+  for (const product of products) {
+    const date = new Date(product.createdAt ?? '')
+    if (!Number.isFinite(date.getTime())) continue
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    months.set(key, new Date(date.getFullYear(), date.getMonth(), 1))
+  }
+  return [...months.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([key, date]) => ({
+      label: new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date),
+      value: `month:${key}`,
+    }))
+}

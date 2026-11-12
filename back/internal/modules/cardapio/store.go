@@ -14,6 +14,9 @@ type dataStore interface {
 	CreateRestaurant(ctx context.Context, accountID, slug, name string) (Restaurant, error)
 	GetRestaurant(ctx context.Context, accountID, id string) (Restaurant, error)
 	ListRestaurantsLean(ctx context.Context, accountID, query string) ([]RestaurantLean, error)
+	ListRestaurantsLeanForAccounts(ctx context.Context, accountIDs []string, query string) ([]RestaurantLean, error)
+	IsCardapioMember(ctx context.Context, accountID, userID string) (bool, error)
+	CardapioMemberAccounts(ctx context.Context, userID string) ([]string, error)
 	UpdateRestaurant(ctx context.Context, accountID, id string, in UpdateRestaurantInput) (Restaurant, error)
 	MoveRestaurantToAccount(ctx context.Context, currentAccountID, restaurantID, targetAccountID string) (Restaurant, error)
 	DuplicateRestaurant(ctx context.Context, accountID, sourceID, slug, name string) (Restaurant, error)
@@ -37,7 +40,12 @@ type dataStore interface {
 	CreateProduct(ctx context.Context, accountID, restaurantID string, in ProductInput) (Product, error)
 	UpdateProduct(ctx context.Context, accountID, id string, in ProductInput) (Product, error)
 	DeleteProduct(ctx context.Context, accountID, id string) error
-	BulkProducts(ctx context.Context, accountID, restaurantID string, ids []string, action ProductBulkAction) (int, error)
+	BulkProducts(ctx context.Context, accountID, restaurantID string, ids []string, action ProductBulkAction, value string) (int, error)
+
+	// Product photos (fotos convertidas da aba Produtos)
+	InsertProductPhoto(ctx context.Context, accountID, restaurantID string, photo ProductPhoto, source string) (ProductPhoto, error)
+	ListLargeProductPhotos(ctx context.Context, accountID, restaurantID string, minBytes int64) ([]ProductPhotoReview, error)
+	MarkProductPhotoReviewed(ctx context.Context, accountID, restaurantID, id string) error
 
 	// Reviews
 	ListReviewsByProduct(ctx context.Context, accountID, productID string) ([]Review, error)

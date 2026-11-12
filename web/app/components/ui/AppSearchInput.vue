@@ -6,8 +6,9 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 // apos o debounce, para o consumidor filtrar sem refazer trabalho a cada tecla.
 // O clear zera na hora (sem esperar o debounce). Acessivel: input com aria-label.
 //
-// Uso: filtro client-side de listas longas (permissoes, paginas). NAO faz fetch —
-// o consumidor decide o que fazer com o termo (aqui sempre filtro local).
+// Uso: filtro client-side de listas longas (permissoes, paginas) ou termo enviado
+// a API em listas paginadas (ex.: roteiros). O componente NAO faz fetch — o
+// consumidor decide o que fazer com o termo.
 
 const props = withDefaults(
   defineProps<{

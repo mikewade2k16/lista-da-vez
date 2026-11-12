@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { productDateRange, productMatchesFilters } from './product-filters'
+import {
+  productDateRange,
+  productMatchesFilters,
+  productMonthOptions,
+  PRODUCT_WITHOUT_TAGS,
+} from './product-filters'
 
 const now = new Date(2026, 9, 29, 15)
 const product = {
@@ -13,11 +18,32 @@ describe('filtros de cadastro e foto dos produtos', () => {
   it('filtra por qualquer tag selecionada e combina com os outros filtros', () => {
     const tagged = { ...product, tags: ['Novo', 'Picante'] }
     expect(productMatchesFilters(tagged, { tags: [] })).toBe(true)
-    expect(productMatchesFilters(product, { tags: ['Novo'] })).toBe(false)
-    expect(productMatchesFilters(tagged, { tags: ['vegano', 'novo'] })).toBe(true)
-    expect(productMatchesFilters(tagged, { tags: ['vegano', 'doce'] })).toBe(false)
-    expect(productMatchesFilters(tagged, { tags: ['Novo'], categoryId: 'outra' })).toBe(false)
-    expect(productMatchesFilters(tagged, { tags: ['Novo'], availability: false })).toBe(false)
+    expect(productMatchesFilters(product, { tags: ['tag:Novo'] })).toBe(false)
+    expect(productMatchesFilters(tagged, { tags: ['tag:vegano', 'tag:novo'] })).toBe(true)
+    expect(productMatchesFilters(tagged, { tags: ['tag:vegano', 'tag:doce'] })).toBe(false)
+    expect(productMatchesFilters(tagged, { tags: ['tag:Novo'], categoryId: 'outra' })).toBe(false)
+    expect(productMatchesFilters(tagged, { tags: ['tag:Novo'], availability: false })).toBe(false)
+  })
+  it('filtra produtos sem tag e combina com tags e outros filtros', () => {
+    expect(productMatchesFilters(product, { tags: [PRODUCT_WITHOUT_TAGS] })).toBe(true)
+    expect(
+      productMatchesFilters({ ...product, tags: ['  '] }, { tags: [PRODUCT_WITHOUT_TAGS] }),
+    ).toBe(true)
+    expect(
+      productMatchesFilters({ ...product, tags: ['Mostarda'] }, { tags: [PRODUCT_WITHOUT_TAGS] }),
+    ).toBe(false)
+    expect(
+      productMatchesFilters(
+        { ...product, tags: ['Mostarda'] },
+        { tags: [PRODUCT_WITHOUT_TAGS, 'tag:Mostarda'] },
+      ),
+    ).toBe(true)
+    expect(
+      productMatchesFilters(product, { tags: [PRODUCT_WITHOUT_TAGS], categoryId: 'outra' }),
+    ).toBe(false)
+    expect(
+      productMatchesFilters({ ...product, tags: ['without-tags'] }, { tags: ['tag:without-tags'] }),
+    ).toBe(true)
   })
   it.each([
     ['today', 29],
@@ -92,4 +118,26 @@ describe('filtros de cadastro e foto dos produtos', () => {
       productDateRange({ createdPeriod: 'last_7_days' }, new Date(2026, 10, 1)).from?.getMonth(),
     ).toBe(9)
   })
+})
+
+it('lista somente meses cadastrados, separados por ano, e filtra o mês inteiro', () => {
+  const options = productMonthOptions([
+    { createdAt: new Date(2025, 9, 2).toISOString() },
+    { createdAt: new Date(2026, 9, 1).toISOString() },
+    { createdAt: new Date(2026, 9, 31, 23).toISOString() },
+    { createdAt: undefined },
+  ])
+  expect(options.map((option) => option.value)).toEqual(['month:2026-10', 'month:2025-10'])
+  expect(
+    productMatchesFilters(
+      { ...product, createdAt: new Date(2026, 9, 31, 23).toISOString() },
+      { createdPeriod: 'month:2026-10' },
+    ),
+  ).toBe(true)
+  expect(
+    productMatchesFilters(
+      { ...product, createdAt: new Date(2026, 10, 1).toISOString() },
+      { createdPeriod: 'month:2026-10' },
+    ),
+  ).toBe(false)
 })

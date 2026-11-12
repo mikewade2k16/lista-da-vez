@@ -1,0 +1,21 @@
+@media (max-width: 640px) {
+  .cardapio-pm__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile: edicao completa em tela cheia, sem moldura. */
+@media (max-width: 720px) {
+  .cardapio-pm {
+    z-index: 600; /* acima do botao flutuante de feedback (500) */
+    padding: 0;
+  }
+
+  .cardapio-pm__panel {
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: none;
+    border-radius: 0;
+  }
+}

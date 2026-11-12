@@ -11,6 +11,8 @@ import type {
   Product,
   ProductBulkAction,
   ProductListItem,
+  ProductPhotoReview,
+  ProductPhotoUpload,
   Restaurant,
   RestaurantDomain,
   RestaurantListItem,
@@ -388,10 +390,15 @@ export const useCardapioStore = defineStore('cardapio', () => {
     }
   }
 
-  async function bulkProducts(id: string, ids: string[], action: ProductBulkAction) {
+  async function bulkProducts(
+    id: string,
+    ids: string[],
+    action: ProductBulkAction,
+    value?: string,
+  ) {
     const result = (await apiRequest(
       withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products/bulk-action`),
-      { method: 'POST', body: { ids, action } },
+      { method: 'POST', body: { ids, action, value } },
     )) as { affected: number }
     await reloadProducts(id)
     return result
@@ -634,6 +641,45 @@ export const useCardapioStore = defineStore('cardapio', () => {
     return String(response?.url ?? '')
   }
 
+  // --- Fotos de produto (aba Produtos) ---
+
+  // Sobe a foto de um produto: o back guarda o original e devolve a versao AVIF
+  // do site (url) + miniatura (thumbUrl). Nao grava no produto: quem chama faz o
+  // PATCH canonico com a url devolvida.
+  async function uploadProductPhoto(id: string, file: File): Promise<ProductPhotoUpload> {
+    const form = new FormData()
+    form.append('file', file)
+    const response = (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/product-photos`),
+      { method: 'POST', body: form },
+    )) as Partial<ProductPhotoUpload> | null
+    return {
+      id: String(response?.id ?? ''),
+      url: String(response?.url ?? ''),
+      thumbUrl: String(response?.thumbUrl ?? ''),
+      originalUrl: String(response?.originalUrl ?? ''),
+      originalBytes: Number(response?.originalBytes ?? 0),
+      converted: Boolean(response?.converted),
+    }
+  }
+
+  // Originais grandes para o admin tratar (so platform_admin; demais => 404).
+  async function loadLargeProductPhotos(id: string): Promise<ProductPhotoReview[]> {
+    const response = await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/product-photos/large`),
+    )
+    return asArray<ProductPhotoReview>(response, 'photos')
+  }
+
+  async function markProductPhotoReviewed(id: string, photoId: string) {
+    await apiRequest(
+      withScope(
+        `/v1/cardapio/restaurants/${encodeURIComponent(id)}/product-photos/${encodeURIComponent(photoId)}/reviewed`,
+      ),
+      { method: 'POST' },
+    )
+  }
+
   // --- Analytics (aba Relatorios — F4) ---
 
   // GET de um endpoint de analytics do restaurante ativo. Herda o escopo do
@@ -770,6 +816,9 @@ export const useCardapioStore = defineStore('cardapio', () => {
     patchZone,
     deleteZone,
     uploadMedia,
+    uploadProductPhoto,
+    loadLargeProductPhotos,
+    markProductPhotoReviewed,
     withScope,
     analyticsRequest,
     loadLayout,

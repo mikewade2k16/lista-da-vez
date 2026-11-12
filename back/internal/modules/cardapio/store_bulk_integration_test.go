@@ -25,7 +25,8 @@ func TestBulkProductsPostgres(t *testing.T) {
 		create table cardapio.products (
 			id uuid primary key, account_id uuid not null, restaurant_id uuid not null,
 			is_available boolean not null, is_featured boolean not null,
-			updated_at timestamptz not null default now());`)
+			updated_at timestamptz not null default now(), tags jsonb not null default '[]'::jsonb, category_id uuid);
+        create table cardapio.categories (id uuid primary key, account_id uuid not null, restaurant_id uuid not null);`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,13 +48,13 @@ func TestBulkProductsPostgres(t *testing.T) {
 				t.Fatal(err)
 			}
 			// A mixed-restaurant selection must roll back the entire action.
-			if _, err := store.BulkProducts(ctx, account, restaurant, []string{p1, outside}, action); !errors.Is(err, ErrNotFound) {
+			if _, err := store.BulkProducts(ctx, account, restaurant, []string{p1, outside}, action, ""); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("mixed selection: expected not found, got %v", err)
 			}
-			if _, err := store.BulkProducts(ctx, "00000000-0000-0000-0000-000000000098", restaurant, []string{p1}, action); !errors.Is(err, ErrNotFound) {
+			if _, err := store.BulkProducts(ctx, "00000000-0000-0000-0000-000000000098", restaurant, []string{p1}, action, ""); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("wrong account: expected not found, got %v", err)
 			}
-			n, err := store.BulkProducts(ctx, account, restaurant, []string{p1, p2}, action)
+			n, err := store.BulkProducts(ctx, account, restaurant, []string{p1, p2}, action, "")
 			if err != nil || n != 2 {
 				t.Fatalf("bulk action: affected=%d err=%v", n, err)
 			}
@@ -88,4 +89,42 @@ func TestBulkProductsPostgres(t *testing.T) {
 			}
 		})
 	}
+	t.Run("tag and category preserve scope", func(t *testing.T) {
+		const category = "00000000-0000-0000-0000-000000000006"
+		const foreignCategory = "00000000-0000-0000-0000-000000000007"
+		_, err := pool.Exec(ctx, `truncate cardapio.products, cardapio.categories`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = pool.Exec(ctx, `insert into cardapio.products(id,account_id,restaurant_id,is_available,is_featured,tags) values
+			($1,$3,$4,true,false,'["Existente"]'),($2,$3,$4,true,false,'["mostarda"]')`, p1, p2, account, restaurant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = pool.Exec(ctx, `insert into cardapio.categories values ($1,$3,$4),($2,$3,'00000000-0000-0000-0000-000000000099')`, category, foreignCategory, account, restaurant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = store.BulkProducts(ctx, account, restaurant, []string{p1, p2}, ProductBulkAddTag, "Mostarda"); err != nil {
+			t.Fatal(err)
+		}
+		var first, second string
+		if err = pool.QueryRow(ctx, `select (select tags::text from cardapio.products where id=$1), (select tags::text from cardapio.products where id=$2)`, p1, p2).Scan(&first, &second); err != nil {
+			t.Fatal(err)
+		}
+		if first != `["Existente", "Mostarda"]` || second != `["mostarda"]` {
+			t.Fatalf("tags alteradas incorretamente: %s / %s", first, second)
+		}
+		if _, err = store.BulkProducts(ctx, account, restaurant, []string{p1, p2}, ProductBulkSetCategory, foreignCategory); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("categoria externa: %v", err)
+		}
+		if _, err = store.BulkProducts(ctx, account, restaurant, []string{p1, p2}, ProductBulkSetCategory, category); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err = pool.QueryRow(ctx, `select count(*) from cardapio.products where category_id=$1`, category).Scan(&count); err != nil || count != 2 {
+			t.Fatalf("categoria count=%d err=%v", count, err)
+		}
+	})
+
 }

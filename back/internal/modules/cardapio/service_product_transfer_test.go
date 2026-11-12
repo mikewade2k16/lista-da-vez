@@ -98,7 +98,7 @@ func (s *productTransferFakeStore) UpdateProduct(_ context.Context, accountID, i
 	return Product{}, pgx.ErrNoRows
 }
 
-func (s *productTransferFakeStore) BulkProducts(_ context.Context, accountID, restaurantID string, ids []string, action ProductBulkAction) (int, error) {
+func (s *productTransferFakeStore) BulkProducts(_ context.Context, accountID, restaurantID string, ids []string, action ProductBulkAction, _ string) (int, error) {
 	if accountID != s.accountID || restaurantID != "rest-1" {
 		return 0, pgx.ErrNoRows
 	}
@@ -136,6 +136,21 @@ func TestBulkProductsValidatesAndScopesSelection(t *testing.T) {
 	})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("account fora do escopo deveria virar 404, recebi %v", err)
+	}
+}
+
+func TestBulkProductsRequiresValueForTagAndCategory(t *testing.T) {
+	store := &productTransferFakeStore{accountID: "acc-1"}
+	svc := newServiceWithStore(store, ServiceConfig{})
+	for _, action := range []ProductBulkAction{ProductBulkAddTag, ProductBulkSetCategory} {
+		_, err := svc.BulkProducts(context.Background(), "acc-1", "rest-1", ProductBulkInput{IDs: []string{"prod-1"}, Action: action, Value: "  "})
+		if !errors.Is(err, ErrValidation) {
+			t.Fatalf("%s: expected validation, got %v", action, err)
+		}
+		_, err = svc.BulkProducts(context.Background(), "acc-1", "rest-1", ProductBulkInput{IDs: []string{"prod-1"}, Action: action, Value: "value"})
+		if err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
 	}
 }
 

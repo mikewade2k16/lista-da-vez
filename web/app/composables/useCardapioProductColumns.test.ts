@@ -5,7 +5,7 @@ import type { Product } from '~/domain/cardapio/types'
 
 const store = vi.hoisted(() => ({
   loadProduct: vi.fn(),
-  uploadMedia: vi.fn(),
+  uploadProductPhoto: vi.fn(),
   patchProduct: vi.fn(),
 }))
 vi.mock('~/stores/cardapio', () => ({ useCardapioStore: () => store }))
@@ -36,7 +36,10 @@ describe('upload da imagem na tabela do cardapio', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     store.loadProduct.mockResolvedValue(product)
-    store.uploadMedia.mockResolvedValue('/uploads/cardapio/account-1/foto.webp')
+    store.uploadProductPhoto.mockResolvedValue({
+      url: '/uploads/cardapio/account-1/foto.webp',
+      thumbUrl: '',
+    })
     store.patchProduct.mockResolvedValue({
       ...product,
       imageUrl: '/uploads/cardapio/account-1/foto.webp',
@@ -70,7 +73,7 @@ describe('upload da imagem na tabela do cardapio', () => {
       const file = new File(['imagem'], `foto.${format}`, { type: `image/${format}` })
       await useCardapioProductColumns().applyImageUpload(product.id, file)
       expect(store.loadProduct).toHaveBeenCalledWith(product.id)
-      expect(store.uploadMedia).toHaveBeenCalledWith(product.restaurantId, file)
+      expect(store.uploadProductPhoto).toHaveBeenCalledWith(product.restaurantId, file)
       expect(store.patchProduct).toHaveBeenCalledWith(
         product.id,
         expect.objectContaining({
@@ -90,12 +93,12 @@ describe('upload da imagem na tabela do cardapio', () => {
     await expect(
       useCardapioProductColumns().applyImageUpload(product.id, new File([], 'foto.png')),
     ).rejects.toThrow('Recurso nao encontrado')
-    expect(store.uploadMedia).not.toHaveBeenCalled()
+    expect(store.uploadProductPhoto).not.toHaveBeenCalled()
     expect(store.patchProduct).not.toHaveBeenCalled()
   })
 
   it('nao altera a imagem gravada quando o upload falha', async () => {
-    store.uploadMedia.mockRejectedValue(new Error('Falha no envio'))
+    store.uploadProductPhoto.mockRejectedValue(new Error('Falha no envio'))
     await expect(
       useCardapioProductColumns().applyImageUpload(product.id, new File([], 'foto.png')),
     ).rejects.toThrow('Falha no envio')
@@ -103,7 +106,7 @@ describe('upload da imagem na tabela do cardapio', () => {
   })
 
   it('nao apaga a imagem anterior se a resposta do upload vier sem URL', async () => {
-    store.uploadMedia.mockResolvedValue('')
+    store.uploadProductPhoto.mockResolvedValue({ url: '', thumbUrl: '' })
     await expect(
       useCardapioProductColumns().applyImageUpload(product.id, new File([], 'foto.png')),
     ).rejects.toThrow('O servidor nao retornou')

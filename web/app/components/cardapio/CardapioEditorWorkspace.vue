@@ -19,6 +19,7 @@ import CardapioSectionDominios from '~/components/cardapio/sections/CardapioSect
 import CardapioSectionAparencia from '~/components/cardapio/sections/CardapioSectionAparencia.vue'
 import CardapioSectionSite from '~/components/cardapio/sections/CardapioSectionSite.vue'
 import CardapioEditorClientSelect from '~/components/cardapio/CardapioEditorClientSelect.vue'
+import CardapioLargePhotosNotice from '~/components/cardapio/product/CardapioLargePhotosNotice.vue'
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { useAuthStore } from '~/stores/auth'
@@ -52,6 +53,20 @@ function isSectionAllowed(section: SectionTab): boolean {
 }
 
 const visibleSections = computed(() => CARDAPIO_SECTIONS.filter(isSectionAllowed))
+
+// Todas as abas liberadas ficam visiveis (sem menu "Mais"): primeiro as do dia a
+// dia, depois as demais na ordem de CARDAPIO_SECTIONS.
+const PRIMARY_SECTION_ORDER = ['produtos', 'categorias', 'pedidos']
+const primarySections = computed(() => [
+  ...PRIMARY_SECTION_ORDER.map((id) =>
+    visibleSections.value.find((section) => section.id === id),
+  ).filter((section): section is SectionTab => Boolean(section)),
+  ...visibleSections.value.filter((section) => !PRIMARY_SECTION_ORDER.includes(section.id)),
+])
+
+// Quem so tem um estabelecimento entra direto nele (a lista redireciona), entao
+// o atalho de volta para a lista some para esse usuario.
+const showListLink = computed(() => isPlatformAdmin.value || store.restaurants.length !== 1)
 
 const active = computed(() =>
   resolveCardapioSection(
@@ -100,39 +115,108 @@ onMounted(loadActive)
   <section class="cardapio-editor">
     <header class="cardapio-editor__top">
       <div class="cardapio-editor__crumbs">
-        <NuxtLink to="/cardapio" class="cardapio-editor__back">Presence</NuxtLink>
-        <span class="cardapio-editor__sep">/</span>
+        <template v-if="showListLink">
+          <NuxtLink
+            to="/cardapio"
+            class="cardapio-editor__back"
+            title="Voltar para Presence"
+            aria-label="Voltar para Presence"
+          >
+            <UIcon name="i-lucide-arrow-left" class="cardapio-editor__back-icon" />
+            <span class="cardapio-editor__back-label">Presence</span>
+          </NuxtLink>
+          <span class="cardapio-editor__sep">/</span>
+        </template>
         <span class="cardapio-editor__current">
           {{ store.restaurant?.name || 'Carregando...' }}
         </span>
+        <span
+          v-if="store.restaurant && !isActive"
+          class="cardapio-editor__offline"
+          title="Site fora do ar"
+        >
+          Fora do ar
+        </span>
       </div>
 
-      <div class="cardapio-editor__status">
-        <CardapioEditorClientSelect
-          :restaurant-id="props.restaurantId"
-          :account-id="props.accountId"
-        />
-        <a
+      <nav
+        v-if="store.restaurant || !store.detailPending"
+        class="cardapio-editor__tabs"
+        aria-label="Secoes do cardapio"
+      >
+        <NuxtLink
+          v-for="section in primarySections"
+          :key="section.id"
+          :to="cardapioSectionLocation(route, section.id)"
+          :aria-current="active === section.id ? 'page' : undefined"
+          class="cardapio-editor__tab"
+          :class="{ 'is-active': active === section.id }"
+          :title="section.label"
+          :aria-label="section.label"
+        >
+          <UIcon :name="section.icon" class="cardapio-editor__tab-icon" />
+          <span class="cardapio-editor__tab-label">{{ section.label }}</span>
+        </NuxtLink>
+      </nav>
+
+      <div class="cardapio-editor__actions">
+        <CardapioLargePhotosNotice v-if="isPlatformAdmin && store.restaurantId" />
+        <UButton
           v-if="publicUrl"
-          :href="publicUrl"
+          :to="publicUrl"
           target="_blank"
-          rel="noopener"
-          class="cardapio-editor__link"
-        >
-          {{ store.primaryDomain }}
-        </a>
-        <span class="cardapio-editor__pill" :class="isActive ? 'is-on' : 'is-off'">
-          {{ isActive ? 'Ativo' : 'Inativo' }}
-        </span>
-        <button
-          type="button"
-          class="cardapio-editor__toggle"
-          :disabled="togglingActive || !store.restaurant"
-          @click="onToggleActive"
-        >
-          <span v-if="togglingActive" class="cardapio-editor__spinner" aria-hidden="true"></span>
-          {{ isActive ? 'Despublicar' : 'Publicar' }}
-        </button>
+          icon="i-lucide-external-link"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          :title="`Abrir ${store.primaryDomain}`"
+          :aria-label="`Abrir o site ${store.primaryDomain}`"
+        />
+        <UPopover :content="{ align: 'end' }">
+          <UButton
+            icon="i-lucide-ellipsis"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            title="Publicacao e configuracoes do site"
+            aria-label="Publicacao e configuracoes do site"
+          />
+          <template #content>
+            <div class="cardapio-editor__menu">
+              <div class="cardapio-editor__menu-row">
+                <span class="cardapio-editor__pill" :class="isActive ? 'is-on' : 'is-off'">
+                  {{ isActive ? 'Publicado' : 'Fora do ar' }}
+                </span>
+                <button
+                  type="button"
+                  class="cardapio-editor__toggle"
+                  :disabled="togglingActive || !store.restaurant"
+                  @click="onToggleActive"
+                >
+                  <span
+                    v-if="togglingActive"
+                    class="cardapio-editor__spinner"
+                    aria-hidden="true"
+                  ></span>
+                  {{ isActive ? 'Despublicar' : 'Publicar' }}
+                </button>
+              </div>
+              <a
+                v-if="publicUrl"
+                :href="publicUrl"
+                target="_blank"
+                rel="noopener"
+                class="cardapio-editor__link"
+              >
+                {{ store.primaryDomain }}
+              </a>
+              <CardapioEditorClientSelect
+                :restaurant-id="props.restaurantId"
+                :account-id="props.accountId"
+              />
+            </div>
+          </template>
+        </UPopover>
       </div>
     </header>
 
@@ -142,66 +226,56 @@ onMounted(loadActive)
       Carregando estabelecimento...
     </div>
 
-    <div v-else class="cardapio-editor__body">
-      <nav class="cardapio-editor__nav" aria-label="Secoes do cardapio">
-        <NuxtLink
-          v-for="section in visibleSections"
-          :key="section.id"
-          :to="cardapioSectionLocation(route, section.id)"
-          :aria-current="active === section.id ? 'page' : undefined"
-          class="cardapio-editor__nav-item"
-          :class="{ 'cardapio-editor__nav-item--active': active === section.id }"
-        >
-          {{ section.label }}
-        </NuxtLink>
-      </nav>
-
-      <div v-if="isActiveVisible" class="cardapio-editor__panel">
-        <CardapioSectionDados v-if="active === 'dados'" />
-        <CardapioSectionCategorias v-else-if="active === 'categorias'" />
-        <CardapioSectionProdutos v-else-if="active === 'produtos'" />
-        <CardapioSectionAvaliacoes v-else-if="active === 'avaliacoes'" />
-        <CardapioSectionPedidos v-else-if="active === 'pedidos'" />
-        <CardapioSectionRelatorios v-else-if="active === 'relatorios'" />
-        <CardapioSectionEntrega v-else-if="active === 'entrega'" />
-        <CardapioSectionDominios v-else-if="active === 'dominios'" />
-        <CardapioSectionAparencia v-else-if="active === 'aparencia'" />
-        <CardapioSectionSite v-else-if="active === 'site'" />
-      </div>
+    <div
+      v-else-if="isActiveVisible"
+      class="cardapio-editor__panel"
+      :class="{ 'cardapio-editor__panel--fill': active === 'produtos' }"
+    >
+      <CardapioSectionDados v-if="active === 'dados'" />
+      <CardapioSectionCategorias v-else-if="active === 'categorias'" />
+      <CardapioSectionProdutos v-else-if="active === 'produtos'" />
+      <CardapioSectionAvaliacoes v-else-if="active === 'avaliacoes'" />
+      <CardapioSectionPedidos v-else-if="active === 'pedidos'" />
+      <CardapioSectionRelatorios v-else-if="active === 'relatorios'" />
+      <CardapioSectionEntrega v-else-if="active === 'entrega'" />
+      <CardapioSectionDominios v-else-if="active === 'dominios'" />
+      <CardapioSectionAparencia v-else-if="active === 'aparencia'" />
+      <CardapioSectionSite v-else-if="active === 'site'" />
     </div>
   </section>
 </template>
 
 <style scoped>
 .cardapio-editor {
-  /* Container de rolagem da pagina (flex:1; min-height:0; overflow-y:auto). O
-     header e a sidebar grudam (sticky) DENTRO deste elemento; por isso ele nao
-     pode ter overflow horizontal que quebre o sticky dos filhos. */
+  /* Container de rolagem da pagina. O header (com as abas) gruda no topo. */
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
-  padding: 1.5rem;
+  /* Sem gap: o respiro abaixo do topo fica no painel (a aba Produtos o zera). */
+  gap: 0;
+  padding: 0 1.5rem 0.75rem;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* Altura do header sticky: a sidebar gruda logo abaixo dele. */
-  --cardapio-editor-header-offset: 3.75rem;
+}
+
+/* Filhos da coluna com rolagem nunca encolhem: com abas em overflow-x o minimo
+   automatico vira 0 e o header/painel se sobrepunham (visto no mobile). */
+.cardapio-editor > * {
+  flex-shrink: 0;
 }
 
 .cardapio-editor__top {
-  /* FIXO no topo enquanto o painel rola. O fundo opaco + margem negativa que
-     cobre o padding do container impedem o conteudo de aparecer por tras/ao lado
-     ao rolar; z-index acima da sidebar e do painel. */
+  /* Barra unica e compacta: nome | abas | acoes. Sticky no topo da area de
+     rolagem (sem margem negativa no topo, que empurrava o sticky para baixo). */
   position: sticky;
   top: 0;
   z-index: 3;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin: -1.5rem -1.5rem 0;
-  padding: 1rem 1.5rem;
+  gap: 1.25rem;
+  margin: 0 -1.5rem;
+  padding: 0.45rem 1.5rem;
+  min-height: 3.25rem;
   background: rgb(var(--surface));
   border-bottom: 1px solid var(--line-soft);
 }
@@ -209,8 +283,10 @@ onMounted(loadActive)
 .cardapio-editor__crumbs {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.95rem;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.92rem;
+  white-space: nowrap;
 }
 
 .cardapio-editor__back {
@@ -224,22 +300,90 @@ onMounted(loadActive)
 }
 
 .cardapio-editor__current {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 700;
   color: var(--text-main);
 }
 
-.cardapio-editor__status {
+.cardapio-editor__offline {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgb(var(--danger) / 0.14);
+  color: rgb(var(--danger));
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.cardapio-editor__tabs {
   display: flex;
   align-items: center;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.cardapio-editor__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  padding: 0.4rem 0.75rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.cardapio-editor__tab:hover {
+  background: rgb(var(--surface-2) / 0.6);
+  color: var(--text-main);
+}
+
+.cardapio-editor__tab.is-active {
+  background: rgb(var(--primary) / 0.15);
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.cardapio-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-left: auto;
+}
+
+.cardapio-editor__menu {
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
-  flex-wrap: wrap;
+  min-width: 15rem;
+  padding: 0.85rem;
+}
+
+.cardapio-editor__menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .cardapio-editor__link {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: rgb(var(--primary));
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-decoration: none;
+  word-break: break-all;
 }
 
 .cardapio-editor__pill {
@@ -255,21 +399,21 @@ onMounted(loadActive)
 }
 
 .cardapio-editor__pill.is-off {
-  background: rgb(var(--muted) / 0.16);
-  color: var(--text-muted);
+  background: rgb(var(--danger) / 0.14);
+  color: rgb(var(--danger));
 }
 
 .cardapio-editor__toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.5rem 0.95rem;
+  padding: 0.4rem 0.8rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
   background: rgb(var(--surface-2) / 0.8);
   color: var(--text-main);
   font-weight: 600;
-  font-size: 0.87rem;
+  font-size: 0.84rem;
   cursor: pointer;
 }
 
@@ -291,59 +435,28 @@ onMounted(loadActive)
   padding: 1rem 0;
 }
 
-.cardapio-editor__body {
-  display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
-  flex: 1;
-  min-height: 0;
-}
-
-.cardapio-editor__nav {
-  /* FIXA enquanto o painel rola. align-self: flex-start impede o item de
-     esticar na altura do grid (sem isso o sticky nao teria folga para grudar).
-     top abaixo do header sticky para nao sobrepor. */
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  position: sticky;
-  top: var(--cardapio-editor-header-offset);
-  align-self: flex-start;
-  z-index: 1;
-}
-
-.cardapio-editor__nav-item {
-  display: block;
-  text-decoration: none;
-  width: 100%;
-  padding: 0.6rem 0.85rem;
-  border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.92rem;
-  font-weight: 500;
-  text-align: left;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease;
-}
-
-.cardapio-editor__nav-item:hover {
-  background: rgb(var(--surface-2) / 0.6);
-  color: var(--text-main);
-}
-
-.cardapio-editor__nav-item--active {
-  background: rgb(var(--primary) / 0.15);
-  color: var(--text-main);
-  font-weight: 600;
-}
-
 .cardapio-editor__panel {
   min-width: 0;
+  padding-top: 1rem;
+}
+
+/* Produtos: filtros e tabela colados no topo, sem faixas vazias entre eles. */
+.cardapio-editor__panel--fill {
+  padding-top: 0;
+}
+
+/* Produtos (desktop): o painel ocupa toda a altura restante e a tabela rola por
+   dentro, sem faixa vazia embaixo. Declarado depois de `.cardapio-editor > *`
+   para o flex-shrink valer. No mobile os cards rolam com a pagina. */
+@media (min-width: 721px) {
+  .cardapio-editor__panel--fill {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+    /* tabela ate o fim da pagina: anula o respiro inferior do editor */
+    margin-bottom: -0.75rem;
+  }
 }
 
 .cardapio-editor__spinner {
@@ -360,23 +473,5 @@ onMounted(loadActive)
     transform: rotate(360deg);
   }
 }
-
-@media (max-width: 880px) {
-  .cardapio-editor__body {
-    grid-template-columns: 1fr;
-  }
-
-  .cardapio-editor__nav {
-    position: static;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .cardapio-editor__nav-item {
-    width: auto;
-    white-space: nowrap;
-  }
-}
 </style>
+<style scoped src="./cardapio-editor-responsive.css"></style>

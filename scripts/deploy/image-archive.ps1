@@ -34,7 +34,7 @@ function Send-DeployImageArchive {
   $directoryQ = Convert-ToBashSingleQuoted "$RemotePath/.deploy/images"
   $remoteFileQ = Convert-ToBashSingleQuoted $remoteFile
   $partialQ = Convert-ToBashSingleQuoted $partial
-  Invoke-RemoteCommand -Description 'Preparando diretorio das imagens na VPS' -Command "set -euo pipefail`nmkdir -p -- $directoryQ`ntest -w $directoryQ"
+  Invoke-RemoteCommand -Description 'Preparando diretorio das imagens na VPS' -Command "set -euo pipefail`nmkdir -p -- $directoryQ`ntest -w $directoryQ`ntouch -- $partialQ"
   $batch = [IO.Path]::GetTempFileName()
   try {
     $localPath = (Get-Item -LiteralPath $Archive).FullName.Replace('\', '/')

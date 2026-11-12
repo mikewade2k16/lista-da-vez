@@ -692,7 +692,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// projeto antigo como back real). Painel em /v1/tools (gating abaixo);
 		// redirects publicos /s/{slug} e /q/{slug} fora do gate.
 		// Plano: docs/tools/PLANO_MODULO_TOOLS.md.
-		registry.MustRegister(tools.New())
+		// realtimeService transporta scripts:account:{id} (invalidação dos roteiros).
+		registry.MustRegister(tools.New(tools.WithScriptPublisher(realtimeService)))
 		// Customer Data e a fonte deterministica de subjects, relacionamentos,
 		// identidades, consentimentos, interacoes offline e segmentos. Customer
 		// Intelligence consome apenas suas fachadas e mantem fatos derivados,

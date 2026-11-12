@@ -1351,3 +1351,11 @@ tentativas (collected/unchanged/failed + código). `knowledge.public_sources` ga
 `collection_id`/`chunk_index` (trechos coletados nascem draft). `knowledge.public_reviews`:
 revisões append-only (dono, IA, contador; aprovado/ajustes/reprovado), sem tenant porque
 o acervo é público global e curado só por platform_admin.
+
+### Roteiros (`tools.scripts`, migration 0325)
+
+`id UUID PK`, `account_id UUID FK → core.accounts(id) ON DELETE CASCADE`, `title TEXT`,
+`rows JSONB` (linhas de áudio/vídeo), `description TEXT`, `created_at TIMESTAMPTZ`,
+`updated_at TIMESTAMPTZ`. Índice `(account_id, updated_at DESC)`; todas as operações filtram
+pela conta autenticada/validada. `updated_at` também é o token de concorrência de edição.
+Não há importação automática dos documentos históricos do PHP.

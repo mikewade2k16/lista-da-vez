@@ -42,6 +42,8 @@ Ele nao deve cuidar de:
 - `GET /v1/realtime/notifications?userId=...&accountId=...&ticket=...`
 - `GET /v1/realtime/calendar?scope=account&accountId=...&ticket=...` (Wave 2, C11)
 - `GET /v1/realtime/omnichannel?scope=account&accountId=...&ticket=...` (F5)
+- `GET /v1/realtime/scripts?scope=account&accountId=...&ticket=...` (roteiros; `script.saved|deleted|reordered`,
+  só invalidação; permissão `tools.scripts.view|manage`; ver `tools/AGENT.md`)
 
 O ticket WS e efemero, fica apenas em memoria do processo, expira em 30s e e consumido com `LoadAndDelete`
 antes do upgrade WebSocket. Ele e single-use: reconexao precisa pedir um ticket novo.

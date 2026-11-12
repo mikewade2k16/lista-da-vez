@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'release-web-container.ps1')
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Push-Location $root
 try {
@@ -6,10 +7,14 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Testes do launcher falharam.' }
   $files = @(& git diff --name-only --diff-filter=ACMRT HEAD) + @(& git ls-files --others --exclude-standard)
   $sources = @($files | Where-Object { $_ -match '^web/.*\.(vue|ts|js|mjs)$' -and $_ -notmatch '\.test\.' -and $_ -notmatch '/roadmap/data/' } | Sort-Object -Unique | ForEach-Object { $_.Substring(4) })
-  if ($sources.Count) {
-    $webContainer = (& docker compose ps -q web).Trim()
-    if (-not $webContainer) { throw 'Inicie o container web local para validar o release.' }
-    foreach ($source in $sources) {
+  $cardapioChanged = [bool]($files | Where-Object { $_ -match '^web/.*cardapio' })
+  $cardapioTests = @('app/domain/cardapio/product-filters.test.ts', 'app/composables/useCardapioImportCompletion.test.ts', 'app/domain/cardapio/product-transfer.test.ts', 'app/domain/cardapio/money-input.test.ts', 'app/stores/cardapio.test.ts')
+  $syncFiles = @($sources) + @(if ($cardapioChanged) { $cardapioTests })
+  if ($syncFiles.Count) {
+    $webContainer = Get-ReleaseWebContainer
+  }
+  if ($syncFiles.Count) {
+    foreach ($source in ($syncFiles | Sort-Object -Unique)) {
       # docker cp nao cria diretorios pais para arquivos novos no container.
       $parent = [System.IO.Path]::GetDirectoryName($source).Replace('\', '/')
       & docker exec $webContainer mkdir -p -- "/app/$parent"
@@ -17,14 +22,16 @@ try {
       & docker cp (Join-Path $root "web/$source") "${webContainer}:/app/$source"
       if ($LASTEXITCODE -ne 0) { throw "Falha ao sincronizar $source para validacao." }
     }
+  }
+  if ($sources.Count) {
     # A configuracao do ESLint depende de .nuxt; aguarde a geracao completa.
-    & docker compose exec -T web npx nuxt prepare
+    & docker exec $webContainer npx nuxt prepare
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar a configuracao Nuxt para o lint.' }
-    & docker compose exec -T web npx eslint --no-warn-ignored @sources
+    & docker exec $webContainer npx eslint --no-warn-ignored @sources
     if ($LASTEXITCODE -ne 0) { throw 'Lint dos arquivos alterados falhou.' }
   }
-  if ($files | Where-Object { $_ -match '^web/.*cardapio' }) {
-    & docker compose exec -T web npx vitest run app/domain/cardapio/product-filters.test.ts app/composables/useCardapioImportCompletion.test.ts app/domain/cardapio/product-transfer.test.ts app/domain/cardapio/money-input.test.ts app/stores/cardapio.test.ts
+  if ($cardapioChanged) {
+    & docker exec $webContainer npx vitest run @cardapioTests
     if ($LASTEXITCODE -ne 0) { throw 'Testes do cardapio falharam.' }
   }
   $packages = @($files | Where-Object { $_ -match '^back/.*\.go$' } | ForEach-Object { './' + (($_ -replace '^back/', '') -replace '/[^/]+$', '') } | Sort-Object -Unique)

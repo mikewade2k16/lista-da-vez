@@ -4,6 +4,10 @@
 
 Status: `ativo` (legado em uso, precisa remover) · `band-aid` (sync temporário mantendo 2 sistemas) · `removido`.
 
+## Scripts de Tools — demonstração `removida`; dados históricos pendentes
+
+A rota `/tools/scripts` usa workspace próprio e API Go persistida em `tools.scripts` (migration 0325), com edição de áudio/vídeo (Quill), documentos por conta e download direto do PDF. A demonstração não participa mais dessa rota. O banco anterior do projeto PHP não foi importado, por decisão do usuário; os documentos históricos continuam fora do Omni atual. Sua migração futura exige mapear a conta dona e validar os registros antes de importar, sem substituir documentos novos.
+
 ---
 
 ## 1. Papéis de usuário em tabelas LEGADAS — `removido` ✅ (2026-06-06)

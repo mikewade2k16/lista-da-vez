@@ -1,0 +1,139 @@
+/* Estilos da aba Produtos (separados do SFC pelo limite de linhas). */
+
+/* Seletor compacto de foto (segmentado) dentro da barra de filtros. */
+.cardapio-prod__photo {
+  display: inline-flex;
+  padding: 0.15rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+
+.cardapio-prod__photo button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cardapio-prod__photo strong {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.cardapio-prod__photo button.is-warn strong {
+  color: rgb(var(--danger));
+}
+
+.cardapio-prod__photo button.is-active {
+  background: rgb(var(--primary) / 0.16);
+  color: var(--text-main);
+}
+
+/* "Mostrar mais" flutua sobre o rodape da tabela (nao ocupa uma faixa propria).
+   A tabela ganha respiro interno para a ultima linha nao ficar sob a pilula. */
+.cardapio-prod__more {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  /* Sem respiro: o botao encosta nas bordas e segue o formato da pilula. */
+  padding: 0 0 0 0.9rem;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: rgb(var(--surface) / 0.92);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(6px);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.cardapio-prod__more > button {
+  align-self: stretch;
+  border-radius: 999px;
+  padding-inline: 0.9rem;
+}
+
+.cardapio-prod.has-more :deep(.omni-data-table) {
+  padding-bottom: 3.5rem;
+}
+
+/* Mobile: os cards rolam com a pagina, entao a pilula gruda no rodape da tela. */
+/* A esquerda e so com o botao, para nao colidir com o botao flutuante de chat
+   (canto inferior direito); o total ja aparece no seletor de foto. */
+@media (max-width: 720px) {
+  .cardapio-prod__more {
+    position: sticky;
+    left: auto;
+    align-self: flex-start;
+    transform: none;
+    padding: 0;
+  }
+
+  .cardapio-prod__more span {
+    display: none;
+  }
+}
+
+/* Desktop: filtros numa faixa de ponta a ponta (sem card) e a tabela logo abaixo,
+   sem espacos entre si (a faixa anula o padding lateral do editor, 1.5rem). */
+@media (min-width: 721px) {
+  .cardapio-prod :deep(.omni-collection-filters) {
+    margin: 0 -1.5rem;
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  /* A tabela mantem o espaco lateral do editor (alinhada ao conteudo dos
+     filtros); so o topo encosta na faixa de filtros. */
+  .cardapio-prod :deep(.omni-data-table) {
+    border-top: none;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}
+
+/* Mobile: barra compacta e cards encostados, com respiro minimo entre eles. */
+@media (max-width: 720px) {
+  .cardapio-prod {
+    gap: 0.45rem;
+  }
+}
+
+/* Coluna Tags: controle compacto com quebra das tags. */
+.cardapio-prod__tags {
+  width: 144px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.cardapio-prod__tags :deep(.omni-tags-input),
+.cardapio-prod__tags :deep([data-slot='base']) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  max-height: none;
+}
+
+.cardapio-prod__tags :deep(input) {
+  min-width: 0;
+  width: 4rem;
+  max-width: 100%;
+  flex: 1;
+}

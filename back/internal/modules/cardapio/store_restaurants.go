@@ -59,21 +59,43 @@ func (s *Store) GetRestaurant(ctx context.Context, accountID, id string) (Restau
 	return scanRestaurant(s.pool.QueryRow(ctx, q, id, accountID))
 }
 
+// restaurantLeanSelect e a projecao enxuta da listagem. coverUrl = banner do site
+// (ou o logo, na falta) — capa dos cards da lista no painel.
+const restaurantLeanSelect = `select r.id, r.account_id, coalesce(a.name, ''), r.slug, r.name,
+			r.is_active,
+			coalesce((select d.host from cardapio.restaurant_domains d
+				where d.restaurant_id = r.id order by d.is_primary desc, d.created_at limit 1), ''),
+			coalesce(nullif(r.banner_url, ''), r.logo_url, ''),
+			r.updated_at
+		from cardapio.restaurants r
+		join core.accounts a on a.id = r.account_id`
+
 // ListRestaurantsLean retorna a projecao enxuta da listagem do painel, com o
 // nome da account e o dominio primario (1 query, sem N+1). accountID vazio =
 // todas (platform_admin); senao filtra.
 func (s *Store) ListRestaurantsLean(ctx context.Context, accountID, query string) ([]RestaurantLean, error) {
-	const q = `select r.id, r.account_id, coalesce(a.name, ''), r.slug, r.name,
-			r.is_active,
-			coalesce((select d.host from cardapio.restaurant_domains d
-				where d.restaurant_id = r.id order by d.is_primary desc, d.created_at limit 1), ''),
-			r.updated_at
-		from cardapio.restaurants r
-		join core.accounts a on a.id = r.account_id
+	const q = restaurantLeanSelect + `
 		where ($1 = '' or r.account_id = $1::uuid)
 		  and ($2 = '' or r.name ilike '%' || $2 || '%' or r.slug ilike '%' || $2 || '%')
 		order by r.updated_at desc`
-	rows, err := s.pool.Query(ctx, q, accountID, query)
+	return s.queryRestaurantsLean(ctx, q, accountID, query)
+}
+
+// ListRestaurantsLeanForAccounts lista os restaurantes de VARIAS accounts (usuario
+// membro de mais de um cliente). accountIDs ja vem validado pelo service.
+func (s *Store) ListRestaurantsLeanForAccounts(ctx context.Context, accountIDs []string, query string) ([]RestaurantLean, error) {
+	if len(accountIDs) == 0 {
+		return []RestaurantLean{}, nil
+	}
+	const q = restaurantLeanSelect + `
+		where r.account_id = any($1::uuid[])
+		  and ($2 = '' or r.name ilike '%' || $2 || '%' or r.slug ilike '%' || $2 || '%')
+		order by a.name, r.name`
+	return s.queryRestaurantsLean(ctx, q, accountIDs, query)
+}
+
+func (s *Store) queryRestaurantsLean(ctx context.Context, q string, scope any, query string) ([]RestaurantLean, error) {
+	rows, err := s.pool.Query(ctx, q, scope, query)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +104,7 @@ func (s *Store) ListRestaurantsLean(ctx context.Context, accountID, query string
 	for rows.Next() {
 		var r RestaurantLean
 		if err := rows.Scan(&r.ID, &r.AccountID, &r.AccountName, &r.Slug, &r.Name,
-			&r.IsActive, &r.PrimaryDomain, &r.UpdatedAt); err != nil {
+			&r.IsActive, &r.PrimaryDomain, &r.CoverURL, &r.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

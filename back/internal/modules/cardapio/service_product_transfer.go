@@ -37,7 +37,11 @@ func (s *Service) BulkProducts(ctx context.Context, accountID, restaurantID stri
 		ids = append(ids, id)
 	}
 
-	affected, err := s.store.BulkProducts(ctx, accountID, restaurantID, ids, in.Action)
+	in.Value = strings.TrimSpace(in.Value)
+	if (in.Action == ProductBulkAddTag || in.Action == ProductBulkSetCategory) && (in.Value == "" || len(in.Value) > 200) {
+		return ProductBulkResult{}, ErrValidation
+	}
+	affected, err := s.store.BulkProducts(ctx, accountID, restaurantID, ids, in.Action, in.Value)
 	if err != nil {
 		return ProductBulkResult{}, mapStoreErr(err)
 	}
@@ -47,7 +51,7 @@ func (s *Service) BulkProducts(ctx context.Context, accountID, restaurantID stri
 func validProductBulkAction(action ProductBulkAction) bool {
 	switch action {
 	case ProductBulkDelete, ProductBulkEnable, ProductBulkDisable,
-		ProductBulkFeature, ProductBulkRemoveFeature:
+		ProductBulkFeature, ProductBulkRemoveFeature, ProductBulkAddTag, ProductBulkSetCategory:
 		return true
 	default:
 		return false

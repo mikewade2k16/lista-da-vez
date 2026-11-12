@@ -19,6 +19,8 @@ type ServiceConfig struct {
 	PublicBaseURL  string // PUBLIC_API_BASE_URL (absolutiza /uploads/* no publico)
 	TelemetrySalt  string // CARDAPIO_TELEMETRY_SALT (hash do IP na ingestao de telemetria)
 	Media          MediaStorage
+	// Photos converte e guarda as fotos de produto (aba Produtos).
+	Photos ProductPhotoStorage
 }
 
 // Service orquestra as regras do modulo cardapio (painel + publico). Depende de
@@ -27,6 +29,9 @@ type Service struct {
 	store dataStore
 	cfg   ServiceConfig
 	gate  *cardapioGate // permissao fina do painel; nil nos testes (gate fail-closed)
+	// members confirma vinculo ativo do usuario com a account do header
+	// (usuario sem conta padrao no login, so com papel do cardapio). nil = desligado.
+	members accountMemberChecker
 }
 
 // NewService cria o service. O gate de permissao e injetado depois via WithGate
@@ -92,6 +97,23 @@ func normalizeSlug(value string) string {
 // contra o Principal (vazio so para platform_admin sem filtro).
 func (s *Service) ListRestaurants(ctx context.Context, accountID, query string) ([]RestaurantLean, error) {
 	return s.store.ListRestaurantsLean(ctx, accountID, strings.TrimSpace(query))
+}
+
+// ListMemberRestaurants lista os restaurantes de todas as accounts em que o
+// usuario e membro ativo (cardapio ligado) E tem cardapio.view. Cada account
+// passa pelo gate; sem nenhuma, lista vazia.
+func (s *Service) ListMemberRestaurants(ctx context.Context, principal auth.Principal, query string) ([]RestaurantLean, error) {
+	accounts, err := s.store.CardapioMemberAccounts(ctx, principal.UserID)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make([]string, 0, len(accounts))
+	for _, accountID := range accounts {
+		if s.authorize(ctx, principal, accountID, permView) == nil {
+			allowed = append(allowed, accountID)
+		}
+	}
+	return s.store.ListRestaurantsLeanForAccounts(ctx, allowed, strings.TrimSpace(query))
 }
 
 // CreateRestaurant cria um restaurante na account informada (ja validada).

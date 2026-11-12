@@ -6,6 +6,91 @@ Estas instrucoes valem para `web/app/components/cardapio/` (painel `/cardapio`).
 
 ## Responsabilidade
 
+Editor compacto (2026-11-11): a sidebar de secoes saiu. Uma barra sticky unica traz
+nome do estabelecimento | TODAS as abas liberadas (sem menu "Mais"; Produtos, Categorias,
+Pedidos e depois as demais, respeitando o gate platform; no mobile so icones numa 2a
+linha) | botao abrir site +
+popover "..." (status Publicado/Fora do ar, Publicar/Despublicar, dominio e seletor de
+Cliente — este so platform_admin) e, so para platform_admin, o lembrete de originais
+
+> = 15MB (`CardapioLargePhotosNotice`: icone + contador, lista em popover). Status ativo
+> nao ocupa o topo; "Fora do ar" aparece
+> ao lado do nome so quando inativo. Na aba Produtos o titulo/linha propria sairam: o
+> seletor de foto (Todos/Sem foto/Com foto), "..." e "Novo produto" ficam no slot de
+> acoes da barra de filtros; "Limpar" so aparece com filtro ativo. Filhos da coluna de
+> rolagem do editor usam `flex-shrink: 0` (abas com overflow-x tinham minimo 0 e o header
+> sobrepunha o painel no mobile).
+
+Lista de estabelecimentos (2026-11-11): duas visoes em `CardapioListWorkspace`
+(`?vista=detalhes` na URL). Padrao: `CardapioRestaurantCards` (capa `coverUrl` 16:9,
+nome, dominio e cliente quando ha mais de um; clique abre o editor) sem busca/filtros.
+"Detalhes": a tabela anterior com filtros, colunas e acoes (criar/duplicar/excluir). O
+editor sempre recebe `?account=` da linha: usuario de varios clientes abre o
+estabelecimento de outro cliente (o back confirma o vinculo).
+
+PENDENTE (pedido do usuario, fazer depois): no modal da foto em tela cheia, deixar as
+informacoes do produto editaveis (nome, preco, descricoes) e navegar entre produtos com
+as setas do teclado / gesto de deslizar.
+
+Foto em tela cheia (2026-11-11): na miniatura com foto, clique abre
+`CardapioProductPhotoViewer`, modal com fundo desfocado e nome/botoes flutuantes (versao
+do site `photoSrc`, nao a miniatura; teleportado,
+z-index 700; fecha com Esc/X/clique fora) com Trocar foto e Remover. Sobre a propria
+miniatura ha icones de trocar (lapis) e remover (lixeira): no hover/foco no desktop,
+sempre visiveis em telas de toque. Sem foto, o clique abre o seletor de arquivo; arrastar
+uma foto continua trocando. Remover = `applyImageRemoval` (PATCH canonico com imageUrl
+vazio, com confirmacao); o arquivo e o original ficam guardados. Validacao do cliente
+(formato e 20MB) centralizada em `domain/cardapio/product-photo.ts` (com teste). Regras
+mobile do editor em `cardapio-editor-responsive.css` (limite de linhas do SFC).
+
+Aba Produtos sem espacos (2026-11-11): o editor nao tem gap; o respiro abaixo do topo
+fica em `.cardapio-editor__panel` (padding-top) e a aba Produtos o zera. No desktop a
+barra de filtros vira faixa de ponta a ponta (sem card) e a tabela encosta logo abaixo,
+tambem de ponta a ponta, ate o fim da pagina; "Mostrar mais" e uma pilula flutuando
+sobre o rodape da tabela (botao encostado nas bordas, mesmo arredondamento), com
+respiro interno na tabela para a ultima linha. No mobile a pilula gruda no rodape, a
+esquerda (o canto direito e do botao de feedback). Estilos em
+`sections/cardapio-produtos.css` (scoped src, limite de linhas do SFC).
+
+Mobile e tela cheia (2026-11-11): a pagina do editor (`pages/cardapio/[id].vue`) anula
+o padding do `.module-workspace-full` (8px 12px 0) no wrapper — barra do estabelecimento
+colada no menu do app e na largura total, desktop e mobile. No desktop a aba Produtos
+ocupa a altura restante (`cardapio-editor__panel--fill`) e a tabela rola por dentro.
+Ate 720px (`useMediaMatch`): abas so com icone (`SectionTab.icon`, nome em
+title/aria-label), "Fora do ar" vira ponto vermelho; a aba Produtos troca a tabela por
+`CardapioProductMobileList` (cards: checkbox, foto com upload, nome e preco editaveis no
+card pelo mesmo commit com debounce, editar/apagar) e a barra por
+`CardapioProductMobileToolbar` (busca + novo; foto/filtros/campos/mais so icones). Os
+campos extras do card seguem a preferencia propria `cardapio.editor.products.mobile`
+(padrao foto/nome/preco). Modal de produto em tela cheia no mobile
+(`product-modal-mobile.css`) e teleportado para o body (o workspace cria camada
+z-index 0 que o prendia abaixo da barra do app). Acoes em lote com valor:
+`CardapioProductBulkEditor`.
+
+Aba Produtos enxuta (2026-11-11): aba padrao do editor quando a URL nao traz `?aba=`
+(`DEFAULT_CARDAPIO_SECTION`). Topo com atalhos de foto (Todos / Sem foto / Com foto,
+mesmo filtro `image`), "Novo produto" e menu "..." (importar, exportar JSON/CSV e
+"Precos sem centavos" — nada removido, so realocado). Barra: busca + categoria;
+disponibilidade/data/tags em "Mais filtros" (seguem ativos recolhidos, com contador).
+Colunas padrao: Foto, Nome, Categoria, Preco, Disponivel (preferencia
+`cardapio.editor.products.v2`; as demais seguem em "Colunas"). Lista renderizada em
+blocos de 40 ("Mostrar mais"). `CardapioProductImageCell` deixou de usar OmniMediaGrid:
+miniatura `thumbUrl` com lazy/async decode, clique ou arraste para enviar, valida
+formato e 20MB no cliente. Uploads da tabela e do modal (foto principal e galeria) usam
+`uploadProductPhoto` (POST `/product-photos`). `CardapioLargePhotosNotice` (so
+platform_admin) lista originais >= 15MB com link do original e "Tratada".
+Logica extraida em `useCardapioProductBulk`, `useCardapioProductTransfer` e
+`useCardapioProductListView`. Lista: usuario nao-admin com um unico estabelecimento e
+redirecionado direto para ele; o breadcrumb "Presence" some nesse caso. Editor:
+header sticky sem margem negativa (cortava o topo do painel) e, no mobile, corpo
+em coluna flex (stretch) com abas `flex-shrink: 0` (no grid encolhiam a zero).
+
+Produtos: ações em lote permitem adicionar uma tag existente ou nova preservando as
+anteriores e trocar a categoria dos produtos selecionados. Os meses disponíveis no
+filtro de cadastro são derivados das datas reais da lista, separados por ano e no
+horário local; meses sem produtos não aparecem. A seleção continua restrita aos
+produtos visíveis. A API deve estar atualizada para as novas ações.
+
 Correcao local (2026-11-04): sidebar do editor reduzida para 132px; coluna Tags
 limita o controle com wrapper de 144px e permite quebra das tags, sem alterar
 OmniTagsInput compartilhado. A imagem da tabela nao exibe hint de arrastar.
@@ -49,7 +134,7 @@ Tags de produtos (2026-11-03): formulario usa `string[]` (zero a N tags), com
 multiselect e criacao no modal e na coluna Tags. `OmniTagsInput` nao possui
 renomeacao/cor local: alteracoes passam pelo PATCH canonico e reloadProducts.
 Opcoes derivadas dos produtos do restaurante aberto; sem catalogo global/localStorage.
-Filtro Tags multiselect inclui produtos com qualquer tag selecionada, combinado
+Filtro Tags multiselect inclui a opcao Sem tag e produtos com qualquer tag selecionada, combinado
 com busca/categoria/disponibilidade/foto/data. Limpar restaura lista sem filtro de
 tags. API lean precisa incluir `tags`; banco ja possui JSONB desde a migration 0153.
 Publico TAVOLA continua no repositorio separado.

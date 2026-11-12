@@ -69,6 +69,15 @@ Os primeiros itens falham **sem erro de build nem type-check** — só aparecem 
 
 Depois dos checks, abrir a rota no browser pelo papel-alvo e confirmar que renderiza a página certa (não a do pai, nem um redirect).
 
+## Busca obrigatória em toda página/módulo com lista
+Toda página ou módulo que lista registros (tabela, grade, cards, lateral de documentos) tem um campo de pesquisa visível acima da lista. Usar o componente compartilhado `AppSearchInput` (debounce, botão de limpar, Esc limpa) — não criar input de busca próprio. Importar explicitamente (`import AppSearchInput from '~/components/ui/AppSearchInput.vue'`): ele não é auto-registrado e, sem o import, o Vue compila `resolveComponent` e o campo simplesmente não aparece, sem erro no lint nem nos testes.
+- **Lista paginada ou com carregamento incremental** → o termo vai para a API (`?q=`), filtrado no banco dentro do tenant e com curingas de `LIKE` escapados. Filtrar só o que já foi carregado esconde resultados.
+- **Lista pequena e já completa no cliente** → filtro local é aceitável.
+- Estado vazio próprio da busca ("Nenhum resultado para …"), distinto de "nenhum cadastro".
+- Ações que dependem da lista inteira (arrastar para ordenar, selecionar todos) ficam desativadas enquanto há termo, com aviso curto.
+- Trocar de conta/escopo zera o termo.
+Referência: lateral de Scripts (`ToolsScriptsWorkspace.vue` + `GET /v1/tools/scripts?q=`).
+
 ## UX
 - Mínimo de cliques: ação que cabe em 1 clique não deve exigir 2.
 - Feedback visual imediato: botão desabilita + spinner no clique, não espera o servidor. Skeleton/loading em < 100ms; sem tela branca.

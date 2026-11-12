@@ -8,6 +8,11 @@ import CardapioProductImportModal from '~/components/cardapio/product/CardapioPr
 import CardapioProductDateRange from '~/components/cardapio/product/CardapioProductDateRange.vue'
 import CardapioProductModal from '~/components/cardapio/product/CardapioProductModal.vue'
 import CardapioProductImageCell from '~/components/cardapio/product/CardapioProductImageCell.vue'
+import CardapioProductBulkEditor from '~/components/cardapio/product/CardapioProductBulkEditor.vue'
+import CardapioProductMobileList from '~/components/cardapio/product/CardapioProductMobileList.vue'
+import CardapioProductMobileToolbar from '~/components/cardapio/product/CardapioProductMobileToolbar.vue'
+import CardapioProductPhotoViewer from '~/components/cardapio/product/CardapioProductPhotoViewer.vue'
+import { useMediaMatch } from '~/composables/useMediaMatch'
 import {
   useCardapioProductColumns,
   type CardapioProductFilters,
@@ -16,12 +21,9 @@ import {
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
-import {
-  serializeProductTransfer,
-  type ProductImportInput,
-  type ProductImportResult,
-} from '~/domain/cardapio/product-transfer'
-import type { ProductBulkAction } from '~/domain/cardapio/types'
+import { useCardapioProductTransfer } from '~/composables/useCardapioProductTransfer'
+import { useCardapioProductBulk } from '~/composables/useCardapioProductBulk'
+import { useCardapioProductListView } from '~/composables/useCardapioProductListView'
 import type { OmniTableCellUpdate } from '~/types/omni/collection'
 
 const store = useCardapioStore()
@@ -32,34 +34,12 @@ const editingId = ref('')
 const busyId = ref('')
 const uploadingIds = ref<string[]>([])
 const selectedIds = ref<Array<string | number>>([])
-const bulkBusy = ref(false)
-const importOpen = ref(false)
-const importBusy = ref(false)
-const importResult = ref<ProductImportResult | null>(null)
-const exportBusy = ref(false)
-const settingsBusy = ref(false)
-const wholeAmounts = computed(() => store.restaurant?.settings.productPriceDecimals !== true)
-
-async function setWholeAmounts(enabled: boolean) {
-  const restaurant = store.restaurant
-  if (!restaurant || settingsBusy.value) return
-  settingsBusy.value = true
-  try {
-    await store.patchRestaurant(restaurant.id, {
-      settings: { ...restaurant.settings, productPriceDecimals: !enabled },
-    })
-    ui.success('Preferencia de valores salva para este cardapio.')
-  } catch (caught) {
-    ui.error(getApiErrorMessage(caught, 'Nao foi possivel salvar a preferencia de valores.'))
-  } finally {
-    settingsBusy.value = false
-  }
-}
 
 const filtersState = ref<CardapioProductFilters & Record<string, unknown>>({
   search: '',
   categoryId: '',
   availability: '',
+  image: '',
   tags: [],
 })
 
@@ -71,6 +51,7 @@ const {
   tagOptions,
   onCellInput,
   applyImageUpload,
+  applyImageRemoval,
 } = useCardapioProductColumns(() => filtersState.value, {
   onSuccess: () => ui.success('Produto atualizado.'),
   onError: (caught) =>
@@ -83,62 +64,80 @@ watch(filteredRows, (rows) => {
   selectedIds.value = selectedIds.value.filter((id) => visible.has(String(id)))
 })
 
-// Sinaliza produtos sem imagem (ex.: import que ainda nao tem foto cadastrada).
-const noImageCount = computed(() => tableRows.value.filter((row) => !row.imageUrl?.trim()).length)
-const selectedProductIds = computed(() =>
-  [...new Set(selectedIds.value.map(String))].filter((id) =>
-    filteredRows.value.some((product) => product.id === id),
-  ),
+const {
+  bulkBusy,
+  bulkEditor,
+  bulkTag,
+  bulkCategory,
+  selectedProductIds,
+  bulkActionItems,
+  runBulkAction,
+} = useCardapioProductBulk(selectedIds, filteredRows)
+
+const {
+  importOpen,
+  importBusy,
+  importResult,
+  exportBusy,
+  settingsBusy,
+  moreItems,
+  closeImport,
+  importProducts,
+} = useCardapioProductTransfer(
+  () => tableRows.value.length,
+  () => {
+    selectedIds.value = []
+  },
 )
 
-const bulkActionItems = computed(() => [
-  [
-    {
-      label: 'Marcar como disponivel',
-      icon: 'i-lucide-circle-check',
-      onSelect: () => runBulkAction('enable'),
-    },
-    {
-      label: 'Marcar como indisponivel',
-      icon: 'i-lucide-circle-off',
-      onSelect: () => runBulkAction('disable'),
-    },
-    {
-      label: 'Adicionar destaque',
-      icon: 'i-lucide-star',
-      onSelect: () => runBulkAction('feature'),
-    },
-    {
-      label: 'Remover destaque',
-      icon: 'i-lucide-star-off',
-      onSelect: () => runBulkAction('remove_feature'),
-    },
-  ],
-  [
-    {
-      label: 'Excluir selecionados',
-      icon: 'i-lucide-trash-2',
-      color: 'error' as const,
-      onSelect: () => runBulkAction('delete'),
-    },
-  ],
-])
-
-const exportItems = [
-  [
-    { label: 'Exportar JSON', icon: 'i-lucide-braces', onSelect: () => exportFile('json') },
-    { label: 'Exportar CSV', icon: 'i-lucide-sheet', onSelect: () => exportFile('csv') },
-  ],
-]
-
+const {
+  showMoreFilters,
+  toolbarFilters,
+  hiddenActiveFilters,
+  photoChips,
+  setPhotoFilter,
+  PAGE_SIZE,
+  pagedRows,
+  remainingRows,
+  showMore,
+} = useCardapioProductListView(filtersState, filterDefinitions, tableRows, filteredRows)
 const columnExcludeKeys = ['actions']
 const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
   useOmniVisibleColumns({
-    preferenceKey: 'cardapio.editor.products',
+    // v2: layout enxuto (foto em destaque). Tags, preco comparativo, destaque e
+    // data continuam disponiveis em "Colunas".
+    preferenceKey: 'cardapio.editor.products.v2',
     allColumns: allTableColumns,
     columnExcludeKeys,
-    forceVisibleColumnKeys: ['tags', 'createdAt'],
+    defaultVisibleColumnKeys: ['imageSrc', 'name', 'categoryId', 'priceReais', 'isAvailable'],
   })
+
+// Mobile: cards no lugar da tabela. Os campos extras do card seguem uma
+// preferencia de colunas propria (foto, nome e preco sempre aparecem).
+const isMobile = useMediaMatch('(max-width: 720px)')
+const { visibleColumnKeys: mobileFieldKeys } = useOmniVisibleColumns({
+  preferenceKey: 'cardapio.editor.products.mobile',
+  allColumns: allTableColumns,
+  columnExcludeKeys,
+  defaultVisibleColumnKeys: ['imageSrc', 'name', 'priceReais'],
+})
+const mobileExtraFilters = computed(() =>
+  filterDefinitions.value.filter((filter) => !['search', 'image'].includes(filter.key)),
+)
+const mobileActiveFilters = computed(
+  () => hiddenActiveFilters.value + (filtersState.value.categoryId ? 1 : 0),
+)
+const mobileSearch = computed({
+  get: () => String(filtersState.value.search ?? ''),
+  set: (value: string) => {
+    filtersState.value = { ...filtersState.value, search: value }
+  },
+})
+
+function openEditById(id: string) {
+  editingId.value = id
+  modalOpen.value = true
+}
 
 function toRow(row: Record<string, unknown>): CardapioProductRow {
   return row as unknown as CardapioProductRow
@@ -180,6 +179,33 @@ async function onImageUpload(id: string, file: File) {
   }
 }
 
+// Foto em tela cheia (conferir) + remover foto (o produto deixa de usar a foto;
+// o arquivo e o original continuam guardados).
+const viewerId = ref('')
+const removingPhotoId = ref('')
+const viewerRow = computed(() => tableRows.value.find((row) => row.id === viewerId.value))
+
+async function removePhoto(id: string) {
+  const product = tableRows.value.find((row) => row.id === id)
+  if (!product || removingPhotoId.value) return
+  const { confirmed } = (await ui.confirm({
+    title: 'Remover foto',
+    message: `Remover a foto de "${product.name}"? O produto fica sem foto no site.`,
+    confirmLabel: 'Remover foto',
+  })) as { confirmed: boolean }
+  if (!confirmed) return
+  removingPhotoId.value = id
+  try {
+    await applyImageRemoval(id)
+    if (viewerId.value === id) viewerId.value = ''
+    ui.success('Foto removida.')
+  } catch (caught) {
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel remover a foto.'))
+  } finally {
+    removingPhotoId.value = ''
+  }
+}
+
 async function remove(row: Record<string, unknown>) {
   const product = toRow(row)
   const { confirmed } = (await ui.confirm({
@@ -200,218 +226,251 @@ async function remove(row: Record<string, unknown>) {
   }
 }
 
-async function runBulkAction(action: ProductBulkAction) {
-  const ids = selectedProductIds.value
-  const restaurantId = store.restaurantId
-  if (!ids.length || !restaurantId || bulkBusy.value) return
-
-  if (action === 'delete') {
-    const { confirmed } = (await ui.confirm({
-      title: 'Excluir produtos selecionados',
-      message: `Excluir permanentemente ${ids.length} produto(s)? Esta acao nao pode ser desfeita.`,
-      confirmLabel: `Excluir ${ids.length}`,
-    })) as { confirmed: boolean }
-    if (!confirmed) return
-  }
-
-  bulkBusy.value = true
-  try {
-    const result = await store.bulkProducts(restaurantId, ids, action)
-    selectedIds.value = []
-    ui.success(
-      `${result.affected} produto(s) ${action === 'delete' ? 'excluído(s)' : 'atualizado(s)'}.`,
-    )
-  } catch (caught) {
-    ui.error(getApiErrorMessage(caught, 'Nao foi possivel aplicar a acao em lote.'))
-  } finally {
-    bulkBusy.value = false
-  }
-}
-
-async function exportFile(format: 'json' | 'csv') {
-  const restaurantId = store.restaurantId
-  if (!restaurantId || exportBusy.value || import.meta.server) return
-  exportBusy.value = true
-  try {
-    const document = await store.exportProducts(restaurantId)
-    const content = serializeProductTransfer(document, format)
-    const mime = format === 'json' ? 'application/json;charset=utf-8' : 'text/csv;charset=utf-8'
-    const prefix = format === 'csv' ? '\uFEFF' : ''
-    const blob = new Blob([prefix, content], { type: mime })
-    const url = URL.createObjectURL(blob)
-    const link = window.document.createElement('a')
-    link.href = url
-    link.download = `produtos-${store.restaurant?.slug || restaurantId}.${format}`
-    link.click()
-    URL.revokeObjectURL(url)
-    ui.success(`${document.products.length} produto(s) exportado(s).`)
-  } catch (caught) {
-    ui.error(getApiErrorMessage(caught, 'Nao foi possivel exportar os produtos.'))
-  } finally {
-    exportBusy.value = false
-  }
-}
-
-function openImport() {
-  importResult.value = null
-  importOpen.value = true
-}
-
-function closeImport() {
-  if (importBusy.value) return
-  importOpen.value = false
-}
-
-async function importProducts(input: ProductImportInput) {
-  const restaurantId = store.restaurantId
-  if (!restaurantId || importBusy.value) return
-  importBusy.value = true
-  importResult.value = null
-  try {
-    const result = await store.importProducts(restaurantId, input)
-    importResult.value = result
-    selectedIds.value = []
-    if (result.failed) {
-      ui.error(`Importacao concluida com ${result.failed} produto(s) rejeitado(s).`)
-    } else {
-      ui.success(`${result.created + result.updated} produto(s) importado(s).`)
-    }
-  } catch (caught) {
-    ui.error(getApiErrorMessage(caught, 'Nao foi possivel importar os produtos.'))
-  } finally {
-    importBusy.value = false
-  }
-}
+// "Limpar" so aparece quando ha filtro aplicado.
+const hasActiveFilters = computed(() => {
+  const state = filtersState.value
+  return Boolean(
+    String(state.search ?? '').trim() ||
+    state.categoryId ||
+    state.image ||
+    typeof state.availability === 'boolean' ||
+    state.createdPeriod ||
+    (Array.isArray(state.tags) && state.tags.length),
+  )
+})
 
 function onResetFilters() {
-  filtersState.value = { search: '', categoryId: '', availability: '', tags: [] }
+  filtersState.value = { search: '', categoryId: '', availability: '', image: '', tags: [] }
 }
 </script>
 
 <template>
-  <section class="cardapio-prod">
-    <div class="cardapio-prod__head">
-      <p class="cardapio-prod__count">
-        {{ filteredRows.length }} de {{ tableRows.length }} produto(s)
-        <span v-if="noImageCount" class="cardapio-prod__warn">· {{ noImageCount }} sem imagem</span>
-      </p>
-      <USwitch
-        :model-value="wholeAmounts"
-        :disabled="settingsBusy || !store.restaurant"
-        label="Valores sem centavos"
-        description="22 = R$ 22. Desative para digitar centavos. Precos existentes sao preservados."
-        @update:model-value="setWholeAmounts"
+  <section class="cardapio-prod" :class="{ 'has-more': remainingRows > 0 }">
+    <template v-if="isMobile">
+      <CardapioProductMobileToolbar
+        v-model:search="mobileSearch"
+        v-model:filters-open="showMoreFilters"
+        v-model:visible-columns="mobileFieldKeys"
+        :photo-chips="photoChips"
+        :photo-value="String(filtersState.image || '')"
+        :active-filter-count="mobileActiveFilters"
+        :columns="allTableColumns"
+        :exclude-keys="columnExcludeKeys"
+        :more-items="moreItems"
+        :bulk-items="bulkActionItems"
+        :selected-count="selectedProductIds.length"
+        :busy="exportBusy || settingsBusy || bulkBusy"
+        @create="openCreate"
+        @photo="setPhotoFilter"
+      />
+      <OmniCollectionFilters
+        v-if="showMoreFilters"
+        v-model="filtersState"
+        :filters="mobileExtraFilters"
+        :show-column-filter="false"
+        :show-reset="hasActiveFilters"
+        @reset="onResetFilters"
+      >
+        <template #below>
+          <CardapioProductDateRange
+            v-if="filtersState.createdPeriod === 'custom'"
+            v-model="filtersState"
+          />
+        </template>
+      </OmniCollectionFilters>
+      <CardapioProductMobileList
+        v-model:selected="selectedIds"
+        :rows="pagedRows"
+        :visible-keys="mobileFieldKeys"
+        :categories="store.categories"
+        :uploading-ids="uploadingIds"
+        :busy-id="busyId"
+        :disabled="bulkBusy"
+        :whole-amounts="store.restaurant?.settings.productPriceDecimals !== true"
+        @upload="onImageUpload"
+        @invalid="ui.error($event)"
+        @view="viewerId = $event"
+        @remove-photo="removePhoto"
+        @edit="openEditById"
+        @remove="remove($event as unknown as Record<string, unknown>)"
+        @cell="onCellInput"
+      />
+    </template>
+
+    <template v-else>
+      <OmniCollectionFilters
+        v-model="filtersState"
+        v-model:visible-columns="visibleColumnKeys"
+        v-model:locked-columns="lockedColumnKeys"
+        v-model:column-order="columnOrder"
+        :filters="toolbarFilters"
+        :table-columns="allTableColumns"
+        :column-exclude-keys="columnExcludeKeys"
+        :show-reset="hasActiveFilters"
+        @reset="onResetFilters"
+        @reset-columns="resetToDefaults"
+      >
+        <template #below>
+          <CardapioProductDateRange
+            v-if="filtersState.createdPeriod === 'custom'"
+            v-model="filtersState"
+          />
+        </template>
+        <template #actions>
+          <div class="cardapio-prod__photo" role="group" aria-label="Filtrar por foto">
+            <button
+              v-for="chip in photoChips"
+              :key="chip.value"
+              type="button"
+              :class="{
+                'is-active': (filtersState.image || '') === chip.value,
+                'is-warn': chip.value === 'without' && chip.count > 0,
+              }"
+              :aria-pressed="(filtersState.image || '') === chip.value"
+              :title="`${chip.label}: ${chip.count} produto(s)`"
+              @click="setPhotoFilter(chip.value)"
+            >
+              {{ chip.label }}
+              <strong>{{ chip.count }}</strong>
+            </button>
+          </div>
+          <UButton
+            :icon="showMoreFilters ? 'i-lucide-chevron-up' : 'i-lucide-sliders-horizontal'"
+            :label="
+              showMoreFilters
+                ? 'Menos filtros'
+                : hiddenActiveFilters
+                  ? `Mais filtros (${hiddenActiveFilters})`
+                  : 'Mais filtros'
+            "
+            color="neutral"
+            variant="ghost"
+            @click="showMoreFilters = !showMoreFilters"
+          />
+          <UDropdownMenu v-if="selectedIds.length" :items="bulkActionItems">
+            <UButton
+              icon="i-lucide-list-checks"
+              :label="`Acoes (${selectedIds.length})`"
+              color="neutral"
+              variant="soft"
+              :loading="bulkBusy"
+              :disabled="!selectedProductIds.length || bulkBusy"
+            />
+          </UDropdownMenu>
+          <div class="cardapio-prod__primary">
+            <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
+              <UButton
+                icon="i-lucide-ellipsis"
+                color="neutral"
+                variant="ghost"
+                aria-label="Mais opcoes"
+                title="Importar, exportar e preferencias"
+                :loading="exportBusy || settingsBusy"
+              />
+            </UDropdownMenu>
+            <UButton
+              icon="i-lucide-plus"
+              label="Novo produto"
+              color="primary"
+              @click="openCreate"
+            />
+          </div>
+        </template>
+      </OmniCollectionFilters>
+
+      <OmniDataTable
+        v-model="selectedIds"
+        :rows="pagedRows"
+        :loading="bulkBusy"
+        :columns="tableColumns"
+        row-key="id"
+        empty-text="Nenhum produto encontrado com os filtros atuais."
+        @update:cell="onCellUpdate"
+      >
+        <template #cell-imageSrc="{ row }">
+          <CardapioProductImageCell
+            :name="toRow(row).name"
+            :src="toRow(row).imageSrc"
+            :uploading="uploadingIds.includes(rowId(row))"
+            :disabled="bulkBusy"
+            @upload="onImageUpload(rowId(row), $event)"
+            @invalid="ui.error($event)"
+            @view="viewerId = rowId(row)"
+            @remove="removePhoto(rowId(row))"
+          />
+        </template>
+        <template #cell-tags="{ row }">
+          <div class="cardapio-prod__tags">
+            <OmniTagsInput
+              :model-value="toRow(row).tags ?? []"
+              :options="tagOptions"
+              size="sm"
+              :disabled="bulkBusy"
+              placeholder="Adicionar tags"
+              creatable
+              @update:model-value="onCellInput(rowId(row), 'tags', $event)"
+            />
+          </div>
+        </template>
+        <template #cell-actions="{ row }">
+          <div class="cardapio-prod__actions">
+            <UButton
+              icon="i-lucide-pencil"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Editar produto (descricao, variacoes, adicionais, galeria)"
+              aria-label="Editar"
+              @click="openEdit(row)"
+            />
+            <UButton
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              size="sm"
+              title="Remover produto"
+              aria-label="Remover"
+              :loading="busyId === rowId(row)"
+              @click="remove(row)"
+            />
+          </div>
+        </template>
+      </OmniDataTable>
+    </template>
+
+    <div v-if="remainingRows" class="cardapio-prod__more">
+      <span>Mostrando {{ pagedRows.length }} de {{ filteredRows.length }}</span>
+      <UButton
+        icon="i-lucide-chevrons-down"
+        :label="`Mostrar mais ${Math.min(remainingRows, PAGE_SIZE * 2)}`"
+        color="neutral"
+        variant="soft"
+        @click="showMore"
       />
     </div>
 
-    <OmniCollectionFilters
-      v-model="filtersState"
-      v-model:visible-columns="visibleColumnKeys"
-      v-model:locked-columns="lockedColumnKeys"
-      v-model:column-order="columnOrder"
-      :filters="filterDefinitions"
-      :table-columns="allTableColumns"
-      :column-exclude-keys="columnExcludeKeys"
-      @reset="onResetFilters"
-      @reset-columns="resetToDefaults"
-    >
-      <template #below>
-        <CardapioProductDateRange
-          v-if="filtersState.createdPeriod === 'custom'"
-          v-model="filtersState"
-        />
-      </template>
-      <template #actions>
-        <UBadge v-if="selectedIds.length" color="neutral" variant="soft">
-          {{ selectedIds.length }} selecionado(s)
-        </UBadge>
-        <UDropdownMenu :items="bulkActionItems">
-          <UButton
-            icon="i-lucide-list-checks"
-            label="Acoes"
-            color="neutral"
-            variant="soft"
-            :loading="bulkBusy"
-            :disabled="!selectedProductIds.length || bulkBusy"
-          />
-        </UDropdownMenu>
-        <UButton
-          icon="i-lucide-upload"
-          label="Importar"
-          color="neutral"
-          variant="soft"
-          @click="openImport"
-        />
-        <UDropdownMenu :items="exportItems">
-          <UButton
-            icon="i-lucide-download"
-            label="Exportar"
-            color="neutral"
-            variant="soft"
-            :loading="exportBusy"
-            :disabled="exportBusy || !tableRows.length"
-          />
-        </UDropdownMenu>
-        <UButton icon="i-lucide-plus" label="Novo produto" color="primary" @click="openCreate" />
-      </template>
-    </OmniCollectionFilters>
+    <CardapioProductPhotoViewer
+      v-if="viewerRow && viewerRow.photoSrc"
+      :name="viewerRow.name"
+      :src="viewerRow.photoSrc"
+      :uploading="uploadingIds.includes(viewerRow.id)"
+      :removing="removingPhotoId === viewerRow.id"
+      @close="viewerId = ''"
+      @upload="onImageUpload(viewerRow.id, $event)"
+      @invalid="ui.error($event)"
+      @remove="removePhoto(viewerRow.id)"
+    />
 
-    <OmniDataTable
-      v-model="selectedIds"
-      :rows="filteredRows"
-      :loading="bulkBusy"
-      :columns="tableColumns"
-      row-key="id"
-      empty-text="Nenhum produto encontrado com os filtros atuais."
-      @update:cell="onCellUpdate"
-    >
-      <template #cell-imageSrc="{ row }">
-        <CardapioProductImageCell
-          :product-id="rowId(row)"
-          :name="toRow(row).name"
-          :src="toRow(row).imageSrc"
-          :uploading="uploadingIds.includes(rowId(row))"
-          :disabled="bulkBusy"
-          @upload="onImageUpload(rowId(row), $event)"
-        />
-      </template>
-      <template #cell-tags="{ row }">
-        <div class="cardapio-prod__tags">
-          <OmniTagsInput
-            :model-value="toRow(row).tags ?? []"
-            :options="tagOptions"
-            size="sm"
-            :disabled="bulkBusy"
-            placeholder="Adicionar tags"
-            creatable
-            @update:model-value="onCellInput(rowId(row), 'tags', $event)"
-          />
-        </div>
-      </template>
-      <template #cell-actions="{ row }">
-        <div class="cardapio-prod__actions">
-          <UButton
-            icon="i-lucide-pencil"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            title="Editar produto (variacoes, adicionais, galeria)"
-            aria-label="Editar"
-            @click="openEdit(row)"
-          />
-          <UButton
-            icon="i-lucide-trash-2"
-            color="error"
-            variant="ghost"
-            size="sm"
-            title="Remover produto"
-            aria-label="Remover"
-            :loading="busyId === rowId(row)"
-            @click="remove(row)"
-          />
-        </div>
-      </template>
-    </OmniDataTable>
+    <CardapioProductBulkEditor
+      v-model:editor="bulkEditor"
+      v-model:tag="bulkTag"
+      v-model:category="bulkCategory"
+      :count="selectedProductIds.length"
+      :busy="bulkBusy"
+      :tag-options="tagOptions"
+      :categories="store.categories"
+      @apply="runBulkAction"
+    />
 
     <CardapioProductModal
       :open="modalOpen"
@@ -435,29 +494,21 @@ function onResetFilters() {
 
 <style scoped>
 .cardapio-prod {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  flex: 1;
+  gap: 0;
   min-width: 0;
   min-height: 0;
 }
 
-.cardapio-prod__head {
+/* Acao principal sempre no fim da linha. */
+.cardapio-prod__primary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.cardapio-prod__count {
-  font-size: 0.86rem;
-  color: var(--text-muted);
-}
-
-.cardapio-prod__warn {
-  color: rgb(var(--danger));
-  font-weight: 600;
+  gap: 0.35rem;
+  margin-left: auto;
 }
 
 .cardapio-prod__actions {
@@ -467,34 +518,13 @@ function onResetFilters() {
   gap: 0.25rem;
 }
 
-.cardapio-prod__tags {
-  width: 144px;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.cardapio-prod__tags :deep(.omni-tags-input),
-.cardapio-prod__tags :deep([data-slot='base']) {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  flex-wrap: wrap;
-  max-height: none;
-}
-
-.cardapio-prod__tags :deep(input) {
-  min-width: 0;
-  width: 4rem;
-  max-width: 100%;
-  flex: 1;
-}
-
 :deep(.omni-data-table) {
+  /* Cresce ate a altura disponivel do painel (editor) e rola por dentro. */
+  flex: 0 1 auto;
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  max-height: min(65vh, 44rem);
+  min-height: 0;
   overflow: auto;
 }
 
@@ -503,3 +533,4 @@ function onResetFilters() {
   overflow: hidden;
 }
 </style>
+<style scoped src="./cardapio-produtos.css"></style>

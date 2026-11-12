@@ -15,4 +15,5 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 	mux.HandleFunc("GET /v1/realtime/notifications", service.HandleNotificationsSocket)
 	mux.HandleFunc("GET /v1/realtime/calendar", service.HandleCalendarSocket)
 	mux.HandleFunc("GET /v1/realtime/omnichannel", service.HandleOmnichannelSocket)
+	mux.HandleFunc("GET /v1/realtime/scripts", service.HandleScriptsSocket)
 }

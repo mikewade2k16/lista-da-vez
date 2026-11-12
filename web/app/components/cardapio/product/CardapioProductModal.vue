@@ -91,7 +91,7 @@ async function onGalleryUpload(file: File) {
   }
   uploadingGallery.value = true
   try {
-    const url = await store.uploadMedia(store.restaurantId, file)
+    const { url } = await store.uploadProductPhoto(store.restaurantId, file)
     if (url) {
       form.value.gallery = [...form.value.gallery, url]
     }
@@ -110,7 +110,7 @@ async function onMainImageUpload(event: Event) {
     return
   }
   try {
-    const url = await store.uploadMedia(store.restaurantId, file)
+    const { url } = await store.uploadProductPhoto(store.restaurantId, file)
     if (url) {
       form.value.imageUrl = url
     }
@@ -149,185 +149,202 @@ async function onSave() {
 </script>
 
 <template>
-  <div v-if="open" class="cardapio-pm" role="dialog" aria-modal="true">
-    <div class="cardapio-pm__backdrop" @click="emit('close')"></div>
-    <div class="cardapio-pm__panel">
-      <header class="cardapio-pm__header">
-        <h2 class="cardapio-pm__title">{{ isEditing() ? 'Editar produto' : 'Novo produto' }}</h2>
-        <button type="button" class="cardapio-pm__close" aria-label="Fechar" @click="emit('close')">
-          &times;
-        </button>
-      </header>
+  <Teleport to="body">
+    <div v-if="open" class="cardapio-pm" role="dialog" aria-modal="true">
+      <div class="cardapio-pm__backdrop" @click="emit('close')"></div>
+      <div class="cardapio-pm__panel">
+        <header class="cardapio-pm__header">
+          <h2 class="cardapio-pm__title">{{ isEditing() ? 'Editar produto' : 'Novo produto' }}</h2>
+          <button
+            type="button"
+            class="cardapio-pm__close"
+            aria-label="Fechar"
+            @click="emit('close')"
+          >
+            &times;
+          </button>
+        </header>
 
-      <div v-if="loading" class="cardapio-pm__loading">Carregando produto...</div>
+        <div v-if="loading" class="cardapio-pm__loading">Carregando produto...</div>
 
-      <div v-else class="cardapio-pm__body">
-        <div class="cardapio-pm__grid">
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Nome</span>
-            <input :value="form.name" type="text" class="cardapio-pm__input" @input="onNameInput" />
-          </label>
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Slug</span>
-            <input :value="form.slug" type="text" class="cardapio-pm__input" @input="onSlugInput" />
-          </label>
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Categoria</span>
-            <select v-model="form.categoryId" class="cardapio-pm__input">
-              <option value="">Sem categoria</option>
-              <option v-for="category in categories" :key="category.id" :value="category.id">
-                {{ category.name }}
-              </option>
-            </select>
-          </label>
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Preco base</span>
-            <CardapioMoneyInput
-              v-model="form.priceCents"
-              :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
-            />
-          </label>
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Preço cheio (riscado)</span>
-            <CardapioMoneyInput
-              v-model="form.compareAtPriceCents"
-              :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
-            />
-            <span class="cardapio-pm__hint">
-              Opcional. Maior que o preço base, mostra o desconto riscado. 0 = sem risco.
-            </span>
-          </label>
-          <label class="cardapio-pm__field cardapio-pm__field--full">
-            <span class="cardapio-pm__label">Descricao curta</span>
-            <input v-model="form.shortDesc" type="text" class="cardapio-pm__input" />
-          </label>
-          <label class="cardapio-pm__field cardapio-pm__field--full">
-            <span class="cardapio-pm__label">Descricao</span>
-            <textarea v-model="form.description" rows="2" class="cardapio-pm__input"></textarea>
-          </label>
-          <label class="cardapio-pm__field cardapio-pm__field--full">
-            <span class="cardapio-pm__label">Texto longo (body)</span>
-            <textarea v-model="form.body" rows="3" class="cardapio-pm__input"></textarea>
-          </label>
-          <div class="cardapio-pm__field cardapio-pm__field--full">
-            <span class="cardapio-pm__label">Imagem principal</span>
-            <div class="cardapio-pm__media">
-              <img
-                v-if="form.imageUrl"
-                :src="mediaUrl(form.imageUrl)"
-                alt="Imagem"
-                class="cardapio-pm__thumb"
-              />
+        <div v-else class="cardapio-pm__body">
+          <div class="cardapio-pm__grid">
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Nome</span>
               <input
-                v-model="form.imageUrl"
+                :value="form.name"
                 type="text"
                 class="cardapio-pm__input"
-                placeholder="URL"
+                @input="onNameInput"
               />
-              <label class="cardapio-pm__upload">
-                <input type="file" accept="image/*" hidden @change="onMainImageUpload" />
-                Enviar
+            </label>
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Slug</span>
+              <input
+                :value="form.slug"
+                type="text"
+                class="cardapio-pm__input"
+                @input="onSlugInput"
+              />
+            </label>
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Categoria</span>
+              <select v-model="form.categoryId" class="cardapio-pm__input">
+                <option value="">Sem categoria</option>
+                <option v-for="category in categories" :key="category.id" :value="category.id">
+                  {{ category.name }}
+                </option>
+              </select>
+            </label>
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Preco base</span>
+              <CardapioMoneyInput
+                v-model="form.priceCents"
+                :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
+              />
+            </label>
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Preço cheio (riscado)</span>
+              <CardapioMoneyInput
+                v-model="form.compareAtPriceCents"
+                :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
+              />
+              <span class="cardapio-pm__hint">
+                Opcional. Maior que o preço base, mostra o desconto riscado. 0 = sem risco.
+              </span>
+            </label>
+            <label class="cardapio-pm__field cardapio-pm__field--full">
+              <span class="cardapio-pm__label">Descricao curta</span>
+              <input v-model="form.shortDesc" type="text" class="cardapio-pm__input" />
+            </label>
+            <label class="cardapio-pm__field cardapio-pm__field--full">
+              <span class="cardapio-pm__label">Descricao</span>
+              <textarea v-model="form.description" rows="2" class="cardapio-pm__input"></textarea>
+            </label>
+            <label class="cardapio-pm__field cardapio-pm__field--full">
+              <span class="cardapio-pm__label">Texto longo (body)</span>
+              <textarea v-model="form.body" rows="3" class="cardapio-pm__input"></textarea>
+            </label>
+            <div class="cardapio-pm__field cardapio-pm__field--full">
+              <span class="cardapio-pm__label">Imagem principal</span>
+              <div class="cardapio-pm__media">
+                <img
+                  v-if="form.imageUrl"
+                  :src="mediaUrl(form.imageUrl)"
+                  alt="Imagem"
+                  class="cardapio-pm__thumb"
+                />
+                <input
+                  v-model="form.imageUrl"
+                  type="text"
+                  class="cardapio-pm__input"
+                  placeholder="URL"
+                />
+                <label class="cardapio-pm__upload">
+                  <input type="file" accept="image/*" hidden @change="onMainImageUpload" />
+                  Enviar
+                </label>
+              </div>
+            </div>
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Peso</span>
+              <input
+                v-model="form.weight"
+                type="text"
+                class="cardapio-pm__input"
+                placeholder="350g"
+              />
+            </label>
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Tempo de preparo</span>
+              <input
+                v-model="form.cookTime"
+                type="text"
+                class="cardapio-pm__input"
+                placeholder="25min"
+              />
+            </label>
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Dieta (separe por virgula)</span>
+              <input
+                v-model="form.diet"
+                type="text"
+                class="cardapio-pm__input"
+                placeholder="vegano, sem gluten"
+              />
+            </label>
+            <label class="cardapio-pm__field">
+              <span class="cardapio-pm__label">Alergenos (virgula)</span>
+              <input
+                v-model="form.allergens"
+                type="text"
+                class="cardapio-pm__input"
+                placeholder="gluten, leite"
+              />
+            </label>
+            <div class="cardapio-pm__field cardapio-pm__field--full">
+              <span class="cardapio-pm__label">Tags</span>
+              <OmniTagsInput
+                :model-value="form.tags"
+                :options="tagOptions"
+                creatable
+                placeholder="Selecionar ou criar tags"
+                @update:model-value="updateTags"
+              />
+              <span class="cardapio-pm__hint">
+                Opcional. Selecione varias tags ou digite para criar.
+              </span>
+            </div>
+            <div class="cardapio-pm__toggles cardapio-pm__field--full">
+              <label class="cardapio-pm__toggle">
+                <input v-model="form.isAvailable" type="checkbox" />
+                <span>Disponivel</span>
+              </label>
+              <label class="cardapio-pm__toggle">
+                <input v-model="form.isFeatured" type="checkbox" />
+                <span>Destaque</span>
               </label>
             </div>
           </div>
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Peso</span>
-            <input
-              v-model="form.weight"
-              type="text"
-              class="cardapio-pm__input"
-              placeholder="350g"
+
+          <div class="cardapio-pm__section">
+            <CardapioProductVariations
+              v-model="form.variations"
+              :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
             />
-          </label>
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Tempo de preparo</span>
-            <input
-              v-model="form.cookTime"
-              type="text"
-              class="cardapio-pm__input"
-              placeholder="25min"
-            />
-          </label>
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Dieta (separe por virgula)</span>
-            <input
-              v-model="form.diet"
-              type="text"
-              class="cardapio-pm__input"
-              placeholder="vegano, sem gluten"
-            />
-          </label>
-          <label class="cardapio-pm__field">
-            <span class="cardapio-pm__label">Alergenos (virgula)</span>
-            <input
-              v-model="form.allergens"
-              type="text"
-              class="cardapio-pm__input"
-              placeholder="gluten, leite"
-            />
-          </label>
-          <div class="cardapio-pm__field cardapio-pm__field--full">
-            <span class="cardapio-pm__label">Tags</span>
-            <OmniTagsInput
-              :model-value="form.tags"
-              :options="tagOptions"
-              creatable
-              placeholder="Selecionar ou criar tags"
-              @update:model-value="updateTags"
-            />
-            <span class="cardapio-pm__hint">
-              Opcional. Selecione varias tags ou digite para criar.
-            </span>
           </div>
-          <div class="cardapio-pm__toggles cardapio-pm__field--full">
-            <label class="cardapio-pm__toggle">
-              <input v-model="form.isAvailable" type="checkbox" />
-              <span>Disponivel</span>
-            </label>
-            <label class="cardapio-pm__toggle">
-              <input v-model="form.isFeatured" type="checkbox" />
-              <span>Destaque</span>
-            </label>
+          <div class="cardapio-pm__section">
+            <CardapioProductAddons
+              v-model="form.addons"
+              :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
+            />
+          </div>
+          <div class="cardapio-pm__section">
+            <CardapioProductGallery
+              v-model="form.gallery"
+              :uploading="uploadingGallery"
+              @upload="onGalleryUpload"
+            />
           </div>
         </div>
 
-        <div class="cardapio-pm__section">
-          <CardapioProductVariations
-            v-model="form.variations"
-            :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
-          />
-        </div>
-        <div class="cardapio-pm__section">
-          <CardapioProductAddons
-            v-model="form.addons"
-            :whole-amounts="!store.restaurant?.settings.productPriceDecimals"
-          />
-        </div>
-        <div class="cardapio-pm__section">
-          <CardapioProductGallery
-            v-model="form.gallery"
-            :uploading="uploadingGallery"
-            @upload="onGalleryUpload"
-          />
-        </div>
+        <footer class="cardapio-pm__footer">
+          <button type="button" class="cardapio-pm__btn" :disabled="saving" @click="emit('close')">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="cardapio-pm__btn cardapio-pm__btn--primary"
+            :disabled="saving || loading"
+            @click="onSave"
+          >
+            <span v-if="saving" class="cardapio-pm__spinner" aria-hidden="true"></span>
+            {{ saving ? 'Salvando...' : 'Salvar produto' }}
+          </button>
+        </footer>
       </div>
-
-      <footer class="cardapio-pm__footer">
-        <button type="button" class="cardapio-pm__btn" :disabled="saving" @click="emit('close')">
-          Cancelar
-        </button>
-        <button
-          type="button"
-          class="cardapio-pm__btn cardapio-pm__btn--primary"
-          :disabled="saving || loading"
-          @click="onSave"
-        >
-          <span v-if="saving" class="cardapio-pm__spinner" aria-hidden="true"></span>
-          {{ saving ? 'Salvando...' : 'Salvar produto' }}
-        </button>
-      </footer>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -536,10 +553,5 @@ async function onSave() {
     transform: rotate(360deg);
   }
 }
-
-@media (max-width: 640px) {
-  .cardapio-pm__grid {
-    grid-template-columns: 1fr;
-  }
-}
 </style>
+<style scoped src="./product-modal-mobile.css"></style>

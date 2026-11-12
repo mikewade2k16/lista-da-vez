@@ -179,3 +179,19 @@ preservam o arquivo local para retomar com `deploy-pull.ps1 -ImageArchive`, mesm
 tag/ambiente/opções. O fluxo rápido exige cliente SFTP antes do build. Não repetir
 rollout automaticamente nem afirmar que testes simulados validam a rede da VPS.
 Teste sem rede: `pwsh -NoProfile -File scripts/deploy/image-archive.test.ps1`.
+
+## Validacao com web local
+
+`validate-release.ps1` exige um unico container web ativo antes de sincronizar
+fontes ou executar testes do cardapio. Ausencia e falha de consulta do Docker
+geram mensagens acionaveis; nenhuma etapa de validacao e pulada. Os comandos
+de validacao usam o ID do container localizado. No Mac, `npm run dev:mac:up`
+inicia a stack e o watch; aguardar o web antes de tentar novamente.
+
+O transporte cria o arquivo parcial com `touch` antes de `reput`: OpenSSH exige
+que o destino exista mesmo no primeiro envio. `touch` preserva dados parciais
+existentes para retomada; SHA256 continua obrigatorio antes do docker load.
+
+A validacao do cardapio sincroniza tambem os cinco arquivos de teste executados
+com os fontes atuais, evitando rodar testes antigos da imagem contra codigo novo.
+Os testes permanecem fora da lista de lint focado.

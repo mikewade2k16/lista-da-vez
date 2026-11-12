@@ -65,3 +65,75 @@ isUniqueViolation/isForeignKeyViolation`) · `store_qr_codes.go` · `http.go` (p
 
 ## Rebuild
 Mudou Go → `docker compose up -d --build api` (restart não basta). Migration roda no boot.
+
+## Roteiros (`0325_tools_scripts.sql`)
+
+`tools.scripts` persiste documentos por `account_id`: título, linhas JSONB de áudio/vídeo,
+observações HTML e timestamps. A rota estática `/tools/scripts` substitui a demonstração.
+Não importa documentos do PHP antigo; essa migração de dados está deliberadamente pendente.
+
+- `GET /v1/tools/scripts?offset=0`: até 50 resumos, ordenados por atualização/id; `hasMore`
+  indica próxima página. Conteúdo completo não participa da listagem; `preview` traz texto puro
+  (sem tags, até 300 caracteres) das 6 primeiras linhas para a miniatura da lateral.
+  `q` (opcional, até 100 caracteres) filtra por título ou texto puro de qualquer linha (ILIKE,
+  curingas `%`/`_` escapados), sempre dentro da conta; a paginação vale sobre o resultado.
+  `client` (opcional): vazio = todos, `none` = sem cliente, uuid = roteiros daquele cliente.
+- `GET /v1/tools/scripts/{id}`: documento completo, no mesmo escopo de leitura da listagem.
+- **Cliente do roteiro (migration 0327).** `tools.scripts.client_account_id` marca sobre qual
+  conta-cliente o roteiro fala; o roteiro continua pertencendo à conta que o criou.
+  `client_visible` (padrão `true`) libera a leitura para os usuários da conta-cliente. Só uma
+  conta-agência (`is_agency`) pode marcar, e só cliente ativo, não-agência e da MESMA
+  organização (senão 400 `invalid_client`). `GET /v1/tools/scripts/clients` (exige `.manage`)
+  lista essas opções com `scriptCount` (roteiros da conta marcados com o cliente); para
+  conta-cliente devolve `[]`.
+- **Escopo de leitura único** (`scriptVisibleTo` em `scripts_store.go`): roteiros da própria
+  conta + roteiros de uma conta-agência da mesma organização marcados com a conta atual e
+  visíveis. A organização é reconferida na leitura. Esses itens voltam com `shared: true` e são
+  somente leitura: PUT/DELETE/ordem filtram por `account_id` e retornam 404. A conta-cliente
+  precisa do módulo tools e de `tools.scripts.view` para ler. Respostas trazem
+  `clientAccountId`, `clientName`, `clientVisible` e `shared`.
+- `POST /v1/tools/scripts`, `PUT /v1/tools/scripts/{id}`, `DELETE /v1/tools/scripts/{id}`.
+- Leitura exige `tools.scripts.view` ou `.manage`; escrita exige `.manage`. Permissões efetivas
+  da conta são resolvidas por `RequireAuthWithAccount`. Admin usa `RequireAuth` e conta explícita
+  em `X-Account-Id`, sem leitura/escrita global implícita. IDs fora da conta retornam 404.
+- PUT exige o `updatedAt` retornado pela API, com precisão de microssegundos: conflito retorna
+  409 e preserva o documento persistido. Título até 200 caracteres, até 200 linhas, cada célula
+  e observações até 200 KB; soma de conteúdo até 800 KB (limite HTTP de 1 MiB).
+- `PUT /v1/tools/scripts/order` grava a ordem da lateral por usuário (`tools.script_orders`,
+  migration 0326); IDs fora da conta retornam 404.
+- `POST /v1/tools/scripts/images` (multipart `file`, PNG/JPEG/GIF/WebP até 10 MB, tipo detectado
+  pelo conteúdo) grava em `PRIVATE_FILES_DIR/scripts/{conta}/{id}` e registra em
+  `tools.script_images`; `GET /v1/tools/scripts/images/{id}` serve imagens da própria conta ou
+  embutidas (id presente em `rows`/`description`) num roteiro compartilhado com ela.
+  Sem `PRIVATE_FILES_DIR` o upload retorna 503.
+- Front faz autosave com debounce de 400 ms sem bloquear o editor, reidrata a resposta
+  autoritativa e confirma saída com draft pendente. Draft por conta fica apenas em memória
+  enquanto a página permanece montada. PDF é baixado direto (html2canvas + jsPDF, A4 fatiado).
+
+### Realtime dos roteiros (versão simples, 2026-11-12)
+
+- Após cada mutação persistida, `scriptService` publica `ScriptEvent` (`scripts_publisher.go`)
+  pelo `ScriptPublisher` injetado em `tools.New(tools.WithScriptPublisher(realtimeService))`.
+  Eventos: `script.saved` (id + `updatedAt`), `script.deleted` (id) e `script.reordered`
+  (só a conta dona, com `userId`; a ordem é por usuário). Falha ao gravar não publica.
+- O evento é só invalidação, sem conteúdo. Vai para `scripts:account:{conta dona}` e para as
+  contas-cliente que viam ou passam a ver o roteiro (cliente atual visível + cliente anterior),
+  para o card sumir/aparecer na tela delas. A tela refaz o fetch pela API (escopo `scriptVisibleTo`).
+- Canal: `GET /v1/realtime/scripts?scope=account&accountId=...&ticket=...` (módulo realtime,
+  `service_scripts.go`): conta ativa + membership + `tools.scripts.view` ou `.manage`.
+- Front (`useScriptsRealtime.ts` + `useScriptWorkspace.ts`): ignora o eco da própria aba pelo
+  `updatedAt`; atualiza o card (`refreshDocument`; 404 remove da lista); roteiro aberto sem
+  edição local recarrega na hora; com edição local mostra "alterado em outra sessão" com
+  "Recarregar"; excluído em outra sessão fecha o editor com aviso. Com busca/filtro ativo,
+  recarrega a lista (a API decide se o item ainda entra).
+
+### Implementações futuras (realtime dos roteiros)
+
+Pendentes de propósito; a versão atual é "último a salvar vence" com detecção de conflito (409).
+- **Edição colaborativa** de verdade (duas pessoas na mesma célula, texto mesclado): exige CRDT/OT
+  (ex.: Yjs + y-quill) e persistência de deltas, não só invalidação.
+- **Presença**: mostrar quem está com o roteiro aberto/editando — reaproveitar o `PresenceStore`
+  do realtime (`/v1/realtime/presence`, já usado em tasks/calendar) com um scope `script`.
+- **Lock por célula** enquanto alguém edita (o presence de tasks já tem `field_locked`).
+- **Atualização sem refetch**: mandar o resumo no evento quando o volume justificar.
+

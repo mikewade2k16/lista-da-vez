@@ -70,6 +70,11 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	store := NewStore(deps.Pool)
 	media := NewDiskMediaStorage(strings.TrimSpace(os.Getenv("UPLOADS_DIR")))
+	if deps.Logger != nil {
+		media.WithLogger(func(event string, err error) {
+			deps.Logger.Warn(event, "error", err)
+		})
+	}
 	telemetrySalt := strings.TrimSpace(os.Getenv("CARDAPIO_TELEMETRY_SALT"))
 	// Sem salt, o ip_hash da telemetria fica vazio (ipHashHex retorna "") — fail-closed
 	// quanto a PII: nao grava IP cru. Em producao o salt deve ser definido (LGPD), mas a
@@ -87,7 +92,8 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		PublicBaseURL:  strings.TrimSpace(os.Getenv("PUBLIC_API_BASE_URL")),
 		TelemetrySalt:  telemetrySalt,
 		Media:          media,
-	}).WithGate(gate)
+		Photos:         media,
+	}).WithGate(gate).WithMembers(auth.NewPostgresAccountMemberChecker(deps.Pool))
 
 	// Poda diaria da telemetria (LGPD). CARDAPIO_TELEMETRY_RETENTION_DAYS sobrescreve o
 	// default de 90 dias; <= 0 desliga a poda automatica. A goroutine para no Close.

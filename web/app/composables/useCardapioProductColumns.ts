@@ -2,7 +2,10 @@ import { computed, onBeforeUnmount, ref, unref } from 'vue'
 import {
   productMatchesFilters,
   productDateRange,
+  productMonthOptions,
   productExtraFilters,
+  PRODUCT_WITHOUT_TAGS,
+  productTagFilterValue,
   type CardapioProductFilters,
 } from '~/domain/cardapio/product-filters'
 import type { MaybeRefOrGetter } from 'vue'
@@ -60,6 +63,8 @@ export interface CardapioProductRow extends ProductListItem {
   priceReais: number
   compareAtPriceReais: number
   imageSrc: string
+  // Foto na versao do site (tela cheia); imageSrc e a miniatura da tabela.
+  photoSrc: string
 }
 
 function centsToReais(cents: number): number {
@@ -149,7 +154,9 @@ export function useCardapioProductColumns(
           categoryId: product.categoryId ?? '',
           priceReais: centsToReais(product.priceCents),
           compareAtPriceReais: centsToReais(product.compareAtPriceCents ?? 0),
-          imageSrc: resolveMediaUrl(product.imageUrl, apiBase.value),
+          // Tabela usa a miniatura AVIF; sem conversao, a propria foto.
+          imageSrc: resolveMediaUrl(product.thumbUrl || product.imageUrl, apiBase.value),
+          photoSrc: resolveMediaUrl(product.imageUrl, apiBase.value),
         }
         // Aplica o overlay otimista (edicao em voo) por cima da projecao do banco.
         const edits = pendingEdits.value
@@ -175,10 +182,11 @@ export function useCardapioProductColumns(
   const allTableColumns = computed<OmniTableColumn[]>(() => [
     {
       key: 'imageSrc',
-      label: 'Imagem',
+      label: 'Foto',
       type: 'custom',
-      minWidth: 104,
-      maxWidth: 120,
+      locked: true,
+      minWidth: 112,
+      maxWidth: 128,
       defaultOrder: 10,
     },
     {
@@ -295,13 +303,20 @@ export function useCardapioProductColumns(
       ],
       accessor: (row) => Boolean(row.isAvailable),
     },
-    ...productExtraFilters,
+    ...productExtraFilters.map((filter) =>
+      filter.key === 'createdPeriod'
+        ? { ...filter, options: [...filter.options, ...productMonthOptions(tableRows.value)] }
+        : filter,
+    ),
     {
       key: 'tags',
       label: 'Tags',
       type: 'multiselect',
       placeholder: 'Filtrar por tags',
-      options: tagOptions.value,
+      options: [
+        { label: 'Sem tag', value: PRODUCT_WITHOUT_TAGS },
+        ...tagOptions.value.map((tag) => ({ ...tag, value: productTagFilterValue(tag.value) })),
+      ],
     },
   ])
 
@@ -406,14 +421,24 @@ export function useCardapioProductColumns(
     )
   }
 
-  // Sobe a imagem pela API de midia e grava a url via PATCH full-replace (mesma
-  // mecanica de persistCell, mas a origem do valor e o upload).
+  // Sobe a foto pela API de fotos de produto (original guardado + AVIF do site +
+  // miniatura) e grava a url via PATCH full-replace (mesma mecanica de
+  // persistCell, mas a origem do valor e o upload).
   async function applyImageUpload(productId: string, file: File) {
     const full = await store.loadProduct(productId)
-    const url = await store.uploadMedia(full.restaurantId, file)
+    const { url } = await store.uploadProductPhoto(full.restaurantId, file)
     if (!url.trim()) throw new Error('O servidor nao retornou o endereco da imagem enviada.')
     const form = productToForm(full)
     form.imageUrl = url
+    await store.patchProduct(productId, formToPayload(form))
+  }
+
+  // Remove a foto principal do produto (PATCH canonico com imageUrl vazio). O
+  // arquivo e o original continuam guardados; so o produto deixa de usar a foto.
+  async function applyImageRemoval(productId: string) {
+    const full = await store.loadProduct(productId)
+    const form = productToForm(full)
+    form.imageUrl = ''
     await store.patchProduct(productId, formToPayload(form))
   }
 
@@ -431,5 +456,6 @@ export function useCardapioProductColumns(
     filterDefinitions,
     onCellInput,
     applyImageUpload,
+    applyImageRemoval,
   }
 }

@@ -1,0 +1,320 @@
+/* Calendario no celular/tablet estreito. Importado por ultimo no barrel (calendar.css)
+   para vencer as regras de desktop. No desktop nada aqui se aplica.
+   Layout (<= 880px), de cima para baixo: UMA linha de controles, trilho M/S1..Sn na
+   horizontal e o scroll de meses/semanas com a MESMA ideia do desktop (bloco em foco
+   centralizado, anterior espiando em cima e proximo embaixo), celulas quadradas e sem
+   margens laterais. Anotacoes = sidebar deslizante, fechada por padrao (estado
+   `mobileNotesOpen` em pages/calendario/index.vue). */
+
+@media (max-width: 880px) {
+  /* Sem respiro entre o header da aplicacao e o calendario, nem nas laterais. */
+  .app-surface .module-workspace-full:has(.calendar-page) {
+    padding: 0;
+  }
+
+  /* Altura util do scroll = viewport - header da app (64) - controles - trilho - folgas.
+     Mes: 6 linhas + 1 linha espiando do anterior e 1 do proximo => /8 (descontado o
+     cabecalho do card). Semana: no maximo 3 blocos em tela => /3. */
+  .calendar-page {
+    --cal-mobile-view: calc(100dvh - 154px);
+    --cal-mobile-row: calc((var(--cal-mobile-view) - 72px) / 8);
+    --cal-mobile-week: calc((var(--cal-mobile-view) - 16px) / 3);
+  }
+
+  .calendar-body {
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 2px 0;
+  }
+
+  /* A coluna esquerda deixa de ser um card: controles e anotacoes viram filhos diretos
+     do layout (controles no topo; anotacoes posicionadas como sidebar). */
+  .calendar-leftcol.calendar-leftcol--mobile {
+    display: contents;
+  }
+
+  .calendar-leftcol__arrow {
+    display: none;
+  }
+
+  /* ----- Controles: uma linha so ------------------------------------------- */
+  .calendar-leftcol--mobile .calendar-controls {
+    order: -1;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    padding: 0.3rem 0.35rem;
+    border: 1px solid rgb(var(--border) / 0.55);
+    border-radius: var(--radius-sm);
+    background: rgb(var(--surface) / 0.62);
+  }
+
+  /* Titulo ja aparece no card do mes; Mes/Semana ja esta no trilho M/S1..Sn;
+     presenca nao cabe na linha. */
+  .calendar-leftcol--mobile .calendar-controls__title,
+  .calendar-leftcol--mobile .calendar-controls__seg,
+  .calendar-leftcol--mobile .calendar-controls__presence,
+  .calendar-leftcol--mobile .calendar-controls__new-label {
+    display: none;
+  }
+
+  .calendar-leftcol--mobile .calendar-controls__collapse {
+    margin-left: 0;
+  }
+
+  .calendar-leftcol--mobile .calendar-controls__client {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .calendar-leftcol--mobile .calendar-controls__today,
+  .calendar-leftcol--mobile .calendar-controls__new {
+    flex: 0 0 auto;
+  }
+
+  .calendar-leftcol--mobile .calendar-controls .calendar-controls__new.app-panel-button {
+    padding: 0 0.55rem;
+  }
+
+  .calendar-leftcol--mobile .calendar-controls__new-icon {
+    margin-right: 0;
+  }
+
+  .calendar-controls__collapse.is-active {
+    background: rgb(var(--primary) / 0.16);
+    color: rgb(var(--primary));
+  }
+
+  /* ----- Sidebar de anotacoes --------------------------------------------- */
+  .calendar-leftcol--mobile .calendar-notes {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: min(86vw, 360px);
+    border-right: 1px solid rgb(var(--border) / 0.55);
+    border-radius: 0 var(--radius-shell) var(--radius-shell) 0;
+    background: rgb(var(--surface));
+    box-shadow: var(--shadow-shell);
+    transform: translateX(-105%);
+    visibility: hidden;
+    transition:
+      transform 0.22s ease,
+      visibility 0s linear 0.22s;
+  }
+
+  .calendar-leftcol--mobile .calendar-notes.is-mobile-open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.22s ease;
+  }
+
+  .calendar-notes-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 29;
+    background: rgb(0 0 0 / 0.45);
+  }
+
+  /* ----- Trilho M/S1..Sn na horizontal ------------------------------------- */
+  .calendar-page .calendar-body > .app-calendar-period-rail {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: center;
+    gap: 0.4rem;
+    width: auto;
+    margin: 0 !important;
+    padding: 0.1rem 0.25rem;
+    border-right: 0;
+    background: transparent;
+    overflow-x: auto;
+  }
+
+  .calendar-page .app-calendar-period-rail .app-calendar-period-rail__item--month {
+    margin-bottom: 0;
+    margin-right: 0.35rem;
+  }
+
+  /* ----- Scroll: como no desktop, com espiada do anterior/proximo ---------- */
+  .calendar-scroll {
+    gap: 8px;
+    /* Espaco no topo/base para o primeiro/ultimo bloco tambem poder centralizar. */
+    padding: 0.25rem 0 30dvh;
+  }
+
+  .calendar-page .calendar-scroll .calendar-month,
+  .calendar-page .calendar-scroll .calendar-weekblock {
+    flex: 0 0 auto;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .calendar-page .calendar-month .app-calendar-surface__header {
+    min-height: 0;
+    padding: 0.35rem 0.5rem;
+  }
+
+  /* O grid compartilhado forca colunas de 130px (min 910px) abaixo de 800px; aqui as 7
+     colunas dividem a largura toda. */
+  .calendar-page .calendar-month .app-month-calendar__weekdays,
+  .calendar-page .calendar-month .app-month-calendar__days {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .calendar-page .calendar-month .app-month-calendar__weekdays {
+    padding: 0.15rem 0.2rem;
+    text-align: center;
+  }
+
+  .calendar-page .calendar-month .app-month-calendar__weekdays span {
+    padding-inline: 0;
+  }
+
+  .calendar-page .calendar-month .app-month-calendar__days {
+    grid-auto-rows: var(--cal-mobile-row);
+    gap: 2px;
+    padding: 0.15rem 0.2rem 0.25rem;
+  }
+
+  .calendar-page .calendar-month .calendar-cell {
+    min-height: 0;
+  }
+
+  /* ----- Semana: 7 colunas, no maximo 3 semanas em tela (foco no centro) ---- */
+  .calendar-page .calendar-scroll .calendar-weekblock {
+    display: flex;
+    flex-direction: column;
+    height: var(--cal-mobile-week);
+  }
+
+  .calendar-page .calendar-weekblock__header {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .calendar-page .calendar-weekblock__grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 2px;
+    padding: 0 0.2rem 0.25rem;
+  }
+
+  .calendar-page .calendar-weekview__day {
+    min-height: 0;
+    gap: 0.2rem;
+    padding: 0.25rem 0.15rem;
+    border-color: rgb(var(--border) / 0.22);
+  }
+
+  /* ----- Tipografia minimalista (titulos, dia da semana, numero) ----------- */
+  .calendar-page .calendar-weekblock__title,
+  .calendar-page .calendar-month .app-calendar-surface__header h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  .calendar-page .calendar-weekblock__tag,
+  .calendar-page .calendar-month .app-calendar-surface__header span {
+    padding: 0.08rem 0.4rem;
+    font-size: 0.55rem;
+    font-weight: 600;
+  }
+
+  /* Nome do dia pequeno em cima, numero embaixo, centralizados e sem divisoria. */
+  .calendar-page .calendar-weekview__day-head {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.1rem;
+    padding-bottom: 0.2rem;
+    border-bottom: 0;
+  }
+
+  .calendar-page .calendar-weekview__weekday {
+    font-size: 0.5rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+
+  .calendar-page .calendar-weekview__num {
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .calendar-page .calendar-weekview__num--today {
+    width: 1.35rem;
+    height: 1.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+
+  .calendar-page .calendar-month .app-month-calendar__weekdays {
+    font-size: 0.5rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+
+  .calendar-page .calendar-month .calendar-cell {
+    border-color: rgb(var(--border) / 0.22);
+  }
+
+  .calendar-page .calendar-cell__num {
+    font-size: 0.68rem;
+    font-weight: 500;
+  }
+
+  /* Drawer do dia: cobre a area toda em vez de deixar uma faixa estreita atras. */
+  .calendar-body__drawer {
+    inset: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  /* ----- Conteudo compacto das celulas (~50px de largura) ------------------ */
+  .calendar-cell {
+    gap: 0.1rem;
+    padding: 0.15rem;
+  }
+
+  .calendar-cell__num {
+    font-size: 0.7rem;
+  }
+
+  .calendar-cell__num--today {
+    width: 1.2rem;
+    height: 1.2rem;
+  }
+
+  /* "HOJE" por extenso nao cabe numa celula de ~50px; o numero destacado ja indica. */
+  .calendar-cell__today {
+    display: none;
+  }
+
+  .calendar-cell__holiday {
+    padding: 0 0.15rem;
+    font-size: 0.5rem;
+  }
+
+  .calendar-chip {
+    gap: 0.15rem;
+    padding: 0.05rem 0.2rem;
+    font-size: 0.56rem;
+  }
+
+  .calendar-chip__icon {
+    display: none;
+  }
+
+  .calendar-cell__more {
+    font-size: 0.56rem;
+  }
+
+  .calendar-span-bar {
+    padding: 0 0.2rem;
+    font-size: 0.5rem;
+  }
+
+  .calendar-weekview__weekday {
+    font-size: 0.55rem;
+  }
+}

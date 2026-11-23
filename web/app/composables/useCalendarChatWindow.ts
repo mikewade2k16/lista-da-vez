@@ -23,6 +23,9 @@ const CENTER_W_MIN = 520
 // Piso do topo: garante que a janela NUNCA cubra a barra de menu do painel, mesmo se a
 // medicao da area do calendario falhar (header do dashboard ~3rem + folga).
 const HEADER_SAFE = 64
+// Celular/tela estreita: a janela ocupa a viewport abaixo do menu, sem posicoes laterais.
+const COMPACT_MAX_W = 720
+const COMPACT_MARGIN = 8
 const DEFAULT_CHAT_LAYOUT: CalendarChatConfig = { position: 'center', width: 0, height: 0 }
 
 interface AreaRect {
@@ -49,6 +52,8 @@ export function useCalendarChatWindow(
   // Retangulo da area interna do calendario (.calendar-page), base do posicionamento.
   const areaRect = ref<AreaRect>({ left: 0, top: 0, width: 0, height: 0 })
   const resizing = ref(false)
+  // Tela estreita: ignora a posicao salva (sem alterar a config) e usa a viewport inteira.
+  const compact = ref(false)
 
   // Edições visuais são compartilhadas pelas surfaces da mesma account na sessão.
   // Não usam localStorage; outra account não reaproveita essas medidas.
@@ -83,6 +88,19 @@ export function useCalendarChatWindow(
 
   function measureArea(): void {
     if (typeof document === 'undefined') return
+    compact.value =
+      typeof window !== 'undefined' &&
+      typeof window.innerWidth === 'number' &&
+      window.innerWidth <= COMPACT_MAX_W
+    if (compact.value) {
+      areaRect.value = {
+        left: 0,
+        top: HEADER_SAFE,
+        width: window.innerWidth,
+        height: window.innerHeight - HEADER_SAFE,
+      }
+      return
+    }
     const el = document.querySelector(anchorSelector()) as HTMLElement | null
     const rect = el?.getBoundingClientRect()
     if (rect && rect.width > 0) {
@@ -175,6 +193,14 @@ export function useCalendarChatWindow(
   // height > 0 (arrasto) sempre vencem o default da posicao.
   const panelBox = computed(() => {
     const area = areaRect.value
+    if (compact.value) {
+      return {
+        left: area.left + COMPACT_MARGIN,
+        top: area.top + COMPACT_MARGIN,
+        width: Math.max(0, area.width - COMPACT_MARGIN * 2),
+        height: Math.max(0, area.height - COMPACT_MARGIN * 2),
+      }
+    }
     const maxW = Math.max(MIN_W, area.width - AREA_MARGIN * 2)
     const maxH = Math.max(MIN_H, area.height - AREA_MARGIN * 2)
     const cfg = localChat.value
@@ -259,6 +285,7 @@ export function useCalendarChatWindow(
 
   return {
     localChat,
+    compact,
     resizing,
     panelStyle,
     resizeFromLeft,

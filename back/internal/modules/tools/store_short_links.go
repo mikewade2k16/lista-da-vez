@@ -61,21 +61,24 @@ func isForeignKeyViolation(err error) bool {
 // ---------------------------------------------------------------------------
 
 // shortReturning e a projecao de uma linha (com clientName via subquery).
-const shortReturning = `id::text, slug, target_url, hits, account_id::text, created_at,
+const shortReturning = `id::text, slug, target_url, hits, is_active, last_hit_at,
+	account_id::text, created_at,
 	coalesce((select name from core.accounts where id = account_id), '')`
 
 // scanShortRow le uma linha na ordem de shortReturning.
 func scanShortRow(row pgx.Row) (ShortLinkItem, error) {
 	var it ShortLinkItem
 	var created time.Time
-	if err := row.Scan(&it.ID, &it.Slug, &it.TargetURL, &it.Hits, &it.AccountID, &created,
-		&it.ClientName); err != nil {
+	var lastHit *time.Time
+	if err := row.Scan(&it.ID, &it.Slug, &it.TargetURL, &it.Hits, &it.IsActive, &lastHit,
+		&it.AccountID, &created, &it.ClientName); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ShortLinkItem{}, ErrShortLinkNotFound
 		}
 		return ShortLinkItem{}, err
 	}
 	it.CreatedAt = tsString(created)
+	it.LastHitAt = ptrTimeString(lastHit)
 	return it, nil
 }
 
@@ -88,6 +91,12 @@ func (r *PostgresShortLinkStore) List(ctx context.Context, accountID string, f L
 		conds = append(conds, fmt.Sprintf("s.account_id = $%d::uuid", n))
 		args = append(args, accountID)
 		n++
+	}
+	switch f.Status {
+	case "active":
+		conds = append(conds, "s.is_active = true")
+	case "inactive":
+		conds = append(conds, "s.is_active = false")
 	}
 	if f.Q != "" {
 		pattern := "%" + strings.ToLower(f.Q) + "%"
@@ -111,8 +120,8 @@ func (r *PostgresShortLinkStore) List(ctx context.Context, accountID string, f L
 
 	args = append(args, f.Limit, (f.Page-1)*f.Limit)
 	q := fmt.Sprintf(`
-		select s.id::text, s.slug, s.target_url, s.hits, s.account_id::text,
-		       coalesce(a.name,''), s.created_at
+		select s.id::text, s.slug, s.target_url, s.hits, s.is_active, s.last_hit_at,
+		       s.account_id::text, s.created_at, coalesce(a.name,'')
 		from tools.short_links s join core.accounts a on a.id = s.account_id
 		where %s
 		order by s.created_at desc
@@ -126,13 +135,10 @@ func (r *PostgresShortLinkStore) List(ctx context.Context, accountID string, f L
 
 	items := make([]ShortLinkItem, 0)
 	for rows.Next() {
-		var it ShortLinkItem
-		var created time.Time
-		if err := rows.Scan(&it.ID, &it.Slug, &it.TargetURL, &it.Hits, &it.AccountID,
-			&it.ClientName, &created); err != nil {
+		it, err := scanShortRow(rows)
+		if err != nil {
 			return nil, 0, err
 		}
-		it.CreatedAt = tsString(created)
 		items = append(items, it)
 	}
 	return items, total, rows.Err()
@@ -169,6 +175,20 @@ func (r *PostgresShortLinkStore) insert(ctx context.Context, accountID, slug, ta
 	return scanShortRow(r.pool.QueryRow(ctx, q, accountID, slug, targetURL))
 }
 
+// Get le um link por id. accountID "" = por id (admin); senao id + account_id.
+func (r *PostgresShortLinkStore) Get(ctx context.Context, id, accountID string) (ShortLinkItem, error) {
+	if !isUUID(id) {
+		return ShortLinkItem{}, ErrShortLinkNotFound
+	}
+	if accountID == "" {
+		return scanShortRow(r.pool.QueryRow(ctx,
+			`select `+shortReturning+` from tools.short_links where id = $1::uuid`, id))
+	}
+	return scanShortRow(r.pool.QueryRow(ctx,
+		`select `+shortReturning+` from tools.short_links where id = $1::uuid and account_id = $2::uuid`,
+		id, accountID))
+}
+
 // Update aplica o patch parcial. Se o slug muda, garante unicidade (sufixo).
 // accountID "" = por id (admin); senao id + account_id (isolamento).
 func (r *PostgresShortLinkStore) Update(ctx context.Context, id, accountID string, p ShortLinkPatch) (ShortLinkItem, error) {
@@ -181,6 +201,11 @@ func (r *PostgresShortLinkStore) Update(ctx context.Context, id, accountID strin
 	if p.TargetURL != nil {
 		set = append(set, fmt.Sprintf("target_url = $%d", n))
 		args = append(args, *p.TargetURL)
+		n++
+	}
+	if p.IsActive != nil {
+		set = append(set, fmt.Sprintf("is_active = $%d", n))
+		args = append(args, *p.IsActive)
 		n++
 	}
 
@@ -252,21 +277,30 @@ func (r *PostgresShortLinkStore) Delete(ctx context.Context, id, accountID strin
 	return nil
 }
 
-// Resolve incrementa hits e devolve o destino, apenas se a conta dona esta ativa
-// e com o modulo tools habilitado. pgx.ErrNoRows quando qualquer condicao falha
-// (nao vaza existencia).
-func (r *PostgresShortLinkStore) Resolve(ctx context.Context, slug string) (string, error) {
-	const q = `
-		update tools.short_links s
-		set hits = hits + 1, updated_at = now()
-		from core.accounts a, core.account_modules m
-		where s.slug = $1
+// shortResolvable sao as condicoes para o redirect funcionar: link ativo, conta
+// dona ativa e modulo tools habilitado. Mesma clausula na leitura e na contagem.
+const shortResolvable = `s.slug = $1
+		  and s.is_active = true
 		  and a.id = s.account_id
 		  and m.account_id = s.account_id
 		  and a.is_active = true
 		  and m.module_id = 'tools'
-		  and m.enabled = true
+		  and m.enabled = true`
+
+// Resolve devolve o destino se o link pode redirecionar; count=true tambem soma
+// o clique (hits/last_hit_at) na mesma instrucao. ErrShortLinkNotFound quando
+// qualquer condicao falha (nao vaza existencia). Nao mexe em updated_at: clique
+// nao e edicao.
+func (r *PostgresShortLinkStore) Resolve(ctx context.Context, slug string, count bool) (string, error) {
+	q := `select s.target_url from tools.short_links s, core.accounts a, core.account_modules m
+		where ` + shortResolvable
+	if count {
+		q = `update tools.short_links s
+		set hits = hits + 1, last_hit_at = now()
+		from core.accounts a, core.account_modules m
+		where ` + shortResolvable + `
 		returning s.target_url`
+	}
 	var target string
 	if err := r.pool.QueryRow(ctx, q, slug).Scan(&target); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

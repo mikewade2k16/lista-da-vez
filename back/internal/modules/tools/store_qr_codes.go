@@ -98,15 +98,10 @@ func (r *PostgresQrCodeStore) List(ctx context.Context, accountID string, f List
 
 	items := make([]QrCodeItem, 0)
 	for rows.Next() {
-		var it QrCodeItem
-		var created time.Time
-		var lastScanned *time.Time
-		if err := rows.Scan(&it.ID, &it.Slug, &it.TargetURL, &it.FillColor, &it.BackColor, &it.Size,
-			&it.IsActive, &it.ScanCount, &lastScanned, &it.AccountID, &created, &it.ClientName); err != nil {
+		it, err := scanQrRow(rows)
+		if err != nil {
 			return nil, 0, err
 		}
-		it.CreatedAt = tsString(created)
-		it.LastScannedAt = ptrTimeString(lastScanned)
 		items = append(items, it)
 	}
 	return items, total, rows.Err()
@@ -143,7 +138,24 @@ func (r *PostgresQrCodeStore) insert(ctx context.Context, accountID, slug string
 		rec.FillColor, rec.BackColor, rec.Size, rec.IsActive))
 }
 
-// Update aplica o patch parcial. Se o slug muda, garante unicidade (sufixo).
+// Get le um QR por id. accountID "" = por id (admin); senao id + account_id.
+func (r *PostgresQrCodeStore) Get(ctx context.Context, id, accountID string) (QrCodeItem, error) {
+	if !isUUID(id) {
+		return QrCodeItem{}, ErrQrCodeNotFound
+	}
+	if accountID == "" {
+		return scanQrRow(r.pool.QueryRow(ctx,
+			`select `+qrReturning+` from tools.qr_codes where id = $1::uuid`, id))
+	}
+	return scanQrRow(r.pool.QueryRow(ctx,
+		`select `+qrReturning+` from tools.qr_codes where id = $1::uuid and account_id = $2::uuid`,
+		id, accountID))
+}
+
+// Update aplica o patch parcial. O slug nao entra: e imutavel depois do create
+// (o QR impresso codifica /q/{slug}). Com ExpectFill/ExpectBack, as cores atuais
+// viram condicao do UPDATE: se outra pessoa trocou as cores no meio, nada e
+// gravado e volta ErrConcurrentChange (o par validado e sempre o par gravado).
 // accountID "" = por id (admin); senao id + account_id (isolamento).
 func (r *PostgresQrCodeStore) Update(ctx context.Context, id, accountID string, p QrCodePatch) (QrCodeItem, error) {
 	if !isUUID(id) {
@@ -152,76 +164,49 @@ func (r *PostgresQrCodeStore) Update(ctx context.Context, id, accountID string, 
 	set := []string{"updated_at = now()"}
 	args := []any{id}
 	n := 2
-	addStr := func(col string, v string) {
+	add := func(col string, v any) {
 		set = append(set, fmt.Sprintf("%s = $%d", col, n))
 		args = append(args, v)
 		n++
 	}
 	if p.TargetURL != nil {
-		addStr("target_url", *p.TargetURL)
+		add("target_url", *p.TargetURL)
 	}
 	if p.FillColor != nil {
-		addStr("fill_color", *p.FillColor)
+		add("fill_color", *p.FillColor)
 	}
 	if p.BackColor != nil {
-		addStr("back_color", *p.BackColor)
+		add("back_color", *p.BackColor)
 	}
 	if p.Size != nil {
-		set = append(set, fmt.Sprintf("size = $%d", n))
-		args = append(args, *p.Size)
-		n++
+		add("size", *p.Size)
 	}
 	if p.IsActive != nil {
-		set = append(set, fmt.Sprintf("is_active = $%d", n))
-		args = append(args, *p.IsActive)
-		n++
+		add("is_active", *p.IsActive)
 	}
 
-	// slug: pode precisar de retry por unicidade — guarda a posicao no args.
-	base := ""
-	slugIdx := -1
-	if p.Slug != nil {
-		base = *p.Slug
-		if base == "" {
-			base = randomCode(7)
-		}
-		set = append(set, fmt.Sprintf("slug = $%d", n))
-		args = append(args, base)
-		slugIdx = len(args) - 1
-		n++
-	}
-
-	scope := ""
+	where := []string{"id = $1::uuid"}
 	if accountID != "" {
-		scope = fmt.Sprintf(" and account_id = $%d::uuid", n)
+		where = append(where, fmt.Sprintf("account_id = $%d::uuid", n))
 		args = append(args, accountID)
 		n++
 	}
-
-	query := fmt.Sprintf(
-		`update tools.qr_codes set %s where id = $1::uuid%s returning %s`,
-		strings.Join(set, ", "), scope, qrReturning)
-
-	if slugIdx < 0 {
-		return scanQrRow(r.pool.QueryRow(ctx, query, args...))
+	guarded := p.ExpectFill != "" || p.ExpectBack != ""
+	if guarded {
+		where = append(where, fmt.Sprintf("fill_color = $%d and back_color = $%d", n, n+1))
+		args = append(args, p.ExpectFill, p.ExpectBack)
 	}
 
-	candidate := base
-	const maxAttempts = 60
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		args[slugIdx] = candidate
-		it, err := scanQrRow(r.pool.QueryRow(ctx, query, args...))
-		if err == nil {
-			return it, nil
+	query := fmt.Sprintf(`update tools.qr_codes set %s where %s returning %s`,
+		strings.Join(set, ", "), strings.Join(where, " and "), qrReturning)
+	it, err := scanQrRow(r.pool.QueryRow(ctx, query, args...))
+	if guarded && errors.Is(err, ErrQrCodeNotFound) {
+		// Distingue "nao existe/fora do escopo" (404) de "cores mudaram" (409).
+		if _, getErr := r.Get(ctx, id, accountID); getErr == nil {
+			return QrCodeItem{}, ErrConcurrentChange
 		}
-		if isUniqueViolation(err) {
-			candidate = fmt.Sprintf("%s-%d", base, attempt+2)
-			continue
-		}
-		return QrCodeItem{}, err
 	}
-	args[slugIdx] = randomCode(10)
-	return scanQrRow(r.pool.QueryRow(ctx, query, args...))
+	return it, err
 }
 
 // Delete remove o QR. accountID "" = por id (admin); senao id + account_id.
@@ -246,22 +231,29 @@ func (r *PostgresQrCodeStore) Delete(ctx context.Context, id, accountID string) 
 	return nil
 }
 
-// Resolve incrementa scan_count/last_scanned_at e devolve o destino, apenas se o
-// QR esta ativo e a conta dona ativa com o modulo tools habilitado. pgx.ErrNoRows
-// quando qualquer condicao falha (nao vaza existencia).
-func (r *PostgresQrCodeStore) Resolve(ctx context.Context, slug string) (string, error) {
-	const q = `
-		update tools.qr_codes q
-		set scan_count = scan_count + 1, last_scanned_at = now()
-		from core.accounts a, core.account_modules m
-		where q.slug = $1
+// qrResolvable sao as condicoes para o QR redirecionar: QR ativo, conta dona
+// ativa e modulo tools habilitado. Mesma clausula na leitura e na contagem.
+const qrResolvable = `q.slug = $1
 		  and q.is_active = true
 		  and a.id = q.account_id
 		  and m.account_id = q.account_id
 		  and a.is_active = true
 		  and m.module_id = 'tools'
-		  and m.enabled = true
+		  and m.enabled = true`
+
+// Resolve devolve o destino se o QR pode redirecionar; count=true tambem soma o
+// scan (scan_count/last_scanned_at) na mesma instrucao. ErrQrCodeNotFound quando
+// qualquer condicao falha (nao vaza existencia).
+func (r *PostgresQrCodeStore) Resolve(ctx context.Context, slug string, count bool) (string, error) {
+	q := `select q.target_url from tools.qr_codes q, core.accounts a, core.account_modules m
+		where ` + qrResolvable
+	if count {
+		q = `update tools.qr_codes q
+		set scan_count = scan_count + 1, last_scanned_at = now()
+		from core.accounts a, core.account_modules m
+		where ` + qrResolvable + `
 		returning q.target_url`
+	}
 	var target string
 	if err := r.pool.QueryRow(ctx, q, slug).Scan(&target); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

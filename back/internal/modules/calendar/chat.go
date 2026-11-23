@@ -776,10 +776,25 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if _, err := s.store.AppendMessage(ctx, account, conv.ID, ChatMessageInput{Role: chatRoleUser, Content: question}); err != nil {
 		return ChatAskResult{}, err
 	}
-	contextMonth := inferChatMonth(question, req.Month, time.Now())
+	now := time.Now()
+	readQuery, calendarRead := resolveChatCalendarRead(question, prior, now)
+	calendarRead = calendarRead && policy.calendar && target.surface != AssistantSurfaceFinance
+	contextMonth := inferChatMonth(question, req.Month, now)
+	if calendarRead {
+		contextMonth = readQuery.from[:7]
+	}
 	contextBlock, err := s.buildChatContext(ctx, account, principal, access, target.mode, target.clientID, contextMonth, policy)
 	if err != nil {
 		return ChatAskResult{}, err
+	}
+	var readEvents []AIContextEvent
+	var readTruncated bool
+	if calendarRead {
+		readEvents, readTruncated, err = s.readCalendarQueryEvents(ctx, account, access, target, readQuery)
+		if err != nil {
+			return ChatAskResult{}, err
+		}
+		contextBlock = replaceChatContextEvents(contextBlock, readEvents)
 	}
 	var (
 		metaResult       MetaAssistantContextResult
@@ -836,6 +851,14 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if err != nil {
 		return ChatAskResult{}, err
 	}
+	if calendarRead && !aiError {
+		answer = calendarReadAnswer(readQuery, readEvents, readTruncated)
+		eventIDs = make([]string, 0, len(readEvents))
+		for _, event := range readEvents {
+			eventIDs = append(eventIDs, event.ID)
+		}
+		proposals = nil
+	}
 	title := conv.Title
 	if strings.TrimSpace(title) == "" {
 		title = deriveChatTitle(question)
@@ -851,7 +874,7 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 		}
 		items := selectContextEvents(contextEvents(contextBlock), eventIDs)
 		resources := selectAuthorizedAssistantResources(resourceRegistry, resourceIDs)
-		answer = compactCalendarCardAnswer(answer, len(items))
+		answer = groundedCalendarCardAnswer(answer, eventIDs, items)
 		evs := contextEvents(contextBlock)
 		tks := contextTasks(contextBlock)
 		// WAVE 14: GUARDA DE ALVO (roda ANTES do resolve, pois pode REESCREVER o targetId). Quando o
@@ -1011,6 +1034,12 @@ func shouldUseAssistantRuntime(req ChatAskRequest, targetSurface string) bool {
 // consulte o período citado, não apenas o mês que estava aberto na tela. Sem mês explícito,
 // preserva o fallback enviado pelo calendário.
 func inferChatMonth(question, fallback string, now time.Time) string {
+	if day, ok := chatRelativeDay(question, now); ok {
+		return day.Format("2006-01")
+	}
+	if normalized := foldChatLabel(question); chatRelativeWeekRe.MatchString(normalized) || chatRelativeMonthRe.MatchString(normalized) {
+		return now.In(saoPauloLoc).Format("2006-01")
+	}
 	normalized := strings.ToLower(question)
 	normalized = strings.NewReplacer("á", "a", "à", "a", "â", "a", "ã", "a", "é", "e",
 		"ê", "e", "í", "i", "ó", "o", "ô", "o", "õ", "o", "ú", "u", "ç", "c").Replace(normalized)

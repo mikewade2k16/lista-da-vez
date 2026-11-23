@@ -3,9 +3,13 @@ import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 export interface ScriptRow {
+  /** Stable row id (cell locks and per-cell edits key on it). */
+  id: string
   audio: string
   video: string
 }
+export type ScriptCellField = 'title' | 'description' | 'audio' | 'video'
+export const newScriptRow = (): ScriptRow => ({ id: crypto.randomUUID(), audio: '', video: '' })
 export interface ScriptDocument {
   id: string
   title: string
@@ -121,7 +125,7 @@ export function useScriptsManager() {
    * from the full document; the thumbnail reads `rows` when there is no `preview`). 404 means
    * it left this account's read scope (deleted, client changed or hidden): drop it.
    */
-  async function refreshDocument(id: string) {
+  async function refreshDocument(id: string, upsert = true) {
     const scope = accountId.value
     if (!scope || !canView.value) return null
     try {
@@ -130,13 +134,14 @@ export function useScriptsManager() {
         skipLoadingIndicator: true,
       })) as { data: ScriptDocument }
       if (scope !== accountId.value) return null
+      if (!upsert) return result.data
       const index = documents.value.findIndex((item) => item.id === id)
       if (index >= 0)
         documents.value = documents.value.map((item) => (item.id === id ? result.data : item))
       else documents.value = [result.data, ...documents.value]
       return result.data
     } catch {
-      if (scope === accountId.value) dropDocument(id)
+      if (scope === accountId.value && upsert) dropDocument(id)
       return null
     }
   }
@@ -194,6 +199,29 @@ export function useScriptsManager() {
       saving.value = false
     }
   }
+  /**
+   * Saves ONE cell (title, description or a row's audio/video). Returns the new updatedAt, or
+   * null on failure (error.value explains, e.g. "Ana está editando este trecho").
+   */
+  async function patchCell(id: string, field: ScriptCellField, rowId: string, value: string) {
+    const scope = accountId.value
+    if (!scope || !canManage.value) return null
+    try {
+      const result = (await api(`/v1/tools/scripts/${encodeURIComponent(id)}/cell`, {
+        method: 'PATCH',
+        body: { field, rowId, value },
+        headers: { 'X-Account-Id': scope },
+        skipLoadingIndicator: true,
+      })) as { data: { updatedAt: string } }
+      if (scope !== accountId.value) return null
+      error.value = ''
+      return result.data.updatedAt
+    } catch (err) {
+      if (scope === accountId.value)
+        error.value = getApiErrorMessage(err, 'Não foi possível salvar a alteração.')
+      return null
+    }
+  }
   async function remove(id: string) {
     const scope = accountId.value
     if (!scope || !canManage.value || saving.value) return false
@@ -243,6 +271,7 @@ export function useScriptsManager() {
     }
   }
   return {
+    patchCell,
     refreshDocument,
     dropDocument,
     search,

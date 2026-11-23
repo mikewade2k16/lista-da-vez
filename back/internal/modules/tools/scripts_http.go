@@ -107,7 +107,8 @@ func registerScriptRoutes(mux *http.ServeMux, svc *scriptService, middleware *au
 			httpapi.WriteError(w, r, 400, "invalid_body", "Dados invalidos.")
 			return
 		}
-		item, err := svc.save(r.Context(), account, r.PathValue("id"), in)
+		principal, _ := auth.PrincipalFromContext(r.Context())
+		item, err := svc.save(r.Context(), account, principal.UserID, r.PathValue("id"), in)
 		if err != nil {
 			scriptError(w, r, err)
 			return
@@ -116,8 +117,28 @@ func registerScriptRoutes(mux *http.ServeMux, svc *scriptService, middleware *au
 	}
 	mux.Handle("POST /v1/tools/scripts", wrap("tools.scripts.manage", save))
 	mux.Handle("PUT /v1/tools/scripts/{id}", wrap("tools.scripts.manage", save))
+	// Edição por célula: grava UMA célula e transmite o conteúdo (sem refetch nas outras telas).
+	mux.Handle("PATCH /v1/tools/scripts/{id}/cell", wrap("tools.scripts.manage", func(w http.ResponseWriter, r *http.Request, account string) {
+		var in struct {
+			Field string `json:"field"`
+			RowID string `json:"rowId"`
+			Value string `json:"value"`
+		}
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, 400, "invalid_body", "Dados invalidos.")
+			return
+		}
+		principal, _ := auth.PrincipalFromContext(r.Context())
+		updatedAt, err := svc.patchCell(r.Context(), account, principal.UserID, r.PathValue("id"), in.Field, in.RowID, in.Value)
+		if err != nil {
+			scriptError(w, r, err)
+			return
+		}
+		writeSuccess(w, 200, map[string]string{"updatedAt": updatedAt})
+	}))
 	mux.Handle("DELETE /v1/tools/scripts/{id}", wrap("tools.scripts.manage", func(w http.ResponseWriter, r *http.Request, account string) {
-		if err := svc.delete(r.Context(), account, r.PathValue("id")); err != nil {
+		principal, _ := auth.PrincipalFromContext(r.Context())
+		if err := svc.delete(r.Context(), account, principal.UserID, r.PathValue("id")); err != nil {
 			scriptError(w, r, err)
 			return
 		}
@@ -130,8 +151,13 @@ func scriptError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, 503, "storage_unavailable", "Armazenamento privado indisponivel. Configure PRIVATE_FILES_DIR.")
 	case errors.Is(err, errScriptNotFound):
 		httpapi.WriteError(w, r, 404, "not_found", "Roteiro nao encontrado.")
-	case errors.Is(err, errScriptConflict):
-		httpapi.WriteError(w, r, 409, "script_conflict", "O roteiro mudou em outra sessao. Reabra o documento antes de salvar.")
+	case errors.Is(err, errScriptLocked):
+		holder := "Outra pessoa"
+		var locked scriptLockedError
+		if errors.As(err, &locked) && locked.holder != "" {
+			holder = locked.holder
+		}
+		httpapi.WriteError(w, r, 409, "script_locked", holder+" esta editando este trecho. Tente quando terminar.")
 	case isForeignKeyViolation(err):
 		httpapi.WriteError(w, r, 400, "invalid_account", "Conta invalida.")
 	case errors.Is(err, errInvalidScriptClient):

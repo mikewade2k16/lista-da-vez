@@ -14,23 +14,29 @@ type ShortLinkStore interface {
 	// List: accountID "" = todas as contas (so alcancado por platform_admin).
 	List(ctx context.Context, accountID string, f ListFilter) ([]ShortLinkItem, int, error)
 	Create(ctx context.Context, accountID, slug, targetURL string) (ShortLinkItem, error)
+	// Get: accountID "" = por id (admin); senao id + account_id (isolamento).
+	Get(ctx context.Context, id, accountID string) (ShortLinkItem, error)
 	// Update: patch parcial. accountID "" = por id (admin); senao id + account_id.
 	Update(ctx context.Context, id, accountID string, p ShortLinkPatch) (ShortLinkItem, error)
 	// Delete: accountID "" = por id (admin); senao id + account_id (isolamento).
 	Delete(ctx context.Context, id, accountID string) error
-	// Resolve incrementa hits e devolve o destino (redirect publico /s/{slug}).
-	Resolve(ctx context.Context, slug string) (string, error)
+	// Resolve devolve o destino do redirect publico /s/{slug} se o link esta
+	// ativo; count=true tambem incrementa hits/last_hit_at.
+	Resolve(ctx context.Context, slug string, count bool) (string, error)
 }
 
 // QrCodeStore abstrai a persistencia de QR codes.
 type QrCodeStore interface {
 	List(ctx context.Context, accountID string, f ListFilter) ([]QrCodeItem, int, error)
 	Create(ctx context.Context, accountID string, rec QrCodeRecord) (QrCodeItem, error)
+	Get(ctx context.Context, id, accountID string) (QrCodeItem, error)
+	// Update aplica o patch; com ExpectFill/ExpectBack, so grava se as cores
+	// atuais ainda forem essas (senao ErrConcurrentChange).
 	Update(ctx context.Context, id, accountID string, p QrCodePatch) (QrCodeItem, error)
 	Delete(ctx context.Context, id, accountID string) error
-	// Resolve incrementa scan_count/last_scanned_at e devolve o destino se
-	// is_active (redirect publico /q/{slug}).
-	Resolve(ctx context.Context, slug string) (string, error)
+	// Resolve devolve o destino se is_active (redirect publico /q/{slug});
+	// count=true tambem incrementa scan_count/last_scanned_at.
+	Resolve(ctx context.Context, slug string, count bool) (string, error)
 }
 
 // Service concentra as regras de negocio das duas ferramentas.
@@ -82,13 +88,17 @@ func normalizeTargetURL(raw string) string {
 	return "https://" + s
 }
 
-// normalizeColor valida #rrggbb (lower); invalido cai no fallback.
-func normalizeColor(raw, fallback string) string {
+// normalizeColor valida #rrggbb (lower). Vazio usa o fallback (so no create);
+// qualquer outro valor invalido e erro — nunca default silencioso.
+func normalizeColor(raw, fallback string) (string, error) {
 	s := strings.TrimSpace(raw)
-	if colorPattern.MatchString(s) {
-		return strings.ToLower(s)
+	if s == "" && fallback != "" {
+		return fallback, nil
 	}
-	return fallback
+	if colorPattern.MatchString(s) {
+		return strings.ToLower(s), nil
+	}
+	return "", ErrInvalidColor
 }
 
 // normalizeSize limita 120..1000; invalido/zero cai no fallback.
@@ -167,6 +177,7 @@ func (s *Service) withQrURL(it QrCodeItem) QrCodeItem {
 func (s *Service) ListShortLinks(ctx context.Context, accountID string, f ListFilter) ([]ShortLinkItem, ListMeta, error) {
 	clampPage(&f)
 	f.Q = strings.TrimSpace(f.Q)
+	f.Status = strings.ToLower(strings.TrimSpace(f.Status))
 	items, total, err := s.shortLinks.List(ctx, accountID, f)
 	if err != nil {
 		return nil, ListMeta{}, err
@@ -200,10 +211,13 @@ func (s *Service) CreateShortLink(ctx context.Context, accountID string, in Shor
 	return s.withShortURL(item), nil
 }
 
-// UpdateShortLink aplica um patch parcial (404 se fora do escopo). Slug vazio no
-// patch gera um codigo aleatorio (o store garante unicidade com sufixo).
+// UpdateShortLink aplica um patch parcial (404 se fora do escopo).
+//   - slug igual ao atual = no-op; vazio = ErrInvalidSlug;
+//   - slug diferente exige confirmSlugChange=true (o link antigo para de
+//     funcionar) — senao ErrSlugChangeNotConfirmed. Colisao ganha sufixo -2/-3.
+//   - isActive liga/desliga o redirect sem excluir.
 func (s *Service) UpdateShortLink(ctx context.Context, id, accountID string, in ShortLinkInput) (ShortLinkItem, error) {
-	var p ShortLinkPatch
+	p := ShortLinkPatch{IsActive: in.IsActive}
 	if in.TargetURL != nil {
 		target := normalizeTargetURL(*in.TargetURL)
 		if target == "" {
@@ -213,7 +227,19 @@ func (s *Service) UpdateShortLink(ctx context.Context, id, accountID string, in 
 	}
 	if in.Slug != nil {
 		slug := normalizeSlug(*in.Slug)
-		p.Slug = &slug
+		if slug == "" {
+			return ShortLinkItem{}, ErrInvalidSlug
+		}
+		current, err := s.shortLinks.Get(ctx, id, accountID)
+		if err != nil {
+			return ShortLinkItem{}, err
+		}
+		if slug != current.Slug {
+			if in.ConfirmSlugChange == nil || !*in.ConfirmSlugChange {
+				return ShortLinkItem{}, ErrSlugChangeNotConfirmed
+			}
+			p.Slug = &slug
+		}
 	}
 	item, err := s.shortLinks.Update(ctx, id, accountID, p)
 	if err != nil {
@@ -227,13 +253,14 @@ func (s *Service) DeleteShortLink(ctx context.Context, id, accountID string) err
 	return s.shortLinks.Delete(ctx, id, accountID)
 }
 
-// ResolveShortLink devolve o destino do redirect publico (+hits).
-func (s *Service) ResolveShortLink(ctx context.Context, slug string) (string, error) {
+// ResolveShortLink devolve o destino do redirect publico; count=true conta o
+// clique (o handler decide: robo de previa/HEAD nao conta).
+func (s *Service) ResolveShortLink(ctx context.Context, slug string, count bool) (string, error) {
 	slug = normalizeSlug(slug)
 	if slug == "" {
 		return "", ErrShortLinkNotFound
 	}
-	return s.shortLinks.Resolve(ctx, slug)
+	return s.shortLinks.Resolve(ctx, slug, count)
 }
 
 // ============================================================================
@@ -275,11 +302,22 @@ func (s *Service) CreateQrCode(ctx context.Context, accountID string, in QrCodeI
 	if in.IsActive != nil {
 		isActive = *in.IsActive
 	}
+	fill, err := normalizeColor(strPtr(in.FillColor), "#000000")
+	if err != nil {
+		return QrCodeItem{}, err
+	}
+	back, err := normalizeColor(strPtr(in.BackColor), "#ffffff")
+	if err != nil {
+		return QrCodeItem{}, err
+	}
+	if err := validateQrColors(fill, back); err != nil {
+		return QrCodeItem{}, err
+	}
 	rec := QrCodeRecord{
 		Slug:      slug,
 		TargetURL: target,
-		FillColor: normalizeColor(strPtr(in.FillColor), "#000000"),
-		BackColor: normalizeColor(strPtr(in.BackColor), "#ffffff"),
+		FillColor: fill,
+		BackColor: back,
 		Size:      normalizeSize(intPtr(in.Size), 220),
 		IsActive:  isActive,
 	}
@@ -291,6 +329,11 @@ func (s *Service) CreateQrCode(ctx context.Context, accountID string, in QrCodeI
 }
 
 // UpdateQrCode aplica um patch parcial (404 se fora do escopo).
+//   - slug e imutavel: o QR impresso codifica /q/{slug}. Slug igual ao atual e
+//     aceito (no-op, telas antigas mandam o form inteiro); diferente/vazio =
+//     ErrQrSlugImmutable.
+//   - cores: valida o par efetivo (patch + valor atual) e grava so se as cores
+//     atuais nao mudaram no meio (ErrConcurrentChange).
 func (s *Service) UpdateQrCode(ctx context.Context, id, accountID string, in QrCodeInput) (QrCodeItem, error) {
 	p := QrCodePatch{IsActive: in.IsActive}
 	if in.TargetURL != nil {
@@ -300,17 +343,33 @@ func (s *Service) UpdateQrCode(ctx context.Context, id, accountID string, in QrC
 		}
 		p.TargetURL = &target
 	}
-	if in.Slug != nil {
-		slug := normalizeSlug(*in.Slug)
-		p.Slug = &slug
-	}
-	if in.FillColor != nil {
-		color := normalizeColor(*in.FillColor, "#000000")
-		p.FillColor = &color
-	}
-	if in.BackColor != nil {
-		color := normalizeColor(*in.BackColor, "#ffffff")
-		p.BackColor = &color
+	colorsTouched := in.FillColor != nil || in.BackColor != nil
+	if in.Slug != nil || colorsTouched {
+		current, err := s.qrCodes.Get(ctx, id, accountID)
+		if err != nil {
+			return QrCodeItem{}, err
+		}
+		if in.Slug != nil && normalizeSlug(*in.Slug) != current.Slug {
+			return QrCodeItem{}, ErrQrSlugImmutable
+		}
+		if colorsTouched {
+			fill, back := current.FillColor, current.BackColor
+			if in.FillColor != nil {
+				if fill, err = normalizeColor(*in.FillColor, ""); err != nil {
+					return QrCodeItem{}, err
+				}
+			}
+			if in.BackColor != nil {
+				if back, err = normalizeColor(*in.BackColor, ""); err != nil {
+					return QrCodeItem{}, err
+				}
+			}
+			if err := validateQrColors(fill, back); err != nil {
+				return QrCodeItem{}, err
+			}
+			p.FillColor, p.BackColor = &fill, &back
+			p.ExpectFill, p.ExpectBack = current.FillColor, current.BackColor
+		}
 	}
 	if in.Size != nil {
 		size := normalizeSize(*in.Size, 220)
@@ -328,13 +387,14 @@ func (s *Service) DeleteQrCode(ctx context.Context, id, accountID string) error 
 	return s.qrCodes.Delete(ctx, id, accountID)
 }
 
-// ResolveQrCode devolve o destino do redirect publico (+scan) se ativo.
-func (s *Service) ResolveQrCode(ctx context.Context, slug string) (string, error) {
+// ResolveQrCode devolve o destino do redirect publico se ativo; count=true
+// conta o scan.
+func (s *Service) ResolveQrCode(ctx context.Context, slug string, count bool) (string, error) {
 	slug = normalizeSlug(slug)
 	if slug == "" {
 		return "", ErrQrCodeNotFound
 	}
-	return s.qrCodes.Resolve(ctx, slug)
+	return s.qrCodes.Resolve(ctx, slug, count)
 }
 
 // strPtr desreferencia *string opcional para "".

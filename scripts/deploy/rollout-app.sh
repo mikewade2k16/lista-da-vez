@@ -14,11 +14,11 @@ rollback() {
 }
 trap rollback ERR
 @REGISTRY_AUTH@
-@IMAGE_PULL@
-"${compose[@]}" up -d --no-deps --no-build --pull never --wait --wait-timeout 180 @FORCE_RECREATE@ api web
+omni_timed_step remote.images.pull bash -c @IMAGE_PULL_QUOTED@
+omni_timed_step remote.containers.health "${compose[@]}" up -d --no-deps --no-build --pull never --wait --wait-timeout 180 @FORCE_RECREATE@ api web
 "${compose[@]}" ps api web
-curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors @PUBLIC_URL@/healthz >/dev/null
-curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors @PUBLIC_URL@/ >/dev/null
+omni_timed_step remote.http.health curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors --output /dev/null @PUBLIC_URL@/healthz
+omni_timed_step remote.http.web curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors --output /dev/null @PUBLIC_URL@/
 docker ps --format '{{.Names}} {{.Image}}' > "$release/images.after.txt"
 touch "$release/app.success"
 trap - ERR

@@ -1,0 +1,56 @@
+<!--
+  Preloader de boot do painel (contrato em web/app/preloader/AGENT.md).
+  Para trocar a animacao, substitua o conteudo deste arquivo; nada mais muda.
+  Regras: HTML + CSS puro (sem JS, sem assets externos), classes com prefixo
+  omni-preloader, raiz em overlay fixo de tela cheia.
+-->
+<div class="omni-preloader" role="status" aria-live="polite" aria-label="Carregando">
+  <div class="omni-preloader__ring" aria-hidden="true"></div>
+  <span class="omni-preloader__label">Carregando</span>
+</div>
+<style>
+  .omni-preloader {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: #060a12;
+    color: #94a3b8;
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      sans-serif;
+  }
+
+  .omni-preloader__ring {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 3px solid rgba(99, 102, 241, 0.18);
+    border-top-color: #6366f1;
+    animation: omni-preloader-spin 0.9s linear infinite;
+  }
+
+  .omni-preloader__label {
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  @keyframes omni-preloader-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .omni-preloader__ring {
+      animation-duration: 2.4s;
+    }
+  }
+</style>

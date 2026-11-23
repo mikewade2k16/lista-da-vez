@@ -9,7 +9,8 @@ import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { useScriptWorkspace } from '~/composables/useScriptWorkspace'
 import { scriptImagesKey, useScriptImages } from '~/composables/useScriptImages'
 import { exportScriptPdf } from '~/composables/useScriptPdf'
-import type { ScriptRow } from '~/composables/useScriptsManager'
+import { scriptCellKey } from '~/composables/useScriptPresence'
+import type { ScriptCellField } from '~/composables/useScriptsManager'
 import 'quill/dist/quill.snow.css'
 import '@fontsource/courier-prime/400.css'
 import '@fontsource/courier-prime/700.css'
@@ -17,7 +18,11 @@ import '@fontsource/courier-prime/400-italic.css'
 
 const {
   remoteNotice,
-  reloadOpened,
+  presence,
+  lockedBy,
+  editCell,
+  addRow,
+  removeRow,
   documents,
   search,
   clientFilter,
@@ -44,7 +49,6 @@ const {
   removeDocument,
   moveRow,
   moveDocument,
-  hasOtherDrafts,
 } = useScriptWorkspace()
 const ui = useUiStore()
 const clientEditOptions = computed(() => [
@@ -59,12 +63,6 @@ const activeHost = shallowRef<HTMLElement>()
 const uploading = ref(false)
 const exporting = ref(false)
 const toolbarVisible = ref(false)
-const rowKeys = new WeakMap<ScriptRow, number>()
-let rowSequence = 0
-function rowKey(row: ScriptRow) {
-  if (!rowKeys.has(row)) rowKeys.set(row, ++rowSequence)
-  return rowKeys.get(row)
-}
 // The toolbar only shows for a text selection (or an empty line, to insert images) and hides
 // itself after a few seconds unless the pointer is over it, so it never sits on top of text.
 const TOOLBAR_IDLE_MS = 3000
@@ -113,9 +111,22 @@ function keyboard(event: KeyboardEvent) {
 // reactively would rewrite the text node on every keystroke and move the caret to the start.
 const titleSeed = ref(draft.value.title)
 watch(selectedId, () => (titleSeed.value = draft.value.title), { immediate: true })
+// Remote title change (realtime): reseed only when the user is not typing in the title.
+watch(
+  () => draft.value.title,
+  (title) => {
+    const heading = window.document.querySelector('.page-script .script-title')
+    if (heading && heading !== window.document.activeElement && heading.textContent !== title)
+      titleSeed.value = title
+  },
+)
 function titleInput(event: Event) {
-  draft.value.title = (event.target as HTMLElement).textContent?.slice(0, 200) || ''
+  editCell('title', '', (event.target as HTMLElement).textContent?.slice(0, 200) || '')
 }
+// Cell lock (presence): focusing a cell locks it for the others; leaving releases it.
+const lockCell = (field: ScriptCellField, rowId = '') => presence.focus(scriptCellKey(field, rowId))
+const unlockCell = (field: ScriptCellField, rowId = '') =>
+  presence.blur(scriptCellKey(field, rowId))
 function titlePaste(event: ClipboardEvent) {
   event.preventDefault()
   const text = event.clipboardData?.getData('text/plain').replace(/\s+/g, ' ') || ''
@@ -156,21 +167,14 @@ async function downloadPdf() {
   }
 }
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (dirty.value || saving.value || hasOtherDrafts()) {
+  if (dirty.value || saving.value) {
     event.preventDefault()
     event.returnValue = ''
   }
 }
 onBeforeRouteLeave(async () => {
   if (saving.value) await saveNow()
-  if (!(await maySwitch())) return false
-  if (!hasOtherDrafts()) return true
-  const result = await ui.confirm({
-    title: 'Rascunhos de outras contas',
-    message: 'Descartar os rascunhos não salvos das outras contas?',
-    confirmLabel: 'Descartar',
-  })
-  return Boolean(result && typeof result === 'object' && 'confirmed' in result && result.confirmed)
+  return maySwitch()
 })
 watch(accountId, () => {
   images.dispose()
@@ -219,10 +223,6 @@ onBeforeUnmount(() => {
           {{ error }}
           <button type="button" @click="dirty ? saveNow() : load()">Tentar novamente</button>
         </div>
-        <div v-if="remoteNotice === 'changed'" class="scripts-error" role="status">
-          Este roteiro foi alterado em outra sessão.
-          <button type="button" @click="reloadOpened">Recarregar (descarta suas alterações)</button>
-        </div>
         <p v-if="remoteNotice === 'deleted'" class="scripts-notice" role="status">
           O roteiro aberto foi excluído em outra sessão.
         </p>
@@ -269,10 +269,14 @@ onBeforeUnmount(() => {
               <h1
                 :key="selectedId"
                 class="script-title"
-                :contenteditable="canEdit ? 'true' : 'false'"
+                :class="{ 'is-locked': lockedBy('title') }"
+                :contenteditable="canEdit && !lockedBy('title') ? 'true' : 'false'"
                 spellcheck="false"
                 role="textbox"
                 aria-label="Título do roteiro"
+                :title="lockedBy('title') ? `${lockedBy('title')} editando` : undefined"
+                @focus="lockCell('title')"
+                @blur="unlockCell('title')"
                 @input="titleInput"
                 @paste="titlePaste"
                 @keydown.enter.prevent
@@ -291,8 +295,12 @@ onBeforeUnmount(() => {
                 <button
                   type="button"
                   class="script-icon-button"
-                  title="Excluir este documento"
-                  :disabled="!canEdit || saving"
+                  :title="
+                    presence.editors.value.length
+                      ? `${presence.editors.value[0]} está editando`
+                      : 'Excluir este documento'
+                  "
+                  :disabled="!canEdit || saving || presence.editors.value.length > 0"
                   @click="removeDocument(selectedId)"
                 >
                   <Trash2 :size="16" />
@@ -312,7 +320,7 @@ onBeforeUnmount(() => {
                 :disabled="!canEdit || exporting"
                 @move="moveRow"
               >
-                <tr v-for="(row, index) in draft.rows" :key="rowKey(row)" class="script-row">
+                <tr v-for="row in draft.rows" :key="row.id" class="script-row">
                   <td class="cell cell-audio">
                     <button
                       v-if="canEdit"
@@ -327,24 +335,43 @@ onBeforeUnmount(() => {
                       v-if="canEdit"
                       type="button"
                       class="script-icon-button row-remove"
-                      title="Excluir linha"
+                      :title="
+                        presence.rowLocker(row.id)
+                          ? `${presence.rowLocker(row.id)} está editando`
+                          : 'Excluir linha'
+                      "
                       aria-label="Excluir linha"
-                      @click="draft.rows.splice(index, 1)"
+                      :disabled="Boolean(presence.rowLocker(row.id))"
+                      @click="removeRow(row)"
                     >
                       <X :size="18" />
                     </button>
+                    <span v-if="lockedBy('audio', row.id)" class="cell-lock">
+                      {{ lockedBy('audio', row.id) }} editando
+                    </span>
                     <ScriptQuillCell
-                      v-model="row.audio"
-                      :editable="canEdit && !exporting"
+                      :model-value="row.audio"
+                      :class="{ 'is-locked': lockedBy('audio', row.id) }"
+                      :editable="canEdit && !exporting && !lockedBy('audio', row.id)"
+                      @update:model-value="(value) => editCell('audio', row.id, value)"
+                      @focus="lockCell('audio', row.id)"
+                      @blur="unlockCell('audio', row.id)"
                       @activate="activate"
                       @selection="selectionChanged"
                       @deactivate="deactivate"
                     />
                   </td>
                   <td class="cell cell-video">
+                    <span v-if="lockedBy('video', row.id)" class="cell-lock">
+                      {{ lockedBy('video', row.id) }} editando
+                    </span>
                     <ScriptQuillCell
-                      v-model="row.video"
-                      :editable="canEdit && !exporting"
+                      :model-value="row.video"
+                      :class="{ 'is-locked': lockedBy('video', row.id) }"
+                      :editable="canEdit && !exporting && !lockedBy('video', row.id)"
+                      @update:model-value="(value) => editCell('video', row.id, value)"
+                      @focus="lockCell('video', row.id)"
+                      @blur="unlockCell('video', row.id)"
                       @activate="activate"
                       @selection="selectionChanged"
                       @deactivate="deactivate"
@@ -358,14 +385,21 @@ onBeforeUnmount(() => {
               type="button"
               class="add-row"
               :disabled="draft.rows.length >= 200 || exporting"
-              @click="draft.rows.push({ audio: '', video: '' })"
+              @click="addRow"
             >
               + Linha
             </button>
             <div class="doc-editor">
+              <span v-if="lockedBy('description')" class="cell-lock">
+                {{ lockedBy('description') }} editando
+              </span>
               <ScriptQuillCell
-                v-model="draft.description"
-                :editable="canEdit && !exporting"
+                :model-value="draft.description"
+                :class="{ 'is-locked': lockedBy('description') }"
+                :editable="canEdit && !exporting && !lockedBy('description')"
+                @update:model-value="(value) => editCell('description', '', value)"
+                @focus="lockCell('description')"
+                @blur="unlockCell('description')"
                 @activate="activate"
                 @selection="selectionChanged"
                 @deactivate="deactivate"
@@ -373,7 +407,10 @@ onBeforeUnmount(() => {
             </div>
           </article>
           <p class="scripts-save-status" role="status">
-            {{ saving ? 'Salvando…' : dirty ? 'Alterações não salvas' : 'Salvo' }}
+            <span v-if="presence.editors.value.length" class="scripts-editors">
+              Editando agora: {{ presence.editors.value.join(', ') }} ·
+            </span>
+            {{ dirty ? 'Salvando…' : 'Salvo' }}
           </p>
         </div>
       </main>

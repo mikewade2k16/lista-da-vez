@@ -1,0 +1,20 @@
+# Imagem de runtime do deploy rapido: recebe um `.output` ja compilado pelo
+# `scripts/deploy/build-web-native.mjs` (contexto = a pasta .output). O build
+# completo continua em `web/Dockerfile` (usado pelo GitHub Actions e pelo
+# fallback `-WebBuildMode docker`).
+#
+# Manter a base IDENTICA ao stage final de web/Dockerfile. O script nativo le a
+# versao do Node daqui e recusa compilar com outra versao no host.
+FROM node:24.11.1-bookworm-slim
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NITRO_HOST=0.0.0.0
+ENV PORT=3003
+
+COPY . ./.output
+
+EXPOSE 3003
+
+CMD ["node", ".output/server/index.mjs"]

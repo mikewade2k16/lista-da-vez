@@ -15,6 +15,8 @@ type scriptRepositoryFake struct {
 	calls   int
 	search  string
 	client  string
+	removed []string
+	patched string
 }
 
 func (f *scriptRepositoryFake) clients(_ context.Context, account string) ([]scriptClient, error) {
@@ -32,11 +34,22 @@ func (f *scriptRepositoryFake) get(_ context.Context, account, _ string) (script
 	f.account = account
 	return scriptDocument{}, f.err
 }
-func (f *scriptRepositoryFake) save(_ context.Context, account, _ string, input scriptInput) (scriptDocument, error) {
+func (f *scriptRepositoryFake) save(_ context.Context, account, _ string, input scriptInput, canRemove func(string) bool) (scriptDocument, error) {
 	f.account = account
 	f.input = input
 	f.calls++
+	for _, removed := range f.removed {
+		if canRemove != nil && !canRemove(removed) {
+			return scriptDocument{}, errScriptLocked
+		}
+	}
 	return scriptDocument{Title: input.Title}, f.err
+}
+func (f *scriptRepositoryFake) patchCell(_ context.Context, account, _, field, rowID, value string) (string, string, error) {
+	f.account = account
+	f.calls++
+	f.patched = field + "|" + rowID + "|" + value
+	return "2026-11-12T10:00:00Z", "", f.err
 }
 func (f *scriptRepositoryFake) delete(_ context.Context, account, _ string) error {
 	f.account = account
@@ -55,12 +68,11 @@ func TestScriptSaveValidation(t *testing.T) {
 		{name: "long title", account: account, input: scriptInput{Title: strings.Repeat("á", 201)}},
 		{name: "too many rows", account: account, input: scriptInput{Title: "Título", Rows: make([]scriptRow, 201)}},
 		{name: "oversized cell", account: account, input: scriptInput{Title: "Título", Rows: []scriptRow{{Audio: strings.Repeat("a", 200001)}}}},
-		{name: "missing concurrency token", account: account, id: account, input: scriptInput{Title: "Título"}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			repository := &scriptRepositoryFake{}
-			_, err := newScriptService(repository).save(context.Background(), test.account, test.id, test.input)
+			_, err := newScriptService(repository).save(context.Background(), test.account, "", test.id, test.input)
 			if !errors.Is(err, errInvalidScript) || repository.calls != 0 {
 				t.Fatalf("invalid save reached repository: %v, calls=%d", err, repository.calls)
 			}
@@ -70,21 +82,24 @@ func TestScriptSaveValidation(t *testing.T) {
 func TestScriptSaveNormalizesAndPreservesScope(t *testing.T) {
 	repository := &scriptRepositoryFake{}
 	account := "00000000-0000-4000-8000-000000000001"
-	_, err := newScriptService(repository).save(context.Background(), account, "", scriptInput{Title: "  Roteiro  "})
-	if err != nil || repository.account != account || repository.input.Title != "Roteiro" || repository.input.Rows == nil {
+	_, err := newScriptService(repository).save(context.Background(), account, "", "", scriptInput{Title: "  Roteiro  ",
+		Rows: []scriptRow{{ID: "bad"}, {}, {ID: "00000000-0000-4000-8000-000000000009"}, {ID: "00000000-0000-4000-8000-000000000009"}}})
+	if err != nil || repository.account != account || repository.input.Title != "Roteiro" {
 		t.Fatalf("invalid persisted input: %#v, %v", repository, err)
 	}
-	repository.err = errScriptConflict
-	_, err = newScriptService(repository).save(context.Background(), account, account, scriptInput{Title: "Roteiro", UpdatedAt: "2026-11-11T12:00:00.123456Z"})
-	if !errors.Is(err, errScriptConflict) {
-		t.Fatalf("lost conflict: %v", err)
+	seen := map[string]bool{}
+	for _, row := range repository.input.Rows {
+		if !isUUID(row.ID) || seen[row.ID] {
+			t.Fatalf("row ids not normalized: %#v", repository.input.Rows)
+		}
+		seen[row.ID] = true
 	}
 }
 func TestScriptErrorDoesNotExposeExistenceOutsideScope(t *testing.T) {
 	for _, test := range []struct {
 		err    error
 		status int
-	}{{errScriptNotFound, 404}, {errScriptConflict, 409}, {errInvalidScript, 400}, {errors.New("private database details"), 500}} {
+	}{{errScriptNotFound, 404}, {scriptLockedError{holder: "Ana"}, 409}, {errInvalidScript, 400}, {errors.New("private database details"), 500}} {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/tools/scripts/id", nil)
 		scriptError(response, request, test.err)
@@ -139,7 +154,7 @@ func TestScriptSaveRejectsInvalidClient(t *testing.T) {
 	account := "00000000-0000-4000-8000-000000000001"
 	for _, client := range []string{"duby", account} {
 		store := &scriptRepositoryFake{}
-		_, err := newScriptService(store).save(context.Background(), account, "", scriptInput{Title: "Roteiro", ClientAccountID: client})
+		_, err := newScriptService(store).save(context.Background(), account, "", "", scriptInput{Title: "Roteiro", ClientAccountID: client})
 		if !errors.Is(err, errInvalidScriptClient) || store.calls != 0 {
 			t.Fatalf("client %q: err = %v, store calls = %d", client, err, store.calls)
 		}
@@ -163,17 +178,17 @@ func TestScriptMutationsPublishInvalidation(t *testing.T) {
 	publisher := &scriptPublisherFake{}
 	svc := newScriptService(store)
 	svc.publisher = publisher
-	if _, err := svc.save(context.Background(), account, "", scriptInput{Title: "Roteiro"}); err != nil {
+	if _, err := svc.save(context.Background(), account, "", "", scriptInput{Title: "Roteiro"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.delete(context.Background(), account, "id"); err != nil {
+	if err := svc.delete(context.Background(), account, "", "id"); err != nil {
 		t.Fatal(err)
 	}
 	if len(publisher.events) != 2 || publisher.events[0].Type != ScriptEventSaved || publisher.events[1].Type != ScriptEventDeleted {
 		t.Fatalf("unexpected events: %+v", publisher.events)
 	}
 	store.err = errors.New("db down")
-	_, _ = svc.save(context.Background(), account, "", scriptInput{Title: "Roteiro"})
+	_, _ = svc.save(context.Background(), account, "", "", scriptInput{Title: "Roteiro"})
 	if len(publisher.events) != 2 {
 		t.Fatalf("failed save must not publish: %+v", publisher.events)
 	}
@@ -189,5 +204,60 @@ func TestScriptPublishSkipsOwnAndEmptyClients(t *testing.T) {
 	}
 	if visibleClient(scriptDocument{ClientAccountID: "client", ClientVisible: false}) != "" {
 		t.Fatal("hidden client must not receive events")
+	}
+}
+
+type scriptLocksFake struct{ fields map[string]string }
+
+func (f scriptLocksFake) ScriptFieldLocker(_, fieldKey, _ string) string { return f.fields[fieldKey] }
+func (f scriptLocksFake) ScriptAnyLocker(string, string) string {
+	for _, holder := range f.fields {
+		return holder
+	}
+	return ""
+}
+
+func TestScriptCellPatchRespectsLocksAndPublishesContent(t *testing.T) {
+	account := "00000000-0000-4000-8000-000000000001"
+	script := "00000000-0000-4000-8000-000000000002"
+	row := "00000000-0000-4000-8000-000000000003"
+	store := &scriptRepositoryFake{}
+	publisher := &scriptPublisherFake{}
+	svc := newScriptService(store)
+	svc.publisher = publisher
+	svc.locks = scriptLocksFake{fields: map[string]string{ScriptCellKey("video", row): "Ana"}}
+
+	if _, err := svc.patchCell(context.Background(), account, "user", script, "audio", row, "<p>oi</p>"); err != nil {
+		t.Fatal(err)
+	}
+	if store.patched != "audio|"+row+"|<p>oi</p>" || len(publisher.events) != 1 ||
+		publisher.events[0].Type != ScriptEventCell || publisher.events[0].Value != "<p>oi</p>" || publisher.events[0].RowID != row {
+		t.Fatalf("unexpected patch/event: %q %+v", store.patched, publisher.events)
+	}
+	_, err := svc.patchCell(context.Background(), account, "user", script, "video", row, "x")
+	var locked scriptLockedError
+	if !errors.As(err, &locked) || locked.holder != "Ana" || len(publisher.events) != 1 {
+		t.Fatalf("locked cell must be refused without publishing: %v", err)
+	}
+	for _, bad := range []struct{ field, row string }{{"audio", "x"}, {"rows", row}, {"title", ""}} {
+		if _, err := svc.patchCell(context.Background(), account, "user", script, bad.field, bad.row, ""); !errors.Is(err, errInvalidScript) {
+			t.Fatalf("%+v must be invalid: %v", bad, err)
+		}
+	}
+}
+
+func TestScriptDeleteAndRowRemovalBlockedWhileSomeoneEdits(t *testing.T) {
+	account := "00000000-0000-4000-8000-000000000001"
+	row := "00000000-0000-4000-8000-000000000003"
+	store := &scriptRepositoryFake{removed: []string{row}}
+	svc := newScriptService(store)
+	svc.locks = scriptLocksFake{fields: map[string]string{ScriptCellKey("audio", row): "Ana"}}
+	if err := svc.delete(context.Background(), account, "user", "script"); !errors.Is(err, errScriptLocked) {
+		t.Fatalf("delete while editing: %v", err)
+	}
+	_, err := svc.save(context.Background(), account, "user", "00000000-0000-4000-8000-000000000002", scriptInput{Title: "Roteiro"})
+	var locked scriptLockedError
+	if !errors.As(err, &locked) || locked.holder != "Ana" {
+		t.Fatalf("removing a locked row: %v", err)
 	}
 }

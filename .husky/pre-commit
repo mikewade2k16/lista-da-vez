@@ -12,6 +12,15 @@ if [ -z "${BASH_VERSION:-}" ] || shopt -oq posix; then exec bash "$0" "$@"; fi
 #
 # Mantem os formatadores/lints web seriais para limitar consumo em commits grandes.
 node scripts/dev/sync-agent-skills.mjs --check || exit $?
+# Metadados do macOS staged: o Finder os reescreve durante o hook e o lint-staged
+# aborta com "merge conflict" ao restaurar o patch binario. Barrar com causa clara.
+OS_META=$(git diff --cached --name-only | grep -E '(^|/)(\.DS_Store|\._[^/]*)$' || true)
+if [ -n "$OS_META" ]; then
+  echo "Commit bloqueado: metadados do macOS staged (nunca versionar):" >&2
+  echo "$OS_META" | sed 's/^/  /' >&2
+  echo "Remover do indice: git rm --cached <arquivo>   (antes: npm run precommit:check)" >&2
+  exit 1
+fi
 if git diff --cached --quiet -- ':(glob)back/**/*.go'; then
   :
 else

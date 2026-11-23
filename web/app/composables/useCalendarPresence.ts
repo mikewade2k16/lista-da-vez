@@ -25,6 +25,10 @@ export interface CalendarPresenceUser {
 interface CalendarPresenceOptions {
   enabled: PresenceSource<boolean>
   accountId?: PresenceSource<string>
+  /** Escopo do canal de presença (padrão 'calendar'). Roteiros usam 'script' (useScriptPresence). */
+  scope?: string
+  /** Id do recurso do escopo (ex.: roteiro). A base WS o envia no parâmetro taskId. */
+  resourceId?: PresenceSource<string>
 }
 
 function initialsFor(value: string) {
@@ -165,17 +169,21 @@ export function useCalendarPresence(options: CalendarPresenceOptions) {
     }
   }
 
+  const scope = options.scope || 'calendar'
   const presenceSocket = useRealtimeSocket({
     enabled: options.enabled,
-    scope: 'calendar',
+    scope,
     accountId: options.accountId,
+    taskId: options.resourceId,
     path: '/v1/realtime/presence',
-    scopeDefault: 'calendar',
-    normalizeScope: () => 'calendar',
-    isValid: ({ accountId }) => Boolean(accountId),
+    scopeDefault: scope,
+    normalizeScope: () => scope,
+    isValid: ({ accountId, taskId }) =>
+      Boolean(accountId) && (!options.resourceId || Boolean(taskId)),
     watchSources: [
       () => sourceValue(options.enabled, false),
       () => sourceValue(options.accountId, ''),
+      () => sourceValue(options.resourceId, ''),
       () => auth.isAuthenticated,
       () => auth.accessToken,
       () => auth.activeTenantId,

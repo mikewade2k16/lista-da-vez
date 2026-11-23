@@ -12,6 +12,8 @@ import (
 )
 
 type scriptRow struct {
+	// ID estável da linha (migration 0328): chave das travas e das edições por célula.
+	ID    string `json:"id"`
 	Audio string `json:"audio"`
 	Video string `json:"video"`
 }
@@ -34,7 +36,6 @@ type scriptInput struct {
 	Title           string      `json:"title"`
 	Rows            []scriptRow `json:"rows"`
 	Description     string      `json:"description"`
-	UpdatedAt       string      `json:"updatedAt,omitempty"`
 	ClientAccountID string      `json:"clientAccountId"`
 	ClientVisible   *bool       `json:"clientVisible"`
 }
@@ -50,15 +51,15 @@ type scriptClient struct {
 	ScriptCount int `json:"scriptCount"`
 }
 
-var errScriptConflict = errors.New("script conflict")
 var errScriptNotFound = errors.New("script not found")
 var errInvalidScriptClient = errors.New("invalid script client")
+var errScriptLocked = errors.New("script cell locked")
 
-// scriptVisibleTo is the single read scope ($1 = current account): the account's own scripts,
+// ScriptVisibleTo is the single read scope (exported for the realtime presence check) ($1 = current account): the account's own scripts,
 // plus scripts of an agency account of the SAME organization that name $1 as client and keep
 // client_visible. The organization check is repeated here so a client moved to another
 // organization stops seeing them even if the stored link survives.
-const scriptVisibleTo = `(s.account_id=$1::uuid or (s.client_account_id=$1::uuid and s.client_visible and exists(
+const ScriptVisibleTo = `(s.account_id=$1::uuid or (s.client_account_id=$1::uuid and s.client_visible and exists(
  select 1 from core.accounts ag join core.accounts cl on cl.organization_id=ag.organization_id
  where ag.id=s.account_id and ag.is_agency and cl.id=s.client_account_id)))`
 
@@ -96,13 +97,14 @@ func (s *scriptStore) list(ctx context.Context, account, user string, filter scr
 	rows, err := s.pool.Query(ctx, `select s.id::text,s.title,s.updated_at,
  coalesce(s.client_account_id::text,''),coalesce(c.name,''),s.client_visible,s.account_id<>$1::uuid,
  coalesce((select jsonb_agg(jsonb_build_object(
+   'id', coalesce(r.value->>'id',''),
    'audio', left(regexp_replace(coalesce(r.value->>'audio',''), '<[^>]*>', ' ', 'g'),300),
    'video', left(regexp_replace(coalesce(r.value->>'video',''), '<[^>]*>', ' ', 'g'),300)) order by r.ord)
   from jsonb_array_elements(s.rows) with ordinality as r(value,ord) where r.ord <= 6),'[]'::jsonb)
  from tools.scripts s
  left join core.accounts c on c.id=s.client_account_id
  left join tools.script_orders o on o.account_id=$1::uuid and o.user_id=$2::uuid
- where `+scriptVisibleTo+`
+ where `+ScriptVisibleTo+`
    and ($4 = '' or s.title ilike $4 escape '\' or exists (
    select 1 from jsonb_array_elements(s.rows) as m(value)
    where regexp_replace(coalesce(m.value->>'audio','') || ' ' || coalesce(m.value->>'video',''), '<[^>]*>', ' ', 'g')
@@ -184,11 +186,7 @@ func (s *scriptStore) reorder(ctx context.Context, account, user string, ids []s
 	}
 	return tx.Commit(ctx)
 }
-func (s *scriptStore) save(ctx context.Context, account, id string, input scriptInput) (scriptDocument, error) {
-	rows, err := json.Marshal(input.Rows)
-	if err != nil {
-		return scriptDocument{}, err
-	}
+func (s *scriptStore) save(ctx context.Context, account, id string, input scriptInput, canRemove func(string) bool) (scriptDocument, error) {
 	if input.ClientAccountID != "" {
 		var valid bool
 		if err := s.pool.QueryRow(ctx, `select exists(select 1 from core.accounts ag
@@ -203,6 +201,10 @@ func (s *scriptStore) save(ctx context.Context, account, id string, input script
 	}
 	visible := input.ClientVisible == nil || *input.ClientVisible
 	if id == "" {
+		rows, err := json.Marshal(input.Rows)
+		if err != nil {
+			return scriptDocument{}, err
+		}
 		return scanScript(s.pool.QueryRow(ctx, `with s as (
  insert into tools.scripts(account_id,title,rows,description,client_account_id,client_visible)
  values($1::uuid,$2,$3::jsonb,$4,nullif($5,'')::uuid,$6) returning *)
@@ -212,22 +214,91 @@ func (s *scriptStore) save(ctx context.Context, account, id string, input script
 	if !isUUID(id) {
 		return scriptDocument{}, errScriptNotFound
 	}
-	item, err := scanScript(s.pool.QueryRow(ctx, `with s as (
- update tools.scripts set title=$3, rows=$4::jsonb, description=$5, client_account_id=nullif($7,'')::uuid,
-   client_visible=$8, updated_at=now()
- where account_id=$1::uuid and id=$2::uuid and updated_at=$6::timestamptz returning *)
- select `+scriptColumns+` from s left join core.accounts c on c.id=s.client_account_id`,
-		account, id, input.Title, rows, input.Description, input.UpdatedAt, input.ClientAccountID, visible))
-	if errors.Is(err, errScriptNotFound) {
-		var exists bool
-		if checkErr := s.pool.QueryRow(ctx, `select exists(select 1 from tools.scripts where account_id=$1::uuid and id=$2::uuid)`, account, id).Scan(&exists); checkErr != nil {
-			return item, checkErr
+	return s.saveStructure(ctx, account, id, input, visible, canRemove)
+}
+
+// saveStructure applies a structural update (row order, added/removed rows, client fields)
+// without touching cell content: rows that already exist keep the stored audio/video, so a
+// concurrent cell PATCH from someone else is never overwritten. Title and description are
+// edited per cell too and are kept. Removing a row someone else is editing is refused.
+func (s *scriptStore) saveStructure(ctx context.Context, account, id string, input scriptInput, visible bool, canRemove func(string) bool) (scriptDocument, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return scriptDocument{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var stored []byte
+	if err := tx.QueryRow(ctx, `select rows from tools.scripts where account_id=$1::uuid and id=$2::uuid for update`,
+		account, id).Scan(&stored); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return scriptDocument{}, errScriptNotFound
 		}
-		if exists {
-			return item, errScriptConflict
+		return scriptDocument{}, err
+	}
+	var current []scriptRow
+	if err := json.Unmarshal(stored, &current); err != nil {
+		return scriptDocument{}, err
+	}
+	byID := make(map[string]scriptRow, len(current))
+	for _, row := range current {
+		byID[row.ID] = row
+	}
+	merged := make([]scriptRow, 0, len(input.Rows))
+	kept := make(map[string]bool, len(input.Rows))
+	for _, row := range input.Rows {
+		if existing, ok := byID[row.ID]; ok {
+			row = existing
+		}
+		kept[row.ID] = true
+		merged = append(merged, row)
+	}
+	for _, row := range current {
+		if !kept[row.ID] && canRemove != nil && !canRemove(row.ID) {
+			return scriptDocument{}, errScriptLocked
 		}
 	}
-	return item, err
+	rows, err := json.Marshal(merged)
+	if err != nil {
+		return scriptDocument{}, err
+	}
+	item, err := scanScript(tx.QueryRow(ctx, `with s as (
+ update tools.scripts set rows=$3::jsonb, client_account_id=nullif($4,'')::uuid, client_visible=$5, updated_at=now()
+ where account_id=$1::uuid and id=$2::uuid returning *)
+ select `+scriptColumns+` from s left join core.accounts c on c.id=s.client_account_id`,
+		account, id, rows, input.ClientAccountID, visible))
+	if err != nil {
+		return item, err
+	}
+	return item, tx.Commit(ctx)
+}
+
+// patchCell updates ONE cell: "title", "description" or a row's "audio"/"video" by row id.
+// Returns the new updatedAt. A row id that no longer exists returns errScriptNotFound.
+func (s *scriptStore) patchCell(ctx context.Context, account, id, field, rowID, value string) (string, string, error) {
+	var updated time.Time
+	var client string
+	var err error
+	// client: conta-cliente que lê o roteiro agora (para o evento chegar a ela também).
+	const returning = ` returning s.updated_at, case when s.client_visible then coalesce(s.client_account_id::text,'') else '' end`
+	switch field {
+	case "title", "description":
+		err = s.pool.QueryRow(ctx, `update tools.scripts s set `+field+`=$3, updated_at=now()
+ where s.account_id=$1::uuid and s.id=$2::uuid`+returning, account, id, value).Scan(&updated, &client)
+	default:
+		err = s.pool.QueryRow(ctx, `update tools.scripts s set rows=(
+   select jsonb_agg(case when x.r->>'id'=$4 then jsonb_set(x.r, array[$5::text], to_jsonb($3::text)) else x.r end order by x.ord)
+   from jsonb_array_elements(s.rows) with ordinality as x(r, ord)), updated_at=now()
+ where s.account_id=$1::uuid and s.id=$2::uuid
+   and exists(select 1 from jsonb_array_elements(s.rows) as e(r) where e.r->>'id'=$4)`+returning,
+			account, id, value, rowID, field).Scan(&updated, &client)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", errScriptNotFound
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return updated.UTC().Format(time.RFC3339Nano), client, nil
 }
 func (s *scriptStore) delete(ctx context.Context, account, id string) error {
 	if !isUUID(id) {
@@ -248,7 +319,7 @@ func (s *scriptStore) get(ctx context.Context, account, id string) (scriptDocume
 		return scriptDocument{}, errScriptNotFound
 	}
 	return scanScript(s.pool.QueryRow(ctx, `select `+scriptColumns+` from tools.scripts s
- left join core.accounts c on c.id=s.client_account_id where s.id=$2::uuid and `+scriptVisibleTo, account, id))
+ left join core.accounts c on c.id=s.client_account_id where s.id=$2::uuid and `+ScriptVisibleTo, account, id))
 }
 
 func (s *scriptStore) addImage(ctx context.Context, account string, image scriptImage) error {
@@ -257,12 +328,12 @@ func (s *scriptStore) addImage(ctx context.Context, account string, image script
 }
 
 // getImage resolves an image the account may read: its own, or one embedded in a script shared
-// with it (scriptVisibleTo). Account in the result is the owner, used to locate the file.
+// with it (ScriptVisibleTo). Account in the result is the owner, used to locate the file.
 func (s *scriptStore) getImage(ctx context.Context, account, id string) (scriptImage, error) {
 	var image scriptImage
 	err := s.pool.QueryRow(ctx, `select i.id::text,i.account_id::text,i.mime_type,i.size_bytes from tools.script_images i
  where i.id=$2::uuid and (i.account_id=$1::uuid or exists(select 1 from tools.scripts s
-   where s.account_id=i.account_id and `+scriptVisibleTo+`
+   where s.account_id=i.account_id and `+ScriptVisibleTo+`
      and (strpos(s.rows::text,i.id::text)>0 or strpos(s.description,i.id::text)>0)))`,
 		account, id).Scan(&image.ID, &image.Account, &image.MIME, &image.Size)
 	if errors.Is(err, pgx.ErrNoRows) {

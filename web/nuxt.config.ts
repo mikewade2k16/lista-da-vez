@@ -233,11 +233,7 @@ export default defineNuxtConfig({
       // alem de disputar CPU e memoria com a primeira navegacao.
       // Caminhos relativos ao srcDir do Vite (web/app); demais telas sob demanda.
       warmup: {
-        clientFiles: [
-          './app.vue',
-          './pages/index.vue',
-          './pages/auth/login.vue',
-        ],
+        clientFiles: ['./app.vue', './pages/index.vue', './pages/auth/login.vue'],
       },
       watch: shouldUsePollingWatcher
         ? {
@@ -351,6 +347,9 @@ export default defineNuxtConfig({
     '~/assets/styles/calendar.css',
     '~/assets/styles/presentation.css',
   ],
+  // Preloader de boot isolado: trocar a animacao = editar so este arquivo.
+  // Contrato em app/preloader/AGENT.md.
+  spaLoadingTemplate: 'preloader/preloader.html',
   app: {
     head: {
       htmlAttrs: {

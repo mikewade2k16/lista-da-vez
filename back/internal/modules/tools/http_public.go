@@ -10,6 +10,9 @@ import (
 // sem JWT e fora do gating por modulo (prefixos /s e /q nao estao em
 // moduleGatingRules). A conta dona precisa estar ativa e com o modulo tools
 // habilitado (checado na query do store); caso contrario 404 uniforme.
+// "GET /x" tambem atende HEAD no ServeMux: HEAD, robos de previa (WhatsApp,
+// Facebook, Telegram...) e User-Agent vazio redirecionam sem contar
+// (shouldCountVisit em preview_agents.go).
 func RegisterPublicRoutes(mux *http.ServeMux, svc *Service) {
 	mux.Handle("GET /s/{slug}", handleShortLinkRedirect(svc))
 	mux.Handle("GET /q/{slug}", handleQrRedirect(svc))
@@ -17,7 +20,7 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *Service) {
 
 func handleShortLinkRedirect(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		target, err := svc.ResolveShortLink(r.Context(), r.PathValue("slug"))
+		target, err := svc.ResolveShortLink(r.Context(), r.PathValue("slug"), shouldCountVisit(r))
 		if err != nil {
 			httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Link nao encontrado.")
 			return
@@ -28,7 +31,7 @@ func handleShortLinkRedirect(svc *Service) http.HandlerFunc {
 
 func handleQrRedirect(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		target, err := svc.ResolveQrCode(r.Context(), r.PathValue("slug"))
+		target, err := svc.ResolveQrCode(r.Context(), r.PathValue("slug"), shouldCountVisit(r))
 		if err != nil {
 			httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "QR nao encontrado.")
 			return

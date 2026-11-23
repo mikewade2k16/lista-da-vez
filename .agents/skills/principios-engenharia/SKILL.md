@@ -13,6 +13,9 @@ Quando a tarefa tocar uma área específica, **leia também o arquivo de referê
 
 ## Princípios inegociáveis (valem sempre)
 
+### Preservação de credenciais cadastradas
+Chaves de API, tokens, senhas e outras credenciais já cadastradas são dados do usuário. Nunca removê-las, substituí-las, rotacioná-las ou esvaziar seu armazenamento, referências ou configuração ativa sem solicitação explícita para essa alteração. Deploy, migração, seed, restore e correções devem preservá-las; ausência inesperada exige investigação e recuperação autorizada, sem expor valores em logs ou documentação.
+
 ### 1. Fonte única de verdade no banco — nada hardcoded
 **Toda** informação exibida vem do banco, através do back; **toda** alteração vai ao back e é gravada no banco. O fluxo é sempre: leitura `banco → back → front`; escrita `front → back → banco → front re-lê do banco` (ou usa o objeto que a API retornou). Nunca confiar só no estado local "achando que salvou".
 
@@ -46,6 +49,8 @@ Em produção, dados que o cálculo usa vão faltar. A tela nunca pode mascarar 
 
 ### 6. Validar local antes de propor commit ou deploy
 Sempre rodar e testar local antes. Mudança de UI precisa de teste no browser, não só type-check — type-check e testes validam corretude de código, não de feature. A validação visual respeita a autorização exigida abaixo; sem ela, deixar essa etapa pendente e orientar o usuário a testar.
+
+**Gate de commit em TODA alteração (qualquer arquivo, qualquer tamanho):** terminar rodando `npm run precommit:check` na raiz e só declarar pronto com "Pronto para commit". Ele reproduz o `.husky/pre-commit` em modo só leitura (Prettier, ESLint, gofmt/golangci, migrations, sync de skills, metadados do macOS). Formatar com Prettier os arquivos que você tocou no próprio fluxo, não deixar para o hook. Se aparecer `.DS_Store`/`._*` rastreado, avisar e propor `git rm --cached -f`. Detalhes e correções em `references/lint.md` (seção "Gate obrigatório").
 
 ### Ambiente de trabalho — sempre local por padrão
 - **Toda implementação, correção, investigação e validação acontece no ambiente local.** Não cogitar VPS, staging ou produção como destino da tarefa sem pedido explícito do usuário para aquele ambiente.

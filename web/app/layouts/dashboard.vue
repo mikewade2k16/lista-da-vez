@@ -90,7 +90,13 @@ function handleProfileChange(profileId) {
         />
         <slot></slot>
       </div>
-      <OmniAssistantHost v-if="assistantEnabled" />
+      <!-- Wrapper estavel obrigatorio: o chat do assistente faz <Teleport to=".app-surface">,
+           isto e, para dentro desta mesma section. Sem o wrapper, ao desligar o v-if o Vue
+           usava como ancora um no teleportado (ja removido) e o insertBefore quebrava o
+           layout: a URL mudava e a pagina antiga ficava na tela (2026-11-16). -->
+      <div class="dashboard-assistant-slot">
+        <OmniAssistantHost v-if="assistantEnabled" />
+      </div>
     </section>
 
     <button
@@ -107,6 +113,10 @@ function handleProfileChange(profileId) {
 </template>
 
 <style scoped>
+.dashboard-assistant-slot {
+  display: contents;
+}
+
 .runtime-settings-banner {
   display: flex;
   align-items: flex-start;

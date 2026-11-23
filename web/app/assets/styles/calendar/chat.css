@@ -100,6 +100,7 @@
 
 .calendar-chat__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -140,7 +141,9 @@
 
 .calendar-chat__title {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
+  min-width: 0;
   gap: 0.4rem;
   color: var(--text-main);
   font-size: 0.92rem;
@@ -150,8 +153,12 @@
 
 .calendar-chat__head-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.35rem;
+  /* Quebra para a linha de baixo em vez de empurrar minimizar/fechar para fora da janela. */
+  margin-left: auto;
 }
 
 /* Seletor de posicao (center/left/right) — segmentado compacto so-icone. */
@@ -1590,5 +1597,19 @@
   /* Em tela estreita nao redimensiona por arrasto (o layout ja preenche a area). */
   .calendar-chat__resize {
     display: none;
+  }
+
+  /* Celular: so existe a janela centralizada; botoes com area de toque maior. */
+  .calendar-chat__pos {
+    display: none;
+  }
+
+  .calendar-chat__header {
+    padding: 0.6rem 0.7rem;
+  }
+
+  .calendar-chat__icon-btn {
+    width: 2.25rem;
+    height: 2.25rem;
   }
 }

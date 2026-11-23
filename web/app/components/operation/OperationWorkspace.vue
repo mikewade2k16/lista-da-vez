@@ -8,6 +8,7 @@ import { defineLazyComponent } from '~/utils/lazy-component'
 
 const OperationFinishModal = defineLazyComponent(
   () => import('~/components/operation/OperationFinishModal.vue'),
+  { suspensible: true }, // tem <Suspense> proprio com fallback no template
 )
 
 const props = defineProps({

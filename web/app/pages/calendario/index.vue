@@ -63,6 +63,21 @@ function toggleLeftMin(): void {
   }
 }
 
+// Celular (mesmo breakpoint de calendar/mobile.css): controles no topo, anotacoes viram
+// sidebar deslizante FECHADA por padrao e a coluna nao usa o modo minimizado do desktop.
+const MOBILE_QUERY = '(max-width: 880px)'
+const isMobile = ref(false)
+const mobileNotesOpen = ref(false)
+let mobileMql: MediaQueryList | null = null
+function syncMobile(): void {
+  isMobile.value = Boolean(mobileMql?.matches)
+  if (!isMobile.value) mobileNotesOpen.value = false
+}
+function onCollapseLeft(): void {
+  if (isMobile.value) mobileNotesOpen.value = !mobileNotesOpen.value
+  else toggleLeftMin()
+}
+
 // Barras multi-dia (WAVE 11): tasks do board configurado com inicio->fim atravessando dias
 // viram barra continua na grade (estilo Google). Toggle mostrar/ocultar persistido.
 const SPANS_KEY = 'omni.calendar.spans.show'
@@ -407,6 +422,9 @@ onMounted(() => {
     leftMinimized.value = localStorage.getItem(LEFT_MIN_KEY) === '1'
     showTaskSpans.value = localStorage.getItem(SPANS_KEY) !== '0'
   }
+  mobileMql = window.matchMedia(MOBILE_QUERY)
+  syncMobile()
+  mobileMql.addEventListener('change', syncMobile)
   const first = store.init()
   // Ao (RE)entrar na pagina, refetcha a janela SEMPRE (menos no 1o load, que o init ja faz): pega
   // mudancas feitas com o calendario fechado — ex.: mexer na data/responsavel de uma TASK no board
@@ -422,6 +440,7 @@ onActivated(() => {
 })
 
 onBeforeUnmount(() => {
+  mobileMql?.removeEventListener('change', syncMobile)
   if (suppressTimer) window.clearTimeout(suppressTimer)
 })
 </script>
@@ -438,9 +457,15 @@ onBeforeUnmount(() => {
         @month="() => onSetView('month')"
       />
 
-      <div class="calendar-leftcol" :class="{ 'calendar-leftcol--min': leftMinimized }">
+      <div
+        class="calendar-leftcol"
+        :class="{
+          'calendar-leftcol--min': leftMinimized && !isMobile,
+          'calendar-leftcol--mobile': isMobile,
+        }"
+      >
         <!-- MINIMIZADA: sidebar slim (expandir + setas de mes + nome do mes vertical clicavel). -->
-        <template v-if="leftMinimized">
+        <template v-if="leftMinimized && !isMobile">
           <button
             type="button"
             class="calendar-leftcol__expand"
@@ -505,12 +530,14 @@ onBeforeUnmount(() => {
             :participants="presenceParticipants"
             :show-spans="showTaskSpans"
             :has-spans="hasTaskSpansInFocusedMonth"
+            :mobile="isMobile"
+            :notes-open="mobileNotesOpen"
             @today="onToday"
             @update:client="store.setClientFilter"
             @update:view="onSetView"
             @new-item="onNew"
             @config="onConfig"
-            @minimize="toggleLeftMin"
+            @minimize="onCollapseLeft"
             @toggle-spans="toggleTaskSpans"
           >
             <template #search>
@@ -518,6 +545,7 @@ onBeforeUnmount(() => {
             </template>
           </CalendarControls>
           <MonthNotesPanel
+            :class="{ 'is-mobile-open': isMobile && mobileNotesOpen }"
             :title="notesTitle"
             :model-value="activeNotes"
             :people-names="peopleNames"
@@ -529,6 +557,13 @@ onBeforeUnmount(() => {
           />
         </template>
       </div>
+
+      <div
+        v-if="isMobile && mobileNotesOpen"
+        class="calendar-notes-backdrop"
+        aria-hidden="true"
+        @click="mobileNotesOpen = false"
+      ></div>
 
       <div ref="scrollContainer" class="calendar-scroll" @scroll.passive="onScroll">
         <template v-if="view === 'month'">

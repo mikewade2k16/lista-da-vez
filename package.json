@@ -4,6 +4,7 @@
   "scripts": {
     "agents:sync": "node scripts/dev/sync-agent-skills.mjs",
     "agents:check": "node scripts/dev/sync-agent-skills.mjs --check",
+    "precommit:check": "bash scripts/dev/precommit-check.sh",
     "dev:mac:start": "bash scripts/dev/mac-stack-watch.sh start",
     "dev:mac:up": "bash scripts/dev/mac-stack-watch.sh up",
     "dev:mac:watch": "bash scripts/dev/mac-stack-watch.sh watch",

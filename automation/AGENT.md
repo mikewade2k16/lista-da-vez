@@ -19,6 +19,10 @@ n8n isolado.
 
 ## Propriedade de workflows — regra obrigatoria
 
+Calendar Chat: o nó `Montar contexto` deve manter strings JavaScript sintaticamente válidas;
+validar os nós com `node --test automation/calendar-chat-syntax.test.cjs` antes de importar.
+Em 2026-11-13 foi detectado que aspas em `countries` quebravam esse nó antes da chamada ao provedor.
+
 Cada workflow pertence ao modulo que o criou. Uma tarefa so pode editar, importar,
 exportar, ativar, desativar ou remover workflows do modulo explicitamente em escopo.
 

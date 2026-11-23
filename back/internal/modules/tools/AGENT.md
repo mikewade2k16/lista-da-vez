@@ -4,64 +4,118 @@ Duas ferramentas por conta, reconstruídas como back Go real (o projeto antigo e
 `globalThis` no BFF Nitro eliminado). Plano/decisões: `docs/tools/PLANO_MODULO_TOOLS.md`.
 
 ## Escopo
-- **Encurtador**: `tools.short_links` → redirect público `GET /s/{slug}` (302 + `hits++`).
-- **QR Code**: `tools.qr_codes` → redirect **rastreado** `GET /q/{slug}` (302 + `scan_count++`,
-  `last_scanned_at`, só se `is_active`). O QR codifica o `qrUrl` (`/q/{slug}`), não a URL final —
-  por isso o toggle Ativo e o contador de scans funcionam de verdade. A imagem PNG é gerada **no
-  cliente** (lib `qrcode`) a partir de `qrUrl` + cores + `size`; o backend não renderiza/armazena PNG.
+- **Encurtador**: `tools.short_links` → redirect público `GET /s/{slug}` (302, só se `is_active`).
+  Toggle Ativo: desativado responde 404 sem contar e volta a funcionar ao reativar (não exclui).
+- **QR Code**: `tools.qr_codes` → redirect **rastreado** `GET /q/{slug}` (302, só se `is_active`).
+  O QR codifica o `qrUrl` (`/q/{slug}`), não a URL final — por isso trocar o destino, desativar e
+  contar scans funcionam com o QR já impresso. A imagem PNG é gerada **no cliente** (lib `qrcode`,
+  correção de erro H) a partir de `qrUrl` + cores + `size`; o backend não renderiza/armazena PNG.
 
-## Schema (migration `0197_tools_module.sql`)
-- `tools.short_links(id, account_id→core.accounts, slug UNIQUE, target_url, hits, created_at, updated_at)`
-- `tools.qr_codes(id, account_id→core.accounts, slug UNIQUE, target_url, fill_color, back_color,
-  size, is_active, scan_count, last_scanned_at, created_at, updated_at)`
+## Regras que protegem QR/link já divulgado (2026-11-12)
+- **Slug do QR é imutável depois do create.** PATCH com slug diferente (ou vazio) → 409
+  `qr_slug_immutable` e nada do payload é gravado; slug igual ao atual é aceito (no-op, telas
+  antigas mandam o form inteiro). Para "trocar" o endereço: criar outro QR.
+- **Renomear link curto exige `confirmSlugChange: true`** (sem isso 409
+  `slug_change_requires_confirmation`; vazio → 400 `invalid_slug`). Slug igual ao atual não exige.
+  No painel o slug saiu da edição inline e passou para o botão "Renomear slug" (modal com aviso,
+  cliques e checkbox de confirmação). Para pausar sem trocar endereço: toggle Ativo.
+- **Cores do QR** (`qr_contrast.go`, espelho em `web/app/utils/qr-contrast.ts`): `#rrggbb`
+  obrigatório (inválido → 400 `invalid_color`, nunca default silencioso); QR mais escuro que o fundo
+  e contraste WCAG ≥ 4.5:1 (senão 400 `low_contrast`). No PATCH valida o par efetivo (patch + valor
+  atual) e grava com trava otimista nas cores lidas (`ExpectFill/ExpectBack`): mudou no meio → 409
+  `concurrent_change`. O painel avisa e bloqueia o salvar antes do back recusar.
+- **Contagem** (`preview_agents.go`): só `GET` de navegador conta. `HEAD`, User-Agent vazio e robôs
+  de prévia/busca (WhatsApp, facebookexternalhit, TelegramBot, Slackbot, Discordbot, Googlebot…)
+  recebem o mesmo redirect sem contar. Não incluir na lista nomes que aparecem no navegador interno
+  de apps (Instagram, Teams, Snapchat, Viber): ali é uma pessoa clicando. Clique não mexe em
+  `updated_at`.
+- **Criação do QR no painel** não mostra QR escaneável antes de salvar (só amostra de cores): um
+  print do preview com o destino direto seria um QR sem rastreio nem desativação. Ao salvar, o modal
+  vira edição com o QR real e o botão "Baixar QR salvo".
 
-`slug` é **único global por tabela** (o redirect resolve sem X-Account-Id). Colisão no create/patch →
-o store adiciona sufixo `-2/-3`… (loop atômico sobre a violação de unique `23505`). `/s` e `/q` são
+## Schema
+- `0197_tools_module.sql`: `tools.short_links(id, account_id→core.accounts, slug UNIQUE, target_url,
+  hits, created_at, updated_at)` e `tools.qr_codes(id, account_id, slug UNIQUE, target_url,
+  fill_color, back_color, size, is_active, scan_count, last_scanned_at, created_at, updated_at)`.
+- `0328_tools_short_links_active.sql`: `short_links.is_active` (default true — existentes nascem
+  ativos) e `short_links.last_hit_at`.
+
+`slug` é **único global por tabela** (o redirect resolve sem X-Account-Id). Colisão no create/rename
+→ o store adiciona sufixo `-2/-3`… (loop sobre a violação de unique `23505`). `/s` e `/q` são
 tabelas distintas: o mesmo slug pode existir nas duas.
 
 ## Rotas
-Painel (RequireAuth + gating de módulo `tools` no Chain via `/v1/tools`):
-- `GET/POST /v1/tools/short-links`, `PATCH /v1/tools/short-links/{id}`, `DELETE /v1/tools/short-links/{id}`
-- `GET/POST /v1/tools/qr-codes`, `PATCH /v1/tools/qr-codes/{id}`, `DELETE /v1/tools/qr-codes/{id}`
-
-O `PATCH` do encurtador é parcial (`slug`/`targetUrl`; `nil` = não mexe) e alimenta a **edição
-inline** da tabela no painel. Trocar o `slug` mantém o unique global (mesmo loop de sufixo `-2/-3` do
-create) — atenção: muda o `shortUrl`, então links já divulgados com o slug antigo param de resolver.
+Painel (gating de módulo `tools` no Chain via `/v1/tools` + permissão por rota):
+- `GET /v1/tools/short-links` (`?status=active|inactive`, `q`) — `tools.shortlinks.view`
+- `POST`, `PATCH /{id}` (`targetUrl`, `isActive`, `slug`+`confirmSlugChange`), `DELETE /{id}` —
+  `tools.shortlinks.manage`
+- `GET /v1/tools/qr-codes` (`?status=`, `q`) — `tools.qr.view`
+- `POST`, `PATCH /{id}` (`targetUrl`, cores, `size`, `isActive`; sem troca de slug), `DELETE /{id}` —
+  `tools.qr.manage`
 
 Público (sem auth, fora do gating — prefixos `/s` e `/q` não estão em `moduleGatingRules`):
-- `GET /s/{slug}` → 302 destino; `GET /q/{slug}` → 302 destino (se ativo).
+- `GET /s/{slug}` → 302 destino; `GET /q/{slug}` → 302 destino. `Cache-Control: no-store`.
 
-O `Resolve` (redirect) só devolve o destino se a conta dona está `is_active` **e** o módulo `tools`
-está habilitado para ela (`core.account_modules`) — igual ao `PublicLookup` do bio. Qualquer falha =
-404 uniforme (`pgx.ErrNoRows`), sem vazar existência.
+O `Resolve` (redirect) só devolve o destino se o item está ativo, a conta dona está `is_active`
+**e** o módulo `tools` está habilitado para ela (`core.account_modules`) — igual ao `PublicLookup` do
+bio. Qualquer falha = 404 uniforme, sem vazar existência. Atenção: QR/link de conta sem o módulo
+ligado não abre (local, 2026-11-12: `bari-cardapio`, `instagram-katarina`, `avriomar`).
 
-## Isolamento multi-tenant (defesa em profundidade)
-`RequireAuthWithAccount` rejeitaria `platform_admin` (sem linha em `core.account_users`), então as
-rotas usam `RequireAuth` + validação **no handler** (`scopeContext` em `http.go`):
-- `platform_admin`: confia no `X-Account-Id` (troca de conta); `""` = todas as contas (list) /
-  remove/edita por id em qualquer conta (mutations). No create pode mirar qualquer `accountId` do body.
-- Usuário comum: exige `X-Account-Id`, valida `IsMember` contra `core.account_users`; escopo = essa
-  conta; `accountId` do body é **ignorado** (nunca escreve em conta alheia). Delete/patch filtram
-  `id = $1 and account_id = $2` → linha de outra conta vira 404.
+## Isolamento multi-tenant e permissões (`requireToolsPermission` em `http.go`)
+- `platform_admin`: `RequireAuth`; confia no `X-Account-Id` (troca de conta); `""` = todas as contas
+  (list) / edita e remove por id em qualquer conta. No create pode mirar qualquer `accountId` do body.
+- Demais: `RequireAuthWithAccount` (membership + permissões efetivas da conta do `X-Account-Id`);
+  sem a permissão da rota → 403 `forbidden`. `.manage` inclui `.view` da mesma ferramenta; permissão
+  de uma ferramenta não libera a outra. `accountId` do body é **ignorado**. Patch/delete/get filtram
+  `id + account_id` → linha de outra conta vira 404.
 
-Além disso toda query do store filtra por `account_id` (quando não-admin). `accountId` inexistente no
-create cross-conta do admin → violação de FK `23503` → 400 `invalid_account`.
+Toda query do store filtra por `account_id` (quando não-admin). `accountId` inexistente no create
+cross-conta do admin → violação de FK `23503` → 400 `invalid_account`.
 
-## Permissões (declaradas em `module.go`, sync no boot)
-`tools.shortlinks.view/manage`, `tools.qr.view/manage`. Templates: `tools.manager`, `tools.viewer`.
-A visibilidade do menu "Tools" continua na permissão de página `workspace.tools.view` (módulo core).
+Permissões declaradas em `module.go` (sync no boot): `tools.shortlinks.view/manage`,
+`tools.qr.view/manage`. Templates: `tools.manager`, `tools.viewer`. O menu "Tools" continua na
+permissão de página `workspace.tools.view` (módulo core). O painel esconde criar/editar/excluir/
+renomear e trava os toggles sem `.manage` (`canManage` nos composables); quem decide é o back.
 
 ## Env
-- `TOOLS_PUBLIC_BASE_URL` (opcional): base absoluta de `shortUrl`/`qrUrl`. Fallback:
-  `PUBLIC_API_BASE_URL` (já usada por bio/cardapio); vazio = URL relativa (o front prefixa com apiBase).
-- Em produção o reverse proxy precisa rotear `/s/*` e `/q/*` para a api (para o link funcionar ao
-  ser clicado/escaneado).
+- `TOOLS_PUBLIC_BASE_URL` (opcional): base absoluta de `shortUrl`/`qrUrl` (produção:
+  `https://crowvisuals.com.br`). Fallback: `PUBLIC_API_BASE_URL`; vazio = URL relativa.
+  O Compose Mac preserva essa configuração pública; não substituir por localhost, pois
+  o QR precisa funcionar em outros dispositivos. Quando a base aponta para produção,
+  edições locais não afetam esse resolver. Validar o resolver local separadamente em
+  `http://localhost:8080/q/{slug}` ou `/s/{slug}`, sem mudar a base codificada.
+- Em produção o reverse proxy precisa rotear `crowvisuals.com.br/s/*` e `/q/*` para a api.
+
+## Testes
+- `tools_rules_test.go` (contraste, contagem por User-Agent, permissões) e `service_tools_test.go`
+  (regras de slug, ativação, cores com stores falsos que contam gravações).
+- `store_tools_integration_test.go`: roda as migrations reais 0197+0328 num Postgres descartável
+  (`TOOLS_TEST_DATABASE_URL`; sem a env o teste é pulado — conferir que não saiu `SKIP`).
+- Front: `web/app/utils/qr-contrast.test.ts` (mesma tabela de cores do Go).
 
 ## Arquivos
 `module.go` (registry/permissions/Build) · `model.go` (DTOs + inputs) · `service.go` (normalização,
-slug, publicBase, orquestração) · `store_short_links.go` (+ helpers `isUUID/tsString/
-isUniqueViolation/isForeignKeyViolation`) · `store_qr_codes.go` · `http.go` (painel + `scopeContext`)
-· `http_public.go` (`/s`,`/q`) · `errors.go` (sentinelas).
+regras de slug/cores, orquestração) · `qr_contrast.go` · `preview_agents.go` ·
+`store_short_links.go` (+ helpers `isUUID/tsString/isUniqueViolation/isForeignKeyViolation`) ·
+`store_qr_codes.go` · `http.go` (painel + `requireToolsPermission`) · `http_public.go` (`/s`,`/q`) ·
+`errors.go` (sentinelas).
+
+## Telas (web/app/components/tools) — modelo da aba Produtos do cardápio
+Desktop: faixa de filtros sem moldura (busca + `ToolsStatusChips` Todos/Ativos/Inativos + Colunas +
+ação primária no fim) e `OmniDataTable` sem coluna de seleção, rolando por dentro. Mobile
+(`useMediaMatch('(max-width: 720px)')`): `ToolsListMobileToolbar` (busca + criar; status + "Campos
+do card") e cards encostados (`tools-cards.css`) só com o essencial. CSS comum em `tools-list.css`.
+- Desktop tem duas visualizações (`ToolsViewToggle`): cards e tabela. QR começa em cards;
+  encurtador começa em tabela. A escolha fica nas preferências locais do navegador
+  (`useToolsViewMode`, `ui.view_mode.*`).
+- QR: `ToolsQrCardGrid` (QR grande; clique abre `ToolsQrViewer` em tela cheia com copiar, baixar,
+  editar e Ativo), slug em destaque como **link de teste** para o `/q/{slug}` (abrir conta como
+  scan), destino numa linha/largura máxima. `ToolsQrThumb` (tamanho por prop), `ToolsQrMobileList`,
+  `ToolsQrFormModal`. Imagem/download/cópia em `web/app/utils/qr-image.ts`.
+- Encurtador: `ToolsShortLinkCardGrid`; o link curto é um link de verdade (abre em nova aba) com
+  botões de copiar e abrir; destino editável na célula da tabela (nos cards e no mobile, pelo menu
+  "..."). `ToolsShortLinkMobileList`, `ToolsShortLinkCreateModal`, `ToolsShortLinkRenameModal`.
+- Preferências de colunas: `tools.qr-codes.v2`/`.mobile`, `tools.short-links.v2`/`.mobile`.
 
 ## Rebuild
 Mudou Go → `docker compose up -d --build api` (restart não basta). Migration roda no boot.
@@ -110,30 +164,44 @@ Não importa documentos do PHP antigo; essa migração de dados está deliberada
   autoritativa e confirma saída com draft pendente. Draft por conta fica apenas em memória
   enquanto a página permanece montada. PDF é baixado direto (html2canvas + jsPDF, A4 fatiado).
 
-### Realtime dos roteiros (versão simples, 2026-11-12)
+### Edição por célula + realtime + travas (2026-11-12)
 
-- Após cada mutação persistida, `scriptService` publica `ScriptEvent` (`scripts_publisher.go`)
-  pelo `ScriptPublisher` injetado em `tools.New(tools.WithScriptPublisher(realtimeService))`.
-  Eventos: `script.saved` (id + `updatedAt`), `script.deleted` (id) e `script.reordered`
-  (só a conta dona, com `userId`; a ordem é por usuário). Falha ao gravar não publica.
-- O evento é só invalidação, sem conteúdo. Vai para `scripts:account:{conta dona}` e para as
-  contas-cliente que viam ou passam a ver o roteiro (cliente atual visível + cliente anterior),
-  para o card sumir/aparecer na tela delas. A tela refaz o fetch pela API (escopo `scriptVisibleTo`).
-- Canal: `GET /v1/realtime/scripts?scope=account&accountId=...&ticket=...` (módulo realtime,
-  `service_scripts.go`): conta ativa + membership + `tools.scripts.view` ou `.manage`.
-- Front (`useScriptsRealtime.ts` + `useScriptWorkspace.ts`): ignora o eco da própria aba pelo
-  `updatedAt`; atualiza o card (`refreshDocument`; 404 remove da lista); roteiro aberto sem
-  edição local recarrega na hora; com edição local mostra "alterado em outra sessão" com
-  "Recarregar"; excluído em outra sessão fecha o editor com aviso. Com busca/filtro ativo,
-  recarrega a lista (a API decide se o item ainda entra).
+Modelo atual (nível intermediário, parecido com os blocos do Notion):
+- **Linhas com id estável** (`rows[].id`, migration 0328 fez o backfill). Toda chave de trava
+  e de edição usa o id, nunca o índice (que muda quando alguém insere/move/remove linhas).
+- **Conteúdo salva por célula**: `PATCH /v1/tools/scripts/{id}/cell` `{field, rowId, value}`
+  com `field` em `title|description|audio|video` (`rowId` só para audio/video). Debounce de
+  400 ms por célula no front. Responde `{updatedAt}` e publica `script.cell` com o conteúdo.
+- **Estrutura salva à parte**: `PUT /v1/tools/scripts/{id}` faz merge por id numa transação
+  (`saveStructure`, `select ... for update`): linhas existentes mantêm o conteúdo do banco,
+  linhas novas entram com o conteúdo enviado, removidas saem; também grava cliente/visível.
+  Nunca sobrescreve célula de outra pessoa, por isso não há mais 409 por `updatedAt`.
+- **Travas por célula = presença** (`/v1/realtime/presence?scope=script&scriptId=` — a base
+  WS do front manda o id em `taskId`, aceito como alternativa). fieldKeys:
+  `title`, `description`, `cell:<rowId>:<audio|video>` (`ScriptCellKey`). Focar trava; sair
+  libera; expira em 30 s sem heartbeat. Exclusiva: o segundo a focar vê "Fulano editando".
+- **O servidor confere as travas** (`ScriptLocks`, implementado pelo realtime sobre o
+  `PresenceStore`): PATCH numa célula travada por outro → 409 `script_locked` ("Fulano esta
+  editando..."); PUT que remove linha travada → 409; `DELETE` com alguém editando → 409.
+- **Eventos** (`scripts:account:{id}`): `script.cell` (campo, linha, conteúdo, autor) é
+  aplicado direto na célula — só aquela célula re-renderiza, sem refetch nem "Abrindo
+  documento"; `script.saved` (estrutura/criação) refaz o fetch e reaproveita as linhas por id;
+  `script.deleted`; `script.reordered` (só abas do próprio usuário). Vão para a conta dona e
+  para o cliente que lê (visível), e o cliente anterior ao trocar/ocultar.
+- **Front**: `useScriptWorkspace.ts` (células pendentes, estrutura, eventos),
+  `useScriptPresence.ts` (wrapper de `useCalendarPresence` com `scope: 'script'`),
+  `useScriptsRealtime.ts`. Célula travada fica não editável com rótulo "Fulano editando";
+  excluir linha/roteiro fica desabilitado enquanto alguém edita; rodapé mostra "Editando agora".
+- A troca de conta descarta o antigo "rascunho por conta": agora só há poucas centenas de ms
+  pendentes, que são enviadas (flush) antes de trocar.
 
-### Implementações futuras (realtime dos roteiros)
+### Implementações futuras (substituir o modelo por célula)
 
-Pendentes de propósito; a versão atual é "último a salvar vence" com detecção de conflito (409).
-- **Edição colaborativa** de verdade (duas pessoas na mesma célula, texto mesclado): exige CRDT/OT
-  (ex.: Yjs + y-quill) e persistência de deltas, não só invalidação.
-- **Presença**: mostrar quem está com o roteiro aberto/editando — reaproveitar o `PresenceStore`
-  do realtime (`/v1/realtime/presence`, já usado em tasks/calendar) com um scope `script`.
-- **Lock por célula** enquanto alguém edita (o presence de tasks já tem `field_locked`).
-- **Atualização sem refetch**: mandar o resumo no evento quando o volume justificar.
-
+Decisão (2026-11-12): o modelo por célula é a etapa atual; o alvo é colaboração completa.
+- **Colaboração na mesma célula (alvo)**: Yjs + y-quill (CRDT). Cada tecla vira operação
+  pequena, mesclada sem conflito, com cursores de quem edita. Exige guardar o estado Yjs por
+  roteiro (o HTML vira derivado), um provider sobre o WebSocket existente e remove a
+  necessidade das travas por célula.
+- **Atualização de lista sem refetch** em `script.saved` (mandar o resumo no evento).
+- **Trava do seletor de tamanho de fonte**: o `<select>` nativo tira o foco do editor e libera
+  a trava enquanto a lista está aberta (janela curta; aceitável no modelo atual).

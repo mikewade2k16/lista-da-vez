@@ -11,8 +11,12 @@ param(
   # A VPS e amd64; nao publicar imagens ARM por acidente ao usar Apple Silicon.
   [ValidateSet("linux/amd64", "linux/arm64")]
   [string]$TargetPlatform = "linux/amd64",
-  [ValidateSet("auto", "registry", "ssh")]
+  # auto: GHCR quando ha credencial local; senao tunnel; senao ssh (pacote SFTP).
+  # tunnel: registry local + ssh -R, so camadas novas sobem (image-tunnel.ps1).
+  [ValidateSet("auto", "registry", "tunnel", "ssh")]
   [string]$Transport = "auto",
+  [ValidateRange(1024, 65535)]
+  [int]$TunnelPort = 5055,
   [string]$ApiImage = "ghcr.io/mikewade2k16/omni-api",
   [string]$WebImage = "ghcr.io/mikewade2k16/omni-web",
   [string]$VpsHost = "85.31.62.33",
@@ -35,10 +39,15 @@ param(
   # Pula o auto-export dos workflows n8n (gatilho OBS-08). Use quando quiser deployar uma
   # versao versionada especifica em vez do que esta rodando no n8n dev agora.
   [switch]$SkipWorkflowExport,
-  # O build Nitro supera 4 GB. O deploy pausa e restaura somente os servicos
-  # locais que ja estavam rodando para liberar a memoria do Docker Desktop.
-  [ValidateRange(4096, 8192)]
-  [int]$WebBuildHeapMB = 5120,
+  # native (padrao): compila o Nuxt no host (build-web-native.mjs, ~1,5 min) e
+  # empacota so o .output em web/Dockerfile.prebuilt; nao pausa a stack local.
+  # docker: build completo em web/Dockerfile dentro do Docker Desktop (~6,5 min).
+  [ValidateSet("native", "docker")]
+  [string]$WebBuildMode = "native",
+  # Heap do build Nitro (supera 4 GB). No modo docker o deploy pausa e restaura
+  # somente os servicos locais que ja estavam rodando para liberar memoria.
+  [ValidateRange(4096, 16384)]
+  [int]$WebBuildHeapMB = $(if ($WebBuildMode -eq "docker") { 5120 } else { 6144 }),
   [switch]$KeepLocalStackRunning,
   # docker login LOCAL no GHCR antes do push (one-time; depois fica no config.json).
   [string]$GhcrUser = "",
@@ -48,12 +57,29 @@ param(
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $scriptDir 'deploy-timing.ps1')
 $repoDir = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 $deployPull = Join-Path $scriptDir "deploy-pull.ps1"
 $composeLocal = Join-Path $repoDir "docker-compose.prod.yml"
 $composeDev = Join-Path $repoDir "docker-compose.yml"
 $composeEnvGuard = Join-Path $scriptDir "assert-compose-api-env.ps1"
 $composeServiceParityGuard = Join-Path $scriptDir "assert-compose-service-parity.ps1"
+
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+  throw "docker nao encontrado no PATH. Instale ou abra o Docker Desktop antes do deploy."
+}
+Invoke-DeployStep 'Preflight Docker engine (limite 5s)' {
+  & node (Join-Path $scriptDir 'check-docker.mjs')
+  if ($LASTEXITCODE -ne 0) { throw 'Preflight Docker falhou; nenhum build ou envio foi iniciado.' }
+}
+$mayUseTunnel = $Transport -in @('auto', 'tunnel')
+Invoke-DeployStep 'Preflight de recursos locais (memoria, disco, Docker)' {
+  $buildMode = if ($Service -eq 'api') { 'none' } else { $WebBuildMode }
+  $tunnelPortArg = if ($mayUseTunnel) { $TunnelPort } else { 0 }
+  & node (Join-Path $scriptDir 'preflight-resources.mjs') --web-build $buildMode --heap-mb $WebBuildHeapMB --tunnel-port $tunnelPortArg
+  if ($LASTEXITCODE -ne 0) { throw 'Preflight de recursos locais falhou; nada foi iniciado.' }
+}
+
 
 # Ownership preflight must finish before any docker login/ps/build. DeployAutomation is
 # explicit platform scope downstream, but its local runtime sync is always one exact owner/key.
@@ -91,31 +117,65 @@ elseif ($ForceAutomationWorkflowImport -or $SkipWorkflowExport -or
 if (-not (Test-Path -LiteralPath $KeyPath -PathType Leaf)) {
   throw "Chave SSH nao encontrada: $KeyPath. Informe -KeyPath antes de iniciar o build."
 }
-$sshProbe = (Get-Command ssh -CommandType Application -ErrorAction Stop).Source
-& $sshProbe -i $KeyPath -p $Port -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new "$User@$VpsHost" true
-if ($LASTEXITCODE -ne 0) { throw 'Preflight SSH falhou; nenhum build foi iniciado.' }
+$sshProbe = (Get-Command ssh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+Invoke-DeployStep 'Preflight SSH' {
+  & $sshProbe -i $KeyPath -p $Port -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new "$User@$VpsHost" true
+  if ($LASTEXITCODE -ne 0) { throw 'Preflight SSH falhou; nenhum build foi iniciado.' }
+}
 Write-Host 'Preflight SSH: OK'
 
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-  throw "docker nao encontrado no PATH. Instale ou abra o Docker Desktop antes do deploy."
+# O tunel exige AllowTcpForwarding no sshd e a porta livre no loopback da VPS.
+# Testado agora para decidir o transporte antes do build, nao no meio do envio.
+$tunnelAvailable = $false
+if ($mayUseTunnel) {
+  Invoke-DeployStep 'Preflight do tunel SSH de imagens' -ObserveNativeExitCode -Action {
+    & $sshProbe -i $KeyPath -p $Port -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o ControlPath=none -o ExitOnForwardFailure=yes -R "127.0.0.1:${TunnelPort}:127.0.0.1:${TunnelPort}" "$User@$VpsHost" true 2>$null
+  }
+  $tunnelAvailable = $LASTEXITCODE -eq 0
+  if (-not $tunnelAvailable) {
+    if ($Transport -eq 'tunnel') { Write-Warning "Tunel SSH indisponivel (forwarding bloqueado ou porta $TunnelPort ocupada na VPS); usando pacote SFTP." }
+    else { Write-Host "Tunel SSH indisponivel; transporte cai para registry/SFTP." }
+  }
 }
-& docker info --format '{{.ServerVersion}}' *> $null
-if ($LASTEXITCODE -ne 0) {
-  throw "Docker engine local indisponivel. Inicie o Docker Desktop e aguarde o engine Linux ficar pronto antes de executar npm run deploy."
-}
+
 
 if (-not (Test-Path -LiteralPath $composeEnvGuard -PathType Leaf)) {
   throw "Preflight de env do Compose nao encontrado: $composeEnvGuard"
 }
-& $composeEnvGuard -ComposePath $composeLocal
+Invoke-DeployStep 'Preflight das variaveis do Compose' { & $composeEnvGuard -ComposePath $composeLocal }
 if (-not (Test-Path -LiteralPath $composeServiceParityGuard -PathType Leaf)) {
   throw "Preflight de paridade dos servicos Compose nao encontrado: $composeServiceParityGuard"
 }
-& $composeServiceParityGuard -DevComposePath $composeDev -ProdComposePath $composeLocal
+Invoke-DeployStep 'Preflight de paridade dos servicos Compose' {
+  & $composeServiceParityGuard -DevComposePath $composeDev -ProdComposePath $composeLocal
+}
 
 if (-not (Test-Path $deployPull)) { throw "deploy-pull.ps1 nao encontrado em $scriptDir" }
 
-& (Join-Path $scriptDir 'validate-release.ps1')
+if ([string]::IsNullOrWhiteSpace($Tag)) {
+  $Tag = "local-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+}
+if ($Tag -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' -or $Tag -eq 'latest') { throw 'Tag de release invalida.' }
+
+$forward = @{
+  Environment    = $Environment
+  Tag            = $Tag
+  VpsHost        = $VpsHost
+  Port           = $Port
+  User           = $User
+  KeyPath        = $KeyPath
+}
+if ($BackupDatabase) { $forward.BackupDatabase = $true }
+if ($ForceRecreate) { $forward.ForceRecreate = $true }
+if ($SkipSmokeTests) { $forward.SkipSmokeTests = $true }
+if ($DeployAutomation) { $forward.DeployAutomation = $true }
+if ($DeployOmnichannel) { $forward.DeployOmnichannel = $true }
+if ($ForceAutomationWorkflowImport) { $forward.ForceAutomationWorkflowImport = $true }
+
+# Segredos e recursos da VPS ANTES da validacao/build: falha em segundos, nao apos minutos.
+Invoke-DeployStep 'Preflight remoto (segredos, Docker, disco, memoria)' { & $deployPull @forward -Phase check }
+
+Invoke-DeployStep 'Validacao local completa' { & (Join-Path $scriptDir 'validate-release.ps1') }
 
 function Get-LocalDockerRegistryCredential {
   param([Parameter(Mandatory = $true)][string]$Registry)
@@ -160,7 +220,8 @@ function Get-LocalDockerRegistryCredential {
   return [pscustomobject]@{ Username = $parts[0]; Secret = $parts[1] }
 }
 
-if ($Transport -ne 'ssh' -and [string]::IsNullOrWhiteSpace($GhcrToken)) {
+if ($Transport -eq 'tunnel' -and -not $tunnelAvailable) { $Transport = 'ssh' }
+if ($Transport -in @('auto', 'registry') -and [string]::IsNullOrWhiteSpace($GhcrToken)) {
   try {
     $credential = Get-LocalDockerRegistryCredential -Registry 'ghcr.io'
     $GhcrUser = $credential.Username
@@ -168,21 +229,16 @@ if ($Transport -ne 'ssh' -and [string]::IsNullOrWhiteSpace($GhcrToken)) {
     $Transport = 'registry'
   } catch {
     if ($Transport -eq 'registry') { throw }
-    $Transport = 'ssh'
-    Write-Host 'GHCR sem credencial local; usando transferencia de imagens por SSH.'
+    $Transport = if ($tunnelAvailable) { 'tunnel' } else { 'ssh' }
+    Write-Host "GHCR sem credencial local; transporte de imagens: $Transport."
   }
 } elseif ($Transport -eq 'auto') { $Transport = 'registry' }
 
-if ($Transport -eq 'ssh') {
+if ($Transport -eq 'tunnel' -and $Service -ne 'both') { throw 'Transporte por tunel exige -Service both para garantir as duas imagens.' }
+if ($Transport -in @('ssh', 'tunnel')) {
   Get-Command sftp -CommandType Application -ErrorAction Stop | Out-Null
   if ($Service -ne 'both') { throw 'Transporte SSH exige -Service both para garantir as duas imagens.' }
 }
-
-if ([string]::IsNullOrWhiteSpace($Tag)) {
-  $Tag = "local-" + (Get-Date -Format "yyyyMMdd-HHmmss")
-}
-
-if ($Tag -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' -or $Tag -eq 'latest') { throw 'Tag de release invalida.' }
 
 $apiRef = "${ApiImage}:${Tag}"
 $webRef = "${WebImage}:${Tag}"
@@ -190,15 +246,17 @@ $webRef = "${WebImage}:${Tag}"
 Write-Host "Build LOCAL + entrega $Transport na VPS (sem git, sem build na VPS)."
 Write-Host "Ambiente: $Environment | Tag: $Tag | Servico: $Service"
 if ($Service -eq "both" -or $Service -eq "web") {
-  Write-Host "Heap do build web: $WebBuildHeapMB MB"
+  Write-Host "Build web: $WebBuildMode | Heap: $WebBuildHeapMB MB"
 }
 
 # Login local opcional no GHCR (one-time).
 if (-not [string]::IsNullOrWhiteSpace($GhcrToken)) {
   if ([string]::IsNullOrWhiteSpace($GhcrUser)) { throw "-GhcrToken informado sem -GhcrUser." }
   Write-Host "==> docker login ghcr.io (local)"
-  $GhcrToken | docker login ghcr.io -u $GhcrUser --password-stdin
-  if ($LASTEXITCODE -ne 0) { throw "Falha no docker login local." }
+  Invoke-DeployStep 'Login no registry local' {
+    $GhcrToken | docker login ghcr.io -u $GhcrUser --password-stdin
+    if ($LASTEXITCODE -ne 0) { throw "Falha no docker login local." }
+  }
 }
 
 # Sync local owner-scoped: antes do build, materializa somente WorkflowOwner/WorkflowOnly.
@@ -224,34 +282,48 @@ function Build-And-Push {
     [string]$Context,
     [string]$Ref,
     [string]$Label,
-    [string[]]$BuildArgs = @()
+    [string[]]$BuildArgs = @(),
+    [string]$StepName = "Build $Label"
   )
   Write-Host "==> docker build $Label -> $Ref"
-  & docker build --platform $TargetPlatform @BuildArgs -t $Ref $Context
-  if ($LASTEXITCODE -ne 0) { throw "Falha no build da imagem $Label." }
-  if ($Label -eq 'web') {
-    Get-Content -LiteralPath (Join-Path $scriptDir 'smoke-web-image.mjs') -Raw | & docker run --rm -i --platform $TargetPlatform --network none --entrypoint node $Ref --input-type=module
-    if ($LASTEXITCODE -ne 0) { throw 'Smoke da imagem web falhou; publicacao abortada.' }
+  Invoke-DeployStep $StepName {
+    & docker build --platform $TargetPlatform @BuildArgs -t $Ref $Context
+    if ($LASTEXITCODE -ne 0) { throw "Falha no build da imagem $Label." }
   }
-  if ($Transport -eq "ssh") { return }
+  if ($Label -eq 'web') {
+    Invoke-DeployStep 'Smoke da imagem web local' {
+      Get-Content -LiteralPath (Join-Path $scriptDir 'smoke-web-image.mjs') -Raw | & docker run --rm -i --platform $TargetPlatform --network none --entrypoint node $Ref --input-type=module
+      if ($LASTEXITCODE -ne 0) { throw 'Smoke da imagem web falhou; publicacao abortada.' }
+    }
+  }
+  if ($Transport -ne "registry") { return }
   Write-Host "==> docker push $Ref (so as camadas que mudaram sobem)"
-  & docker push $Ref
-  if ($LASTEXITCODE -ne 0) { throw "Falha no push de $Ref (esta logado no ghcr.io? use -GhcrUser/-GhcrToken)." }
+  Invoke-DeployStep "Push $Label" {
+    & docker push $Ref
+    if ($LASTEXITCODE -ne 0) { throw "Falha no push de $Ref (esta logado no ghcr.io? use -GhcrUser/-GhcrToken)." }
+  }
 }
+
+# Snapshot para rollback + backup do banco em segundo plano na VPS: o backup roda
+# enquanto o build local acontece; a publicacao espera ele terminar com sucesso.
+Invoke-DeployStep 'Preparacao remota (snapshot + backup em segundo plano)' { & $deployPull @forward -Phase prepare }
 
 # O Docker Desktop deste projeto tem ~6 GB. Pausa apenas os servicos deste Compose
 # que ja estavam rodando e os restaura no finally, inclusive quando o build falha.
 $localServicesToRestore = @()
 $buildsWeb = $Service -eq "both" -or $Service -eq "web"
 try {
-  if ($buildsWeb -and -not $KeepLocalStackRunning) {
+  # O build nativo nao usa memoria do Docker Desktop: a stack local continua de pe.
+  if ($buildsWeb -and $WebBuildMode -eq "docker" -and -not $KeepLocalStackRunning) {
     $localServicesToRestore = @(& docker compose --profile "*" ps --status running --services)
     if ($LASTEXITCODE -ne 0) { throw "Falha ao inventariar a stack local antes do build web." }
     $localServicesToRestore = @($localServicesToRestore | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
     if ($localServicesToRestore.Count -gt 0) {
       Write-Host "==> Pausando stack local durante o build web: $($localServicesToRestore -join ', ')"
-      & docker compose --profile "*" stop @localServicesToRestore
-      if ($LASTEXITCODE -ne 0) { throw "Falha ao pausar a stack local antes do build web." }
+      Invoke-DeployStep 'Pausa da stack local' {
+        & docker compose --profile "*" stop @localServicesToRestore
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao pausar a stack local antes do build web." }
+      }
     }
   }
 
@@ -259,7 +331,15 @@ try {
   if ($Service -eq "both" -or $Service -eq "api") {
     Build-And-Push -Context (Join-Path $repoDir "back") -Ref $apiRef -Label "api"
   }
-  if ($buildsWeb) {
+  if ($buildsWeb -and $WebBuildMode -eq "native") {
+    Invoke-DeployStep 'Build web nativo (Nuxt no host)' {
+      & node (Join-Path $scriptDir 'build-web-native.mjs') --heap-mb $WebBuildHeapMB
+      if ($LASTEXITCODE -ne 0) { throw "Falha no build nativo do web. Alternativa: -WebBuildMode docker." }
+    }
+    $webOutput = Join-Path $repoDir ".tmp/web-build/.output"
+    $webBuildArgs = @("-f", (Join-Path $repoDir "web/Dockerfile.prebuilt"))
+    Build-And-Push -Context $webOutput -Ref $webRef -Label "web" -BuildArgs $webBuildArgs -StepName 'Empacotamento da imagem web'
+  } elseif ($buildsWeb) {
     $webBuildArgs = @("--build-arg", "WEB_BUILD_HEAP_MB=$WebBuildHeapMB")
     Build-And-Push -Context (Join-Path $repoDir "web") -Ref $webRef -Label "web" -BuildArgs $webBuildArgs
   }
@@ -267,9 +347,11 @@ try {
 finally {
   if ($localServicesToRestore.Count -gt 0) {
     Write-Host "==> Restaurando stack local: $($localServicesToRestore -join ', ')"
-    & docker compose --profile "*" start @localServicesToRestore
-    if ($LASTEXITCODE -ne 0) {
-      Write-Warning "Nao consegui restaurar toda a stack local. Rode: docker compose --profile '*' start $($localServicesToRestore -join ' ')"
+    Invoke-DeployStep -Name 'Restauracao da stack local' -ObserveNativeExitCode -Action {
+      & docker compose --profile "*" start @localServicesToRestore
+      if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Nao consegui restaurar toda a stack local. Rode: docker compose --profile '*' start $($localServicesToRestore -join ' ')"
+      }
     }
   }
 }
@@ -279,36 +361,37 @@ if ($Service -ne "both") {
 }
 
 . (Join-Path $scriptDir 'image-archive.ps1')
+. (Join-Path $scriptDir 'image-tunnel.ps1')
 $imageArchive = ''
-if ($Transport -eq 'ssh') {
-  if ($Service -ne 'both') { throw 'Transporte SSH exige -Service both para garantir as duas imagens.' }
-  $imageArchive = Export-DeployImageArchive -Tag $Tag -Images @($apiRef, $webRef)
-}
+try {
+  if ($Transport -eq 'tunnel') {
+    try {
+      $digests = Invoke-DeployStep 'Push para o registry local do tunel' {
+        Publish-DeployImagesToLocalRegistry -Images @{ api = $apiRef; web = $webRef } -Port $TunnelPort
+      }
+      $forward.TunnelPort = $TunnelPort
+      $forward.TunnelApiDigest = $digests.api
+      $forward.TunnelWebDigest = $digests.web
+      $forward.TunnelPlatform = $TargetPlatform
+    } catch {
+      Write-Warning "Registry local falhou ($($_.Exception.Message)); usando pacote SFTP."
+      $Transport = 'ssh'
+    }
+  }
+  if ($Transport -eq 'ssh') {
+    if ($Service -ne 'both') { throw 'Transporte SSH exige -Service both para garantir as duas imagens.' }
+    $imageArchive = Export-DeployImageArchive -Tag $Tag -Images @($apiRef, $webRef)
+    $forward.ImageArchive = $imageArchive
+  }
+  if ($Transport -eq "registry" -and -not [string]::IsNullOrWhiteSpace($GhcrToken)) {
+    $forward.GhcrUser = $GhcrUser
+    $forward.GhcrToken = $GhcrToken
+  }
 
-$forward = @{
-  Environment    = $Environment
-  Tag            = $Tag
-  VpsHost        = $VpsHost
-  Port           = $Port
-  User           = $User
-  KeyPath        = $KeyPath
+  Invoke-DeployStep 'Publicacao remota completa' { & $deployPull @forward -Phase publish }
+  # Sucesso: o pacote local (~350 MB) nao e mais necessario para retomada.
+  if ($imageArchive) { Remove-Item -LiteralPath (Split-Path -Parent $imageArchive) -Recurse -Force -ErrorAction SilentlyContinue }
 }
-if ($BackupDatabase) { $forward.BackupDatabase = $true }
-if ($ForceRecreate) { $forward.ForceRecreate = $true }
-if ($SkipSmokeTests) { $forward.SkipSmokeTests = $true }
-if ($DeployAutomation) {
-  $forward.DeployAutomation = $true
+finally {
+  if ($Transport -eq 'tunnel') { Stop-DeployLocalRegistry }
 }
-if ($DeployOmnichannel) { $forward.DeployOmnichannel = $true }
-if ($ForceAutomationWorkflowImport) { $forward.ForceAutomationWorkflowImport = $true }
-if ($imageArchive) { $forward.ImageArchive = $imageArchive }
-if ($Transport -eq "registry" -and -not [string]::IsNullOrWhiteSpace($GhcrToken)) {
-  $forward.GhcrUser = $GhcrUser
-  $forward.GhcrToken = $GhcrToken
-}
-
-& $deployPull @forward
-
-Write-Host ""
-Write-Host "Deploy rapido ($Environment) concluido: imagem $Tag no ar."
-Write-Host "Rollback: npm run deploy:prod -- -Tag <tag-anterior> $(if ($Transport -eq 'ssh') { '-UseLoadedImages' })"

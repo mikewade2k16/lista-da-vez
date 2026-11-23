@@ -12,14 +12,19 @@
 import { computed } from 'vue'
 import type { CalendarChatScope, CalendarChatScopeMode } from '~/domain/calendar/calendar-chat-api'
 
-const props = defineProps<{
-  scope: CalendarChatScope
-  mode: CalendarChatScopeMode
-  clientId: string
-  disabled?: boolean
-  allowAll?: boolean
-  label?: string
-}>()
+// allowAll precisa de default explicito: prop booleana ausente vira `false` no Vue, o que
+// escondia "Todos os clientes" e deixava o select vazio no escopo 'all'.
+const props = withDefaults(
+  defineProps<{
+    scope: CalendarChatScope
+    mode: CalendarChatScopeMode
+    clientId: string
+    disabled?: boolean
+    allowAll?: boolean
+    label?: string
+  }>(),
+  { disabled: false, allowAll: true, label: '' },
+)
 
 const emit = defineEmits<{
   (e: 'change', mode: CalendarChatScopeMode, clientId: string): void
@@ -50,7 +55,7 @@ function onChange(event: Event): void {
       :title="label || 'Contexto do assistente: todos os clientes ou um cliente específico'"
       @change="onChange"
     >
-      <option v-if="allowAll !== false" value="">Todos os clientes</option>
+      <option v-if="allowAll" value="">Todos os clientes</option>
       <option
         v-for="client in scope.clients"
         :key="client.id"

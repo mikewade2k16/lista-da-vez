@@ -1,5 +1,8 @@
 # Deploy
 
+## Preservação de credenciais existentes
+Deploys, migrations, seeds, backups e restores devem preservar chaves de API, tokens, senhas, cofres e referências ativas existentes. Só remover, substituir ou rotacionar credenciais mediante solicitação explícita do usuário para a alteração. Não registrar valores em logs, arquivos versionados ou documentação; investigar ausência inesperada antes de qualquer escrita.
+
 Leia ao fazer deploy, alterar script/workflow de deploy, ou adicionar variável de ambiente. Os detalhes de infra abaixo são padrões comuns — adapte aos do seu projeto.
 
 ## Build fora do servidor de produção (registry)

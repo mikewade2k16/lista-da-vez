@@ -33,8 +33,17 @@ func (service *Service) PublishScriptEvent(_ context.Context, evt toolsmodule.Sc
 		UserID:     strings.TrimSpace(evt.UserID),
 		SavedAt:    time.Now().UTC(),
 	}
+	payload := map[string]any{}
 	if updated := strings.TrimSpace(evt.UpdatedAt); updated != "" {
-		base.Payload = map[string]any{"updatedAt": updated}
+		payload["updatedAt"] = updated
+	}
+	if eventType == toolsmodule.ScriptEventCell {
+		payload["field"] = evt.Field
+		payload["rowId"] = evt.RowID
+		payload["value"] = evt.Value
+	}
+	if len(payload) > 0 {
+		base.Payload = payload
 	}
 	for _, accountID := range scriptPublishAccountIDs(evt) {
 		event := base
@@ -123,4 +132,40 @@ func (service *Service) authorizeAccountPermission(ctx context.Context, principa
 		return nil
 	}
 	return errRealtimeForbidden
+}
+
+// ScriptFieldLocker / ScriptAnyLocker implementam tools.ScriptLocks sobre a presença:
+// o servidor recusa gravar numa célula (ou excluir o roteiro) travada por outra pessoa.
+func (service *Service) ScriptFieldLocker(scriptID, fieldKey, userID string) string {
+	if service.presence == nil {
+		return ""
+	}
+	return service.presence.FieldLocker(presenceScriptTopic(scriptID), fieldKey, userID)
+}
+
+func (service *Service) ScriptAnyLocker(scriptID, userID string) string {
+	if service.presence == nil {
+		return ""
+	}
+	return service.presence.AnyLocker(presenceScriptTopic(scriptID), userID)
+}
+
+// authorizeScriptPresence: conta com permissão de roteiros + roteiro dentro do escopo de
+// leitura da conta (próprio ou compartilhado pela agência), o mesmo predicado da API.
+func (service *Service) authorizeScriptPresence(ctx context.Context, principal auth.Principal, accountID, scriptID string) error {
+	if accountID == "" || !toolsmodule.ValidScriptID(scriptID) {
+		return errRealtimeValidation
+	}
+	if err := service.authorizeAccountPermission(ctx, principal, accountID, scriptsViewPermissions); err != nil {
+		return err
+	}
+	var visible bool
+	if err := service.pool.QueryRow(ctx, `select exists(select 1 from tools.scripts s where s.id=$2::uuid and `+
+		toolsmodule.ScriptVisibleTo+`)`, accountID, scriptID).Scan(&visible); err != nil {
+		return err
+	}
+	if !visible {
+		return errRealtimeNotFound
+	}
+	return nil
 }

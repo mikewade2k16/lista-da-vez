@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+if [ -z "${BASH_VERSION:-}" ] || shopt -oq posix; then exec bash "$0" "$@"; fi
+# Husky post-merge hook — Omni
+#
+# Depois de `git pull`/merge, sincroniza web/node_modules com package.json +
+# package-lock.json (mesmo script do container web; só roda `npm ci` quando o hash
+# mudou). Assim dependência nova de outra máquina já chega instalada no host.
+# Falha aqui não desfaz o merge: só avisa para rodar `npm ci` em web/ manualmente.
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+node web/scripts/ensure-node-modules.mjs ||
+  echo "Aviso: nao foi possivel sincronizar web/node_modules; rode 'npm ci' em web/." >&2

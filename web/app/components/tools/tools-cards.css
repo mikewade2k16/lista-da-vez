@@ -1,0 +1,98 @@
+/* Cards do mobile do encurtador e do QR (mesmo desenho dos cards de produto do
+   cardapio): uma linha por item, encostadas, com so o essencial visivel.
+   Incluido com <style scoped src> nas duas listas mobile. */
+
+.tools-cards {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-0.5rem + 2px);
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.tools-cards__empty {
+  padding: 1.25rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.tools-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.5rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.tools-card--thumb {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+}
+
+.tools-card:last-child {
+  border-bottom: none;
+}
+
+.tools-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.tools-card__title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-card.is-off .tools-card__title {
+  color: var(--text-muted);
+}
+
+.tools-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-card__meta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tools-card__off {
+  flex-shrink: 0;
+  color: rgb(var(--danger));
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.tools-card__toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  margin-top: 0.2rem;
+}
+
+.tools-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}

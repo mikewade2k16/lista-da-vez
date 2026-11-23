@@ -28,6 +28,12 @@ if (( WEB_BUILD_FREE_MB < WEB_BUILD_MIN_FREE_MB )); then
   exit 1
 fi
 
+# Mesmo script que o container web roda ao subir: compara o hash de package.json +
+# package-lock.json com web/node_modules e roda `npm ci` só quando divergem. Evita o build
+# quebrar por dependência adicionada com o web rodando apenas no Docker. Roda ANTES do
+# NODE_ENV=production abaixo, senão o npm ci pularia as devDependencies (Nuxt etc.).
+node web/scripts/ensure-node-modules.mjs || exit $?
+
 export NODE_ENV=production
 export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${WEB_BUILD_HEAP_MB} --disable-warning=DEP0155"
 echo "→ build web de pre-push (heap Node: ${WEB_BUILD_HEAP_MB} MB; disco livre: ${WEB_BUILD_FREE_MB} MB)"

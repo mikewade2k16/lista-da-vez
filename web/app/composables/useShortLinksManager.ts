@@ -3,14 +3,16 @@ import type {
   ShortLinksListResponse,
   ShortLinkMutationResponse,
   CreateShortLinkPayload,
+  UpdateShortLinkPayload,
 } from '~/types/tools'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import { useInlineEditManager } from '~/composables/useInlineEditManager'
 
 const DEFAULT_FETCH_LIMIT = 200
 
-// Campos editaveis inline na tabela (o resto e read-only).
-type ShortLinkFieldKey = 'slug' | 'targetUrl'
+// Campo editavel inline na tabela. O slug NAO e inline: trocar derruba o link
+// antigo, entao passa pelo modal de renomear (renameSlug, com confirmacao).
+type ShortLinkFieldKey = 'targetUrl'
 
 // useShortLinksManager: estado + CRUD dos links curtos (/v1/tools/short-links).
 // X-Account-Id e injetado pelo api-client (conta ativa); platform_admin em
@@ -28,6 +30,26 @@ export function useShortLinksManager() {
   const errorMessage = ref('')
 
   const { savingMap, setSaving, rowIsSaving, schedulePatch } = useInlineEditManager()
+
+  // Espelha a permissao exigida pela API (tools.shortlinks.view/manage); o back
+  // continua sendo quem decide.
+  const canManage = computed(
+    () =>
+      auth.role === 'platform_admin' ||
+      auth.effectivePermissionKeys.includes('tools.shortlinks.manage'),
+  )
+
+  function replaceRow(updated: ShortLinkItem) {
+    shortLinks.value = shortLinks.value.map((item) => (item.id === updated.id ? updated : item))
+  }
+
+  async function patchShortLink(id: string, body: UpdateShortLinkPayload) {
+    const response = (await apiRequest(`/v1/tools/short-links/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body,
+    })) as ShortLinkMutationResponse
+    return response?.data ?? null
+  }
 
   async function fetchShortLinks() {
     loading.value = true
@@ -85,21 +107,14 @@ export function useShortLinksManager() {
     setSaving(key, true)
     errorMessage.value = ''
     try {
-      const response = (await apiRequest(`/v1/tools/short-links/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: { [field]: value },
-      })) as ShortLinkMutationResponse
-      const updated = response?.data
+      const updated = await patchShortLink(id, { [field]: value })
       if (updated) {
         // Re-hidrata SO os campos afetados por este patch (o back normaliza o valor;
         // trocar o slug muda o shortUrl junto). Nao substitui a linha inteira para
         // nao pisar em outra edicao inline em voo na mesma linha.
-        shortLinks.value = shortLinks.value.map((item) => {
-          if (item.id !== id) return item
-          const merged = { ...item, [field]: updated[field] }
-          if (field === 'slug') merged.shortUrl = updated.shortUrl
-          return merged
-        })
+        shortLinks.value = shortLinks.value.map((item) =>
+          item.id === id ? { ...item, [field]: updated[field] } : item,
+        )
       }
     } catch (error) {
       errorMessage.value = getApiErrorMessage(error, 'Falha ao atualizar link curto.')
@@ -121,6 +136,42 @@ export function useShortLinksManager() {
     schedulePatch(`${id}:${field}`, () => void persistPatch(id, field, value), {
       immediate: opts?.immediate,
     })
+  }
+
+  // setActive liga/desliga o redirect sem excluir. A linha so muda com a
+  // resposta do banco (sem estado otimista que pudesse mentir).
+  async function setActive(id: string, isActive: boolean) {
+    const key = `${id}:isActive`
+    setSaving(key, true)
+    errorMessage.value = ''
+    try {
+      const updated = await patchShortLink(id, { isActive })
+      if (updated) replaceRow(updated)
+      return updated
+    } catch (error) {
+      errorMessage.value = getApiErrorMessage(error, 'Falha ao ativar/desativar o link.')
+      await fetchShortLinks()
+      return null
+    } finally {
+      setSaving(key, false)
+    }
+  }
+
+  // renameSlug troca o slug com confirmacao explicita (o link antigo para de
+  // funcionar). Devolve o item do banco: o slug pode ganhar sufixo -2/-3.
+  async function renameSlug(id: string, slug: string) {
+    const key = `${id}:slug`
+    setSaving(key, true)
+    errorMessage.value = ''
+    try {
+      const updated = await patchShortLink(id, { slug, confirmSlugChange: true })
+      if (updated) replaceRow(updated)
+      return { item: updated, error: '' }
+    } catch (error) {
+      return { item: null, error: getApiErrorMessage(error, 'Falha ao renomear o link.') }
+    } finally {
+      setSaving(key, false)
+    }
   }
 
   async function deleteShortLink(id: string) {
@@ -148,9 +199,12 @@ export function useShortLinksManager() {
     errorMessage,
     savingMap,
     rowIsSaving,
+    canManage,
     fetchShortLinks,
     createShortLink,
     updateShortLink,
+    setActive,
+    renameSlug,
     deleteShortLink,
   }
 }

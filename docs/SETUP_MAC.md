@@ -48,6 +48,11 @@ Whisper 8010, Evolution 8085, Redis 6380 e runner 8765, salvo override no `.env`
 Painel: http://localhost:3003; API: http://localhost:8080/healthz.
 Volumes persistem durante recriações; nunca apagar volumes para corrigir rede.
 
+QR Codes e links curtos usam a base pública configurada em `TOOLS_PUBLIC_BASE_URL`.
+Não sobrescrever essa base com localhost para testar: o QR precisa abrir em outros
+dispositivos. Edições no banco local não alteram o destino servido pelo banco de
+produção; validar o resolver local separadamente sem mudar o conteúdo do QR.
+
 ### Tela branca com 502 nos arquivos `/_nuxt/`
 
 Incidente de 2026-11-03: metadados AppleDouble do macOS foram encontrados no
@@ -174,3 +179,13 @@ repositorio. Precedencia: argumentos `-User`/`-KeyPath`, variaveis `OMNI_DEPLOY_
 `OMNI_DEPLOY_KEY_PATH`, configuracao local, defaults dos scripts.
 Assim `npm run deploy` funciona sem repetir o caminho da chave em cada comando,
 inclusive nos scripts aninhados de staging/promocao. Ajuda nao le nem usa credenciais.
+
+## Dependencias do web no host x container
+
+O container web usa um `node_modules` proprio (volume `omni_web_node_modules`) e o
+sincroniza ao subir com `web/scripts/ensure-node-modules.mjs`. O `web/node_modules` do
+host e separado. Para dependencias novas nao quebrarem o build do `pre-push`, os hooks
+rodam o mesmo script no host: `.husky/pre-push` antes do build (fora do
+`NODE_ENV=production`, para manter as devDependencies) e `.husky/post-merge` depois de
+`git pull`. Ele so executa `npm ci` quando o hash de `package.json` + `package-lock.json`
+muda; nos demais casos leva milissegundos. Em caso de erro manual: `npm ci` em `web/`.

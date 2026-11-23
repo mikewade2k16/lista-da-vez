@@ -23,6 +23,12 @@ export function useQrcodesManager() {
   const errorMessage = ref('')
   const savingMap = ref<Record<string, boolean>>({})
 
+  // Espelha a permissao exigida pela API (tools.qr.manage); o back decide.
+  const canManage = computed(
+    () =>
+      auth.role === 'platform_admin' || auth.effectivePermissionKeys.includes('tools.qr.manage'),
+  )
+
   function setSaving(key: string, value: boolean) {
     savingMap.value = { ...savingMap.value, [key]: value }
   }
@@ -93,9 +99,6 @@ export function useQrcodesManager() {
       if (payload.targetUrl !== undefined) {
         body.targetUrl = payload.targetUrl
       }
-      if (payload.slug !== undefined) {
-        body.slug = payload.slug
-      }
       if (payload.fillColor !== undefined) {
         body.fillColor = payload.fillColor
       }
@@ -148,6 +151,7 @@ export function useQrcodesManager() {
     deletingId,
     errorMessage,
     savingMap,
+    canManage,
     fetchQrCodes,
     createQrCode,
     updateQrCode,

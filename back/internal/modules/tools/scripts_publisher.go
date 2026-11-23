@@ -2,10 +2,13 @@ package tools
 
 import "context"
 
-// Tipos de evento do canal de roteiros (scripts:account:{id}). O evento é só uma
-// invalidação: leva o id e o updatedAt, nunca o conteúdo; a tela refaz o fetch pela API,
-// que reaplica o escopo de leitura (scriptVisibleTo).
+// Tipos de evento do canal de roteiros (scripts:account:{id}).
+//   - script.cell: UMA célula mudou; leva campo, linha e o conteúdo novo, aplicado direto
+//     pela tela (sem refetch). Só chega a contas com leitura (dona + cliente visível).
+//   - script.saved: estrutura/metadados (linhas, cliente) ou criação; a tela refaz o fetch.
+//   - script.deleted / script.reordered: invalidação.
 const (
+	ScriptEventCell      = "script.cell"
 	ScriptEventSaved     = "script.saved"
 	ScriptEventDeleted   = "script.deleted"
 	ScriptEventReordered = "script.reordered"
@@ -20,8 +23,41 @@ type ScriptEvent struct {
 	ClientAccountIDs []string
 	ResourceID       string
 	UpdatedAt        string
-	// UserID limita "script.reordered" às abas do próprio usuário (a ordem é por usuário).
+	// UserID: autor da mudança; em "script.reordered" limita às abas do próprio usuário.
 	UserID string
+	// Só em script.cell: campo ("title", "description", "audio", "video"), linha e conteúdo.
+	Field string
+	RowID string
+	Value string
+}
+
+// ScriptLocks consulta as travas de edição por célula (presença do realtime). Retorna o
+// nome de quem trava, ou "" se livre/do próprio usuário. Implementado pelo realtime.Service.
+type ScriptLocks interface {
+	ScriptFieldLocker(scriptID, fieldKey, userID string) string
+	ScriptAnyLocker(scriptID, userID string) string
+}
+
+type noopScriptLocks struct{}
+
+func (noopScriptLocks) ScriptFieldLocker(string, string, string) string { return "" }
+func (noopScriptLocks) ScriptAnyLocker(string, string) string           { return "" }
+
+// ScriptCellKey é a chave de trava de uma célula, igual à usada pelo front na presença.
+func ScriptCellKey(field, rowID string) string {
+	if field == "title" || field == "description" {
+		return field
+	}
+	return "cell:" + rowID + ":" + field
+}
+
+// WithScriptLocks liga a checagem de travas no servidor (PATCH/remoção de linha/exclusão).
+func WithScriptLocks(locks ScriptLocks) Option {
+	return func(m *Module) {
+		if locks != nil {
+			m.scriptLocks = locks
+		}
+	}
 }
 
 // ScriptPublisher entrega os eventos ao transporte realtime.
@@ -44,3 +80,6 @@ func WithScriptPublisher(publisher ScriptPublisher) Option {
 		}
 	}
 }
+
+// ValidScriptID valida o id de um roteiro (uuid) para quem consome o módulo (ex.: realtime).
+func ValidScriptID(id string) bool { return isUUID(id) }

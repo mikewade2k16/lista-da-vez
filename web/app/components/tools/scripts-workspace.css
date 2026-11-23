@@ -702,3 +702,32 @@
     max-width: calc(100vw - 24px);
   }
 }
+
+/* Trava por célula (presença): quem edita aparece na célula; os outros não editam ali. */
+.page-script .cell,
+.page-script .doc-editor {
+  position: relative;
+}
+.page-script .cell-lock {
+  position: absolute;
+  top: -9px;
+  right: 6px;
+  z-index: 3;
+  padding: 1px 6px;
+  background: rgb(var(--primary));
+  color: #fff;
+  font-family: 'Courier Prime', monospace;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.page-script .quill-cell.is-locked,
+.page-script .script-title.is-locked {
+  outline: 1px dashed rgb(var(--primary));
+  outline-offset: 2px;
+  cursor: not-allowed;
+}
+.page-script .scripts-editors {
+  color: rgb(var(--primary));
+}

@@ -55,6 +55,9 @@ o dev continua com ambos. O painel e SPA e os maps nao sao publicados, enquanto
 o bundle server com Tailwind/Vue multiplicava RAM e podia ser encerrado pelo host.
 O target `build` do Dockerfile fixa `NODE_ENV=production` antes de avaliar o config;
 sem isso o CLI normaliza a variavel tarde demais e os maps voltam a ser gerados.
+O deploy rapido compila no host (`scripts/deploy/build-web-native.mjs`, tambem com
+`NODE_ENV=production`) e `Dockerfile.prebuilt` so empacota o `.output`; a base dele
+deve continuar igual ao stage final do `Dockerfile` (detalhes em `scripts/deploy/AGENT.md`).
 O `.husky/pre-push` deve fazer o mesmo antes do build nativo; definir a variavel
 somente depois de carregar o Nuxt reativa sourcemaps, aumenta o uso de disco/RAM e
 repete centenas de warnings `@tailwindcss/vite:generate:build`.
@@ -122,6 +125,12 @@ Toda implementacao nova em `web/` deve:
 - preparar a camada para futura integracao com API.
 
 ## Regras de arquitetura
+
+### 0. Preloader de boot
+
+- Animacao isolada em `app/preloader/preloader.html` (`spaLoadingTemplate` do
+  Nuxt). Trocar a animacao = trocar so esse arquivo; contrato em
+  `app/preloader/AGENT.md`. Paginas e layouts nunca referenciam o preloader.
 
 ### 1. Stores
 
@@ -375,8 +384,9 @@ arrastar fica desativado com filtro ativo). Na conta-agência, o canto superior 
 cliente e a visibilidade (olho), fora do PDF; roteiros compartilhados abrem somente leitura.
 O seletor da barra é "Tamanho da fonte" (formato inline `size`, só no texto selecionado).
 A barra flutuante só aparece com texto selecionado ou cursor em linha vazia (inserir imagem) e
-some após 3 s sem o mouse sobre ela. Realtime simples por invalidação
-(`useScriptsRealtime.ts`, canal `/v1/realtime/scripts`). Arrastar para ordenar
+some após 3 s sem o mouse sobre ela. Edição por célula com realtime e travas de presença
+(`useScriptWorkspace.ts`, `useScriptPresence.ts`, `useScriptsRealtime.ts`; detalhes em
+`back/internal/modules/tools/AGENT.md`). Arrastar para ordenar
 linhas e documentos (`ScriptSortable.vue`, ordem por usuário em `tools.script_orders`), imagens
 privadas por conta (`useScriptImages.ts`) e download direto do PDF via html2canvas + jsPDF
 (`useScriptPdf.ts`). Autosave com debounce de 400 ms sem bloquear a digitação nem recriar células;
@@ -384,3 +394,12 @@ o título contenteditable só é semeado ao trocar de documento (binding reativo
 Controles e fetch respeitam `.view`/`.manage`; escritas reidratam o retorno do banco. PUT carrega
 `updatedAt` para detectar conflito (409), sem sobrescrever edição concorrente. Dados antigos não
 foram importados. Validação visual requer autorização explícita para automação do navegador.
+
+## QR Codes e encurtador — visualização local
+
+QR começa em cards e encurtador em tabela; `useToolsViewMode` restaura a escolha
+por tela nas preferências do navegador. No mobile, a raiz de `tools-list.css`
+rola e seus filhos não encolhem: a lista inteira permanece acessível. O slug
+do QR permite quebra de linha e tem destaque nos cards. O Compose Mac preserva
+a base pública configurada de Tools: nunca trocar o conteúdo do QR por localhost
+para contornar diferenças entre os bancos local e de produção.

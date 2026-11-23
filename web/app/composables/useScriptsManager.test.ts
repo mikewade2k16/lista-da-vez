@@ -16,7 +16,7 @@ vi.mock('~/utils/api-client', () => ({
 const document = {
   id: 'script-1',
   title: 'Persistido',
-  rows: [{ audio: 'áudio', video: 'vídeo' }],
+  rows: [{ id: 'row-1', audio: 'áudio', video: 'vídeo' }],
   description: '',
   updatedAt: '2026-11-11T12:00:00.123456Z',
   clientAccountId: '',

@@ -35,6 +35,8 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 
 ## Regras do fluxo
 
+- preservar chaves de API, tokens, senhas, cofres e referências ativas em deploys, migrations e restores; remover, substituir ou rotacionar somente mediante solicitação explícita do usuário para essa alteração, sem expor valores
+
 - a VPS NAO builda imagem: recebe por pull GHCR ou docker load verificado e usa up --no-build
 - o `IMAGE_TAG` deve ser concreto: SHA do CI ou local-<timestamp> do build local (nunca latest em prod)
 - promover pra prod = usar a MESMA tag que passou por staging (`promote.ps1` le do `.env.staging`)
@@ -150,6 +152,33 @@ do Calendar leem `automation/export/workflow-calendar-chat.json`; por isso, a et
 de teste monta a pasta `automation/` do repositório como `/automation` somente para
 `go test` e `go vet`. A pasta fica somente leitura e não entra na imagem de produção.
 
+## Medicao de duracoes — 2026-11-12
+
+O launcher grava somente eventos de tempo em `.tmp/deploy/<execucao>/timings.jsonl`
+e o resultado em `summary.json` (ambos locais e ignorados pelo Git). Preservar o exit
+code do filho, registrar falhas/interrupcoes e nunca gravar argumentos, env, tokens
+ou comandos no relatorio. `deploy-timing.ps1` preserva stdout capturado (backup e
+checksum) e os exit codes usados pelo retry SFTP. `remote-timing.sh` emite eventos
+por etapa; `Invoke-RemoteCommand` encaminha esses metadados para o relatorio local.
+Tempos de pais e filhos se sobrepoem e nao devem ser somados.
+
+O preflight do engine usa `check-docker.mjs`: consulta `docker version` com limite
+de 5 s, mata somente o CLI da verificacao em timeout e exige servidor Linux.
+Nunca usar `docker info *> $null` sem limite: em 2026-11-12 ficou bloqueado por
+mais de seis minutos depois do SSH OK. Engine, env e paridade Compose devem ter
+etapas visiveis separadas. Esse limite nao reinicia Docker Desktop nem containers. A verificacao deve ser
+a primeira acao do deploy rapido, antes de chave SSH, conexao remota e builds.
+
+Nesta etapa somente a instrumentacao foi adicionada: sem otimizacoes de build,
+cache, transporte, sincronizacao ou selecao de servicos. Primeiro medir o deploy
+manual do usuario, depois otimizar com base no relatorio. Nao executar deploy por
+conta propria quando o usuario decidir faze-lo manualmente.
+
+Validar com `node --test scripts/deploy/run-deploy.test.mjs`,
+`pwsh -NoProfile -File scripts/deploy/deploy-timing.test.ps1` e
+`pwsh -NoProfile -File scripts/deploy/image-archive.test.ps1`. Os testes simulam
+falhas, interrupcao, transporte e rollback sem acessar Docker nem VPS.
+
 ## Referencias
 
 - `../../docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md` (plano canonico)
@@ -195,3 +224,58 @@ existentes para retomada; SHA256 continua obrigatorio antes do docker load.
 A validacao do cardapio sincroniza tambem os cinco arquivos de teste executados
 com os fontes atuais, evitando rodar testes antigos da imagem contra codigo novo.
 Os testes permanecem fora da lista de lint focado.
+
+## Build rapido — 2026-11-12
+
+Medido no deploy de 12/11: web 6min28s, API 1min23s, go test+vet 29s.
+
+- Web (`-WebBuildMode native`, padrao): `build-web-native.mjs` compila o Nuxt no
+  host em `.tmp/web-build` (isolado do `.nuxt`/`.output` do dev) e
+  `web/Dockerfile.prebuilt` empacota so o `.output` (~4 s). Medido: ~1,5 min
+  (ate ~2,5 min com o host carregado). Nao pausa a stack local.
+  Garantias: Node do host igual ao `FROM` do Dockerfile.prebuilt (falha se
+  diferente); `npm ci` pelo `package-lock` quando lock/Node/plataforma mudam;
+  exclui `.env*` como o `.dockerignore`; remove `NUXT_/NITRO_/VITE_/NODE_` do
+  ambiente; o smoke da imagem continua recusando modulos `.node` e exigindo
+  HTTP 200 em linux/amd64. Manter a base do Dockerfile.prebuilt igual ao stage
+  final de `web/Dockerfile`.
+- Fallback: `-WebBuildMode docker` usa o build completo antigo (com pausa da
+  stack). O GitHub Actions continua usando `web/Dockerfile`.
+- API: `back/Dockerfile` usa cache mount do BuildKit (`omni-go-build`) para o
+  `go build`; medido 24 s frio e ~3 s incremental. `.gomodcache` saiu do contexto.
+- Validacao Go: `go test -count=1` e `go vet` usam o volume `omni_deploy_gobuild`
+  (so cache de compilacao; pode ser removido sem perda — o proximo run recompila).
+  `-count=1` mantem os testes sempre executados. Medido ~2 s cada com cache quente.
+
+## Preflights, tunel e backup assincrono — 2026-11-12
+
+Ordem do `deploy-fast.ps1`: preflight Docker -> `preflight-resources.mjs` (memoria
+real do host via vm_stat/MemAvailable, disco do host e da VM Docker, Node da imagem,
+porta do tunel) -> SSH -> teste `ssh -R` -> `deploy-pull -Phase check` (segredos +
+Docker API >= 1.44, Compose, disco, memoria, carga, Postgres rodando) -> validacao
+-> `deploy-pull -Phase prepare` (snapshot + backup em segundo plano) -> builds ->
+transporte -> `deploy-pull -Phase publish`. `-Phase all` (padrao) mantem o fluxo
+unico para `deploy:prod`/staging.
+
+- Trava: `run-deploy.mjs` cria `.tmp/deploy/deploy.lock` com o PID; PID morto = trava
+  abandonada substituida. Nao existe trava remota entre maquinas diferentes.
+- Tunel (`image-tunnel.ps1`): container `omni-deploy-registry` (registry:2.8.3, so em
+  127.0.0.1:5055, volume `omni_deploy_registry`, GC + stop ao final). A VPS faz pull
+  por digest via `ssh -R` (loopback dos dois lados) e retaga para `ghcr.io/...:<tag>`.
+  O primeiro deploy pelo tunel ainda baixa todas as camadas (a VPS nao tem o mapeamento
+  digest->camada de imagens vindas de `docker load`); os seguintes so as novas.
+  Qualquer falha do tunel cai para o pacote SFTP no mesmo deploy.
+- Backup (`remote-backup.sh`): iniciado com `nohup setsid` na fase prepare; dumps em
+  paralelo com `pigz -1`/`gzip -1`, `.part` + `gzip -t` + rename + `.sha256`.
+  A fase publish espera `backup.status` = 0 (limite 30 min) antes de enviar Compose ou
+  trocar IMAGE_TAG; falha aborta sem tocar na stack. O ponto de restauracao fica ~2 min
+  antes do rollout (antes era ~1 min).
+- SSH multiplexado (`ControlMaster`/`ControlPersist=180`, exceto Windows). Opcoes extras
+  do `Invoke-RemoteCommand` vem antes das padrao (OpenSSH usa a primeira ocorrencia).
+- Healthchecks api/web com `start_interval: 2s` (Docker 25+): o `--wait` libera assim
+  que o servico responde.
+- Lookups de ssh/scp/sftp usam `Select-Object -First 1` (varios executaveis no PATH).
+
+Validacao sem VPS: testes do launcher (trava), `bash -n` dos scripts remotos gerados por
+`ssh` falso, backup com `docker` simulado (sucesso/falhas), tunel e ControlMaster contra
+um sshd descartavel em container. O primeiro deploy real ainda precisa ser observado.

@@ -1,22 +1,39 @@
 <script setup lang="ts">
-import QRCode from 'qrcode'
+import { computed, onMounted, ref } from 'vue'
+
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
 import OmniDataTable from '../../../layers/tasks/components/omni/table/OmniDataTable.vue'
+import ToolsListMobileToolbar from '~/components/tools/ToolsListMobileToolbar.vue'
+import ToolsQrCardGrid from '~/components/tools/ToolsQrCardGrid.vue'
+import ToolsQrFormModal from '~/components/tools/ToolsQrFormModal.vue'
+import ToolsQrMobileList from '~/components/tools/ToolsQrMobileList.vue'
+import ToolsQrThumb from '~/components/tools/ToolsQrThumb.vue'
+import ToolsQrViewer from '~/components/tools/ToolsQrViewer.vue'
+import ToolsStatusChips from '~/components/tools/ToolsStatusChips.vue'
+import ToolsViewToggle from '~/components/tools/ToolsViewToggle.vue'
 import { applyOmniFilters } from '~/composables/useOmniCollectionFiltering'
-import type { QrCodeItem } from '~/types/tools'
+import { useMediaMatch } from '~/composables/useMediaMatch'
+import { useToolsViewMode } from '~/composables/useToolsViewMode'
+import { useUiStore } from '~/stores/ui'
+import type { QrCodeItem, UpdateQrCodePayload } from '~/types/tools'
 import type {
   OmniFilterDefinition,
   OmniTableCellUpdate,
   OmniTableColumn,
 } from '~/types/omni/collection'
+import { copyToClipboard, downloadQrImage } from '~/utils/qr-image'
 
+// Lista de QR Codes no modelo da aba Produtos do cardapio: faixa de filtros sem
+// moldura; no desktop cards (padrao, QR grande) ou tabela; cards no mobile.
+// A imagem do QR abre em tela cheia; o slug e link de teste (/q/{slug}).
+const ui = useUiStore()
 const {
   qrcodes,
   loading,
   creating,
-  deletingId,
   errorMessage,
   savingMap,
+  canManage,
   fetchQrCodes,
   createQrCode,
   updateQrCode,
@@ -32,25 +49,11 @@ const {
   ensureClientOptions,
 } = useToolsClientOptions()
 
-const selectedIds = ref<Array<string | number>>([])
-const modalOpen = ref(false)
-const modalMode = ref<'create' | 'edit'>('create')
-const previewImage = ref('')
-const previewError = ref('')
-const submitSuccessMessage = ref('')
-const thumbnails = ref<Record<string, string>>({})
-
-const formState = reactive({
-  id: '',
-  qrUrl: '',
-  slug: '',
-  targetUrl: '',
-  fillColor: '#000000',
-  backColor: '#ffffff',
-  size: 220,
-  isActive: true,
-  clientId: '',
-})
+const viewMode = useToolsViewMode('tools.qr-codes')
+const formOpen = ref(false)
+const formItem = ref<QrCodeItem | null>(null)
+const viewerId = ref('')
+const viewerItem = computed(() => qrcodes.value.find((item) => item.id === viewerId.value) ?? null)
 
 const filtersState = ref<Record<string, unknown>>({ query: '', statusFilter: '' })
 
@@ -59,7 +62,7 @@ const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
     key: 'query',
     label: 'Buscar',
     type: 'text',
-    placeholder: 'Pesquisar por slug ou destino...',
+    placeholder: 'Buscar por slug ou destino...',
     mode: 'columns',
     columns: ['clientName', 'slug', 'targetUrl'],
   },
@@ -67,7 +70,6 @@ const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
     key: 'statusFilter',
     label: 'Status',
     type: 'select',
-    placeholder: 'Status',
     options: [
       { label: 'Ativo', value: 'active' },
       { label: 'Inativo', value: 'inactive' },
@@ -75,268 +77,180 @@ const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
     accessor: (row) => (row.isActive ? 'active' : 'inactive'),
   },
 ])
+// Na barra so a busca: o status vira o seletor segmentado com contagem.
+const toolbarFilters = computed(() => filterDefinitions.value.filter((f) => f.key === 'query'))
+
+// Campos que o card do mobile sempre mostra (fora do menu "Campos do card").
+const MOBILE_FIXED_KEYS = ['actions', 'qrImage', 'slug', 'targetUrl']
 
 const allTableColumns = computed<OmniTableColumn[]>(() => [
+  { key: 'qrImage', label: 'QR', type: 'custom', editable: false, minWidth: 96 },
+  { key: 'slug', label: 'Slug', type: 'custom', editable: false, minWidth: 160, maxWidth: 260 },
+  // Destino com largura maxima: URLs longas nao podem tomar a tabela.
+  {
+    key: 'targetUrl',
+    label: 'Destino',
+    type: 'custom',
+    editable: false,
+    minWidth: 160,
+    maxWidth: 280,
+  },
+  {
+    key: 'isActive',
+    label: 'Ativo',
+    type: 'switch',
+    editable: canManage.value,
+    immediate: true,
+    switchOnValue: true,
+    switchOffValue: false,
+    formatter: (value) => (value ? 'Ativo' : 'Inativo'),
+    minWidth: 90,
+    align: 'center',
+  },
+  { key: 'scanCount', label: 'Scans', type: 'number', editable: false, minWidth: 80 },
+  {
+    key: 'lastScannedAt',
+    label: 'Ultimo scan',
+    type: 'text',
+    editable: false,
+    minWidth: 150,
+    formatter: (value) => formatDate(String(value ?? '')),
+  },
+  {
+    key: 'createdAt',
+    label: 'Criado em',
+    type: 'text',
+    editable: false,
+    minWidth: 150,
+    formatter: (value) => formatDate(String(value ?? '')),
+  },
   {
     key: 'clientName',
     label: 'Cliente',
     adminOnly: true,
     type: 'text',
     editable: false,
-    minWidth: 180,
+    minWidth: 160,
   },
-  { key: 'slug', label: 'Slug', type: 'text', editable: false, minWidth: 160 },
-  { key: 'targetUrl', label: 'Destino', type: 'text', editable: false, minWidth: 300 },
-  {
-    key: 'qrImage',
-    label: 'QR Code',
-    type: 'custom',
-    editable: false,
-    minWidth: 110,
-    align: 'center',
-  },
-  {
-    key: 'isActive',
-    label: 'Ativo',
-    type: 'switch',
-    editable: true,
-    immediate: true,
-    switchOnValue: true,
-    switchOffValue: false,
-    minWidth: 110,
-    align: 'center',
-  },
-  { key: 'scanCount', label: 'Scans', type: 'number', editable: false, minWidth: 100 },
-  {
-    key: 'createdAt',
-    label: 'Criado em',
-    type: 'text',
-    editable: false,
-    minWidth: 170,
-    formatter: (value) => formatDate(String(value ?? '')),
-  },
-  { key: 'actions', label: 'Opcoes', type: 'custom', minWidth: 160, align: 'center' },
+  ...(canManage.value
+    ? [
+        {
+          key: 'actions',
+          label: 'Acoes',
+          type: 'custom',
+          minWidth: 96,
+          align: 'center',
+        } as OmniTableColumn,
+      ]
+    : []),
 ])
 
 const columnExcludeKeys = ['actions']
-const { visibleColumnKeys, tableColumns } = useOmniVisibleColumns({
-  preferenceKey: 'tools.qr-codes',
+const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
+  useOmniVisibleColumns({
+    // v2: layout enxuto (QR em destaque). Cliente, datas e ultimo scan em "Colunas".
+    preferenceKey: 'tools.qr-codes.v2',
+    allColumns: allTableColumns,
+    columnExcludeKeys,
+    defaultVisibleColumnKeys: ['qrImage', 'slug', 'targetUrl', 'isActive', 'scanCount', 'actions'],
+  })
+
+// Mobile: cards no lugar da tabela; campos extras seguem preferencia propria.
+const isMobile = useMediaMatch('(max-width: 720px)')
+const { visibleColumnKeys: mobileFieldKeys } = useOmniVisibleColumns({
+  preferenceKey: 'tools.qr-codes.mobile',
   allColumns: allTableColumns,
-  columnExcludeKeys,
+  columnExcludeKeys: MOBILE_FIXED_KEYS,
+  defaultVisibleColumnKeys: ['isActive', 'scanCount'],
 })
 
 const filteredRows = computed(() => {
   const rows = qrcodes.value as unknown as Array<Record<string, unknown>>
   return applyOmniFilters(rows, filtersState.value, filterDefinitions.value)
 })
+const filteredItems = computed(() => filteredRows.value as unknown as QrCodeItem[])
+const activeCount = computed(() => qrcodes.value.filter((item) => item.isActive).length)
 
-const modalTitle = computed(() =>
-  modalMode.value === 'create' ? 'Novo QR Code' : 'Editar QR Code',
-)
-const submitLoading = computed(() =>
-  modalMode.value === 'create'
-    ? creating.value
-    : Boolean(savingMap.value[`${formState.id}:update`]),
+const search = computed({
+  get: () => String(filtersState.value.query ?? ''),
+  set: (value: string) => {
+    filtersState.value = { ...filtersState.value, query: value }
+  },
+})
+const status = computed({
+  get: () => String(filtersState.value.statusFilter ?? ''),
+  set: (value: string) => {
+    filtersState.value = { ...filtersState.value, statusFilter: value }
+  },
+})
+const hasActiveFilters = computed(() => Boolean(search.value.trim() || status.value))
+const emptyText = computed(() =>
+  qrcodes.value.length
+    ? 'Nenhum QR Code com os filtros atuais.'
+    : 'Nenhum QR Code ainda. Crie o primeiro em "Novo QR".',
 )
 
-function toQrCode(row: Record<string, unknown>) {
+function toQr(row: Record<string, unknown>) {
   return row as unknown as QrCodeItem
-}
-function rowId(row: Record<string, unknown>) {
-  return String(row.id ?? '')
 }
 
 function formatDate(value: string) {
   const raw = String(value ?? '').trim()
   if (!raw) return '-'
   const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return raw
-  return date.toLocaleString('pt-BR')
+  return Number.isNaN(date.getTime()) ? raw : date.toLocaleString('pt-BR')
 }
 
-function normalizeUrlish(value: string) {
-  const raw = String(value ?? '').trim()
-  if (!raw) return ''
-  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+function openCreate() {
+  formItem.value = null
+  formOpen.value = true
 }
 
-// buildQrDataUrl gera a imagem PNG (data URL) de um QR no cliente.
-async function buildQrDataUrl(content: string, fill: string, back: string, size: number) {
-  return QRCode.toDataURL(content, {
-    width: size,
-    margin: 1,
-    color: { dark: fill, light: back },
-    errorCorrectionLevel: 'H',
-  })
+function openEdit(item: QrCodeItem) {
+  viewerId.value = ''
+  formItem.value = item
+  formOpen.value = true
 }
 
-// buildThumbnails gera as miniaturas da tabela a partir do qrUrl rastreado.
-async function buildThumbnails() {
-  if (!import.meta.client) return
-  const next: Record<string, string> = {}
-  for (const item of qrcodes.value) {
-    try {
-      next[item.id] = await buildQrDataUrl(item.qrUrl, item.fillColor, item.backColor, 96)
-    } catch {
-      next[item.id] = ''
-    }
-  }
-  thumbnails.value = next
-}
-
-watch(qrcodes, () => void buildThumbnails(), { deep: false })
-
-// Preview do modal: em edicao usa o qrUrl real; na criacao usa o destino apenas
-// para mostrar a aparencia (o QR salvo aponta para o link rastreado /q/{slug}).
-async function refreshPreview() {
-  if (!import.meta.client) return
-  previewError.value = ''
-  const content = formState.qrUrl || normalizeUrlish(formState.targetUrl)
-  if (!content) {
-    previewImage.value = ''
+async function setActive(id: string, isActive: boolean) {
+  const updated = await updateQrCode(id, { isActive }, 'toggle')
+  if (!updated) {
+    ui.error(errorMessage.value || 'Nao foi possivel alterar o QR.')
     return
   }
-  try {
-    previewImage.value = await buildQrDataUrl(
-      content,
-      formState.fillColor,
-      formState.backColor,
-      normalizeSize(formState.size),
-    )
-  } catch {
-    previewImage.value = ''
-    previewError.value = 'Falha ao gerar o preview do QR Code.'
-  }
+  ui.success(isActive ? 'QR ativado.' : 'QR desativado: quem escanear ve pagina nao encontrada.')
 }
 
-function normalizeSize(value: number) {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return 220
-  if (parsed < 120) return 120
-  if (parsed > 1000) return 1000
-  return Math.floor(parsed)
-}
-
-watch(
-  () => [
-    formState.targetUrl,
-    formState.fillColor,
-    formState.backColor,
-    formState.size,
-    formState.qrUrl,
-    modalOpen.value,
-  ],
-  () => {
-    if (modalOpen.value) void refreshPreview()
-  },
-)
-
-function openCreateModal() {
-  modalMode.value = 'create'
-  Object.assign(formState, {
-    id: '',
-    qrUrl: '',
-    slug: '',
-    targetUrl: '',
-    fillColor: '#000000',
-    backColor: '#ffffff',
-    size: 220,
-    isActive: true,
-    clientId: canChooseClient.value ? activeClientId.value : '',
-  })
-  previewImage.value = ''
-  previewError.value = ''
-  submitSuccessMessage.value = ''
-  modalOpen.value = true
-}
-
-function openEditModal(item: QrCodeItem) {
-  modalMode.value = 'edit'
-  Object.assign(formState, {
-    id: item.id,
-    qrUrl: item.qrUrl,
-    slug: item.slug,
-    targetUrl: item.targetUrl,
-    fillColor: item.fillColor,
-    backColor: item.backColor,
-    size: item.size,
-    isActive: item.isActive,
-    clientId: item.accountId,
-  })
-  previewImage.value = ''
-  previewError.value = ''
-  submitSuccessMessage.value = ''
-  modalOpen.value = true
-}
-
-async function submitQrCode() {
-  submitSuccessMessage.value = ''
-  const target = normalizeUrlish(formState.targetUrl)
-  if (!target) {
-    previewError.value = 'Informe a URL de destino.'
-    return
-  }
-  if (modalMode.value === 'create') {
-    const created = await createQrCode({
-      targetUrl: formState.targetUrl,
-      slug: formState.slug,
-      fillColor: formState.fillColor,
-      backColor: formState.backColor,
-      size: normalizeSize(formState.size),
-      isActive: formState.isActive,
-      accountId: canChooseClient.value ? formState.clientId : undefined,
-    })
-    if (!created) return
-    submitSuccessMessage.value = `QR criado com slug ${created.slug}.`
-    modalOpen.value = false
-    return
-  }
-  const updated = await updateQrCode(
-    formState.id,
-    {
-      targetUrl: formState.targetUrl,
-      slug: formState.slug,
-      fillColor: formState.fillColor,
-      backColor: formState.backColor,
-      size: normalizeSize(formState.size),
-      isActive: formState.isActive,
-    },
-    'update',
-  )
-  if (!updated) return
-  submitSuccessMessage.value = `QR atualizado com slug ${updated.slug}.`
-  modalOpen.value = false
-}
-
-async function onCellUpdate(payload: OmniTableCellUpdate) {
-  if (String(payload.key) !== 'isActive') return
+function onCellUpdate(payload: OmniTableCellUpdate) {
+  if (String(payload.key) !== 'isActive' || !canManage.value) return
   const id = String(payload.rowId ?? '')
-  if (!id) return
-  await updateQrCode(id, { isActive: Boolean(payload.value) }, 'toggle')
+  if (id) void setActive(id, Boolean(payload.value))
 }
 
-async function downloadQr(item: QrCodeItem) {
-  if (!import.meta.client) return
-  try {
-    const dataUrl = await buildQrDataUrl(item.qrUrl, item.fillColor, item.backColor, item.size)
-    const anchor = document.createElement('a')
-    anchor.href = dataUrl
-    anchor.download = `${item.slug || 'qrcode'}.png`
-    anchor.rel = 'noopener'
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-  } catch {
-    // geracao falhou — sem download
-  }
+async function download(item: QrCodeItem) {
+  if (!(await downloadQrImage(item))) ui.error('Nao foi possivel gerar a imagem do QR.')
 }
 
-async function onDeleteQrCode(id: string) {
-  if (import.meta.client) {
-    const confirmed = window.confirm('Excluir este QR Code? Esta acao nao pode ser desfeita.')
-    if (!confirmed) return
-  }
-  await deleteQrCode(id)
+async function copyLink(item: QrCodeItem) {
+  if (await copyToClipboard(item.qrUrl)) ui.success('Link do QR copiado.')
+  else ui.error('Nao foi possivel copiar o link.')
+}
+
+async function remove(item: QrCodeItem) {
+  const { confirmed } = (await ui.confirm({
+    title: 'Excluir QR Code',
+    message: `Excluir o QR "${item.slug}"? Os QR ja impressos param de funcionar. Para pausar, use o Ativo.`,
+    confirmLabel: 'Excluir',
+  })) as { confirmed: boolean }
+  if (!confirmed) return
+  if (await deleteQrCode(item.id)) ui.success('QR excluido.')
+  else ui.error(errorMessage.value || 'Nao foi possivel excluir o QR.')
+}
+
+async function updateFromModal(id: string, payload: UpdateQrCodePayload) {
+  const updated = await updateQrCode(id, payload, 'update')
+  if (updated) ui.success('QR atualizado.')
+  return updated
 }
 
 function onResetFilters() {
@@ -349,223 +263,214 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="qr-codes-page space-y-4">
+  <section class="tools-list">
     <AdminPageHeader
       eyebrow="Tools"
       title="QR Code"
-      description="Gere QR Codes personalizados e rastreados (scans + status), com preview e download."
+      description="QR Codes rastreados: troque o destino, pause e conte scans sem reimprimir."
     />
+    <template v-if="isMobile">
+      <ToolsListMobileToolbar
+        v-model:search="search"
+        v-model:status="status"
+        v-model:visible-columns="mobileFieldKeys"
+        placeholder="Buscar QR"
+        create-label="Novo QR"
+        :can-create="canManage"
+        :total="qrcodes.length"
+        :active="activeCount"
+        :columns="allTableColumns"
+        :exclude-keys="MOBILE_FIXED_KEYS"
+        @create="openCreate"
+      />
+      <UAlert
+        v-if="errorMessage && !formOpen"
+        color="error"
+        variant="soft"
+        icon="i-lucide-alert-triangle"
+        :description="errorMessage"
+      />
+      <ToolsQrMobileList
+        :rows="filteredItems"
+        :visible-keys="mobileFieldKeys"
+        :can-manage="canManage"
+        :saving-map="savingMap"
+        :empty-text="emptyText"
+        @view="viewerId = $event"
+        @download="download"
+        @edit="openEdit"
+        @remove="remove"
+        @toggle="setActive"
+      />
+    </template>
 
-    <OmniCollectionFilters
-      v-model="filtersState"
-      v-model:visible-columns="visibleColumnKeys"
-      :filters="filterDefinitions"
-      :viewer-user-type="viewerUserType"
-      :table-columns="allTableColumns"
-      :column-exclude-keys="columnExcludeKeys"
-      :loading="loading"
-      @reset="onResetFilters"
-    >
-      <template #actions>
-        <UButton
-          icon="i-lucide-plus"
-          label="Novo QR"
-          color="primary"
-          :loading="creating"
-          :disabled="creating"
-          @click="openCreateModal"
-        />
-      </template>
-    </OmniCollectionFilters>
-
-    <UAlert
-      v-if="errorMessage"
-      color="error"
-      variant="soft"
-      icon="i-lucide-alert-triangle"
-      title="Erro"
-      :description="errorMessage"
-    />
-
-    <OmniDataTable
-      v-model="selectedIds"
-      :rows="filteredRows"
-      :columns="tableColumns"
-      :viewer-user-type="viewerUserType"
-      row-key="id"
-      :loading="loading"
-      empty-text="Nenhum QR Code encontrado com os filtros atuais."
-      @update:cell="onCellUpdate"
-    >
-      <template #cell-qrImage="{ row }">
-        <div class="flex items-center justify-center">
-          <img
-            v-if="thumbnails[rowId(row)]"
-            :src="thumbnails[rowId(row)]"
-            alt="QR"
-            class="h-12 w-12 rounded-[var(--radius-sm)] border border-[rgb(var(--border))] bg-white object-contain p-0.5"
-          />
-          <span v-else class="text-[11px] text-[rgb(var(--muted))]">...</span>
-        </div>
-      </template>
-
-      <template #cell-actions="{ row }">
-        <div class="qr-codes-page__row-actions flex items-center justify-end gap-1">
-          <UButton
-            icon="i-lucide-pencil"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            title="Editar QR"
-            aria-label="Editar QR"
-            @click="openEditModal(toQrCode(row))"
-          />
-          <UButton
-            icon="i-lucide-download"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            title="Baixar QR"
-            aria-label="Baixar QR"
-            @click="downloadQr(toQrCode(row))"
-          />
-          <UButton
-            icon="i-lucide-trash-2"
-            color="error"
-            variant="ghost"
-            size="sm"
-            title="Excluir"
-            aria-label="Excluir"
-            :loading="deletingId === rowId(row) || Boolean(savingMap[`${rowId(row)}:delete`])"
-            @click="onDeleteQrCode(rowId(row))"
-          />
-        </div>
-      </template>
-    </OmniDataTable>
-
-    <UModal
-      v-model:open="modalOpen"
-      :title="modalTitle"
-      description="Preencha os dados para gerar ou editar o QR Code."
-      :ui="{ content: 'max-w-4xl' }"
-    >
-      <template #body>
-        <div class="qr-codes-page__modal-body grid gap-3 md:grid-cols-[minmax(0,1fr)_280px]">
-          <div class="space-y-3">
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="space-y-1">
-                <p class="text-xs text-[rgb(var(--muted))]">Slug (opcional)</p>
-                <UInput
-                  v-model="formState.slug"
-                  placeholder="meu-qr"
-                  @update:model-value="submitSuccessMessage = ''"
-                />
-              </div>
-              <div class="space-y-1">
-                <p class="text-xs text-[rgb(var(--muted))]">Tamanho (px)</p>
-                <UInput v-model.number="formState.size" type="number" :min="120" :max="1000" />
-              </div>
-            </div>
-
-            <div class="space-y-1">
-              <p class="text-xs text-[rgb(var(--muted))]">Destino (URL)</p>
-              <UInput v-model="formState.targetUrl" placeholder="https://..." />
-            </div>
-
-            <div v-if="canChooseClient" class="space-y-1">
-              <p class="text-xs text-[rgb(var(--muted))]">Conta dona</p>
-              <USelect
-                v-model="formState.clientId"
-                :items="clientOptions"
-                placeholder="Selecionar conta"
-              />
-            </div>
-            <div v-else class="space-y-1">
-              <p class="text-xs text-[rgb(var(--muted))]">Conta dona</p>
-              <UInput :model-value="activeClientLabel" disabled />
-            </div>
-
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="space-y-1">
-                <p class="text-xs text-[rgb(var(--muted))]">Cor do QR</p>
-                <input
-                  v-model="formState.fillColor"
-                  type="color"
-                  class="h-9 w-full cursor-pointer rounded border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-1"
-                />
-              </div>
-              <div class="space-y-1">
-                <p class="text-xs text-[rgb(var(--muted))]">Cor de fundo</p>
-                <input
-                  v-model="formState.backColor"
-                  type="color"
-                  class="h-9 w-full cursor-pointer rounded border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-1"
-                />
-              </div>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <USwitch v-model="formState.isActive" />
-              <span class="text-xs text-[rgb(var(--muted))]">
-                QR ativo (desativado, o scan para de funcionar)
-              </span>
-            </div>
-
-            <p v-if="modalMode === 'create'" class="text-[11px] text-[rgb(var(--muted))]">
-              O QR salvo aponta para um link rastreado (/q/...). Este preview usa o destino para
-              mostrar a aparencia; a imagem final aparece na tabela apos salvar.
-            </p>
-
-            <UAlert
-              v-if="previewError"
-              color="error"
-              variant="soft"
-              icon="i-lucide-alert-triangle"
-              :description="previewError"
-            />
-            <UAlert
-              v-if="submitSuccessMessage"
-              color="success"
-              variant="soft"
-              icon="i-lucide-badge-check"
-              :description="submitSuccessMessage"
+    <template v-else>
+      <OmniCollectionFilters
+        v-model="filtersState"
+        v-model:visible-columns="visibleColumnKeys"
+        v-model:locked-columns="lockedColumnKeys"
+        v-model:column-order="columnOrder"
+        :filters="toolbarFilters"
+        :viewer-user-type="viewerUserType"
+        :table-columns="allTableColumns"
+        :column-exclude-keys="columnExcludeKeys"
+        :show-column-filter="viewMode === 'table'"
+        :loading="loading"
+        :show-reset="hasActiveFilters"
+        @reset="onResetFilters"
+        @reset-columns="resetToDefaults"
+      >
+        <template #actions>
+          <ToolsStatusChips v-model="status" :total="qrcodes.length" :active="activeCount" />
+          <div class="tools-list__primary">
+            <ToolsViewToggle v-model="viewMode" />
+            <UButton
+              v-if="canManage"
+              icon="i-lucide-plus"
+              label="Novo QR"
+              color="primary"
+              :loading="creating"
+              @click="openCreate"
             />
           </div>
+        </template>
+      </OmniCollectionFilters>
 
-          <aside
-            class="qr-codes-page__preview rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-3"
-          >
-            <p class="mb-2 text-xs font-medium text-[rgb(var(--muted))]">Pre-visualizacao</p>
-            <div
-              class="flex min-h-[240px] items-center justify-center rounded-[var(--radius-sm)] border border-dashed border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-2"
-            >
-              <img
-                v-if="previewImage"
-                :src="previewImage"
-                alt="Preview QR"
-                class="max-h-[220px] max-w-full object-contain"
-              />
-              <p v-else class="text-xs text-[rgb(var(--muted))]">
-                Informe a URL para gerar o preview.
-              </p>
-            </div>
-          </aside>
-        </div>
-      </template>
+      <UAlert
+        v-if="errorMessage && !formOpen"
+        color="error"
+        variant="soft"
+        icon="i-lucide-alert-triangle"
+        :description="errorMessage"
+      />
 
-      <template #footer>
-        <div class="flex w-full items-center justify-end gap-2">
-          <UButton label="Fechar" color="neutral" variant="ghost" @click="modalOpen = false" />
-          <UButton
-            :label="modalMode === 'create' ? 'Salvar QR' : 'Atualizar QR'"
-            icon="i-lucide-save"
-            color="primary"
-            :loading="submitLoading"
-            :disabled="submitLoading"
-            @click="submitQrCode"
+      <ToolsQrCardGrid
+        v-if="viewMode === 'cards'"
+        :rows="filteredItems"
+        :can-manage="canManage"
+        :saving-map="savingMap"
+        :empty-text="loading ? 'Carregando...' : emptyText"
+        @view="viewerId = $event"
+        @download="download"
+        @edit="openEdit"
+        @remove="remove"
+        @toggle="setActive"
+      />
+
+      <OmniDataTable
+        v-else
+        :rows="filteredRows"
+        :columns="tableColumns"
+        :viewer-user-type="viewerUserType"
+        :selectable="false"
+        row-key="id"
+        :loading="loading"
+        :empty-text="emptyText"
+        @update:cell="onCellUpdate"
+      >
+        <template #cell-qrImage="{ row }">
+          <ToolsQrThumb
+            :slug="toQr(row).slug"
+            :qr-url="toQr(row).qrUrl"
+            :fill-color="toQr(row).fillColor"
+            :back-color="toQr(row).backColor"
+            :is-active="toQr(row).isActive"
+            @view="viewerId = toQr(row).id"
+            @download="download(toQr(row))"
           />
-        </div>
-      </template>
-    </UModal>
+        </template>
+        <template #cell-slug="{ row }">
+          <a
+            class="tools-qr-slug"
+            :href="toQr(row).qrUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            :title="`Testar ${toQr(row).qrUrl} (conta como scan)`"
+          >
+            <span class="tools-list__ellipsis">{{ toQr(row).slug }}</span>
+            <UIcon name="i-lucide-external-link" class="tools-qr-slug__icon" />
+          </a>
+        </template>
+        <template #cell-targetUrl="{ row }">
+          <span class="tools-list__ellipsis" :title="toQr(row).targetUrl">
+            {{ toQr(row).targetUrl }}
+          </span>
+        </template>
+        <template #cell-actions="{ row }">
+          <div class="tools-list__actions">
+            <UButton
+              icon="i-lucide-pencil"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Editar QR (destino, cores, tamanho)"
+              aria-label="Editar"
+              @click="openEdit(toQr(row))"
+            />
+            <UButton
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              size="sm"
+              title="Excluir QR"
+              aria-label="Excluir"
+              :loading="Boolean(savingMap[`${toQr(row).id}:delete`])"
+              @click="remove(toQr(row))"
+            />
+          </div>
+        </template>
+      </OmniDataTable>
+    </template>
+
+    <ToolsQrViewer
+      v-if="viewerItem"
+      :item="viewerItem"
+      :can-manage="canManage"
+      :toggling="Boolean(savingMap[`${viewerItem.id}:toggle`])"
+      @close="viewerId = ''"
+      @copy="copyLink(viewerItem)"
+      @download="download(viewerItem)"
+      @edit="openEdit(viewerItem)"
+      @toggle="setActive(viewerItem.id, $event)"
+    />
+
+    <ToolsQrFormModal
+      v-model:open="formOpen"
+      :item="formItem"
+      :can-choose-client="canChooseClient"
+      :client-options="clientOptions"
+      :active-client-label="activeClientLabel"
+      :active-client-id="activeClientId"
+      :saving="creating || Boolean(formItem && savingMap[`${formItem.id}:update`])"
+      :create="createQrCode"
+      :update="updateFromModal"
+      :error-text="() => errorMessage"
+    />
   </section>
 </template>
+
+<style scoped src="./tools-list.css"></style>
+<style scoped>
+/* Slug = link de teste do QR (abre o /q/{slug} rastreado). */
+.tools-qr-slug {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  color: var(--text-main);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tools-qr-slug:hover span {
+  color: rgb(var(--primary));
+  text-decoration: underline;
+}
+
+.tools-qr-slug__icon {
+  flex-shrink: 0;
+  width: 0.8rem;
+  height: 0.8rem;
+  color: var(--text-muted);
+}
+</style>

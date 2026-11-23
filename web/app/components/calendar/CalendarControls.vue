@@ -18,6 +18,9 @@ const props = withDefaults(
     // Barras multi-dia (WAVE 11): estado do toggle mostrar/ocultar as tasks com inicio->fim.
     showSpans?: boolean
     hasSpans?: boolean
+    // Celular: o botao de recolher abre/fecha a sidebar de anotacoes.
+    mobile?: boolean
+    notesOpen?: boolean
   }>(),
   {
     canSelectClient: false,
@@ -25,6 +28,8 @@ const props = withDefaults(
     participants: () => [],
     showSpans: true,
     hasSpans: false,
+    mobile: false,
+    notesOpen: false,
   },
 )
 
@@ -103,6 +108,19 @@ const clientOptions = computed(() => [
     </button>
 
     <button
+      v-if="mobile"
+      type="button"
+      class="calendar-controls__gear calendar-controls__collapse"
+      :class="{ 'is-active': notesOpen }"
+      :aria-expanded="notesOpen"
+      :aria-label="notesOpen ? 'Fechar anotações' : 'Abrir anotações'"
+      :title="notesOpen ? 'Fechar anotações' : 'Abrir anotações do mês'"
+      @click="emit('minimize')"
+    >
+      <UIcon name="i-lucide-notebook-pen" aria-hidden="true" />
+    </button>
+    <button
+      v-else
       type="button"
       class="calendar-controls__gear calendar-controls__collapse"
       aria-label="Minimizar coluna de anotações"
@@ -149,9 +167,14 @@ const clientOptions = computed(() => [
     <AppPanelButton variant="ghost" class="calendar-controls__today" @click="emit('today')">
       Hoje
     </AppPanelButton>
-    <AppPanelButton variant="primary" class="calendar-controls__new" @click="emit('new-item')">
+    <AppPanelButton
+      variant="primary"
+      class="calendar-controls__new"
+      aria-label="Novo item"
+      @click="emit('new-item')"
+    >
       <UIcon name="i-lucide-plus" class="calendar-controls__new-icon" aria-hidden="true" />
-      Novo
+      <span class="calendar-controls__new-label">Novo</span>
     </AppPanelButton>
   </div>
 </template>

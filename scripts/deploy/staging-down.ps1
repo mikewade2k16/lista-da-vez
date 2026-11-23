@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 
 if (-not (Test-Path $KeyPath)) { throw "Chave SSH nao encontrada em $KeyPath" }
 
-$SshExe = (Get-Command ssh -CommandType Application -ErrorAction Stop).Source
+$SshExe = (Get-Command ssh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 if (-not (Test-Path $SshExe)) { throw "ssh.exe nao encontrado em $SshExe" }
 
 $resolvedKeyPath = (Resolve-Path $KeyPath).Path

@@ -9,5 +9,20 @@
       "Bash(npm run lint*)",
       "Bash(npm --prefix web run lint*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/dev/agent-format-hook.sh\"",
+            "timeout": 90,
+            "statusMessage": "Formatando e lintando no padrao do pre-commit..."
+          }
+        ]
+      }
+    ]
   }
 }

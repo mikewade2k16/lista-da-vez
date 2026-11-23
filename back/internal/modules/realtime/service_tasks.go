@@ -467,6 +467,17 @@ func (service *Service) resolvePresenceSubscription(ctx context.Context, princip
 			return realtimeSubscription{}, err
 		}
 		return realtimeSubscription{topic: presenceTaskTopic(authorized.taskID), accountID: authorized.accountID, boardID: authorized.boardID, taskID: authorized.taskID}, nil
+	case "script":
+		// Presenca/travas de um roteiro: topico por roteiro, fieldKeys "title", "description"
+		// e "cell:<rowId>:<audio|video>". A base WS do front envia o id do recurso em taskId.
+		scriptID := strings.TrimSpace(r.URL.Query().Get("scriptId"))
+		if scriptID == "" {
+			scriptID = taskID
+		}
+		if err := service.authorizeScriptPresence(ctx, principal, resolvedAccountID, scriptID); err != nil {
+			return realtimeSubscription{}, err
+		}
+		return realtimeSubscription{topic: presenceScriptTopic(scriptID), accountID: resolvedAccountID}, nil
 	case "calendar":
 		// Presenca do calendario (contrato C11): topico por conta, fieldKeys
 		// "notes:YYYY-MM" e "event:<id>" (o readPresencePump repassa o fieldKey livre).

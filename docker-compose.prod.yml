@@ -205,6 +205,10 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+      # Durante o start_period sonda a cada 2s: o rollout `--wait` libera assim que
+      # a API responde, em vez de esperar a sonda de 15s. Exige Docker 25+
+      # (API 1.44, checado no preflight remoto do deploy).
+      start_interval: 2s
     networks:
       app:
       proxy:
@@ -245,6 +249,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+      start_interval: 2s
     networks:
       app:
       proxy:

@@ -7,6 +7,8 @@ export interface ShortLinkItem {
   targetUrl: string
   shortUrl: string
   hits: number
+  isActive: boolean
+  lastHitAt: string
   createdAt: string
   accountId: string
   clientName: string
@@ -66,6 +68,15 @@ export interface CreateShortLinkPayload {
   accountId?: string
 }
 
+// PATCH /v1/tools/short-links/{id}. Trocar o slug exige confirmSlugChange=true
+// (o link antigo para de funcionar); sem isso o back responde 409.
+export interface UpdateShortLinkPayload {
+  targetUrl?: string
+  slug?: string
+  isActive?: boolean
+  confirmSlugChange?: boolean
+}
+
 export interface CreateQrCodePayload {
   targetUrl: string
   slug?: string
@@ -76,9 +87,10 @@ export interface CreateQrCodePayload {
   accountId?: string
 }
 
+// Sem slug: o slug do QR e imutavel depois de criado (o QR impresso codifica
+// /q/{slug}); o back recusa troca com 409 qr_slug_immutable.
 export interface UpdateQrCodePayload {
   targetUrl?: string
-  slug?: string
   fillColor?: string
   backColor?: string
   size?: number

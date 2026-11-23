@@ -410,9 +410,40 @@ func presenceEventForTopic(topic string, eventType string, user PresenceUser) Ev
 		// Sem este case os broadcasts (join/left/field_locked) caiam no default e eram
 		// descartados por publishPresenceEvent (Type vazio) — avatares/badge nunca ao vivo.
 		event.AccountID = strings.TrimPrefix(topic, "presence:calendar:")
+	case strings.HasPrefix(topic, "presence:script:"):
+		// Travas por célula de um roteiro. Mesmo cuidado do calendário: sem este case os
+		// broadcasts (field_locked/unlocked) eram descartados e só o snapshot chegava.
+		event.ResourceID = strings.TrimPrefix(topic, "presence:script:")
 	default:
 		return Event{}
 	}
 
 	return event
+}
+
+// FieldLocker returns the display name of another user holding `fieldKey` in `topic` within
+// the TTL, or "" when the field is free (or held by exceptUserID).
+func (store *PresenceStore) FieldLocker(topic, fieldKey, exceptUserID string) string {
+	return store.findLocker(topic, exceptUserID, func(key string) bool { return key == fieldKey })
+}
+
+// AnyLocker returns the display name of another user editing any field in `topic`, or "".
+func (store *PresenceStore) AnyLocker(topic, exceptUserID string) string {
+	return store.findLocker(topic, exceptUserID, func(key string) bool { return key != "" })
+}
+
+func (store *PresenceStore) findLocker(topic, exceptUserID string, match func(string) bool) string {
+	now := time.Now().UTC()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for userID, entry := range store.entries[strings.TrimSpace(topic)] {
+		if userID == exceptUserID || !match(entry.user.FieldKey) || now.Sub(entry.user.UpdatedAt) > store.ttl {
+			continue
+		}
+		if entry.user.DisplayName != "" {
+			return entry.user.DisplayName
+		}
+		return "Outra pessoa"
+	}
+	return ""
 }

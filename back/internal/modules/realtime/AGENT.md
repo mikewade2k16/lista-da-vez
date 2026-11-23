@@ -42,8 +42,11 @@ Ele nao deve cuidar de:
 - `GET /v1/realtime/notifications?userId=...&accountId=...&ticket=...`
 - `GET /v1/realtime/calendar?scope=account&accountId=...&ticket=...` (Wave 2, C11)
 - `GET /v1/realtime/omnichannel?scope=account&accountId=...&ticket=...` (F5)
-- `GET /v1/realtime/scripts?scope=account&accountId=...&ticket=...` (roteiros; `script.saved|deleted|reordered`,
-  só invalidação; permissão `tools.scripts.view|manage`; ver `tools/AGENT.md`)
+- `GET /v1/realtime/scripts?scope=account&accountId=...&ticket=...` (roteiros; `script.cell` com o conteúdo da
+  célula e `script.saved|deleted|reordered` como invalidação; permissão `tools.scripts.view|manage`)
+- `GET /v1/realtime/presence?scope=script&scriptId=...` (ou `taskId`): travas por célula de um roteiro; exige
+  permissão de roteiros e o roteiro no escopo de leitura da conta (`tools.ScriptVisibleTo`). `Service` também
+  implementa `tools.ScriptLocks` (o tools recusa gravar célula travada por outro).
 
 O ticket WS e efemero, fica apenas em memoria do processo, expira em 30s e e consumido com `LoadAndDelete`
 antes do upgrade WebSocket. Ele e single-use: reconexao precisa pedir um ticket novo.

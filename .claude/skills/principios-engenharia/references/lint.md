@@ -2,9 +2,29 @@
 
 Leia ao escrever código nessas linguagens. Todo código gerado já deve respeitar estas regras — o linter as cobra no pré-commit, e auditar um arquivo geralmente revela erros pré-existentes do pacote inteiro. Escrever certo na primeira vez evita commits de fixup.
 
+## Gate obrigatório ao fim de TODA alteração: `npm run precommit:check`
+
+**Durante a edição (Claude Code):** o hook `PostToolUse` em `.claude/settings.json` roda `scripts/dev/agent-format-hook.sh` após cada Write/Edit — Prettier + ESLint `--fix` em `web/`, `gofmt` (Docker) em `back/`, `agents:sync` em `.claude/skills/`. Erro de ESLint que sobra volta como exit 2: corrigir na hora, antes de seguir. Hook reformatou o arquivo? Reler antes do próximo Edit na mesma região. O Codex não executa esse hook: aplica as mesmas ferramentas manualmente.
+
+Antes de declarar qualquer tarefa pronta (ou devolver os comandos de commit), rodar na raiz:
+
+```bash
+npm run precommit:check              # tudo que um `git add .` levaria (staged + modificados + novos)
+npm run precommit:check -- --staged  # só o que já está staged
+```
+
+`scripts/dev/precommit-check.sh` executa as MESMAS checagens do `.husky/pre-commit`, só leitura (sem fix, sem stash, sem mexer no índice): metadados do macOS rastreados, `agents:check`, Prettier e ESLint no `web/`, linter de migrations, `gofmt -l` + golangci-lint (Docker) no `back/`. Só considerar pronto com "Pronto para commit". Se falhar:
+
+- **Prettier:** `cd web && npx prettier --write <arquivos>` — formatar os arquivos que você criou/alterou no próprio fluxo, não deixar para o hook. Quando o lint-staged corrige no commit, ele precisa esconder e restaurar alterações não staged, e qualquer conflito nessa restauração aborta o commit inteiro.
+- **ESLint:** só `error` bloqueia (`--max-warnings=999`); warnings como `max-lines` não travam, mas arquivo novo deve nascer abaixo do limite.
+- **Go:** `bash scripts/dev/gofmt-staged-docker.sh <arquivos>` e corrigir o que o golangci apontar.
+- **Metadados do macOS (`.DS_Store`, `._*`):** nunca versionar. Se aparecer rastreado: `git rm --cached -f <arquivo>` (o `-f` só ignora a divergência índice × disco; o arquivo local fica). O Finder reescreve o `.DS_Store` enquanto o hook roda; com ele staged, o lint-staged falha com `Unstaged changes could not be restored due to a merge conflict` / `lint-staged failed due to a git error` (patch binário não reaplica). O pre-commit agora bloqueia antes com mensagem clara — ver [registro-de-falhas.md, caso 18](registro-de-falhas.md#18-commit-abortado-por-merge-conflict-no-lint-staged-ds_store-rastreado).
+- **Skills:** editou `.claude/skills/`? `npm run agents:sync` antes do check.
+- Após corrigir, `git add` de novo os arquivos afetados (o hook valida a versão staged).
+
 ## O pre-commit roda 4 checks e PARA no primeiro que falha
 
-`lint-staged` (via husky) despacha, nesta ordem: **ESLint+Prettier** no `web/`, **gofmt+golangci-lint** no `back/`, e o **linter de migrations** nos `.sql`. Como para no primeiro que falha, corrigir só o erro que apareceu faz o *próximo* `git commit` revelar o check seguinte — dá a sensação de "os erros não acabam". Ao consertar lint, **valide os quatro antes de recomitar**:
+`lint-staged` (via husky) despacha, nesta ordem: **ESLint+Prettier** no `web/`, **gofmt+golangci-lint** no `back/`, e o **linter de migrations** nos `.sql`. Como para no primeiro que falha, corrigir só o erro que apareceu faz o *próximo* `git commit` revelar o check seguinte — dá a sensação de "os erros não acabam". O `npm run precommit:check` acima roda todos de uma vez; os comandos individuais, se precisar isolar um:
 
 ```bash
 # web (ESLint, como o hook — max-warnings=999, só errors bloqueiam)

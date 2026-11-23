@@ -10,6 +10,9 @@ export interface LazyComponentOptions {
   retries?: number
   // Timeout do carregamento antes de cair no errorComponent, em ms (default: 20000).
   timeout?: number
+  // Deixa o <Suspense> ancestral controlar o carregamento (default: false). So ligar
+  // quando houver um <Suspense> proprio envolvendo o componente (com #fallback).
+  suspensible?: boolean
 }
 
 // Wrapper canonico para componentes carregados sob demanda (chunks lazy).
@@ -23,6 +26,10 @@ export interface LazyComponentOptions {
 //   - se ainda falhar, mostra um errorComponent acionavel ("Recarregar") no lugar do
 //     componente, em vez de sumir;
 //   - aplica timeout pra nao ficar em loading infinito.
+//   - NAO e suspensible por padrao: suspensible, ele vira dependencia do <Suspense> do
+//     <NuxtPage>, a troca de rota espera o chunk (URL muda e a pagina antiga fica na
+//     tela) e o Vue ignora timeout/errorComponent. /tasks e /tracking montam o
+//     TasksTaskModal sempre, entao cada entrada esperaria o chunk do editor.
 //
 // Use SEMPRE no lugar de defineAsyncComponent para componentes lazy reais.
 export function defineLazyComponent(
@@ -35,6 +42,7 @@ export function defineLazyComponent(
     errorComponent: options.errorComponent ?? CoreAsyncError,
     ...(options.loadingComponent ? { loadingComponent: options.loadingComponent } : {}),
     timeout: options.timeout ?? 20000,
+    suspensible: options.suspensible ?? false,
     onError(_error, retry, fail, attempts) {
       // attempts e 1-based: 1 = primeira tentativa. Re-tenta enquanto <= maxRetries,
       // senao desiste e deixa o errorComponent renderizar.

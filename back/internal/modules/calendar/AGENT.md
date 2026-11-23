@@ -749,6 +749,19 @@ Ao subir a WAVE 3 pra producao, NAO basta o deploy da imagem. Fazer, em ordem:
 
 ## Surface Finance (2026-11-02)
 
+Conversa compartilhada: `GetConversation` usa alias SQL para filtrar `assistant_mode`;
+referência qualificada como `to_jsonb(calendar.chat_conversations)` causa erro 500 no PostgreSQL.
+Regressão coberta por `TestChatFlowPostgresFirstReplyAndResume`, com PostgreSQL descartável
+via `TEST_DATABASE_URL`: primeira resposta, continuação com memória, replay sem duplicar,
+persistência de cards, isolamento entre contas e separação do modo Plus.
+
+Consultas simples de calendário por dia/mês/semana usam período e contagem resolvidos no
+backend (`chat_calendar_read.go`), com a mesma seleção para resposta e cards. Hoje/ontem/amanhã
+usam o fuso do produto; uma data negada pelo usuário não redefine hoje. Continuação de listagem
+retoma a data pedida pelo usuário, sem confiar em datas/contagens antigas do modelo. A consulta
+mantém conta/clientes autorizados e sinaliza truncamento acima de 100 eventos. Pedidos de edição,
+Tasks ou filtros específicos seguem o fluxo conversacional. Modelo e prompt cadastrado não mudam.
+
 `WithFinanceAssistant` injeta runtime e contexto do módulo Finance; não herda o runtime global. Surface `finance` somente leitura, conversas pessoais com checagem de criador mesmo para agência/admin, queries filtradas por criador e conta. `surface=finance` nos endpoints compartilhados resolve acesso sem exigir Calendar; `/ask` inclui `financeSheetId`. Constraints de surfaces ampliadas em0305. Regressões em `assistant_finance_test.go`. Não há executor de portal fiscal.
 
 ## Plus Finance — CT-05 (2026-11-04)

@@ -166,8 +166,8 @@ func (s *Store) CreateConversation(ctx context.Context, accountID, createdByUser
 // existencia). A checagem de dono-ou-agencia fica no service (authorizeConversation).
 func (s *Store) GetConversation(ctx context.Context, id, accountID string) (ChatConversation, error) {
 	const q = `select ` + chatConversationCols + `
-		from calendar.chat_conversations
-		where id = $1::uuid and account_id = $2::uuid and deleted_at is null and coalesce(to_jsonb(calendar.chat_conversations)->>'assistant_mode','legacy')='legacy'`
+		from calendar.chat_conversations c
+		where c.id = $1::uuid and c.account_id = $2::uuid and c.deleted_at is null and coalesce(to_jsonb(c)->>'assistant_mode','legacy')='legacy'`
 	return scanChatConversation(s.pool.QueryRow(ctx, q, id, accountID))
 }
 

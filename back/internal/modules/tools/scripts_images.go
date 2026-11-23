@@ -2,9 +2,7 @@ package tools
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -51,13 +49,10 @@ func (s *scriptService) uploadImage(ctx context.Context, account string, reader 
 	default:
 		return scriptImage{}, errInvalidScript
 	}
-	var raw [16]byte
-	if _, err = rand.Read(raw[:]); err != nil {
+	id, err := newScriptUUID()
+	if err != nil {
 		return scriptImage{}, err
 	}
-	raw[6] = (raw[6] & 0x0f) | 0x40
-	raw[8] = (raw[8] & 0x3f) | 0x80
-	id := fmt.Sprintf("%x-%x-%x-%x-%x", raw[:4], raw[4:6], raw[6:8], raw[8:10], raw[10:])
 	path, err := scriptImagePath(s.imageRoot, account, id)
 	if err != nil {
 		return scriptImage{}, err

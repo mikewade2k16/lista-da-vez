@@ -95,10 +95,18 @@ function prepareResourceInstruction(resource: AssistantResource): void {
 function chatAnchorSelector(): string {
   return '.module-workspace-full, .workspace'
 }
-const { localChat, resizing, panelStyle, resizeFromLeft, measureArea, setPosition, startResize } =
-  useCalendarChatWindow(chatAnchorSelector, () =>
-    financeLocal.value ? 'finance' : effectiveSurface.value,
-  )
+const {
+  localChat,
+  compact,
+  resizing,
+  panelStyle,
+  resizeFromLeft,
+  measureArea,
+  setPosition,
+  startResize,
+} = useCalendarChatWindow(chatAnchorSelector, () =>
+  financeLocal.value ? 'finance' : effectiveSurface.value,
+)
 
 // Modo de voz (persistido por usuario): 'whisper' usa o servico compartilhado (grava ->
 // para -> transcreve); 'live' = ditado ao vivo pelo navegador (Web Speech API, palavras
@@ -491,7 +499,7 @@ useCalendarShortcuts([
       <section
         v-if="windowVisible"
         class="calendar-chat"
-        :class="{ 'calendar-chat--resizing': resizing }"
+        :class="{ 'calendar-chat--resizing': resizing, 'calendar-chat--compact': compact }"
         :style="panelStyle"
         role="dialog"
         :aria-label="panelAriaLabel"
@@ -540,7 +548,12 @@ useCalendarShortcuts([
               @new="financeArchive ? (financeArchive = false) : startConversationForCurrentPage()"
               @delete="removeConversation"
             />
-            <div class="calendar-chat__pos" role="group" aria-label="Posicao da janela">
+            <div
+              v-if="!compact"
+              class="calendar-chat__pos"
+              role="group"
+              aria-label="Posicao da janela"
+            >
               <button
                 v-for="option in POSITION_OPTIONS"
                 :key="option.value"

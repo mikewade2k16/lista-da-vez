@@ -639,6 +639,18 @@ Interacao-chave:
   e apenas depois de `store.isConfigLoaded` confirmar o GET da account ativa; Meta/global guardam
   layout efemero por `accountId:surface` e jamais fazem o PUT full-replace do Calendar. Trocar de
   account/surface cancela debounce pendente e re-hidrata o layout daquele contexto.
+  **Celular (2026-11-13)**: com `window.innerWidth <= 720` o composable expoe `compact=true`, ignora a
+  posicao salva (sem gravar nada) e ocupa a viewport abaixo do menu (margem 8); o painel esconde o
+  seletor de posicao. O header usa `flex-wrap`: botoes quebram linha em vez de empurrar
+  minimizar/fechar para fora da janela (regressao vista no modo `left` com o selo "IA fora do ar").
+  Layout do calendario no celular (<= 880px, `isMobile` via matchMedia em `pages/calendario/index.vue`):
+  UMA linha de controles (sem titulo, sem Mes/Semana — o trilho M/S1..Sn horizontal ja faz isso —,
+  "Novo" so icone), mesma ideia do desktop no scroll (bloco em foco centralizado com o anterior/proximo
+  espiando), celulas quadradas (`aspect-ratio`) e sem margens laterais nem respiro sob o header
+  (`.module-workspace-full:has(.calendar-page)` padding 0). O override do `AppMonthCalendarGrid` de
+  130px/coluna e anulado so dentro de `.calendar-page`. Anotacoes em sidebar deslizante FECHADA por
+  padrao (`mobileNotesOpen`; botao de caderno nos controles; backdrop fecha); modo minimizado do
+  desktop ignorado; drawer do dia em tela cheia. CSS em `assets/styles/calendar/mobile.css`, ultimo do barrel.
   Render via `Teleport to=".app-surface"` (a `.calendar-page` tem `overflow:hidden`)
   com `position:fixed` + style calculado; `.calendar-chat`/`.calendar-chat-pill` z-index 9810 em
   `assets/styles/calendar/chat.css` (so tokens), sem copiar CSS por surface. Bolhas

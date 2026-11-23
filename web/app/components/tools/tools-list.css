@@ -1,0 +1,89 @@
+/* Layout das listas do encurtador e do QR (modelo da aba Produtos do cardapio):
+   filtros numa faixa sem moldura, tabela logo abaixo e rolando por dentro.
+   Incluido com <style scoped src> nos dois workspaces. */
+
+.tools-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Acao principal sempre no fim da linha. */
+.tools-list__primary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.tools-list__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+}
+
+.tools-list :deep(.omni-data-table) {
+  flex: 0 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tools-list :deep(.omni-data-table__head-cell),
+.tools-list :deep(.omni-data-table__cell) {
+  overflow: hidden;
+}
+
+/* Desktop: faixa de filtros sem card; a tabela encosta nela. */
+@media (min-width: 721px) {
+  .tools-list :deep(.omni-collection-filters) {
+    padding: 0.5rem 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .tools-list :deep(.omni-data-table) {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}
+
+/* Mobile: os cards rolam com a pagina (o container da pagina corta o resto). */
+@media (max-width: 720px) {
+  .tools-list {
+    gap: 0.45rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .tools-list :deep(.tools-cards),
+  .tools-list > * {
+    flex-shrink: 0;
+  }
+}
+
+/* Texto longo numa linha so, com reticencias (destino, link curto). */
+.tools-list__ellipsis {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-list__muted {
+  color: var(--text-muted);
+}
+
+.tools-list__off {
+  color: rgb(var(--danger));
+  font-size: 0.72rem;
+  font-weight: 600;
+}

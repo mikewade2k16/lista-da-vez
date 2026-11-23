@@ -12,6 +12,9 @@ const emit = defineEmits<{
   deactivate: [editor: Quill]
   /** Toolbar wanted: text selected, or caret on an empty line (where images are inserted). */
   selection: [editor: Quill, wanted: boolean]
+  /** Caret entered / left this cell (drives the presence lock). */
+  focus: []
+  blur: []
 }>()
 const host = ref<HTMLElement>()
 const mount = ref<HTMLElement>()
@@ -65,8 +68,10 @@ onMounted(async () => {
           images ? images.persist(editor.root.innerHTML) : editor.root.innerHTML,
         )
     })
-    editor.on('selection-change', (range) => {
+    editor.on('selection-change', (range, oldRange) => {
+      if (!range && oldRange) emit('blur')
       if (!range || !editor) return
+      if (!oldRange) emit('focus')
       activate()
       const [line] = editor.getLine(range.index)
       emit('selection', editor, range.length > 0 || !line || line.length() <= 1)
@@ -96,6 +101,7 @@ watch(
 )
 onBeforeUnmount(() => {
   disposed = true
+  if (editor?.hasFocus()) emit('blur')
   if (editor) {
     emit('deactivate', editor)
     editor.off('text-change')

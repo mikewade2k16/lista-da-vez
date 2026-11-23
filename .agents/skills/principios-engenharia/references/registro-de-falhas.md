@@ -18,6 +18,9 @@ Leia ao depurar um bug que parece familiar. Cada entrada é um erro real já res
 13. Deploy que embarca o working tree pulou passos manuais do runbook (produção caiu com 502)
 14. Refresh de contexto zera o board da operação (normalizador sobre estado existente)
 15. Metadados AppleDouble do macOS derrubam o painel inteiro
+16. Deploy trava em diretório novo ou transferência interrompida
+17. URL muda e a página antiga fica na tela (Teleport para o próprio pai quebra o layout)
+18. Commit abortado por "merge conflict" no lint-staged (.DS_Store rastreado)
 
 ---
 
@@ -105,3 +108,11 @@ Leia ao depurar um bug que parece familiar. Cada entrada é um erro real já res
 **Correção:** preservar a preparação idempotente de diretórios; substituir o envio monolítico das imagens por SFTP com `reput`, parcial por tag/hash, até três tentativas e SHA256 obrigatório antes de promover/carregar. Arquivo local permanece disponível para reutilizar sem rebuild; o cliente SFTP é verificado antes do build no fluxo rápido. Não alterar timeout ou reiniciar serviços sem diagnóstico.
 
 **Validação:** teste isolado de controle de fluxo com transporte simulado cobre sucesso, falha seguida de retomada, três falhas consecutivas e propagação de erro na etapa de integridade. Sintaxe e launcher são validados localmente. Rede real, SFTP remoto e rollout não são comprovados por esses testes. Procedimento e limites em [deploy.md](deploy.md#preparação-e-transporte-do-deploy-incidentes-de-2026-11-04).
+
+## 17. URL muda e a página antiga fica na tela (Teleport para o próprio pai)
+
+**Sintoma (2026-11-16):** depois de sair de Calendário/Finance/Meta Ads, clicar no menu mudava a URL e o destaque, mas o conteúdo anterior continuava na tela em TODA navegação seguinte. Console: `NotFoundError: Failed to execute 'insertBefore' ... not a child of this node` em `processCommentNode` dentro de `<Dashboard>`, seguido de `Cannot read properties of null (reading 'emitsOptions')` a cada clique. **Causa:** `<OmniAssistantHost v-if>` era o último filho de `section.app-surface` no layout, e o `CalendarChatPanel` dentro dele faz `<Teleport to=".app-surface">` — para dentro do próprio pai. Ao desligar o `v-if`, o Vue usou como âncora o próximo irmão do host, que era um nó teleportado removido no mesmo unmount; o patch do layout abortou e o layout ficou corrompido. **Correção:** `v-if` dentro de wrapper estável (`display: contents`) em `layouts/dashboard.vue`. **Regra:** um componente com `v-if` cujo conteúdo faz Teleport para um ancestral direto precisa de wrapper estável (ou o Teleport aponta para um nó dedicado). Diagnóstico: o erro só aparece no console do browser; compilar/curl as páginas não revela. Endurecimento complementar: `defineLazyComponent` agora é `suspensible: false` por padrão (lazy suspensible segura a troca de rota e ignora timeout/errorComponent); `{ suspensible: true }` só com `<Suspense>` próprio.
+
+## 18. Commit abortado por "merge conflict" no lint-staged (.DS_Store rastreado)
+
+**Sintoma (2026-11-16):** `git add . && git commit` falhou com `Unstaged changes could not be restored due to a merge conflict!` e `lint-staged failed due to a git error`; o lint-staged reverteu tudo, sem apontar nenhum arquivo de código. **Causa:** `.DS_Store` estava no `.gitignore` mas rastreado desde `0fce500`. O Finder o reescreveu depois do `git add`, ficando staged e modificado (`MM`). O lint-staged esconde as alterações não staged de arquivos parcialmente staged, roda Prettier/ESLint `--fix` e reaplica o patch; patch binário não reaplica → "merge conflict" → aborto. Os 9 arquivos fora do Prettier aumentavam a chance (o hook reescrevia arquivos staged). **Correção:** `git rm --cached -f .DS_Store`; guarda no `.husky/pre-commit` que barra metadados do macOS staged com mensagem clara; `npm run precommit:check` (só leitura, mesmas checagens do hook) como gate obrigatório ao fim de toda alteração. **Regra:** rodar o gate antes de declarar pronto; arquivos tocados já saem formatados; metadados do SO nunca entram no índice (ver também caso 15).

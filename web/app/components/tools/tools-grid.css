@@ -1,0 +1,118 @@
+/* Grade de cards (visualizacao padrao) do encurtador e do QR no desktop.
+   Incluido com <style scoped src> nas duas grades. */
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  align-content: start;
+  flex: 1 1 auto;
+  gap: 0.6rem;
+  min-height: 0;
+  padding-bottom: 0.75rem;
+  overflow-y: auto;
+}
+
+.tools-grid--wide {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.tools-grid__empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 1.5rem;
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.tools-grid__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: rgb(var(--surface));
+  transition: border-color 0.12s ease;
+}
+
+.tools-grid__card:hover {
+  border-color: rgb(var(--primary) / 0.5);
+}
+
+/* Titulo = link clicavel (slug do QR / link curto). */
+.tools-grid__title {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.tools-grid__title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-grid__title:hover > span {
+  color: rgb(var(--primary));
+  text-decoration: underline;
+}
+
+.tools-grid__title-icon {
+  flex-shrink: 0;
+  width: 0.8rem;
+  height: 0.8rem;
+  color: var(--text-muted);
+}
+
+.tools-grid__card.is-off .tools-grid__title {
+  color: var(--text-muted);
+}
+
+/* Destino: uma linha so, sem ocupar a tela. */
+.tools-grid__sub {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-grid__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.tools-grid__stat {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tools-grid__off {
+  color: rgb(var(--danger));
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.tools-grid__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+  margin-left: auto;
+}

@@ -52,3 +52,36 @@ it('keeps identical geometry across Calendar and Finance without saving Finance 
   expect(layout.panelStyle.value).toEqual(original)
   scope.stop()
 })
+
+it('uses the whole viewport below the menu on phones, ignoring the saved side position', () => {
+  mocks.calendar = reactive({
+    isConfigLoaded: true,
+    config: { chat: { position: 'left', width: 360, height: 500 } },
+    saveConfig: mocks.save,
+  })
+  mocks.account = reactive({ activeAccountId: 'a' })
+  mocks.save.mockReset()
+  vi.stubGlobal('useState', (_key: string, init: () => unknown) => ref(init()))
+  vi.stubGlobal('document', {
+    querySelector: () => ({
+      getBoundingClientRect: () => ({ left: 0, top: 300, width: 390, height: 200 }),
+    }),
+  })
+  vi.stubGlobal('window', {
+    clearTimeout: vi.fn(),
+    setTimeout: vi.fn(),
+    innerWidth: 390,
+    innerHeight: 844,
+  })
+  const scope = effectScope()
+  const layout = scope.run(() => useCalendarChatWindow(() => '.workspace'))!
+  expect(layout.compact.value).toBe(true)
+  expect(layout.panelStyle.value).toEqual({
+    left: '8px',
+    top: '72px',
+    width: '374px',
+    height: '764px',
+  })
+  expect(mocks.save).not.toHaveBeenCalled()
+  scope.stop()
+})

@@ -20,11 +20,12 @@ import (
 type Module struct {
 	handle          *handle
 	scriptPublisher ScriptPublisher
+	scriptLocks     ScriptLocks
 }
 
 // New cria um Module pronto para registrar no Registry.
 func New(options ...Option) *Module {
-	m := &Module{scriptPublisher: noopScriptPublisher{}}
+	m := &Module{scriptPublisher: noopScriptPublisher{}, scriptLocks: noopScriptLocks{}}
 	for _, option := range options {
 		option(m)
 	}
@@ -103,6 +104,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	scripts := newScriptService(newScriptStore(deps.Pool))
 	scripts.imageRoot = strings.TrimSpace(os.Getenv("PRIVATE_FILES_DIR"))
 	scripts.publisher = m.scriptPublisher
+	scripts.locks = m.scriptLocks
 	m.handle = &handle{
 		service:        svc,
 		scripts:        scripts,

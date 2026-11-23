@@ -1,5 +1,7 @@
 # Deploy na VPS
 
+**Credenciais cadastradas são dados do usuário:** deploys, migrations, seeds e restores devem preservar chaves de API, tokens, senhas, cofres e referências ativas. Só remover, substituir ou rotacionar mediante solicitação explícita para a alteração. Não registrar valores de segredos em logs ou documentação; investigar qualquer ausência inesperada.
+
 Doc **único** de deploy deste repositorio. Operacao do dia-a-dia, rollback, migrations,
 arquitetura da VPS e procedimentos raros (primeiro go-live, ERP, release especial).
 
@@ -32,13 +34,61 @@ TAVOLA nao foi publicado. Automation/n8n nao foi importado ou reiniciado.
 
 ## Deploy rapido no Mac e Windows (2026-10-29)
 
+### Medicao de tempo (primeira execucao sem otimizacoes)
+
+`npm run deploy` mostra inicio, fim e duracao das etapas e o tempo total, inclusive
+em falhas e interrupcoes tratadas pelo launcher. Cada execucao salva arquivos locais
+ignorados pelo Git em `.tmp/deploy/<execucao>/`: `timings.jsonl` recebe os eventos
+durante a execucao e `summary.json` recebe o resumo ao terminar. Os arquivos contem
+apenas nomes de etapas, estados e tempos; nao capturam comandos, credenciais nem
+a transcricao completa do terminal. Encerramento forcado do processo (SIGKILL ou
+queda da maquina) pode deixar somente o JSONL parcial.
+
+Sao medidos validacao local, sincronizacao de fontes, lint/testes, builds por imagem,
+smoke local, push ou save/gzip/SFTP/SHA256/load, backup, envio do Compose, atualizacao
+dos containers e verificacoes HTTP. As etapas remotas internas usam resolucao de
+um segundo; os cronometros locais usam Stopwatch. Etapas-pai incluem as filhas:
+nao somar `Validacao local completa` com cada lint/teste, nem `Publicacao remota
+completa` com backup/transporte/rollout.
+
+Para comparar antes/depois, executar primeiro o fluxo atual apenas instrumentado,
+guardar o `summary.json`, aplicar as otimizacoes e repetir com as mesmas opcoes.
+Analisar por etapa: um segundo build ja pode aproveitar caches existentes mesmo
+sem mudanca de script. A instrumentacao, por si so, nao acelera o deploy.
+
+O preflight Docker mostra progresso e consulta o servidor com timeout de 5 s.
+Se o engine nao responder, o deploy encerra antes do build/envio. Um SSH OK nao
+significa Docker local pronto. Nenhum reinicio do Docker Desktop e feito pelo check.
+
+### Deploy rapido otimizado (2026-11-12)
+
+Medido antes: 12min16s (web 6min28s, backup 1min33s, API 1min23s, transporte ~1 min).
+Ordem atual do `npm run deploy` (detalhes em `scripts/deploy/AGENT.md`):
+
+1. Trava local (`.tmp/deploy/deploy.lock`): um segundo deploy no mesmo checkout aborta.
+2. Preflights locais: Docker (5 s), memoria disponivel (build web ~4,3 GB de pico),
+   disco do host e da VM Docker, Node igual ao da imagem, porta do tunel.
+3. SSH + teste do tunel reverso; preflight remoto: segredos, Docker 25+, Compose,
+   disco (3 GB), memoria, carga e Postgres rodando. Tudo antes de qualquer build.
+4. Validacao local (lint/testes focados; go test/vet com cache de compilacao).
+5. Snapshot para rollback + **backup em segundo plano** na VPS (Postgres e Evolution
+   em paralelo, mesmo formato `.sql.gz` + `.sha256`).
+6. Build: web nativo no host (~1,5 min) + API com cache Go (segundos).
+7. Transporte `tunnel`: so as camadas novas sobem (registry local + `ssh -R`, pull
+   por digest). Sem tunel, cai para o pacote SFTP verificado por SHA256.
+8. Espera o backup terminar OK; so entao Compose/IMAGE_TAG/rollout/smoke.
+
+Fallbacks: `-WebBuildMode docker` (build antigo), `-Transport ssh` (pacote SFTP).
+
+### Fluxo de publicacao
+
 `npm run deploy` executa o launcher, lint dos arquivos web alterados, testes do cardapio
 quando afetado e go test/vet dos pacotes Go alterados. Usa o Compose local efetivo
 (incluindo overrides do Mac) para pausar/restaurar apenas servicos que estavam rodando.
 Os stages de compilacao usam a arquitetura nativa e as imagens finais sao linux/amd64.
 
-Transporte `-Transport auto` (padrao): GHCR quando ha credencial local, ou arquivo
-docker save + gzip + SFTP/SSH quando ausente. `-Transport registry` exige credencial;
+Transporte `-Transport auto` (padrao): GHCR quando ha credencial local; senao tunel
+SSH com registry local (`-Transport tunnel`); senao arquivo docker save + gzip + SFTP. `-Transport registry` exige credencial;
 `-Transport ssh` escolhe a transferencia direta. SSH exige ambas as imagens (-Service both).
 O arquivo recebe verificacao SHA256 na VPS antes do docker load; a VPS nunca compila.
 A imagem web tambem e iniciada isoladamente e precisa responder HTTP 200 antes da entrega.

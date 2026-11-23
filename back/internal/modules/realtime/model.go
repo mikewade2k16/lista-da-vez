@@ -126,6 +126,11 @@ func presenceCalendarTopic(accountID string) string {
 	return "presence:calendar:" + accountID
 }
 
+// presenceScriptTopic e o canal de presenca/travas de um roteiro (edicao por celula).
+func presenceScriptTopic(scriptID string) string {
+	return "presence:script:" + scriptID
+}
+
 func notificationsUserTopic(userID string) string {
 	return "notifications:user:" + userID
 }

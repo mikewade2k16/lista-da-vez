@@ -24,12 +24,27 @@ param(
   # Credencial opcional do GHCR para o pull de imagens privadas. Quando informada,
   # vive somente em um DOCKER_CONFIG temporario remoto e e removida ao final do pull.
   [string]$GhcrUser = "",
-  [string]$GhcrToken = ""
+  [string]$GhcrToken = "",
+  # Fases para o deploy rapido intercalar trabalho remoto com o build local:
+  # check   = segredos + recursos da VPS (nada muda);
+  # prepare = snapshot para rollback + backup em segundo plano;
+  # publish = imagens, espera do backup, Compose, IMAGE_TAG, rollout e smoke.
+  # all (padrao) = as tres em sequencia (comportamento anterior).
+  [ValidateSet("all", "check", "prepare", "publish")]
+  [string]$Phase = "all",
+  # Transporte por tunel (image-tunnel.ps1): digests no registry local 127.0.0.1:<porta>.
+  # Se o tunel falhar, cai para o pacote SFTP das imagens locais da mesma tag.
+  [int]$TunnelPort = 0,
+  [string]$TunnelApiDigest = "",
+  [string]$TunnelWebDigest = "",
+  [ValidateSet("linux/amd64", "linux/arm64")]
+  [string]$TunnelPlatform = "linux/amd64"
 )
 
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $scriptDir 'deploy-timing.ps1')
 $repoDir = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 $composeLocal = Join-Path $repoDir "docker-compose.prod.yml"
 $workflowLocalDir = Join-Path $repoDir "automation\export"
@@ -76,8 +91,8 @@ if ([string]::IsNullOrWhiteSpace($Tag)) {
 
 if ($Tag -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' -or $Tag -eq 'latest') { throw 'Tag de release invalida.' }
 
-$SshExe = (Get-Command ssh -CommandType Application -ErrorAction Stop).Source
-$ScpExe = (Get-Command scp -CommandType Application -ErrorAction Stop).Source
+$SshExe = (Get-Command ssh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+$ScpExe = (Get-Command scp -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 foreach ($exe in @($SshExe, $ScpExe)) {
   if (-not (Test-Path $exe)) { throw "Executavel nao encontrado: $exe" }
 }
@@ -89,6 +104,11 @@ $sshHardening = @(
   "-o", "ServerAliveInterval=10",
   "-o", "ServerAliveCountMax=3"
 )
+# Reaproveita uma unica conexao SSH entre os ~15 comandos remotos (economiza o
+# handshake de cada um). OpenSSH do Windows nao suporta ControlMaster.
+if ($env:OS -ne 'Windows_NT') {
+  $sshHardening += @("-o", "ControlMaster=auto", "-o", "ControlPath=$HOME/.ssh/omni-deploy-%C", "-o", "ControlPersist=180")
+}
 $sshArgs = @("-i", $resolvedKeyPath, "-o", "StrictHostKeyChecking=accept-new", "-p", $Port.ToString()) + $sshHardening
 $scpBaseArgs = @("-i", $resolvedKeyPath, "-o", "StrictHostKeyChecking=accept-new", "-P", $Port.ToString()) + $sshHardening
 $remoteTarget = "$User@$VpsHost"
@@ -104,23 +124,30 @@ function Invoke-RemoteCommand {
   param(
     [Parameter(Mandatory = $true)][string]$Description,
     [Parameter(Mandatory = $true)][string]$Command,
-    [switch]$CaptureOutput
+    [switch]$CaptureOutput,
+    # Vem ANTES de $sshArgs: no OpenSSH vale a primeira ocorrencia de cada opcao.
+    [string[]]$ExtraSshArgs = @()
   )
   Write-Host "==> $Description"
-  # Entrega o script pela STDIN do bash remoto, NAO como argumento do ssh.exe: passar
-  # como argumento faz o PowerShell 5.1 comer as aspas duplas embutidas (o
-  # `sed -i "s|...|...|"` e o `pg_dump -U "$POSTGRES_USER"` viram lixo no shell remoto).
-  # Detalhe: ao fazer pipe pra stdin de um nativo, o PS 5.1 reconverte \n em \r\n, e o
-  # \r quebra o bash (`cd <dir>\r` => "No such file or directory"). Por isso o remoto
-  # roda `tr -d '\r' | bash -s` pra limpar o CR antes de executar.
-  $normalizedCommand = $Command -replace "`r`n", "`n" -replace "`r", "`n"
-  if ($CaptureOutput) {
-    $output = $normalizedCommand | & $SshExe @sshArgs $remoteTarget "tr -d '\r' | bash -s"
+  Invoke-DeployStep $Description {
+    # Entrega o script pela STDIN do bash remoto, NAO como argumento do ssh.exe: passar
+    # como argumento faz o PowerShell 5.1 comer as aspas duplas embutidas (o
+    # `sed -i "s|...|...|"` e o `pg_dump -U "$POSTGRES_USER"` viram lixo no shell remoto).
+    # Detalhe: ao fazer pipe pra stdin de um nativo, o PS 5.1 reconverte \n em \r\n, e o
+    # \r quebra o bash (`cd <dir>\r` => "No such file or directory"). Por isso o remoto
+    # roda `tr -d '\r' | bash -s` pra limpar o CR antes de executar.
+    $timingFunctions = Get-Content -LiteralPath (Join-Path $scriptDir 'remote-timing.sh') -Raw
+    $normalizedCommand = ($timingFunctions + "`n" + $Command) -replace "`r`n", "`n" -replace "`r", "`n"
+    if ($CaptureOutput) {
+      $output = $normalizedCommand | & $SshExe @ExtraSshArgs @sshArgs $remoteTarget "tr -d '\r' | bash -s"
+      if ($LASTEXITCODE -ne 0) { throw "Falha ao executar: $Description" }
+      return (($output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
+    }
+    $normalizedCommand | & $SshExe @ExtraSshArgs @sshArgs $remoteTarget "tr -d '\r' | bash -s" | ForEach-Object {
+      Write-DeployRemoteTiming -Line $_.ToString()
+    }
     if ($LASTEXITCODE -ne 0) { throw "Falha ao executar: $Description" }
-    return (($output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
   }
-  $normalizedCommand | & $SshExe @sshArgs $remoteTarget "tr -d '\r' | bash -s"
-  if ($LASTEXITCODE -ne 0) { throw "Falha ao executar: $Description" }
 }
 
 $remotePathQ = Convert-ToBashSingleQuoted $remotePath
@@ -215,7 +242,44 @@ if [ "$deployOmnichannelValue" = "1" ]; then
 fi
 echo "Preflight de segredos obrigatorios: OK"
 "@
-Invoke-RemoteCommand -Description "Validando ambiente remoto antes do deploy" -Command $preflightCmd
+$backupValue = if ($BackupDatabase) { "1" } else { "0" }
+$resourcesCmd = @"
+set -euo pipefail
+cd $remotePathQ
+api=`$(timeout 15 docker version --format '{{.Server.APIVersion}}') || { echo 'ERRO: Docker da VPS nao respondeu em 15s.' >&2; exit 1; }
+api_major=`${api%%.*}
+api_minor=`${api#*.}
+if [ "`$api_major" -lt 1 ] || { [ "`$api_major" -eq 1 ] && [ "`$api_minor" -lt 44 ]; }; then
+  echo "ERRO: Docker da VPS (API `$api) precisa ser 25+ (API 1.44) para os healthchecks com start_interval." >&2
+  exit 1
+fi
+timeout 15 docker compose version >/dev/null || { echo 'ERRO: docker compose indisponivel na VPS.' >&2; exit 1; }
+disk_kb=`$(df -Pk . | awk 'NR==2 {print `$4}')
+mem_kb=`$(awk '/^MemAvailable:/ {print `$2}' /proc/meminfo)
+load=`$(cut -d' ' -f1 /proc/loadavg)
+cpus=`$(nproc)
+printf 'VPS: Docker API %s | disco livre %s GB | memoria disponivel %s MB | load %s (%s CPUs)\n' "`$api" "`$((disk_kb / 1048576))" "`$((mem_kb / 1024))" "`$load" "`$cpus"
+[ "`$disk_kb" -ge 3145728 ] || { echo 'ERRO: menos de 3 GB livres na VPS. Limpe imagens antigas (docker image prune) ou backups antes do deploy.' >&2; exit 1; }
+[ "`$mem_kb" -ge 307200 ] || { echo 'ERRO: menos de 300 MB de memoria disponivel na VPS; o rollout pode derrubar servicos.' >&2; exit 1; }
+[ "`$mem_kb" -ge 716800 ] || echo 'AVISO: memoria da VPS apertada (< 700 MB disponiveis).' >&2
+awk -v l="`$load" -v c="`$cpus" 'BEGIN { exit !(l > c * 2) }' && echo 'AVISO: VPS com carga alta; o deploy pode demorar mais.' >&2
+mkdir -p backups .deploy
+test -w backups && test -w .deploy
+if [ "$backupValue" = "1" ]; then
+  if [ -z "`$(docker compose --env-file $envFileQ -f docker-compose.prod.yml ps -q --status running postgres)" ]; then
+    echo 'ERRO: Postgres de producao nao esta rodando; o backup pre-deploy falharia.' >&2
+    exit 1
+  fi
+fi
+docker compose --env-file $envFileQ -f docker-compose.prod.yml ps --format '{{.Service}}: {{.State}} {{.Health}}' api web postgres || true
+echo 'Preflight de recursos da VPS: OK'
+"@
+
+if ($Phase -in @('all', 'check')) {
+  Invoke-RemoteCommand -Description "Validando ambiente remoto antes do deploy" -Command $preflightCmd
+  Invoke-RemoteCommand -Description "Recursos e Docker da VPS" -Command $resourcesCmd
+}
+if ($Phase -eq 'check') { return }
 
 $releaseDirQ = Convert-ToBashSingleQuoted ".deploy/$Tag"
 $snapshotCmd = @"
@@ -231,40 +295,70 @@ available=`$(df -Pk . | awk 'NR==2 {print `$4}')
 [ "`$available" -ge 3145728 ] || { echo 'Menos de 3 GB livres na VPS'; exit 1; }
 echo 'Snapshot de configuracao e espaco remoto: OK'
 "@
-Invoke-RemoteCommand -Description 'Preservando configuracao anterior para rollback' -Command $snapshotCmd
+# Backup em segundo plano: comeca na fase prepare (antes do build local) e a fase
+# publish espera o resultado antes de qualquer alteracao na stack.
+$backupScript = (Get-Content -LiteralPath (Join-Path $scriptDir 'remote-backup.sh') -Raw).
+  Replace('@REMOTE_PATH_RAW@', $remotePath).Replace('@REMOTE_PATH@', $remotePathQ).Replace('@RELEASE_DIR@', $releaseDirQ).
+  Replace('@ENV_FILE@', $envFileQ).Replace('@TAG@', $Tag).Replace('@WITH_EVOLUTION@', $deployOmnichannelValue)
+if ($backupScript -match 'OMNI_BACKUP_EOF') { throw 'Script de backup invalido.' }
+$backupStartCmd = @"
+set -euo pipefail
+cd $remotePathQ
+rm -f $releaseDirQ/backup.status $releaseDirQ/backup.log
+cat > $releaseDirQ/backup.sh <<'OMNI_BACKUP_EOF'
+$backupScript
+OMNI_BACKUP_EOF
+chmod 700 $releaseDirQ/backup.sh
+nohup setsid bash $releaseDirQ/backup.sh > $releaseDirQ/backup.log 2>&1 < /dev/null &
+echo "Backup iniciado em segundo plano (PID `$!)."
+"@
+$backupWaitCmd = @"
+set -euo pipefail
+cd $remotePathQ
+status_file=$releaseDirQ/backup.status
+[ -f $releaseDirQ/backup.sh ] || { echo 'ERRO: backup em segundo plano nao foi iniciado.' >&2; exit 1; }
+for _ in `$(seq 1 1800); do
+  [ -f "`$status_file" ] && break
+  sleep 1
+done
+[ -f "`$status_file" ] || { echo 'ERRO: backup nao terminou em 30 min; deploy abortado sem alterar a stack.' >&2; exit 1; }
+cat $releaseDirQ/backup.log
+if [ "`$(cat "`$status_file")" != "0" ]; then
+  echo 'ERRO: backup pre-deploy falhou; deploy abortado sem alterar a stack.' >&2
+  exit 1
+fi
+"@
 
-if ($ImageArchive) {
+if ($Phase -in @('all', 'prepare')) {
+  Invoke-RemoteCommand -Description 'Preservando configuracao anterior para rollback' -Command $snapshotCmd
+  if ($BackupDatabase) {
+    Invoke-RemoteCommand -Description "Iniciando backup do banco em segundo plano ($Environment)" -Command $backupStartCmd
+  }
+}
+if ($Phase -eq 'prepare') { return }
+
+$tunnelOk = $false
+if ($TunnelPort -gt 0) {
+  . (Join-Path $scriptDir 'image-tunnel.ps1')
+  $tunnelCmd = "set -euo pipefail`nomni_timed_step remote.images.tunnel bash -c " + (Convert-ToBashSingleQuoted (Get-DeployTunnelPullScript -Port $TunnelPort -Tag $Tag -ApiDigest $TunnelApiDigest -WebDigest $TunnelWebDigest -Platform $TunnelPlatform))
+  $tunnelArgs = @("-o", "ControlPath=none", "-o", "ExitOnForwardFailure=yes", "-R", "127.0.0.1:${TunnelPort}:127.0.0.1:${TunnelPort}")
+  try {
+    Invoke-RemoteCommand -Description 'Imagens pelo tunel SSH (so camadas novas)' -Command $tunnelCmd -ExtraSshArgs $tunnelArgs
+    $tunnelOk = $true
+  } catch {
+    Write-Warning "Tunel de imagens falhou ($($_.Exception.Message)); usando o pacote SFTP."
+    . (Join-Path $scriptDir 'image-archive.ps1')
+    $ImageArchive = Export-DeployImageArchive -Tag $Tag -Images @("ghcr.io/mikewade2k16/omni-api:$Tag", "ghcr.io/mikewade2k16/omni-web:$Tag")
+  }
+}
+if ($ImageArchive -and -not $tunnelOk) {
   . (Join-Path $scriptDir 'image-archive.ps1')
   Send-DeployImageArchive -Archive $ImageArchive -Tag $Tag -RemoteTarget $remoteTarget -RemotePath $remotePath -SftpArguments $scpBaseArgs
 }
 
-$evolutionBackup = if ($DeployOmnichannel) { @"
-if [ -n "`$(docker compose $composeOmnichannelArgs ps -q evolution-db)" ]; then
-  evolution_backup="backups/evolution_$Tag`_`$(date +%Y%m%d_%H%M%S).sql.gz"
-  docker compose $composeOmnichannelArgs exec -T evolution-db sh -lc 'pg_dump -U "`$POSTGRES_USER" -d "`$POSTGRES_DB"' </dev/null | gzip > "`$evolution_backup"
-  gzip -t "`$evolution_backup"
-  sha256sum "`$evolution_backup" > "`$evolution_backup.sha256"
-  printf '%s\n' "$remotePath/`$evolution_backup"
-fi
-"@ } else { "" }
-
-# 5. Backup opcional do Postgres (antes de mexer nos containers).
+# 5. Backup (iniciado na fase prepare) precisa ter terminado com sucesso.
 if ($BackupDatabase) {
-  $backupCmd = @"
-set -euo pipefail
-cd $remotePathQ
-umask 077
-mkdir -p backups
-backup_name="backups/backup_$Tag`_`$(date +%Y%m%d_%H%M%S).sql.gz"
-docker compose $composeArgs exec -T postgres sh -lc 'pg_dump -U "`$POSTGRES_USER" -d "`$POSTGRES_DB"' </dev/null | gzip > "`$backup_name"
-gzip -t "`$backup_name"
-sha256sum "`$backup_name" > "`$backup_name.sha256"
-
-printf '%s\n' "$remotePath/`$backup_name"
-$evolutionBackup
-"@
-  $backupFile = Invoke-RemoteCommand -Description "Backup remoto do Postgres ($Environment)" -Command $backupCmd -CaptureOutput
-  if ($backupFile) { Write-Host "Backup remoto: $backupFile" }
+  Invoke-RemoteCommand -Description "Aguardando backup do banco ($Environment)" -Command $backupWaitCmd
 }
 
 # 2. Envia o compose (a VPS so precisa do compose + .env; o codigo vive nas
@@ -272,8 +366,10 @@ $evolutionBackup
 
 Write-Host "==> Enviando docker-compose.prod.yml"
 $scpArgs = $scpBaseArgs + @($composeLocal, "${remoteTarget}:${remotePath}/.deploy/$Tag/docker-compose.next.yml")
-& $ScpExe @scpArgs
-if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o docker-compose.prod.yml (scp)." }
+Invoke-DeployStep 'Envio do Compose por SCP' {
+  & $ScpExe @scpArgs
+  if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o docker-compose.prod.yml (scp)." }
+}
 
 # 3. Valida o compose novo contra o env real e so entao grava o IMAGE_TAG escolhido.
 $tagQ = Convert-ToBashSingleQuoted $Tag
@@ -307,9 +403,9 @@ export DOCKER_CONFIG="`$ghcr_auth_dir"
 }
 
 # 6. Pull + up SEM build (a VPS nunca compila).
-$imagePull = if ($ImageArchive -or $UseLoadedImages) { "docker image inspect ghcr.io/mikewade2k16/omni-api:$Tag ghcr.io/mikewade2k16/omni-web:$Tag >/dev/null" } else { "docker compose $composeArgs pull api web" }
+$imagePull = if ($ImageArchive -or $UseLoadedImages -or $tunnelOk) { "docker image inspect ghcr.io/mikewade2k16/omni-api:$Tag ghcr.io/mikewade2k16/omni-web:$Tag >/dev/null" } else { "docker compose $composeArgs pull api web" }
 $deployCmd = Get-Content -LiteralPath (Join-Path $scriptDir 'rollout-app.sh') -Raw
-$deployCmd = $deployCmd.Replace('@REMOTE_PATH@', $remotePathQ).Replace('@ENV_FILE@', $envFileQ).Replace('@RELEASE_DIR@', $releaseDirQ).Replace('@REGISTRY_AUTH@', $registryAuthSetup).Replace('@IMAGE_PULL@', $imagePull).Replace('@FORCE_RECREATE@', $forceRecreateFlag).Replace('@PUBLIC_URL@', (Convert-ToBashSingleQuoted $publicBaseUrl))
+$deployCmd = $deployCmd.Replace('@REMOTE_PATH@', $remotePathQ).Replace('@ENV_FILE@', $envFileQ).Replace('@RELEASE_DIR@', $releaseDirQ).Replace('@REGISTRY_AUTH@', $registryAuthSetup).Replace('@IMAGE_PULL_QUOTED@', (Convert-ToBashSingleQuoted $imagePull)).Replace('@FORCE_RECREATE@', $forceRecreateFlag).Replace('@PUBLIC_URL@', (Convert-ToBashSingleQuoted $publicBaseUrl))
 Invoke-RemoteCommand -Description "Pull + up --no-build (api web) no $Environment" -Command $deployCmd
 
 # 7. Omnichannel opcional: reconcilia Evolution e seu banco proprio. O up normal

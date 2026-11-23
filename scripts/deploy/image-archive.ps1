@@ -1,3 +1,5 @@
+. (Join-Path $PSScriptRoot 'deploy-timing.ps1')
+
 function Export-DeployImageArchive {
   param([string]$Tag, [string[]]$Images)
   $directory = Join-Path ([IO.Path]::GetTempPath()) "omni-deploy-$Tag"
@@ -5,13 +7,17 @@ function Export-DeployImageArchive {
   $raw = Join-Path $directory 'images.tar'
   $archive = "$raw.gz"
   Write-Host '==> Empacotando imagens locais para SSH'
-  & docker image save -o $raw @Images
-  if ($LASTEXITCODE -ne 0) { throw 'Falha no docker image save.' }
-  $inputStream = [IO.File]::OpenRead($raw)
-  $outputStream = [IO.File]::Create($archive)
-  $gzip = [IO.Compression.GZipStream]::new($outputStream, [IO.Compression.CompressionLevel]::Fastest)
-  try { $inputStream.CopyTo($gzip) }
-  finally { $gzip.Dispose(); $outputStream.Dispose(); $inputStream.Dispose() }
+  Invoke-DeployStep 'Docker save das imagens' {
+    & docker image save -o $raw @Images
+    if ($LASTEXITCODE -ne 0) { throw 'Falha no docker image save.' }
+  }
+  Invoke-DeployStep 'Compressao gzip das imagens' {
+    $inputStream = [IO.File]::OpenRead($raw)
+    $outputStream = [IO.File]::Create($archive)
+    $gzip = [IO.Compression.GZipStream]::new($outputStream, [IO.Compression.CompressionLevel]::Fastest)
+    try { $inputStream.CopyTo($gzip) }
+    finally { $gzip.Dispose(); $outputStream.Dispose(); $inputStream.Dispose() }
+  }
   Remove-Item -LiteralPath $raw
   return $archive
 }
@@ -25,9 +31,11 @@ function Convert-ToSftpQuoted {
 function Send-DeployImageArchive {
   param([string]$Archive, [string]$Tag, [string]$RemoteTarget, [string]$RemotePath,
     [string[]]$SftpArguments,
-    [string]$SftpExe = (Get-Command sftp -CommandType Application -ErrorAction Stop).Source)
+    [string]$SftpExe = (Get-Command sftp -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source)
   if (-not (Test-Path -LiteralPath $Archive -PathType Leaf)) { throw "Arquivo de imagens ausente: $Archive" }
-  $checksum = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+  $checksum = Invoke-DeployStep 'SHA256 local das imagens' {
+    (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
   # O hash isola parciais de arquivos diferentes, mesmo se a tag for reutilizada.
   $remoteFile = "$RemotePath/.deploy/images/$Tag-$checksum.tar.gz"
   $partial = "$remoteFile.part"
@@ -42,7 +50,9 @@ function Send-DeployImageArchive {
     [IO.File]::WriteAllText($batch, "$put`n", [Text.UTF8Encoding]::new($false))
     for ($attempt = 1; $attempt -le 3; $attempt++) {
       Write-Host "==> Enviando imagens por SFTP com retomada ($attempt/3)"
-      & $SftpExe @SftpArguments -b $batch $RemoteTarget
+      Invoke-DeployStep -Name "SFTP das imagens - tentativa $attempt" -ObserveNativeExitCode -Action {
+        & $SftpExe @SftpArguments -b $batch $RemoteTarget
+      }
       if ($LASTEXITCODE -eq 0) { break }
       if ($attempt -eq 3) {
         throw "Transferencia interrompida apos 3 tentativas. Arquivo local preservado: $Archive. Retome sem rebuild: npm run deploy:prod -- -Tag $Tag -ImageArchive <arquivo-local> (use deploy:staging para staging e repita as opcoes originais de acesso, backup e profiles)."
@@ -51,6 +61,8 @@ function Send-DeployImageArchive {
   } finally {
     Remove-Item -LiteralPath $batch -Force
   }
-  $command = "set -euo pipefail`nprintf '%s  %s\n' '$checksum' $partialQ | sha256sum -c -`nmv -- $partialQ $remoteFileQ`ndocker load -i $remoteFileQ"
+  $verifyCommand = "set -euo pipefail`nprintf '%s  %s\n' '$checksum' $partialQ | sha256sum -c -`nmv -- $partialQ $remoteFileQ"
+  $verifyQ = Convert-ToBashSingleQuoted $verifyCommand
+  $command = "set -euo pipefail`nomni_timed_step remote.images.verify bash -c $verifyQ`nomni_timed_step remote.images.load docker load -i $remoteFileQ"
   Invoke-RemoteCommand -Description 'Verificando SHA256 e carregando imagens (sem build na VPS)' -Command $command
 }

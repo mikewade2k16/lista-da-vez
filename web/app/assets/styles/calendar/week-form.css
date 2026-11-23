@@ -477,10 +477,8 @@
 }
 
 @media (max-width: 880px) {
-  .calendar-leftcol,
-  .calendar-weekrail {
-    display: none;
-  }
+  /* Coluna esquerda continua visivel no celular (empilhada) e o trilho de semanas
+     some; ver calendar/mobile.css. */
 
   .calendar-body__drawer {
     position: absolute;

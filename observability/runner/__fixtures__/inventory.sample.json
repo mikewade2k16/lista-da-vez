@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-23T00:00:00Z",
+  "git": { "sha": "fixture", "branch": "fixture" },
+  "modules": [
+    { "id": "core", "backendDirs": [], "endpoints": 4, "pages": 2, "tables": 2 }
+  ],
+  "endpoints": [
+    {
+      "id": "GET /healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "module": "core",
+      "auth": "public",
+      "roles": [],
+      "access": "read",
+      "pathParams": [],
+      "deps": { "db": true, "external": [] }
+    },
+    {
+      "id": "POST /v1/auth/login",
+      "method": "POST",
+      "path": "/v1/auth/login",
+      "module": "core",
+      "auth": "public",
+      "roles": [],
+      "access": "write",
+      "pathParams": [],
+      "deps": {}
+    },
+    {
+      "id": "GET /v2/me/accounts",
+      "method": "GET",
+      "path": "/v2/me/accounts",
+      "module": "core",
+      "auth": "auth",
+      "roles": [],
+      "access": "read",
+      "pathParams": [],
+      "deps": {}
+    },
+    {
+      "id": "GET /v1/admin/observability/overview",
+      "method": "GET",
+      "path": "/v1/admin/observability/overview",
+      "module": "core",
+      "auth": "role",
+      "roles": ["platform_admin"],
+      "access": "read",
+      "pathParams": [],
+      "deps": {}
+    }
+  ],
+  "pages": [
+    {
+      "path": "/auth/login",
+      "module": "core",
+      "requiresLogin": false,
+      "dynamic": false,
+      "apis": []
+    },
+    {
+      "path": "/auth/esqueceu-senha",
+      "module": "core",
+      "requiresLogin": false,
+      "dynamic": false,
+      "apis": []
+    }
+  ],
+  "tables": [
+    { "schema": "core", "name": "users", "module": "core", "kind": "table" }
+  ]
+}

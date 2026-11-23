@@ -161,6 +161,24 @@ export async function runApi(ctx) {
     }
   }
 
+  // GET que responde 400 sem filtros: tenta uma vez com os parâmetros de query
+  // declarados no inventário que a sessão sabe preencher (tenant/loja/período).
+  async function probeQuery(ep, path, sess) {
+    const defaults = sess?.queryDefaults;
+    if (ep.method !== "GET" || !defaults || !ep.queryParams?.length) return "";
+    const params = ep.queryParams.filter((q) => defaults[q] !== undefined);
+    if (!params.length) return "";
+    const plain = await client.request("GET", path, {
+      token: sess.token,
+      accountId: sess.accountId,
+      keepBody: false,
+    });
+    if (plain.status !== 400) return "";
+    return new URLSearchParams(
+      params.map((q) => [q, String(defaults[q])]),
+    ).toString();
+  }
+
   async function main(ep) {
     const base = { module: ep.module };
     if (WRITE_METHODS.has(ep.method) && !writePolicy.allowed)
@@ -184,6 +202,8 @@ export async function runApi(ctx) {
     const r = await resolver.resolvePath(ep.path, sess);
     if (r.missing)
       return push(result("api", ep, "skip", `sem valor para {${r.missing}}`));
+    const query = await probeQuery(ep, r.path, sess);
+    if (query) r.path += `?${query}`;
     const n = ep.method === "GET" ? args.repeat : 1;
     const times = [],
       sizes = [],

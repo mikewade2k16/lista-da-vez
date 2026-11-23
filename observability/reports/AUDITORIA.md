@@ -324,3 +324,62 @@ O que mudou de lugar:
 - **Polling em segundo plano:** a medição mostrou ~15 consultas/s ociosas, aceitável.
   Só entra se o banco virar gargalo; nesse caso, o caminho é LISTEN/NOTIFY ou backoff
   quando a fila está vazia.
+
+## 8. Execução autenticada (2026-11-23)
+
+Execuções `20261123-081550` e `20261123-082204` (`npm run obs:run -- --load`, perfil
+ADMIN, banco cópia de produção, escrita desligada). A `081550` é a referência de
+latência. Na `082204` uma compilação Go rodou em paralelo e subiu o p95 de oito GETs
+de ~12 ms para 60–120 ms. Uma execução isolada do módulo finance (`082818`) confirmou
+a volta a 11–16 ms.
+
+| medida                                          | valor                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Resultados                                      | 2397: 1050 pass, 497 warn, 1 fail, 849 skip                                                                                                                                                                                                                                                      |
+| Cobertura de endpoints                          | 125/919 (13,6%), ou 125 de 393 GETs (32%)                                                                                                                                                                                                                                                        |
+| Endpoints não testados                          | 526 de escrita (banco é cópia de produção), 206 GETs com integração externa (`OBS_SKIP_EXTERNAL=0` libera), 52 sem valor para parâmetro de caminho, 36 com auth dentro do handler, 18 em `neverCall`                                                                                             |
+| Cobertura de páginas e tabelas                  | páginas 72/80 (90%; as 8 restantes têm parâmetro dinâmico); tabelas 384/396 (97%)                                                                                                                                                                                                                |
+| Autorização                                     | 857 testes sem token rejeitados, 0 falhas. Teste entre perfis não executado: credencial de consultor vazia                                                                                                                                                                                       |
+| Latência da API                                 | todo GET 2xx com p95 abaixo de 40 ms local. Mais pesados: o próprio painel (payload, corrigido abaixo), `/v1/analytics/data` (30 ms, 10 queries/req), `/v1/performance-feedback/context` (17 queries/req), `/v1/settings` (15 queries/req), `/v1/task-boards/{boardId}` (10 queries/req)         |
+| Consultas lentas (tráfego real das últimas 6 h) | `GET /v1/operations/snapshot`: média 1,2 s, máximo 2,5 s (31 ocorrências), CTE `known_orders` em `back/internal/modules/crm/erp/repository_crm_scope.go:172`. `GET /v1/erp/crm`: média 408 ms, máximo 979 ms (mesma CTE). `GET /v1/erp/status` 392 ms; `GET /v1/content-operations/brief` 402 ms |
+| N+1                                             | 1 suspeita: `GET /v1/omnichannel/tenant/whatsapp/instances/access` repete 10 vezes por requisição a checagem de permissão (`core.user_role_assignments`)                                                                                                                                         |
+| Páginas (`nuxt dev`)                            | `/tasks`: LCP 6,0–6,6 s, INP 416–848 ms, carga 7,3 s. `/calendario/config`: LCP 3,3 s. Demais abaixo de 2,7 s. Entre execuções o `nuxt dev` varia até 2x (`/feedback-desempenho` caiu de 9,7 s para 0,8 s depois da primeira compilação). Confirmar no build de produção                         |
+| Carga leve                                      | 5 endpoints, 10 conexões, 18 req/s por 10 s: 0 erros, p99 até 82 ms                                                                                                                                                                                                                              |
+| Erros 5xx                                       | `/tasks` recebeu 503 ao abrir um vídeo: o storage R2 não está disponível no ambiente local (limitação do ambiente). Os demais 500 vieram do fim da janela de carga: o cliente fecha a conexão e o handler responde 500 ao contexto cancelado                                                     |
+
+Correções feitas a partir desta execução:
+
+- **Painel:** o `/overview` não entregava `modules` e mandava as notas em formato
+  cru, então a página mostrava "Nenhuma nota ainda". Agora ele segue o `SPEC.md` e
+  usa só execuções completas. O payload caiu de 411 KB para 10 KB; a lista de
+  execuções caiu de 284 KB para 7 KB. O detalhe de uma execução (`runs/{id}`, 785 KB)
+  continua completo.
+- **Telemetria:** um 5xx com o contexto cancelado agora é gravado como 499
+  `client_closed_request` e não conta como erro do servidor.
+- **Runner:**
+  - um GET que responde 400 é repetido uma vez com os filtros que o front envia
+    (tenant e loja ativos, período), lidos de `/v1/me/context`. Isso levou 15
+    endpoints de 400 para 200 com dado real;
+  - a comparação ignora métricas quando o status muda de faixa (ex.: 400 para 200).
+
+### Top 10 revisado (execução autenticada)
+
+| #   | melhoria                                                                                                                                            | impacto | esforço | base         |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- | ------------ |
+| 1   | Sanitizar `bodyHtml` de comentários no servidor e no `v-html`; token em cookie HttpOnly                                                             | Crítico | Baixo   | C-01         |
+| 2   | Zerar as 29 vulnerabilidades Go alcançáveis; `govulncheck` bloqueante no CI                                                                         | Alto    | Baixo   | medido       |
+| 3   | Zerar as 6 críticas e 16 altas do `npm audit` do web                                                                                                | Alto    | Médio   | medido, A-06 |
+| 4   | Reescrever a CTE `known_orders` (`operations/snapshot` 1,2–2,5 s, `erp/crm` até 1 s): índice em `order_id`/`store_id_raw` ou agregado materializado | Alto    | Médio   | medido       |
+| 5   | Proteger `/uploads/` (sem listagem; anexos autenticados e escopados)                                                                                | Alto    | Baixo   | A-02         |
+| 6   | Rate limit por identidade autenticada e limiter de login                                                                                            | Alto    | Médio   | A-01         |
+| 7   | `/tasks`: medir no build de produção; se o INP > 200 ms e o LCP > 2,5 s se confirmarem, virtualizar o quadro e adiar o carregamento dos vídeos      | Médio   | Médio   | medido (dev) |
+| 8   | Graceful shutdown e `recover` nos workers em segundo plano                                                                                          | Alto    | Médio   | A-03         |
+| 9   | Índices nas FKs de hot path (das 428 sem índice), com `concurrently`                                                                                | Médio   | Baixo   | medido, M-07 |
+| 10  | Timeouts por rota ou jobs assíncronos para chat de IA, PDF e OCR                                                                                    | Alto    | Médio   | A-04         |
+
+Saem do Top 10:
+
+- **Paginação por cursor (A-05):** nenhuma listagem medida passou de 200 KB nem de
+  40 ms.
+- **CI em `pull_request` (M-03):** continua recomendado.
+- **N+1 de permissão no WhatsApp:** fica como item médio (10 queries de ~1 ms).

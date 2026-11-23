@@ -67,7 +67,7 @@ aqui primeiro.
 - `GET /v1/admin/observability/pages?days=7` → `{ live: [{page, samples, lcpP75, inpP75, clsP75, ttfbP75, loadP75, jsErrors, apiFailures}], lastRun: [run_results kind=page] }`
 - `GET /v1/admin/observability/errors?days=7` → `[{source:'api'|'front', signature, route|page, count, lastSeen, correlationIds: [...]}]`
 - `GET /v1/admin/observability/trace/{correlationId}` → `{ request, slowQueries, nPlusOne, externalCalls, frontendEvents }`
-- `GET /v1/admin/observability/runs?limit=30` → `[{id, startedAt, finishedAt, env, filters, summary, coverage, scores, exitCode}]`
+- `GET /v1/admin/observability/runs?limit=30` → `[{id, startedAt, finishedAt, env, filters, summary, coverage: {endpoints, pages, tables} (%), scores: {modulo: nota}, exitCode}]` (resumido; a lista de não testados só vem em `runs/{id}`)
 - `GET /v1/admin/observability/runs/{id}` → `{ run, results: [...] }`
 - `GET /v1/admin/observability/runs/compare?a=<id>&b=<id>` → `{ a, b, changes: [{kind, target, metric, before, after, deltaPct, verdict:'regression'|'improvement'|'same'}] }`
 - `GET /v1/admin/observability/run-requests` → `{ canRun, workerOnline, items: [...] }`

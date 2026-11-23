@@ -11,11 +11,51 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+// leanRunColumns resume scores/coverage em números: a coluna completa traz a
+// lista de itens não testados (centenas de KB por execução) e só o detalhe usa.
+const leanRunColumns = `
+		(select coalesce(jsonb_object_agg(sc.key, sc.value->'score'), '{}'::jsonb)
+		   from jsonb_each(coalesce(scores, '{}'::jsonb)) sc) as scores,
+		jsonb_build_object(
+		  'endpoints', coverage->'endpoints'->'pct',
+		  'pages', coverage->'pages'->'pct',
+		  'tables', coverage->'tables'->'pct') as coverage`
+
+// fullRunFilter casa execuções completas: sem --module/--page/--endpoint e com
+// as fases api e pages. Notas de execuções filtradas não são comparáveis.
+const fullRunFilter = `coalesce(jsonb_array_length(filters->'modules'), 0) = 0
+		    and filters->>'page' is null and filters->>'endpoint' is null
+		    and filters->'only' ?& array['api', 'pages']`
+
+// FullRuns alimenta a tendência das notas só com execuções completas.
+func (s *Store) FullRuns(ctx context.Context, limit int) ([]map[string]any, error) {
+	return s.collectMaps(ctx, `
+		select id, started_at as "startedAt",`+leanRunColumns+`
+		from obs.runs where `+fullRunFilter+` order by started_at desc limit $1`, limit)
+}
+
 func (s *Store) Runs(ctx context.Context, limit int) ([]map[string]any, error) {
 	return s.collectMaps(ctx, `
 		select id, started_at as "startedAt", finished_at as "finishedAt", git_sha as "gitSha", branch,
-		       env, base_url as "baseUrl", filters, summary, coverage, scores, regressions, exit_code as "exitCode"
+		       env, base_url as "baseUrl", filters, summary, regressions, exit_code as "exitCode",`+leanRunColumns+`
 		from obs.runs order by started_at desc limit $1`, limit)
+}
+
+// LatestModuleScores devolve nota, componentes e cobertura (% de itens testados
+// entre endpoints, páginas e tabelas) de cada módulo na execução completa mais
+// recente (sem --module/--page/--endpoint e com api+pages); execuções
+// filtradas ficam de fora para a tabela não mostrar só um módulo.
+func (s *Store) LatestModuleScores(ctx context.Context) ([]map[string]any, error) {
+	return s.collectMaps(ctx, `
+		select sc.key as module, (sc.value->>'score')::float8 as score, sc.value->'components' as components,
+		       (select round(100.0 * sum((cv.value->>'tested')::numeric) / nullif(sum((cv.value->>'total')::numeric), 0), 1)::float8
+		          from jsonb_each(coalesce(r.coverage->'byModule'->sc.key, '{}'::jsonb)) cv) as coverage
+		from obs.runs r cross join lateral jsonb_each(coalesce(r.scores, '{}'::jsonb)) sc
+		where r.id = (
+		  select id from obs.runs
+		  where `+fullRunFilter+`
+		  order by started_at desc limit 1)
+		order by score`)
 }
 
 func (s *Store) Run(ctx context.Context, id string) (map[string]any, []map[string]any, error) {

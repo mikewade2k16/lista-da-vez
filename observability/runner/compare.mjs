@@ -74,7 +74,12 @@ export function compareRuns(current, baseline) {
       );
     const a = old.metrics || {},
       b = r.metrics || {};
+    // Status mudou de faixa (ex.: 400 sem filtro -> 200 com dado real): as
+    // métricas medem respostas diferentes e não são comparáveis.
+    const band = (s) => (s ? Math.floor(s / 100) : 0);
+    const sameBand = band(a.status) === band(b.status);
     if (
+      sameBand &&
       r.kind === "api" &&
       a.p95 != null &&
       b.p95 != null &&

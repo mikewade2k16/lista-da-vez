@@ -2,6 +2,8 @@ package observability
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -14,7 +16,12 @@ type RouteResolver interface {
 	Handler(r *http.Request) (http.Handler, string)
 }
 
-const unmatchedRoute = "UNMATCHED"
+const (
+	unmatchedRoute = "UNMATCHED"
+	// statusClientClosedRequest segue a convenção do nginx (499): só aparece na
+	// telemetria, nunca é enviado ao cliente.
+	statusClientClosedRequest = 499
+)
 
 // Middleware mede toda requisição: deve ficar DEPOIS do RequestID (lê o
 // X-Request-ID já definido) e ANTES de auth/Recover, que enriquecem o estado.
@@ -96,6 +103,13 @@ func (rt *Runtime) finishRequest(r *http.Request, state *requestState, writer *c
 		}
 	}
 	state.mu.Unlock()
+
+	// Cliente desconectou no meio (aba fechada, fim de carga): o handler costuma
+	// responder 500 a um contexto cancelado, mas a falha não é do servidor.
+	if event.Status >= http.StatusInternalServerError && errors.Is(r.Context().Err(), context.Canceled) {
+		event.Status = statusClientClosedRequest
+		event.ErrorCode = "client_closed_request"
+	}
 
 	if event.Route == unmatchedRoute && event.Status == http.StatusNotFound {
 		event.PathModule = "" // varredura de URL inexistente não polui os módulos

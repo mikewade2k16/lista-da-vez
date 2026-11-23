@@ -43,6 +43,9 @@ eventos do front, gravados de forma assíncrona no schema `obs` (migration
 - Amostragem só afeta a linha bruta de `http_requests`. Agregados por rota contam
   100% das requisições (histograma de latência em `buckets`). 5xx, lentas e as do
   runner (`X-Obs-Source: runner`) sempre gravam a linha bruta.
+- Resposta 5xx com o contexto da requisição cancelado (cliente desconectou) é gravada
+  como 499 `client_closed_request`: não conta como erro do servidor. O cliente não
+  recebe esse status; ele existe só na telemetria.
 - Nunca gravar corpo de requisição/resposta, header de auth ou valor de parâmetro SQL.
   Texto livre passa por `SanitizeText`.
 - O schema `obs` não é tenant-scoped: guarda ids opacos de usuário/conta. A leitura é

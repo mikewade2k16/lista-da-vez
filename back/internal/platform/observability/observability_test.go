@@ -196,3 +196,25 @@ func TestSanitizeKeepsNonCardNumbersAndIDs(t *testing.T) {
 		t.Fatal("token key must be masked")
 	}
 }
+
+func TestMiddlewareRecordsClientCancelAs499(t *testing.T) {
+	rt := newTestRuntime()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/slow", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodGet, "/v1/slow", nil).WithContext(ctx)
+	rt.Middleware(mux)(mux).ServeHTTP(httptest.NewRecorder(), request)
+
+	for _, event := range drain(rt) {
+		if typed, ok := event.(httpEvent); ok {
+			if typed.Status != statusClientClosedRequest || typed.ErrorCode != "client_closed_request" {
+				t.Fatalf("cancelamento do cliente deveria virar 499: %+v", typed)
+			}
+			return
+		}
+	}
+	t.Fatal("nenhum evento http gravado")
+}

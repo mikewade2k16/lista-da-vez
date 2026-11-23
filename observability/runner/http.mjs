@@ -95,6 +95,38 @@ export function createClient({
   return client;
 }
 
+// Valores de query que o próprio front envia (tenant/loja ativos e período),
+// lidos do contexto da sessão. Usados só quando um GET responde 400 sem eles.
+async function contextDefaults(client, sess) {
+  const res = await client.request("GET", "/v1/me/context", {
+    token: sess.token,
+    accountId: sess.accountId,
+  });
+  const ctx = res.json?.context || {};
+  const store =
+    (ctx.stores || []).find((s) => s.id === ctx.activeStoreId) ||
+    ctx.stores?.[0];
+  const day = (d) => d.toISOString().slice(0, 10);
+  const now = new Date();
+  const from = new Date(now.getTime() - 30 * 864e5);
+  const out = {
+    tenantId: ctx.activeTenantId || store?.tenantId,
+    storeId: ctx.activeStoreId || store?.id,
+    storeCode: store?.code,
+    accountId: sess.accountId,
+    dateFrom: day(from),
+    dateTo: day(now),
+    from: day(from),
+    to: day(now),
+    month: day(now).slice(0, 7),
+    weekStart: day(new Date(now.getTime() - ((now.getDay() + 6) % 7) * 864e5)),
+    clientAccountId: ctx.activeTenantId || store?.tenantId,
+    term: "a",
+    search: "a",
+  };
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v));
+}
+
 // Sessões por perfil. Sem credencial => session null com motivo.
 export async function loginProfiles(client, profiles, log = () => {}) {
   const sessions = {};
@@ -133,6 +165,7 @@ export async function loginProfiles(client, profiles, log = () => {}) {
       accounts.find((a) => a.isDefault || a.active)?.id ||
       accounts[0]?.id ||
       null;
+    sess.queryDefaults = await contextDefaults(client, sess);
     sessions[profile] = sess;
   }
   return sessions;

@@ -113,14 +113,22 @@ func (s *Service) Overview(ctx context.Context, days int) (map[string]any, error
 	if err != nil {
 		return nil, err
 	}
+	fullRuns, err := s.store.FullRuns(ctx, 30)
+	if err != nil {
+		return nil, err
+	}
+	modules, err := s.store.LatestModuleScores(ctx)
+	if err != nil {
+		return nil, err
+	}
 	errorRate := 0.0
 	if totals.Requests > 0 {
 		errorRate = math.Round(float64(totals.Errors5xx)/float64(totals.Requests)*10000) / 10000
 	}
 	stats := s.runtime.Stats()
-	trend := make([]map[string]any, 0, len(runs))
-	for index := len(runs) - 1; index >= 0; index-- {
-		run := runs[index]
+	trend := make([]map[string]any, 0, len(fullRuns))
+	for index := len(fullRuns) - 1; index >= 0; index-- {
+		run := fullRuns[index]
 		trend = append(trend, map[string]any{"runId": run["id"], "startedAt": run["startedAt"], "scores": run["scores"], "coverage": run["coverage"]})
 	}
 	var latest map[string]any
@@ -134,6 +142,7 @@ func (s *Service) Overview(ctx context.Context, days int) (map[string]any, error
 			"droppedEvents": stats.DroppedEvents, "queuedEvents": stats.QueuedEvents,
 		},
 		"latestRun": latest,
+		"modules":   modules,
 		"trend":     trend,
 	}, nil
 }

@@ -13,13 +13,13 @@ de 1 a 90 (padrão 7).
 
 | rota | uso |
 |---|---|
-| `GET /overview` | números ao vivo, última execução, tendência das notas |
+| `GET /overview` | números ao vivo, nota/componentes/cobertura por módulo da última execução, tendência das notas |
 | `GET /endpoints?module=&sort=p95\|errors\|calls\|queries` | p50/p95/p99 pelo histograma, taxa de erro, queries/req |
 | `GET /db` | lentas, suspeitas de N+1, top por tempo total, checagens do último run |
 | `GET /pages` | Web Vitals p75 por página (ao vivo) e resultado do último run |
 | `GET /errors` | erros agrupados (API 5xx e front) com correlation IDs |
 | `GET /trace/{correlationId}` | requisição → queries lentas/N+1 → externas → eventos do front |
-| `GET /runs`, `GET /runs/{id}`, `GET /runs/compare?a=&b=` | histórico e comparação antes × depois |
+| `GET /runs`, `GET /runs/{id}`, `GET /runs/compare?a=&b=` | histórico (notas e cobertura resumidas em números), detalhe completo e comparação antes × depois |
 | `GET /run-requests`, `POST /run-requests` | fila do botão "rodar runner" (403 `runner_disabled_in_production` em produção; 429 com 5 pendentes) |
 
 `POST /v1/obs/collect` exige login. Aceita corpo de até 64 KB e 100 eventos, e

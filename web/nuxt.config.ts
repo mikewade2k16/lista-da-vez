@@ -335,6 +335,10 @@ export default defineNuxtConfig({
       // do editor de cardapio (desenho B4). A origem desta URL e a UNICA aceita
       // nas mensagens postMessage do iframe. Sobrescrevivel por NUXT_PUBLIC_STUDIO_URL.
       studioUrl: process.env.NUXT_PUBLIC_STUDIO_URL || 'http://localhost:3000',
+      // Coletor de observabilidade do front (Web Vitals, erros JS, chamadas lentas).
+      // NUXT_PUBLIC_OBSERVABILITY_ENABLED=false desliga; sample rate de 0 a 1.
+      observabilityEnabled: process.env.NUXT_PUBLIC_OBSERVABILITY_ENABLED !== 'false',
+      observabilitySampleRate: Number(process.env.NUXT_PUBLIC_OBSERVABILITY_SAMPLE_RATE || 1),
     },
   },
   css: [

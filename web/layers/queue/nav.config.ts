@@ -413,6 +413,14 @@ export default {
               agencyOnly: true,
             },
             {
+              id: 'manage-observability',
+              label: 'Observabilidade',
+              icon: 'database',
+              path: '/manage/observabilidade',
+              workspaceId: 'observability_admin',
+              agencyOnly: true,
+            },
+            {
               id: 'manage-knowledge',
               label: 'Base pública',
               icon: 'page',

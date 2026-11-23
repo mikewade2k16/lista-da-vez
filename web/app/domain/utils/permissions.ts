@@ -284,6 +284,14 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: '',
   },
   {
+    id: 'observability_admin',
+    label: 'Observabilidade',
+    description:
+      'Saude da API, banco, paginas e execucoes do runner de testes (so platform_admin).',
+    viewPermission: '',
+    editPermission: '',
+  },
+  {
     id: 'knowledge_admin',
     label: 'Base pública',
     description:
@@ -432,6 +440,7 @@ const ROLE_WORKSPACES = {
     'organizations_admin',
     'role_templates_admin',
     'storage_admin',
+    'observability_admin',
     'knowledge_admin',
     'manage',
     'configuracoes',

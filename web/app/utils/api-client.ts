@@ -32,6 +32,10 @@ interface ApiRequestOptions extends Omit<FetchOptions, 'headers' | 'method'> {
   method?: ApiRequestMethod
   dedupe?: boolean
   skipLoadingIndicator?: boolean
+  // Chamadas do proprio coletor de observabilidade: sem X-Request-ID e sem registro.
+  skipObserver?: boolean
+  // Nao dispara o handler global de 401 (evita loop logout -> coletor -> 401).
+  skipUnauthorizedHandler?: boolean
 }
 
 export function getApiErrorMessage(error, fallbackMessage) {
@@ -224,6 +228,33 @@ export function setApiUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler
 }
 
+// Observador de chamadas (coletor de observabilidade do front). Injetado pelo plugin
+// observability.client.ts. nextRequestId devolve o X-Request-ID da chamada ('' = nao
+// enviar o header); onSettled recebe o resultado depois que a chamada termina.
+export interface ApiCallInfo {
+  method: string
+  path: string
+  status: number
+  durationMs: number
+  requestId: string
+}
+
+export interface ApiObserver {
+  nextRequestId: (path: string) => string
+  onSettled: (info: ApiCallInfo) => void
+}
+
+let apiObserver: ApiObserver | null = null
+
+export function setApiObserver(observer: ApiObserver | null) {
+  apiObserver = observer
+}
+
+function errorStatus(error): number {
+  const status = Number(error?.response?.status ?? error?.statusCode ?? error?.status ?? 0)
+  return Number.isFinite(status) ? status : 0
+}
+
 function isAuthEndpoint(path: string) {
   return String(path || '').includes('/v1/auth/')
 }
@@ -252,6 +283,8 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
 
     const processedOptions = { ...options }
     delete processedOptions.dedupe
+    delete processedOptions.skipObserver
+    delete processedOptions.skipUnauthorizedHandler
 
     if (
       ['POST', 'PUT', 'PATCH', 'DELETE'].includes(normalizedMethod) &&
@@ -279,15 +312,35 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
       return inflightGetRequests.get(requestKey)
     }
 
+    // Observabilidade: o X-Request-ID entra DEPOIS da chave de dedupe (um id por
+    // chamada tornaria cada GET unico e desligaria a deduplicacao).
+    const observer = options.skipObserver === true ? null : apiObserver
+    const requestId = observer ? observer.nextRequestId(path) : ''
+    if (requestId && !headers['X-Request-ID']) {
+      headers['X-Request-ID'] = requestId
+    }
+    const startedAt = observer ? Date.now() : 0
+    let responseStatus = 0
+
     const fetchPromise = $fetch(path, {
       baseURL,
       ...processedOptions,
       headers,
+      onResponse(ctx) {
+        responseStatus = Number(ctx?.response?.status || 0)
+        if (typeof options.onResponse === 'function') {
+          options.onResponse(ctx)
+        }
+      },
       onResponseError(ctx) {
         // Sessao expirada/invalida em qualquer rota (menos login/logout): aciona o
         // handler global que desloga e redireciona, em vez de so estourar um toast
         // enquanto o usuario continua "na tela" achando que esta logado.
-        if (ctx?.response?.status === 401 && !isAuthEndpoint(path)) {
+        if (
+          ctx?.response?.status === 401 &&
+          !isAuthEndpoint(path) &&
+          options.skipUnauthorizedHandler !== true
+        ) {
           unauthorizedHandler?.()
         }
         if (typeof options.onResponseError === 'function') {
@@ -296,6 +349,26 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
       },
     })
     let requestPromise = fetchPromise
+
+    if (observer) {
+      const report = (status: number) => {
+        try {
+          observer.onSettled({
+            method: normalizedMethod,
+            path: String(path || ''),
+            status,
+            durationMs: Date.now() - startedAt,
+            requestId,
+          })
+        } catch {
+          // Observabilidade nunca pode quebrar a chamada.
+        }
+      }
+      void fetchPromise.then(
+        () => report(responseStatus || 200),
+        (error) => report(errorStatus(error)),
+      )
+    }
 
     if (requestKey) {
       const trackedPromise = fetchPromise.finally(() => {

@@ -95,7 +95,7 @@ export function formatFeedbackImageSize(bytes: number) {
   return `${(normalizedBytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function loadImageElement(file: File) {
+export function loadImageElement(file: File) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file)
     const image = new Image()
@@ -137,7 +137,7 @@ function encodeFeedbackImage(
   })
 }
 
-function replaceFileExtension(fileName: string, nextExtension: string) {
+export function replaceFileExtension(fileName: string, nextExtension: string) {
   const normalizedName = String(fileName || 'imagem').trim() || 'imagem'
   const lastDotIndex = normalizedName.lastIndexOf('.')
   const baseName = lastDotIndex > 0 ? normalizedName.slice(0, lastDotIndex) : normalizedName

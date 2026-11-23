@@ -8,6 +8,7 @@ import type {
   OmniTableCellUpdate,
   OmniTableImageUpload,
   OmniTableColumn,
+  OmniTableSort,
   OmniSelectOption,
 } from '../../../types/omni/collection'
 
@@ -22,6 +23,7 @@ const props = withDefaults(
     selectable?: boolean
     modelValue?: Array<string | number>
     focusCell?: OmniFocusCell | null
+    sort?: OmniTableSort | null
   }>(),
   {
     viewerUserType: 'admin',
@@ -31,6 +33,7 @@ const props = withDefaults(
     selectable: true,
     modelValue: () => [],
     focusCell: null,
+    sort: null,
   },
 )
 
@@ -45,7 +48,27 @@ const emit = defineEmits<{
   'update:cell': [payload: OmniTableCellUpdate]
   'row-action': [payload: { action: string; row: Record<string, any> }]
   'upload:image': [payload: OmniTableImageUpload]
+  'update:sort': [value: OmniTableSort | null]
 }>()
+
+// Colunas `sortable`: crescente -> decrescente -> sem ordenacao. A tabela nao
+// reordena as linhas; quem consome aplica o `sort` recebido.
+function onSortClick(key: string) {
+  const current = props.sort
+  if (current?.key !== key) return emit('update:sort', { key, dir: 'asc' })
+  emit('update:sort', current.dir === 'asc' ? { key, dir: 'desc' } : null)
+}
+
+function sortIcon(key: string) {
+  if (props.sort?.key !== key) return 'i-lucide-chevrons-up-down'
+  return props.sort.dir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'
+}
+
+function ariaSort(column: OmniTableColumn) {
+  if (!column.sortable) return undefined
+  if (props.sort?.key !== column.key) return 'none'
+  return props.sort.dir === 'asc' ? 'ascending' : 'descending'
+}
 
 const tableRootRef = ref<HTMLElement | null>(null)
 const imagePreviewOpen = ref(false)
@@ -327,8 +350,24 @@ watch(imagePreviewOpen, (open) => {
             class="omni-data-table__head-cell px-3 py-3 font-semibold"
             :class="columnAlignClass(column.align)"
             :style="columnStyle(column)"
+            :aria-sort="ariaSort(column)"
           >
-            {{ column.label }}
+            <button
+              v-if="column.sortable"
+              type="button"
+              class="omni-data-table__sort inline-flex items-center gap-1 font-semibold transition-colors hover:text-[rgb(var(--primary))]"
+              :class="{ 'text-[rgb(var(--primary))]': props.sort?.key === column.key }"
+              :title="`Ordenar por ${column.label}`"
+              @click="onSortClick(column.key)"
+            >
+              {{ column.label }}
+              <UIcon
+                :name="sortIcon(column.key)"
+                class="omni-data-table__sort-icon size-3.5"
+                :class="{ 'opacity-45': props.sort?.key !== column.key }"
+              />
+            </button>
+            <template v-else>{{ column.label }}</template>
           </th>
         </tr>
       </thead>

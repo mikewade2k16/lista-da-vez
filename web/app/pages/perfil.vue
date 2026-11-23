@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import AppPasswordInput from '~/components/ui/AppPasswordInput.vue'
+import ProfileAvatarDrop from '~/components/profile/ProfileAvatarDrop.vue'
 import ProfileAccessCard from '~/components/profile/ProfileAccessCard.vue'
 import ProfileSecurityCard from '~/components/profile/ProfileSecurityCard.vue'
 import ProfileStoresCard from '~/components/profile/ProfileStoresCard.vue'
@@ -11,6 +12,7 @@ import FiscalProfileCard from '../../layers/finance/components/fiscal/FiscalProf
 import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import { getApiBase, getApiErrorMessage } from '~/utils/api-client'
+import { prepareAvatarImage } from '~/utils/avatar-image'
 
 definePageMeta({
   layout: 'dashboard',
@@ -21,6 +23,9 @@ definePageMeta({
 const runtimeConfig = useRuntimeConfig()
 const auth = useAuthStore()
 const ui = useUiStore()
+// Quem nao e dev ve so foto, nome, email e senha; papel, conta, sessao, fiscal,
+// lojas e feedback ficam para o platform_admin.
+const isPlatformAdmin = computed(() => String(auth.role || '').trim() === 'platform_admin')
 
 onMounted(() => {
   void auth.ensureSession()
@@ -137,36 +142,29 @@ async function changePassword() {
   }
 }
 
-async function handleAvatarChange(event) {
-  const file = event?.target?.files?.[0] || null
-  if (!file) {
-    return
-  }
-
+// Qualquer foto vira um quadrado de ate 512px em WebP antes de subir (leve no
+// armazenamento e abaixo do limite de 2 MB do back).
+async function uploadAvatar(file) {
   avatarPending.value = true
 
   try {
-    await auth.uploadAvatar(file)
+    await auth.uploadAvatar(await prepareAvatarImage(file))
     ui.success('Foto atualizada.')
   } catch (error) {
     ui.error(getApiErrorMessage(error, 'Nao foi possivel enviar a foto.'))
   } finally {
     avatarPending.value = false
-    event.target.value = ''
   }
 }
 </script>
 
 <template>
   <div class="page-workspace">
-    <section class="admin-panel profile-panel" data-testid="profile-panel">
-      <header class="admin-panel__header">
-        <h2 class="admin-panel__title">Meu perfil</h2>
-        <p class="admin-panel__text">
-          Atualize sua foto, nome, email e senha sem depender do administrativo.
-        </p>
-      </header>
-
+    <section
+      class="admin-panel profile-panel"
+      :class="{ 'profile-panel--simple': !isPlatformAdmin }"
+      data-testid="profile-panel"
+    >
       <article v-if="auth.mustChangePassword" class="insight-card">
         <p class="settings-card__text">
           Sua conta ainda está com senha temporária. Antes de continuar usando a plataforma,
@@ -174,40 +172,25 @@ async function handleAvatarChange(event) {
         </p>
       </article>
 
-      <div class="profile-panel__layout">
-        <div class="profile-panel__col profile-panel__col--side">
-          <article class="settings-card profile-panel__avatar-card">
+      <!-- Dev: lateral com foto/acesso/sessao. Demais: coluna unica com a foto
+           dentro do cartao de dados pessoais. -->
+      <div
+        class="profile-panel__layout"
+        :class="{ 'profile-panel__layout--simple': !isPlatformAdmin }"
+      >
+        <div v-if="isPlatformAdmin" class="profile-panel__col profile-panel__col--side">
+          <article class="settings-card">
             <header class="settings-card__header">
               <h3 class="settings-card__title">Foto</h3>
-              <p class="settings-card__text">JPG, PNG ou WebP com ate 2 MB.</p>
             </header>
-
-            <div class="profile-panel__avatar-wrap">
-              <img
-                v-if="avatarUrl"
-                :src="avatarUrl"
-                alt="Foto do usuario"
-                class="profile-panel__avatar-image"
-              />
-              <span v-else class="profile-panel__avatar-fallback">{{ initials || 'US' }}</span>
-            </div>
-
-            <AppPanelButton
-              as="label"
-              block
-              class="profile-panel__avatar-button"
-              :disabled="avatarPending"
-            >
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                hidden
-                @change="handleAvatarChange"
-              />
-              {{ avatarPending ? 'Enviando...' : 'Enviar nova foto' }}
-            </AppPanelButton>
+            <ProfileAvatarDrop
+              :src="avatarUrl"
+              :initials="initials"
+              :pending="avatarPending"
+              @upload="uploadAvatar"
+              @invalid="ui.error($event)"
+            />
           </article>
-
           <ProfileAccessCard />
           <ProfileSecurityCard />
         </div>
@@ -221,27 +204,40 @@ async function handleAvatarChange(event) {
               </p>
             </header>
 
-            <form class="multistore-form multistore-form--add" @submit.prevent="saveProfile">
-              <div class="multistore-form__row">
-                <input
-                  v-model="profileDraft.displayName"
-                  class="product-add__input"
-                  type="text"
-                  placeholder="Nome completo *"
-                />
-                <input
-                  v-model="profileDraft.email"
-                  class="product-add__input"
-                  type="email"
-                  placeholder="Email *"
-                />
-              </div>
-              <div class="multistore-form__actions">
-                <AppPanelButton type="submit" :disabled="profilePending">
-                  {{ profilePending ? 'Salvando...' : 'Salvar perfil' }}
-                </AppPanelButton>
-              </div>
-            </form>
+            <div class="profile-panel__identity">
+              <ProfileAvatarDrop
+                v-if="!isPlatformAdmin"
+                :src="avatarUrl"
+                :initials="initials"
+                :pending="avatarPending"
+                @upload="uploadAvatar"
+                @invalid="ui.error($event)"
+              />
+              <form
+                class="multistore-form multistore-form--add profile-panel__identity-form"
+                @submit.prevent="saveProfile"
+              >
+                <div class="multistore-form__row">
+                  <input
+                    v-model="profileDraft.displayName"
+                    class="product-add__input"
+                    type="text"
+                    placeholder="Nome completo *"
+                  />
+                  <input
+                    v-model="profileDraft.email"
+                    class="product-add__input"
+                    type="email"
+                    placeholder="Email *"
+                  />
+                </div>
+                <div class="multistore-form__actions">
+                  <AppPanelButton type="submit" :disabled="profilePending">
+                    {{ profilePending ? 'Salvando...' : 'Salvar perfil' }}
+                  </AppPanelButton>
+                </div>
+              </form>
+            </div>
           </article>
 
           <article class="settings-card">
@@ -324,9 +320,11 @@ async function handleAvatarChange(event) {
             </form>
           </article>
 
-          <FiscalProfileCard />
-          <ProfileStoresCard />
-          <ProfileFeedbackCard />
+          <template v-if="isPlatformAdmin">
+            <FiscalProfileCard />
+            <ProfileStoresCard />
+            <ProfileFeedbackCard />
+          </template>
         </div>
       </div>
     </section>
@@ -334,8 +332,25 @@ async function handleAvatarChange(event) {
 </template>
 
 <style scoped>
-.profile-panel__avatar-button {
-  margin-top: auto;
+/* Foto (so no layout simples) ao lado de nome/email; empilha no estreito. */
+.profile-panel__identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+/* Cartao estreito (meia largura): o form desce para baixo da foto. */
+.profile-panel__identity-form {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .profile-panel__identity {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .profile-panel__hint {
@@ -364,6 +379,49 @@ async function handleAvatarChange(event) {
   gap: 1rem;
   align-content: start;
   min-width: 0;
+}
+
+/* Quem nao e dev: sem o painel externo (so os dois cartoes, lado a lado), sem a
+   divisoria interna do form e com os campos empilhados na meia largura. O
+   .settings-card global ocupa a linha inteira (grid-column 1 / -1). */
+.profile-panel--simple {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.profile-panel__layout--simple {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 0;
+}
+
+.profile-panel__layout--simple .profile-panel__col--main {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.profile-panel__layout--simple .settings-card {
+  grid-column: auto;
+  align-content: start;
+  padding: 1.1rem 1.25rem;
+}
+
+.profile-panel__layout--simple .multistore-form--add {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.profile-panel__layout--simple .multistore-form__row {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: none;
+}
+
+@media (max-width: 720px) {
+  .profile-panel__layout--simple .profile-panel__col--main {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 880px) {

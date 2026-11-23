@@ -182,6 +182,7 @@ export function useCardapioProductColumns(
   const allTableColumns = computed<OmniTableColumn[]>(() => [
     {
       key: 'imageSrc',
+      sortable: true,
       label: 'Foto',
       type: 'custom',
       locked: true,
@@ -191,6 +192,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'name',
+      sortable: true,
       label: 'Nome',
       type: 'text',
       editable: true,
@@ -201,6 +203,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'categoryId',
+      sortable: true,
       label: 'Categoria',
       type: 'select',
       editable: true,
@@ -212,6 +215,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'priceReais',
+      sortable: true,
       wholeAmounts: store.restaurant?.settings.productPriceDecimals !== true,
       label: 'Preço',
       type: 'money',
@@ -221,6 +225,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'compareAtPriceReais',
+      sortable: true,
       wholeAmounts: store.restaurant?.settings.productPriceDecimals !== true,
       label: 'Preço comparativo',
       type: 'money',
@@ -230,6 +235,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'isAvailable',
+      sortable: true,
       label: 'Disponível',
       type: 'switch',
       editable: true,
@@ -239,6 +245,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'isFeatured',
+      sortable: true,
       label: 'Destaque',
       type: 'switch',
       editable: true,
@@ -256,6 +263,7 @@ export function useCardapioProductColumns(
     },
     {
       key: 'createdAt',
+      sortable: true,
       label: 'Data de cadastro',
       type: 'text',
       formatter: (value) => {

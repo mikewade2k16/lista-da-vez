@@ -26,9 +26,10 @@ const ui = useUiStore()
 const isAdmin = computed(() => String(auth.role || '').trim() === 'platform_admin')
 
 // Duas visoes: cards (padrao, so o basico) e "Detalhes" (tabela com filtros e
-// acoes de gestao). A escolha fica na URL (?vista=detalhes).
+// acoes de gestao). A escolha fica na URL (?vista=detalhes) e so existe para
+// dev (platform_admin); os demais sempre veem os cards, sem o seletor.
 const route = useRoute()
-const showDetails = computed(() => route.query.vista === 'detalhes')
+const showDetails = computed(() => isAdmin.value && route.query.vista === 'detalhes')
 function setView(details: boolean) {
   void navigateTo(
     { query: { ...route.query, vista: details ? 'detalhes' : undefined } },
@@ -374,7 +375,7 @@ onMounted(async () => {
 
 <template>
   <section class="cardapio-list flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-    <header class="cardapio-list__bar">
+    <header v-if="isAdmin" class="cardapio-list__bar">
       <nav class="cardapio-list__tabs" aria-label="Visao da lista">
         <button
           type="button"

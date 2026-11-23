@@ -45,7 +45,12 @@ const isPlatformAdmin = computed(
 // platform durante o load. Resolvido = aplica o gate de plataforma.
 const accessReady = computed(() => accountStore.accountsLoaded)
 
+// Por enquanto quem nao e dev so usa Produtos: entra direto nela e a barra de abas
+// some. O papel vem do auth (ja resolvido), entao nao ha flash de abas.
+const CLIENT_SECTIONS = new Set<string>(['produtos'])
+
 function isSectionAllowed(section: SectionTab): boolean {
+  if (!isPlatformAdmin.value) return CLIENT_SECTIONS.has(section.id)
   if (section.gate !== 'platform' || !accessReady.value) {
     return true
   }
@@ -66,7 +71,15 @@ const primarySections = computed(() => [
 
 // Quem so tem um estabelecimento entra direto nele (a lista redireciona), entao
 // o atalho de volta para a lista some para esse usuario.
-const showListLink = computed(() => isPlatformAdmin.value || store.restaurants.length !== 1)
+// Cliente (nao-dev) nao volta para a lista: com mais de um estabelecimento, eles
+// viram abas no topo e a troca e direta.
+const showListLink = computed(() => isPlatformAdmin.value)
+const placeTabs = computed(() =>
+  !isPlatformAdmin.value && store.restaurants.length > 1 ? store.restaurants : [],
+)
+function placeLocation(id: string, accountId: string) {
+  return { path: `/cardapio/${id}`, query: accountId ? { account: accountId } : {} }
+}
 
 const active = computed(() =>
   resolveCardapioSection(
@@ -108,7 +121,12 @@ function loadActive() {
 }
 
 watch(() => [props.restaurantId, props.accountId], loadActive)
-onMounted(loadActive)
+onMounted(() => {
+  loadActive()
+  // Abas de estabelecimento: quem abriu o editor direto (sem passar pela lista)
+  // ainda nao tem a lista carregada.
+  if (!isPlatformAdmin.value && !store.restaurants.length) void store.loadRestaurants()
+})
 </script>
 
 <template>
@@ -127,7 +145,7 @@ onMounted(loadActive)
           </NuxtLink>
           <span class="cardapio-editor__sep">/</span>
         </template>
-        <span class="cardapio-editor__current">
+        <span v-if="!placeTabs.length" class="cardapio-editor__current">
           {{ store.restaurant?.name || 'Carregando...' }}
         </span>
         <span
@@ -140,7 +158,24 @@ onMounted(loadActive)
       </div>
 
       <nav
-        v-if="store.restaurant || !store.detailPending"
+        v-if="placeTabs.length"
+        class="cardapio-editor__tabs cardapio-editor__tabs--places"
+        aria-label="Estabelecimentos"
+      >
+        <NuxtLink
+          v-for="place in placeTabs"
+          :key="place.id"
+          :to="placeLocation(place.id, place.accountId)"
+          :aria-current="place.id === props.restaurantId ? 'page' : undefined"
+          class="cardapio-editor__tab"
+          :class="{ 'is-active': place.id === props.restaurantId }"
+        >
+          <span class="cardapio-editor__tab-label">{{ place.name }}</span>
+        </NuxtLink>
+      </nav>
+
+      <nav
+        v-if="(store.restaurant || !store.detailPending) && primarySections.length > 1"
         class="cardapio-editor__tabs"
         aria-label="Secoes do cardapio"
       >
@@ -159,7 +194,7 @@ onMounted(loadActive)
         </NuxtLink>
       </nav>
 
-      <div class="cardapio-editor__actions">
+      <div v-if="isPlatformAdmin" class="cardapio-editor__actions">
         <CardapioLargePhotosNotice v-if="isPlatformAdmin && store.restaurantId" />
         <UButton
           v-if="publicUrl"
@@ -233,7 +268,10 @@ onMounted(loadActive)
     >
       <CardapioSectionDados v-if="active === 'dados'" />
       <CardapioSectionCategorias v-else-if="active === 'categorias'" />
-      <CardapioSectionProdutos v-else-if="active === 'produtos'" />
+      <CardapioSectionProdutos
+        v-else-if="active === 'produtos'"
+        :is-platform-admin="isPlatformAdmin"
+      />
       <CardapioSectionAvaliacoes v-else-if="active === 'avaliacoes'" />
       <CardapioSectionPedidos v-else-if="active === 'pedidos'" />
       <CardapioSectionRelatorios v-else-if="active === 'relatorios'" />

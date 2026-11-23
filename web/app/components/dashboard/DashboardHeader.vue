@@ -63,6 +63,7 @@ function handleProfileChange(value) {
           variant="ghost"
           size="sm"
           aria-label="Abrir sidebar"
+          :class="{ 'dashboard-header__menu-btn--mobile-only': role !== 'platform_admin' }"
           @click="sidebarOpen = true"
         />
         <picture class="dashboard-header__logo" aria-label="Logo da plataforma">
@@ -106,7 +107,7 @@ function handleProfileChange(value) {
             <DashboardThemeSwitcher />
             <SystemNotificationsDropdown v-if="isAuthenticated" />
             <CoreAccountSwitcher
-              v-if="isAuthenticated && hasMultipleAccounts"
+              v-if="isAuthenticated && hasMultipleAccounts && role === 'platform_admin'"
               :can-enter-platform-view="role === 'platform_admin'"
             />
             <DashboardHeaderProfileMenu v-if="isAuthenticated" />
@@ -179,6 +180,13 @@ function handleProfileChange(value) {
   justify-content: flex-end;
   gap: 0.7rem;
   flex-wrap: wrap;
+}
+
+/* Sidebar no PC so para dev; no celular segue como menu de navegacao. */
+@media (min-width: 901px) {
+  .dashboard-header__menu-btn--mobile-only {
+    display: none;
+  }
 }
 
 @media (max-width: 900px) {

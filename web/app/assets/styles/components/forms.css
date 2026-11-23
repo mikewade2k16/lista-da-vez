@@ -246,42 +246,6 @@
   gap: 16px;
 }
 
-.profile-panel__avatar-card {
-  align-self: start;
-}
-
-.profile-panel__avatar-wrap {
-  display: grid;
-  place-items: center;
-  width: 132px;
-  height: 132px;
-  border-radius: 999px;
-  border: 1px solid var(--line-soft);
-  background: linear-gradient(180deg, rgb(var(--primary) / 0.14), rgb(var(--surface-2) / 0.86));
-  overflow: hidden;
-}
-
-.profile-panel__avatar-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.profile-panel__avatar-fallback {
-  font-size: 1.8rem;
-  font-weight: 800;
-  color: rgb(var(--primary));
-  letter-spacing: 0.04em;
-}
-
-.profile-panel__avatar-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  cursor: pointer;
-}
-
 @media (max-width: 900px) {
   .profile-panel__grid {
     grid-template-columns: 1fr;

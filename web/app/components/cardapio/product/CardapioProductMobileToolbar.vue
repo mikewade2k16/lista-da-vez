@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import OmniTableColumnsConfig from '~/components/omni/table/OmniTableColumnsConfig.vue'
+import { PRODUCT_SORT_OPTIONS, type ProductSort } from '~/domain/cardapio/product-sort'
 import type { OmniTableColumn } from '~/types/omni/collection'
 
 // Barra da aba Produtos no mobile: so icones, em duas linhas finas.
 // 1) busca + novo produto; 2) foto, filtros, campos do card, mais opcoes e,
 // com selecao, acoes em lote. Mesmo estado/filtros da versao desktop.
+// Foto, filtros, ordenacao, campos do card e "..." so aparecem para `advanced`
+// (platform_admin). Os demais tem uma linha so: busca + categoria + novo.
 interface PhotoChip {
   value: string
   label: string
@@ -12,6 +17,8 @@ interface PhotoChip {
 }
 
 defineProps<{
+  advanced: boolean
+  categoryOptions: Array<{ label: string; value: string }>
   photoChips: PhotoChip[]
   photoValue: string
   activeFilterCount: number
@@ -25,7 +32,40 @@ defineProps<{
 const search = defineModel<string>('search', { required: true })
 const filtersOpen = defineModel<boolean>('filtersOpen', { required: true })
 const visibleColumns = defineModel<string[]>('visibleColumns', { required: true })
+const sort = defineModel<ProductSort | null>('sort', { required: true })
+const category = defineModel<string>('category', { required: true })
+
+// USelect nao aceita item com valor vazio: "Todas" usa um marcador e volta a ''.
+const ALL_CATEGORIES = '__all'
+const categoryValue = computed({
+  get: () => category.value || undefined,
+  set: (value: string | undefined) => {
+    category.value = !value || value === ALL_CATEGORIES ? '' : value
+  },
+})
 const emit = defineEmits<{ create: []; photo: [value: string] }>()
+
+const sortItems = computed(() => [
+  [
+    {
+      label: 'Ordem do site',
+      icon: sort.value ? undefined : 'i-lucide-check',
+      onSelect: () => {
+        sort.value = null
+      },
+    },
+    ...PRODUCT_SORT_OPTIONS.map((option) => ({
+      label: option.label,
+      icon:
+        sort.value?.key === option.key && sort.value.dir === option.dir
+          ? 'i-lucide-check'
+          : undefined,
+      onSelect: () => {
+        sort.value = { key: option.key, dir: option.dir }
+      },
+    })),
+  ],
+])
 
 const PHOTO_ICONS: Record<string, string> = {
   '': 'i-lucide-list',
@@ -55,6 +95,17 @@ const PHOTO_ICONS: Record<string, string> = {
           />
         </template>
       </UInput>
+      <USelect
+        v-if="!advanced"
+        v-model="categoryValue"
+        :items="[
+          { label: 'Todas', value: ALL_CATEGORIES },
+          ...categoryOptions.filter((option) => option.value),
+        ]"
+        placeholder="Categoria"
+        class="cardapio-mtool__category"
+        aria-label="Filtrar por categoria"
+      />
       <UButton
         icon="i-lucide-plus"
         color="primary"
@@ -63,8 +114,8 @@ const PHOTO_ICONS: Record<string, string> = {
         @click="emit('create')"
       />
     </div>
-    <div class="cardapio-mtool__row">
-      <div class="cardapio-mtool__photo" role="group" aria-label="Filtrar por foto">
+    <div v-if="advanced || selectedCount" class="cardapio-mtool__row">
+      <div v-if="advanced" class="cardapio-mtool__photo" role="group" aria-label="Filtrar por foto">
         <button
           v-for="chip in photoChips"
           :key="chip.value"
@@ -92,7 +143,7 @@ const PHOTO_ICONS: Record<string, string> = {
             :aria-label="`Acoes para ${selectedCount} selecionado(s)`"
           />
         </UDropdownMenu>
-        <UChip :show="activeFilterCount > 0" :text="activeFilterCount" size="lg">
+        <UChip v-if="advanced" :show="activeFilterCount > 0" :text="activeFilterCount" size="lg">
           <UButton
             icon="i-lucide-sliders-horizontal"
             color="neutral"
@@ -102,14 +153,24 @@ const PHOTO_ICONS: Record<string, string> = {
             @click="filtersOpen = !filtersOpen"
           />
         </UChip>
+        <UDropdownMenu v-if="advanced" :items="sortItems" :content="{ align: 'end' }">
+          <UButton
+            icon="i-lucide-arrow-up-down"
+            color="neutral"
+            :variant="sort ? 'soft' : 'ghost'"
+            aria-label="Ordenar"
+            title="Ordenar"
+          />
+        </UDropdownMenu>
         <OmniTableColumnsConfig
+          v-if="advanced"
           v-model="visibleColumns"
           :columns="columns"
           :exclude-keys="excludeKeys"
           label=""
           title="Campos do card"
         />
-        <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
+        <UDropdownMenu v-if="advanced" :items="moreItems" :content="{ align: 'end' }">
           <UButton
             icon="i-lucide-ellipsis"
             color="neutral"
@@ -138,6 +199,11 @@ const PHOTO_ICONS: Record<string, string> = {
 
 .cardapio-mtool__search {
   flex: 1;
+  min-width: 0;
+}
+
+.cardapio-mtool__category {
+  flex: 0 1 9.5rem;
   min-width: 0;
 }
 

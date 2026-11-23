@@ -50,6 +50,13 @@ export interface OmniTableColumn {
   focusOnCreate?: boolean
   formatter?: (value: unknown, row: Record<string, unknown>) => string
   actions?: OmniTableAction[]
+  // Cabecalho clicavel; a tabela so emite `update:sort`, quem consome ordena.
+  sortable?: boolean
+}
+
+export interface OmniTableSort {
+  key: string
+  dir: 'asc' | 'desc'
 }
 
 export interface OmniFocusCell {

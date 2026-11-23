@@ -15,6 +15,8 @@ import {
 } from '~/utils/api-client'
 import { hydrateRuntimeStoreContext } from '~/utils/runtime-remote'
 import { getWorkspacePath } from '~/utils/workspaces'
+import { findEditorModulePathGuard, isAgencyOnlyPath } from '~/utils/account-route-access'
+import { findModulePathGuard, isModulePathGuardEnabled } from '~/utils/module-path-guards'
 import { useCoreAccountStore } from '../../layers/core/stores/account'
 
 const REMEMBERED_LOGIN_STORAGE_KEY = 'ldv_remembered_login'
@@ -160,12 +162,25 @@ export const useAuthStore = defineStore('auth', () => {
   // realmente pode acessar esse workspace. O gate preserva papeis restritos e
   // evita que auth.global redirecione de volta para uma home sem autorizacao.
   // Usuario sem workspace continua autenticado e cai na rota universal `/perfil`.
+  // A home tambem respeita os modulos contratados pela conta ativa (mesma regra do
+  // module-enabled.global): sem isso o owner de um restaurante caia em /operacao,
+  // o guard (sem modulo queue) mandava para /perfil e o Presence nunca era a
+  // primeira tela. Sem conta ativa resolvida, segue a ordem do papel.
+  function isPathOpenForActiveAccount(path: string) {
+    const account = coreAccount.activeAccount
+    if (coreAccount.platformView || !account) return true
+    if (isAgencyOnlyPath(path) && !account.isAgency) return false
+    const guard = findEditorModulePathGuard(path) || findModulePathGuard(path)
+    return !guard || isModulePathGuardEnabled(guard, new Set(coreAccount.enabledModules))
+  }
   const homeWorkspaceId = computed(() => {
     if (coreAccount.activeAccount?.isAgency && allowedWorkspaces.value.includes('calendar')) {
       return 'calendar'
     }
 
-    return allowedWorkspaces.value[0] || ''
+    return (
+      allowedWorkspaces.value.find((id) => isPathOpenForActiveAccount(getWorkspacePath(id))) || ''
+    )
   })
   const homePath = computed(() =>
     homeWorkspaceId.value ? getWorkspacePath(homeWorkspaceId.value) : '/perfil',

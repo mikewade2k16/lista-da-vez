@@ -96,6 +96,29 @@ async function addClient() {
   }
 }
 
+// Papel escolhido para reativar um vinculo inativo (por conta). Vazio = 'owner'.
+const reactivateRole = ref<Record<string, string>>({})
+
+// Troca o papel de um vinculo ativo direto na linha (PATCH .../memberships/{accountId}).
+// A lista volta do back; em erro, re-le do banco para o select nao mentir.
+async function changeClientRole(accountId: string, role: string) {
+  if (!role) return
+  const next = await m.updateMembershipRole(props.user.id, accountId, role)
+  memberships.value = next ?? (await m.fetchMemberships(props.user.id))
+  if (next) emit('updated')
+}
+
+// Vinculo inativo (removido antes) nao aparece no seletor de adicionar; reativa
+// pelo mesmo POST de adicionar (upsert reativa membership + papel + permissoes).
+async function reactivateClient(accountId: string) {
+  const role = reactivateRole.value[accountId] || 'owner'
+  const next = await m.addMembership(props.user.id, accountId, role)
+  if (next) {
+    memberships.value = next
+    emit('updated')
+  }
+}
+
 async function removeClient(accountId: string) {
   const next = await m.removeMembership(props.user.id, accountId)
   if (next) {
@@ -162,16 +185,54 @@ async function unlinkOrg(accountId: string) {
             </div>
             <span class="admin-user-memberships__row-slug">{{ mb.accountSlug }}</span>
           </div>
-          <UButton
-            icon="i-lucide-x"
-            color="error"
-            variant="ghost"
-            size="xs"
-            title="Remover cliente"
-            aria-label="Remover cliente"
-            :loading="saving(`membership:${mb.accountId}`)"
-            @click="removeClient(mb.accountId)"
-          />
+          <div class="admin-user-memberships__row-actions">
+            <template v-if="mb.isActive">
+              <select
+                class="admin-user-memberships__select admin-user-memberships__select--row"
+                :value="mb.role"
+                :disabled="saving(`membership:${mb.accountId}`)"
+                aria-label="Papel no cliente"
+                @change="changeClientRole(mb.accountId, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-if="!CLIENT_ROLE_LABELS[mb.role] || !mb.role" value="" disabled>
+                  {{ roleLabel(mb.role) }}
+                </option>
+                <option v-for="opt in CLIENT_ROLE_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+              <UButton
+                icon="i-lucide-x"
+                color="error"
+                variant="ghost"
+                size="xs"
+                title="Remover cliente"
+                aria-label="Remover cliente"
+                :loading="saving(`membership:${mb.accountId}`)"
+                @click="removeClient(mb.accountId)"
+              />
+            </template>
+            <template v-else>
+              <select
+                class="admin-user-memberships__select admin-user-memberships__select--row"
+                :value="reactivateRole[mb.accountId] || 'owner'"
+                aria-label="Papel ao reativar"
+                @change="reactivateRole[mb.accountId] = ($event.target as HTMLSelectElement).value"
+              >
+                <option v-for="opt in CLIENT_ROLE_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+              <UButton
+                label="Reativar"
+                color="primary"
+                variant="soft"
+                size="xs"
+                :loading="saving(`membership:${mb.accountId}`)"
+                @click="reactivateClient(mb.accountId)"
+              />
+            </template>
+          </div>
         </li>
       </ul>
 
@@ -369,6 +430,20 @@ async function unlinkOrg(accountId: string) {
   color: rgb(var(--muted));
 }
 
+.admin-user-memberships__row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.admin-user-memberships__select--row {
+  width: auto;
+  min-width: 11rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.78rem;
+}
+
 .admin-user-memberships__add {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
@@ -408,6 +483,10 @@ async function unlinkOrg(accountId: string) {
 @media (max-width: 560px) {
   .admin-user-memberships__add {
     grid-template-columns: 1fr;
+  }
+
+  .admin-user-memberships__row {
+    flex-wrap: wrap;
   }
 }
 </style>

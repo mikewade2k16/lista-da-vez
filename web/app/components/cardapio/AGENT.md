@@ -85,6 +85,29 @@ redirecionado direto para ele; o breadcrumb "Presence" some nesse caso. Editor:
 header sticky sem margem negativa (cortava o topo do painel) e, no mobile, corpo
 em coluna flex (stretch) com abas `flex-shrink: 0` (no grid encolhiam a zero).
 
+Acesso de cliente e ordenacao (2026-11-23): quem nao e dev (`platform_admin` ou
+`platformView`) so ve a aba Produtos (`CLIENT_SECTIONS` no editor) e a barra de abas
+some quando ha uma aba so. Na aba, `isPlatformAdmin` (prop vinda do editor) libera
+"Colunas", "Mais filtros", atalhos/contadores de foto e o menu "..."; os demais veem as
+colunas padrao fixas e, no mobile, os campos padrao do card e so o filtro de categoria.
+Todos ordenam pelos cabecalhos (`sortable` no `OmniDataTable`, que so emite
+`update:sort`; ciclo crescente -> decrescente -> ordem do site) ou, no mobile, pelo
+seletor "Ordenar". Ordenacao client-side estavel em `domain/cardapio/product-sort.ts`
+(nome sem acento/numerico, nome da categoria, precos, disponivel, destaque, com foto,
+data). O seletor de cliente do header global (`CoreAccountSwitcher`) so aparece para
+`platform_admin`. Na lista, o seletor Estabelecimentos/Detalhes tambem e so
+`platform_admin`; os demais sempre veem os cards (`?vista=detalhes` e ignorado). No
+editor, cliente nao ve "Presence /", abrir site nem o "..." (publicacao/cliente); com
+mais de um estabelecimento, eles viram abas no topo (`cardapio-editor__tabs--places`,
+carrega `loadRestaurants` se o editor abriu direto). No header global, o botao da
+sidebar some no desktop (> 900px) para quem nao e `platform_admin`. O
+`CardapioProductModal` recebe `simple` (nao-dev): so nome, categoria, preco, descricao e
+foto (`CardapioProductImageCell`, o mesmo da tabela); slug sai do nome e os demais
+campos seguem no formulario carregado (PATCH full-replace nao os apaga). Home do
+sistema: `auth.homePath` pula workspaces cujo modulo a conta ativa nao contratou
+(`utils/module-path-guards.ts`, compartilhado com `module-enabled.global`), entao o
+cliente so com `cardapio` abre direto em `/cardapio` em vez de `/perfil`.
+
 Produtos: ações em lote permitem adicionar uma tag existente ou nova preservando as
 anteriores e trocar a categoria dos produtos selecionados. Os meses disponíveis no
 filtro de cadastro são derivados das datas reais da lista, separados por ano e no

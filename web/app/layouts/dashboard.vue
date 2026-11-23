@@ -26,6 +26,8 @@ onMounted(() => {
 })
 
 const feedbackModalOpen = ref(false)
+// Chamado de suporte ainda em validacao: so o dev (platform_admin) ve o botao.
+const canOpenSupport = computed(() => String(auth.role || '').trim() === 'platform_admin')
 const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice || '').trim())
 // Conta sem o modulo queue nao usa configuracoes de fila — "configuracoes
 // indisponiveis" e o estado esperado, nao um erro. O aviso de modo degradado so
@@ -100,6 +102,7 @@ function handleProfileChange(profileId) {
     </section>
 
     <button
+      v-if="canOpenSupport"
       class="dashboard-feedback-btn"
       title="Abrir chamado de suporte"
       aria-label="Abrir chamado de suporte"
@@ -108,7 +111,7 @@ function handleProfileChange(profileId) {
       <span class="dashboard-feedback-btn__icon">💬</span>
     </button>
 
-    <FeedbackFormModal v-model="feedbackModalOpen" />
+    <FeedbackFormModal v-if="canOpenSupport" v-model="feedbackModalOpen" />
   </main>
 </template>
 

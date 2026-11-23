@@ -41,6 +41,11 @@
     display: none;
   }
 
+  /* Abas de estabelecimento nao tem icone: o nome continua visivel. */
+  .cardapio-editor__tabs--places .cardapio-editor__tab-label {
+    display: inline;
+  }
+
   .cardapio-editor__tab-icon,
   .cardapio-editor__back-icon {
     display: inline-block;

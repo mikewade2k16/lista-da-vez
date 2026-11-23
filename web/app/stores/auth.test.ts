@@ -92,6 +92,33 @@ describe('useAuthStore', () => {
     expect(auth.homePath).toBe('/operacao')
   })
 
+  it('opens Presence first for a client account that only has the cardapio module', () => {
+    const auth = useAuthStore()
+    const account = useCoreAccountStore()
+
+    Reflect.set(auth, 'principal', {
+      userId: 'restaurant-owner',
+      role: 'owner',
+      permissionsResolved: false,
+    })
+    account.accounts = [
+      {
+        id: 'restaurant-account',
+        name: 'Restaurante',
+        slug: 'restaurante',
+        organizationId: 'crow-org',
+        planCode: 'default',
+        modules: ['cardapio'],
+        isAgency: false,
+        organizationName: 'Crow Visuals',
+      },
+    ]
+    account.activeAccountId = 'restaurant-account'
+
+    expect(auth.homeWorkspaceId).toBe('cardapio_web')
+    expect(auth.homePath).toBe('/cardapio')
+  })
+
   it('does not force calendar when the agency role cannot access it', () => {
     const auth = useAuthStore()
     const account = useCoreAccountStore()
@@ -116,7 +143,9 @@ describe('useAuthStore', () => {
     account.activeAccountId = 'crow-account'
 
     expect(auth.allowedWorkspaces).not.toContain('calendar')
-    expect(auth.homeWorkspaceId).toBe('operacao')
-    expect(auth.homePath).toBe('/operacao')
+    // /operacao exige o modulo queue (ausente): a home pula para o primeiro
+    // workspace que a conta abre, em vez de cair em /perfil pelo guard.
+    expect(auth.homeWorkspaceId).toBe('bi')
+    expect(auth.homePath).toBe('/bi')
   })
 })

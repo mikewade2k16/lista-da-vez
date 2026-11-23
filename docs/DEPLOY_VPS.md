@@ -500,6 +500,30 @@ o acesso pelo outro dominio nao roteia.
 > da API. Fix = adicionar os dois `handle` nos blocos `omni.` e `lista.` + recriar o container
 > (ver armadilha do inode abaixo). Validado de fora: `/s/lma` → `302` com `Location` pro destino.
 
+#### Cardápios TAVOLA — ATIVO desde 2026-11-19
+
+O site público dos cardápios saiu da HostGator (conta suspensa) e roda na VPS no
+container `tavola-web` (`/home/deploy/tavola`, repo TAVOLA, runbook em
+`TAVOLA/deploy/vps/README.md`). O Caddy central termina o TLS e repassa os domínios
+dos restaurantes. **Sem `import secure_headers`**: o `X-Frame-Options SAMEORIGIN`
+quebraria o Studio embutido na aba Site do painel; o `tavola-web` envia
+`frame-ancestors` restrito ao `omni.`.
+
+```caddy
+mostarda.crowvisuals.com.br, bari.crowvisuals.com.br, cardapio.crowvisuals.com.br, aperolajoias.thecrow.com.br {
+    encode zstd gzip
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy tavola-web:80 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+```
+
+Domínio novo de cardápio: cadastrar em `cardapio.restaurant_domains`, incluir o host
+nesta lista (procedimento abaixo) e apontar o DNS (A) para a VPS. O deploy do
+TAVOLA (`npm run deploy` no repo dele) não mexe no Omni nem neste Caddyfile.
+
 #### Links curtos na raiz `crowvisuals.com.br` (sem o `omni.`) — ATIVO desde 2026-07-13
 
 O `shortUrl` novo sai limpo em **`https://crowvisuals.com.br/s/{slug}`**. Como foi feito (e como o

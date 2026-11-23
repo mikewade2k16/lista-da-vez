@@ -30,7 +30,9 @@ com `/operacao/usuarios` (módulo Fila legado, `back/internal/modules/users` + `
   `admin/users/`. A aba Senha só aparece para platform_admin (identity-global).
 - `admin/users/AdminUserDataPanel.vue` — identidade (nome/nick/email/ativo/platform admin);
   campos desabilitados quando `canEditIdentity=false` (só platform_admin edita identidade).
-- `admin/users/AdminUserMembershipsPanel.vue` — adicionar/remover cliente; vincular/desvincular
+- `admin/users/AdminUserMembershipsPanel.vue` — adicionar/remover cliente; trocar o papel do
+  cliente na própria linha (`updateMembershipRole`); vínculo inativo (removido antes) mostra
+  "Reativar" com papel (reusa o POST de adicionar, que reativa) em vez do X; vincular/desvincular
   organização (com `orgRole` + confirmação obrigatória de acesso amplo de agência).
 - `admin/users/AdminUserRolesPanel.vue` — papéis `core.roles` por ESCOPO (multi-select +
   `setUserRoles`); embute o `AdminRoleMatrixEditor`. O escopo inclui clientes E a conta-agência

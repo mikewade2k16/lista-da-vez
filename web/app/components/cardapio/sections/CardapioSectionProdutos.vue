@@ -26,6 +26,11 @@ import { useCardapioProductBulk } from '~/composables/useCardapioProductBulk'
 import { useCardapioProductListView } from '~/composables/useCardapioProductListView'
 import type { OmniTableCellUpdate } from '~/types/omni/collection'
 
+// Ferramentas de catalogo (colunas, mais filtros, contadores de foto e o menu
+// "..." de importar/exportar/preferencias) sao so do platform_admin. Os demais
+// usuarios veem as colunas padrao e ordenam pelos cabecalhos.
+const props = defineProps<{ isPlatformAdmin: boolean }>()
+
 const store = useCardapioStore()
 const ui = useUiStore()
 
@@ -96,36 +101,74 @@ const {
   hiddenActiveFilters,
   photoChips,
   setPhotoFilter,
+  sort,
   PAGE_SIZE,
   pagedRows,
   remainingRows,
   showMore,
-} = useCardapioProductListView(filtersState, filterDefinitions, tableRows, filteredRows)
+} = useCardapioProductListView(
+  filtersState,
+  filterDefinitions,
+  tableRows,
+  filteredRows,
+  (id) => store.categories.find((category) => category.id === id)?.name ?? '',
+)
 const columnExcludeKeys = ['actions']
-const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
-  useOmniVisibleColumns({
-    // v2: layout enxuto (foto em destaque). Tags, preco comparativo, destaque e
-    // data continuam disponiveis em "Colunas".
-    preferenceKey: 'cardapio.editor.products.v2',
-    allColumns: allTableColumns,
-    columnExcludeKeys,
-    defaultVisibleColumnKeys: ['imageSrc', 'name', 'categoryId', 'priceReais', 'isAvailable'],
-  })
+const DEFAULT_COLUMN_KEYS = ['imageSrc', 'name', 'categoryId', 'priceReais', 'isAvailable']
+const {
+  visibleColumnKeys,
+  lockedColumnKeys,
+  columnOrder,
+  tableColumns: preferredColumns,
+  resetToDefaults,
+} = useOmniVisibleColumns({
+  // v2: layout enxuto (foto em destaque). Tags, preco comparativo, destaque e
+  // data continuam disponiveis em "Colunas".
+  preferenceKey: 'cardapio.editor.products.v2',
+  allColumns: allTableColumns,
+  columnExcludeKeys,
+  defaultVisibleColumnKeys: DEFAULT_COLUMN_KEYS,
+})
+const fixedColumnKeys = new Set([...DEFAULT_COLUMN_KEYS, ...columnExcludeKeys])
+const tableColumns = computed(() =>
+  props.isPlatformAdmin
+    ? preferredColumns.value
+    : allTableColumns.value.filter((column) => fixedColumnKeys.has(column.key)),
+)
 
 // Mobile: cards no lugar da tabela. Os campos extras do card seguem uma
 // preferencia de colunas propria (foto, nome e preco sempre aparecem).
 const isMobile = useMediaMatch('(max-width: 720px)')
-const { visibleColumnKeys: mobileFieldKeys } = useOmniVisibleColumns({
+const MOBILE_DEFAULT_KEYS = ['imageSrc', 'name', 'priceReais']
+const { visibleColumnKeys: preferredMobileKeys } = useOmniVisibleColumns({
   preferenceKey: 'cardapio.editor.products.mobile',
   allColumns: allTableColumns,
   columnExcludeKeys,
-  defaultVisibleColumnKeys: ['imageSrc', 'name', 'priceReais'],
+  defaultVisibleColumnKeys: MOBILE_DEFAULT_KEYS,
 })
+const mobileFieldKeys = computed({
+  get: () => (props.isPlatformAdmin ? preferredMobileKeys.value : MOBILE_DEFAULT_KEYS),
+  set: (keys: string[]) => {
+    preferredMobileKeys.value = keys
+  },
+})
+// Painel de filtros do mobile (so dev; os demais filtram categoria na linha da busca).
 const mobileExtraFilters = computed(() =>
   filterDefinitions.value.filter((filter) => !['search', 'image'].includes(filter.key)),
 )
 const mobileActiveFilters = computed(
   () => hiddenActiveFilters.value + (filtersState.value.categoryId ? 1 : 0),
+)
+const mobileCategory = computed({
+  get: () => String(filtersState.value.categoryId ?? ''),
+  set: (value: string) => {
+    filtersState.value = { ...filtersState.value, categoryId: value }
+  },
+})
+const mobileCategoryOptions = computed(() =>
+  (filterDefinitions.value.find((filter) => filter.key === 'categoryId')?.options ?? []).map(
+    (option) => ({ label: option.label, value: String(option.value) }),
+  ),
 )
 const mobileSearch = computed({
   get: () => String(filtersState.value.search ?? ''),
@@ -251,6 +294,10 @@ function onResetFilters() {
         v-model:search="mobileSearch"
         v-model:filters-open="showMoreFilters"
         v-model:visible-columns="mobileFieldKeys"
+        v-model:sort="sort"
+        v-model:category="mobileCategory"
+        :advanced="isPlatformAdmin"
+        :category-options="mobileCategoryOptions"
         :photo-chips="photoChips"
         :photo-value="String(filtersState.image || '')"
         :active-filter-count="mobileActiveFilters"
@@ -306,6 +353,7 @@ function onResetFilters() {
         :filters="toolbarFilters"
         :table-columns="allTableColumns"
         :column-exclude-keys="columnExcludeKeys"
+        :show-column-filter="isPlatformAdmin"
         :show-reset="hasActiveFilters"
         @reset="onResetFilters"
         @reset-columns="resetToDefaults"
@@ -317,7 +365,12 @@ function onResetFilters() {
           />
         </template>
         <template #actions>
-          <div class="cardapio-prod__photo" role="group" aria-label="Filtrar por foto">
+          <div
+            v-if="isPlatformAdmin"
+            class="cardapio-prod__photo"
+            role="group"
+            aria-label="Filtrar por foto"
+          >
             <button
               v-for="chip in photoChips"
               :key="chip.value"
@@ -335,6 +388,7 @@ function onResetFilters() {
             </button>
           </div>
           <UButton
+            v-if="isPlatformAdmin"
             :icon="showMoreFilters ? 'i-lucide-chevron-up' : 'i-lucide-sliders-horizontal'"
             :label="
               showMoreFilters
@@ -358,7 +412,7 @@ function onResetFilters() {
             />
           </UDropdownMenu>
           <div class="cardapio-prod__primary">
-            <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
+            <UDropdownMenu v-if="isPlatformAdmin" :items="moreItems" :content="{ align: 'end' }">
               <UButton
                 icon="i-lucide-ellipsis"
                 color="neutral"
@@ -380,6 +434,7 @@ function onResetFilters() {
 
       <OmniDataTable
         v-model="selectedIds"
+        v-model:sort="sort"
         :rows="pagedRows"
         :loading="bulkBusy"
         :columns="tableColumns"
@@ -476,6 +531,7 @@ function onResetFilters() {
       :open="modalOpen"
       :product-id="editingId"
       :categories="store.categories"
+      :simple="!isPlatformAdmin"
       @close="modalOpen = false"
       @saved="modalOpen = false"
     />

@@ -271,3 +271,56 @@ Formato: **ID — título** · `arquivo:linha` · Problema · Risco · Correçã
 | 10  | Backup off-site obrigatório e criptografado + restore mensal automatizado; `Validate()` de produção exigir SMTP e barrar defaults inseguros | Médio   | Médio   | M-15, M-01, B-06 |
 
 **Sequência sugerida:** 1, 2, 7 e 9 cabem em uma semana e removem os maiores riscos de menor custo; 3, 4 e 6 formam uma segunda leva de robustez operacional; 5 e 8 exigem medição (`EXPLAIN`, `nuxi analyze`) antes de fechar o escopo.
+
+## 7. Top 10 revisado com números reais (primeira execução, 2026-11-23)
+
+Execução `20261123-022153` (`npm run obs:run`, ambiente local, banco cópia de produção,
+**sem credencial de teste**). Ela cobre só:
+
+- rotas públicas;
+- testes negativos de autorização;
+- banco (checagens estruturais e queries capturadas);
+- saúde e dependências.
+
+Endpoints autenticados e páginas logadas ficam para a próxima execução, quando as
+credenciais existirem em `observability/.env.local`.
+
+| medida                                         | valor                                                                                                                                                                                           |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Endpoints no inventário                        | 919 (491 `auth_account`, 341 `auth`, 25 `role`, 26 públicos, 36 com auth dentro do handler)                                                                                                     |
+| Rejeição sem token                             | 883 endpoints testados, **0 responderam 2xx sem token** (695 rejeitados com 400 `missing_account_id` pelo guard de módulo antes da auth, demais com 401, `gateway/verify` com 302 para o login) |
+| Banco                                          | 396 relações; **428 FKs sem índice**, 12 grupos de índices duplicados, 40 índices nunca usados; `pg_stat_statements` não instalado                                                              |
+| Consultas em segundo plano                     | ~15 consultas/s com o sistema ocioso: cada fila de outbox/job faz 1 claim/s (intervalo padrão de `platform/jobs`)                                                                               |
+| Consultas lentas (> 200 ms) e suspeitas de N+1 | nenhuma no tráfego medido (sem tráfego autenticado ainda)                                                                                                                                       |
+| Dependências Go                                | **29 vulnerabilidades alcançáveis** (`govulncheck`)                                                                                                                                             |
+| Dependências web                               | `npm audit --omit=dev`: **6 críticas, 16 altas**                                                                                                                                                |
+| Páginas públicas (`nuxt dev`)                  | LCP 5,4 s em `/auth/login`; `/offline` com TTFB de 10 s. Medir de novo no build de produção antes de concluir                                                                                   |
+| Saúde                                          | API, web, Postgres e 9 serviços auxiliares saudáveis                                                                                                                                            |
+
+| #   | melhoria                                                                                                                                         | impacto | esforço | base                        |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | ------- | --------------------------- |
+| 1   | Sanitizar `bodyHtml` de comentários no servidor e no `v-html`; token em cookie HttpOnly                                                          | Crítico | Baixo   | C-01 (confirmado no código) |
+| 2   | Atualizar a toolchain/dependências Go até zerar as 29 vulnerabilidades alcançáveis; `govulncheck` bloqueante no CI                               | Alto    | Baixo   | medido                      |
+| 3   | Zerar as 6 críticas e 16 altas do `npm audit` do web (Nuxt/Vue/Tiptap)                                                                           | Alto    | Médio   | medido, A-06                |
+| 4   | Proteger `/uploads/` (sem listagem; anexos de feedback autenticados e escopados)                                                                 | Alto    | Baixo   | A-02                        |
+| 5   | Rate limit por identidade autenticada, último hop confiável e limiter de login                                                                   | Alto    | Médio   | A-01                        |
+| 6   | Graceful shutdown e `recover` nos workers em segundo plano                                                                                       | Alto    | Médio   | A-03                        |
+| 7   | Índices nas FKs de hot path: começar pelas colunas `account_id`/`*_id` usadas em `WHERE`/`JOIN` (das 428 sem índice), criados com `concurrently` | Médio   | Baixo   | medido, M-07                |
+| 8   | Timeouts por rota ou jobs assíncronos para chat de IA, PDF e OCR                                                                                 | Alto    | Médio   | A-04                        |
+| 9   | Paginação por cursor nas listagens sem limite                                                                                                    | Alto    | Médio   | A-05                        |
+| 10  | CI em `pull_request` com lint, `vue-tsc`, `-race` e `obs:inventory --check`                                                                      | Médio   | Baixo   | M-03                        |
+
+O que sai do Top 10 anterior:
+
+- **Backup:** continua no item M-15.
+- **Locks do migrator:** continuam no item M-02.
+
+O que mudou de lugar:
+
+- **Dependências vulneráveis subiram:** os números medidos mostram superfície concreta.
+- **Rejeição sem token:** a execução confirmou que nenhuma rota com wrapper de auth
+  responde sem token. Isso não cobre as 36 rotas com auth dentro do handler
+  (WebSocket, `/internal`, `/v1/runtime`), que ficam para revisão manual.
+- **Polling em segundo plano:** a medição mostrou ~15 consultas/s ociosas, aceitável.
+  Só entra se o banco virar gargalo; nesse caso, o caminho é LISTEN/NOTIFY ou backoff
+  quando a fila está vazia.

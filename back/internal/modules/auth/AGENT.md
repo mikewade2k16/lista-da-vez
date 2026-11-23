@@ -242,3 +242,7 @@ mantém membership e grants de negócio explícitos. Teste PostgreSQL descartáv
 em `finance_scope_test.go` cobre permissões, revogação e módulo desabilitado.
 O cliente selecionado no chat é enviado em header, validado no middleware e
 revalidado no serviço; não muda a conta global da página.
+
+## Observabilidade
+
+`RequireAuth` e `RequireAuthWithAccount` chamam `observability.SetPrincipal` (só ids de usuário e conta) para que a requisição medida seja atribuída. Isso não altera a autorização.

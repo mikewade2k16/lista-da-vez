@@ -13,7 +13,8 @@ Logging, Gzip, `AccountModulesGuard` (multi-tenant), helpers de erro padronizado
 - `compress.go` — `Gzip()` (P1.16): comprime respostas quando o cliente aceita gzip; pula WebSocket (Hijack), uploads/binários (Content-Type não-comprimível) e respostas sem corpo (204/304/1xx). Preserva Flush/Hijack e implementa `Unwrap`, assim como o `statusRecorder` do Logging, para `http.ResponseController` alcançar deadlines por rota. Mais interno (após Logging, para o status logado ser o real).
 - `cors.go` — `CORS(allowedOrigins)`. O CORS autenticado permite `Idempotency-Key`, usado por
   uploads controlados contra duplicacao por retry; novos headers de contrato exigem preflight testado.
-- `request_id.go` — `RequestID` injeta X-Request-Id e logging structure key.
+- `request_id.go` — `RequestID` injeta X-Request-Id e logging structure key. Reaproveita o `X-Request-ID` recebido quando casa `^[A-Za-z0-9._-]{8,80}$` (correlation ID gerado pelo front: `<pageViewId>-<seq>`); senão gera um novo. CORS autenticado aceita `X-Request-ID` e `X-Obs-Source`.
+- Observabilidade: `WriteError*` chama `observability.NoteError` e `Recover` chama `observability.NotePanic` (stack só no log e no schema obs). Ver `internal/platform/observability/AGENT.md`.
 - `rate_limit.go` — `RateLimit(opts)`: token bucket por identidade (preferida
   `Principal.UserID`, fallback IP). Resposta 429 com `Retry-After`. Coberto
   por testes em `rate_limit_test.go`.

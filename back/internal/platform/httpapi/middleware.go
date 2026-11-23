@@ -5,12 +5,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/observability"
 )
 
 type Middleware func(http.Handler) http.Handler
@@ -74,7 +78,12 @@ func Chain(handler http.Handler, middlewares ...Middleware) http.Handler {
 
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := newRequestID()
+		// Reaproveita o correlation ID enviado pelo front (formato validado) para
+		// ligar página → API → banco; qualquer outro valor é descartado.
+		requestID := strings.TrimSpace(r.Header.Get("X-Request-ID"))
+		if !observability.ValidCorrelationID(requestID) {
+			requestID = newRequestID()
+		}
 		w.Header().Set("X-Request-ID", requestID)
 
 		ctx := context.WithValue(r.Context(), requestIDContextKey, requestID)
@@ -105,6 +114,7 @@ func Logging(logger *slog.Logger) Middleware {
 				slog.String("path", r.URL.Path),
 				slog.Int("status", recorder.status),
 				slog.Duration("duration", time.Since(startedAt)),
+				slog.Float64("duration_ms", float64(time.Since(startedAt).Microseconds())/1000),
 			)
 		})
 	}
@@ -119,13 +129,17 @@ func Recover(logger *slog.Logger) Middleware {
 					return
 				}
 
+				// Stack só no log e no schema obs; a resposta continua genérica.
+				stack := debug.Stack()
 				logger.Error(
 					"http_panic",
 					slog.String("request_id", RequestIDFromContext(r.Context())),
 					slog.Any("panic", recovered),
+					slog.String("stack", string(stack)),
 				)
 
 				WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro interno do servidor.")
+				observability.NotePanic(r.Context(), fmt.Sprint(recovered), stack)
 			}()
 
 			next.ServeHTTP(w, r)
@@ -166,7 +180,7 @@ func CORS(allowedOrigins []string) Middleware {
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Requested-With,X-Account-Id,Idempotency-Key,If-Match,X-Perola-Token,X-Perola-Company-Key")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Requested-With,X-Account-Id,Idempotency-Key,If-Match,X-Perola-Token,X-Perola-Company-Key,X-Request-ID,X-Obs-Source")
 			w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 
 			if r.Method == http.MethodOptions {

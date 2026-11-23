@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/observability"
 )
 
 type ErrorPayload struct {
@@ -55,6 +57,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, code, messag
 }
 
 func WriteErrorWithDetails(w http.ResponseWriter, r *http.Request, status int, code, message string, details any) {
+	observability.NoteError(r.Context(), code, message)
 	WriteJSON(w, status, ErrorPayload{
 		Error: APIError{
 			Code:      code,

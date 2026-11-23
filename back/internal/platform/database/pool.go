@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
@@ -14,7 +15,7 @@ import (
 // OpenPool abre o pool privilegiado (DATABASE_URL). Usado pelo binario migrate
 // (roda DDL das migrations) e por qualquer caller que precise da role padrao.
 func OpenPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
-	return openPoolWithURL(ctx, cfg, cfg.DatabaseURL)
+	return openPoolWithURL(ctx, cfg, cfg.DatabaseURL, nil)
 }
 
 // OpenAppPool abre o pool de RUNTIME da api com DATABASE_APP_URL (role
@@ -22,14 +23,20 @@ func OpenPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 // URL nao esta definida (dev local sem a role — em production o Validate() da
 // config impede esse fallback).
 func OpenAppPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
+	return OpenAppPoolWithTracer(ctx, cfg, nil)
+}
+
+// OpenAppPoolWithTracer igual ao OpenAppPool, com um tracer pgx opcional
+// (instrumentacao de consultas; nil = sem tracer).
+func OpenAppPoolWithTracer(ctx context.Context, cfg config.Config, tracer pgx.QueryTracer) (*pgxpool.Pool, error) {
 	url := cfg.DatabaseAppURL
 	if url == "" {
 		url = cfg.DatabaseURL
 	}
-	return openPoolWithURL(ctx, cfg, url)
+	return openPoolWithURL(ctx, cfg, url, tracer)
 }
 
-func openPoolWithURL(ctx context.Context, cfg config.Config, url string) (*pgxpool.Pool, error) {
+func openPoolWithURL(ctx context.Context, cfg config.Config, url string, tracer pgx.QueryTracer) (*pgxpool.Pool, error) {
 	if url == "" {
 		return nil, errors.New("database_url is required")
 	}
@@ -50,6 +57,9 @@ func openPoolWithURL(ctx context.Context, cfg config.Config, url string) (*pgxpo
 	poolConfig.MaxConnIdleTime = 5 * time.Minute
 	poolConfig.MaxConnLifetime = 30 * time.Minute
 	poolConfig.HealthCheckPeriod = 30 * time.Second
+	if tracer != nil {
+		poolConfig.ConnConfig.Tracer = tracer
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {

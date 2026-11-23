@@ -30,6 +30,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/knowledge"
 	metaads "github.com/mikewade2k16/lista-da-vez/back/internal/modules/meta_ads"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
+	observabilitymodule "github.com/mikewade2k16/lista-da-vez/back/internal/modules/observability"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operationgoals"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/planning"
@@ -58,10 +59,12 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/observability"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/secretbox"
 )
 
-func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) (http.Handler, error) {
+// obs pode ser nil (OBSERVABILITY_ENABLED=false): middleware e coletor viram no-op.
+func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, obs *observability.Runtime) (http.Handler, error) {
 	const operationsAlertMonitorInterval = 3 * time.Second
 	const feedbackAttachmentCleanupInterval = 6 * time.Hour
 
@@ -301,6 +304,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		fileServer := http.StripPrefix("/uploads/", http.FileServer(http.Dir(cfg.UploadsDir)))
 		mux.Handle("GET /uploads/", fileServer)
 	}
+	// Painel de observabilidade (platform_admin) + coletor do front (logado).
+	observabilitymodule.RegisterRoutes(mux, observabilitymodule.NewService(observabilitymodule.NewStore(pool), obs, cfg.Env), authMiddleware)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		// AC-16: ping real no banco (o pool pgx e lazy — sem isso a api responde 200
 		// mesmo com o Postgres morto). 503 = healthcheck do compose marca unhealthy e
@@ -868,6 +873,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		httpapi.SecurityHeaders(strings.EqualFold(cfg.Env, "production")),
 		httpapi.CORS(cfg.CORSAllowedOrigins),
 		httpapi.RequestID,
+		// Observabilidade logo apos o RequestID (le o correlation ID) e antes do
+		// RateLimit: mede tambem 429, e auth/Recover/WriteError enriquecem o estado.
+		obs.Middleware(mux),
 		// RateLimit antes do Logging para que requisicoes bloqueadas tambem apareçam nos logs
 		// com status 429. Identidade preferida = principal.UserID (via callback que evita import
 		// cycle com o pacote auth); fallback para IP.

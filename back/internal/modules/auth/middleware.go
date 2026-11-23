@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/observability"
 )
 
 type authContextKey string
@@ -42,6 +43,7 @@ func (middleware *Middleware) RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		observability.SetPrincipal(r.Context(), principal.UserID, "")
 		ctx := context.WithValue(r.Context(), principalContextKey, principal)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -122,6 +124,7 @@ func (middleware *Middleware) RequireAuthWithAccount(next http.Handler) http.Han
 		}
 
 		principal.AccountID = accountID
+		observability.SetPrincipal(r.Context(), "", accountID)
 		ctx := context.WithValue(r.Context(), principalContextKey, principal)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}))

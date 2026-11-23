@@ -60,6 +60,16 @@ func writeBatch(ctx context.Context, pool *pgxpool.Pool, batch *eventBatch, rout
 		}
 		written += upserts.Len()
 	}
+	if len(batch.presence) > 0 {
+		presence := &pgx.Batch{}
+		for _, item := range batch.presence {
+			presence.Queue(upsertPresenceSQL, item.PageViewID, item.UserID, item.Page, item.UserAgent, item.SeenAt)
+		}
+		if err := tx.SendBatch(ctx, presence).Close(); err != nil {
+			return 0, fmt.Errorf("upsert obs.presence: %w", err)
+		}
+		written += presence.Len()
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit obs flush: %w", err)
 	}

@@ -71,3 +71,40 @@ export function useObsQuery<T>(path: string, params: () => Params = () => ({})) 
 
   return { data, loading, error, reload }
 }
+
+// Atualizacao automatica: roda `tick` a cada `intervalMs` so com a aba do navegador
+// visivel, sem sobrepor requisicoes (`busy`), e retoma ao voltar. Limpa no unmount.
+export function useObsAutoRefresh(tick: () => void, busy: () => boolean, intervalMs: number) {
+  let timer: ReturnType<typeof setInterval> | null = null
+
+  function run() {
+    if (document.hidden || busy()) return
+    tick()
+  }
+  function start() {
+    if (timer) return
+    timer = setInterval(run, intervalMs)
+  }
+  function stop() {
+    if (!timer) return
+    clearInterval(timer)
+    timer = null
+  }
+  function onVisibility() {
+    if (document.hidden) {
+      stop()
+      return
+    }
+    run()
+    start()
+  }
+
+  onMounted(() => {
+    document.addEventListener('visibilitychange', onVisibility)
+    if (!document.hidden) start()
+  })
+  onBeforeUnmount(() => {
+    document.removeEventListener('visibilitychange', onVisibility)
+    stop()
+  })
+}

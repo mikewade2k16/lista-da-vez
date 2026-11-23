@@ -15,6 +15,7 @@ import {
   isPublicApiPath,
   normalizeApiPath,
 } from '~/utils/observability/path'
+import { HEARTBEAT_INTERVAL_MS, shouldSendHeartbeat } from '~/utils/observability/health'
 import { createVitalsCollector, measureSpaPageload } from '~/utils/observability/vitals'
 
 // Coletor de observabilidade do front (Fase 2): correlation id por chamada, Web
@@ -172,9 +173,33 @@ export default defineNuxtPlugin((nuxtApp) => {
     }
   }
 
+  // --- heartbeat de presenca -------------------------------------------------------
+  // Nao passa pela amostragem: presenca precisa ser completa. Aba oculta, deslogado
+  // ou desligado = nao envia (decisao pura em utils/observability/health).
+  let lastHeartbeatAt = 0
+
+  function maybeHeartbeat(routeChanged: boolean) {
+    const allowed = shouldSendHeartbeat({
+      hidden: document.visibilityState === 'hidden',
+      loggedIn: Boolean(auth.accessToken),
+      enabled: runtimeConfig.public.observabilityEnabled !== false,
+      lastSentAt: lastHeartbeatAt,
+      now: Date.now(),
+      routeChanged,
+    })
+    if (!allowed) return
+    lastHeartbeatAt = Date.now()
+    queue.push({ kind: 'heartbeat', name: page, at: new Date().toISOString() })
+    void sendBatch()
+  }
+
   setInterval(() => void sendBatch(), FLUSH_INTERVAL_MS)
+  setInterval(() => maybeHeartbeat(false), HEARTBEAT_INTERVAL_MS)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'hidden') return
+    if (document.visibilityState !== 'hidden') {
+      maybeHeartbeat(false)
+      return
+    }
     vitals.flush()
     sendBatchKeepalive()
   })
@@ -187,6 +212,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     if (firstNavigation) {
       firstNavigation = false
       page = currentPage()
+      maybeHeartbeat(true)
       return
     }
     // Fecha a pagina anterior (vitals + lote) antes de trocar o contexto.
@@ -198,5 +224,6 @@ export default defineNuxtPlugin((nuxtApp) => {
     sampled = Math.random() < sampleRate
     page = currentPage()
     measureSpaPageload(navStartedAt, record)
+    maybeHeartbeat(true)
   })
 })

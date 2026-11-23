@@ -106,3 +106,132 @@ aqui primeiro.
 - `results.json`: `{ runId, startedAt, finishedAt, git, env, baseUrl, filters, results: [run_results...], db: {...}, health: {...}, coverage: { endpoints|pages|tables: { total, tested, pct, untested: [{ key, reason }] } }, scores: { <module>: { score, components } }, regressions: [...], improvements: [...], exitCode }`
 - `report.html`: estático, sem dependências externas.
 - `screenshots/*.jpg` (qualidade 50, viewport 1280×800, para poupar disco).
+
+## Saúde do sistema (fase 6) — contratos
+
+Migration `0330_observability_health.sql` (tabelas `obs.system_samples`,
+`obs.container_samples`, `obs.presence`, `obs.alerts`, `obs.security_checks`,
+`obs.findings`). Retenção: as três primeiras entram na limpeza de `OBS_RETENTION_DAYS`
+(presença: apagar `last_seen` com mais de 1 dia).
+
+### Coletor de sistema na API (`platform/observability/system*.go`)
+
+A cada `OBS_SYSTEM_INTERVAL` (padrão 15s) grava uma linha `source='api'` em
+`obs.system_samples.metrics`:
+
+```jsonc
+{
+  "go":    { "goroutines": 0, "heapAllocBytes": 0, "heapSysBytes": 0, "numGC": 0, "gcPauseP99Ms": 0, "gomaxprocs": 0 },
+  "pool":  { "max": 0, "total": 0, "acquired": 0, "idle": 0, "acquireCountDelta": 0, "emptyAcquireDelta": 0,
+             "canceledAcquireDelta": 0, "acquireWaitMsDelta": 0, "utilization": 0.0 },
+  "pg":    { "connections": 0, "maxConnections": 0, "active": 0, "idleInTransaction": 0,
+             "idleInTransactionOver60s": 0, "waitingOnLock": 0, "longestQuerySeconds": 0,
+             "longestQuery": "<normalizado>", "deadlocksDelta": 0, "cacheHitRatio": 0.0, "dbSizeBytes": 0 },
+  "jobs":  [ { "table": "schema.tabela", "pending": 0, "due": 0, "oldestDueLagSeconds": 0, "processing": 0,
+               "stuckProcessing": 0, "dead": 0, "deadLastHour": 0 } ]
+}
+```
+
+`jobs`: descobre via `information_schema` as tabelas com colunas `status` e `run_after`
+(filas do `platform/jobs`, status `pending|processing|done|dead`). Consultas do coletor
+usam `WithoutTracing` e timeout curto; falha numa parte não derruba as outras.
+
+### Agente de host (`back/cmd/obs-agent`, container `obs-agent`)
+
+A cada `OBS_AGENT_INTERVAL` (padrão 30s): lê o Docker pelo socket (somente leitura) e
+grava uma linha por container em `obs.container_samples` (inclui `restart_policy` e `exit_code` do inspect), mais uma linha
+`source='agent'` em `obs.system_samples` com
+`{ "disk": [{ "path": "/", "totalBytes": 0, "freeBytes": 0, "usedPct": 0 }], "docker": { "containers": 0, "running": 0 } }`.
+
+### Presença
+
+O front envia `kind: "heartbeat"` (campo `name` = rota atual) pelo `POST /v1/obs/collect`
+a cada 30s com a aba visível e a cada troca de rota. A API faz upsert em `obs.presence`
+(`page_view_id`, `user_id` do principal). Online = `last_seen` nos últimos 90s.
+
+### Alertas (`platform/observability/alerts*.go`)
+
+Avaliados a cada 60s. Canal atual: **e-mail** (SMTP já configurado no projeto,
+destinatários em `OBS_ALERT_EMAILS`, separados por vírgula). WhatsApp: **planejado**,
+não implementado. Anti-spam: notifica ao abrir, ao subir de severidade e no máximo
+1 vez a cada `OBS_ALERT_RENOTIFY_MINUTES` (padrão 60) enquanto aberto; avisa ao resolver.
+Regras (alvo entre parênteses compõe o fingerprint). As regras e contagens de 5xx/latência lidas de `obs.http_requests` consideram só `source = 'live'` (tráfego do runner fica nas execuções). Alertas abertos cuja condição deixa de valer são resolvidos na rodada seguinte. A área `containers` do /health conta só containers esperados no ar (ex.: "14 de 14 containers esperados rodando, 5 parados de propósito").
+
+| regra | condição (janela) | severidade |
+|---|---|---|
+| `api_5xx_rate` | 5xx > 5% e >= 20 req em 5 min | high (critical se > 20%) |
+| `route_errors` (rota) | rota com >= 5 respostas 5xx em 5 min | medium |
+| `slow_route` (rota) | p95 > 2000 ms com >= 10 req em 15 min | medium |
+| `pool_saturation` | utilização >= 0.9 em 3 amostras seguidas, ou canceledAcquireDelta > 0 em 2 seguidas, ou espera média (acquireWaitMsDelta / acquireCountDelta) > 50 ms em 3 seguidas (emptyAcquireDelta não conta: é só criação de conexão nova) | high |
+| `pg_idle_in_tx` | idleInTransactionOver60s > 0 | medium |
+| `pg_lock_wait` | waitingOnLock > 0 por 2 amostras | medium |
+| `pg_deadlock` | deadlocksDelta > 0 | high |
+| `pg_connections` | connections / maxConnections >= 0.85 | high |
+| `goroutine_growth` | goroutines > 10000, ou crescimento > 50% em 30 min sem queda | medium |
+| `job_backlog` (tabela) | oldestDueLagSeconds > 300 | medium (high > 1800) |
+| `job_dead` (tabela) | deadLastHour > 0 | medium |
+| `collector_silent` | sem amostra `api` há 2 min | high |
+| `agent_silent` | sem amostra `agent` há 3 min (só se já houve alguma) | medium |
+| `container_down` (container) | (restart_policy em always\|unless-stopped\|on-failure E state != running) ou health = unhealthy. Policy `no`/vazia parada é intencional e não alerta; containers sem amostra há > 10 min (removidos) são ignorados | critical |
+| `container_restarts` (container) | restart_count subiu em 1 h | high |
+| `disk_low` (path) | usedPct >= 85 (critical >= 95) | high |
+| `frontend_errors` | >= 20 erros de JS em 15 min | medium |
+
+### Endpoints novos (todos `RequireRoles(platform_admin)`, envelope `{ data }`)
+
+- `GET /v1/admin/observability/health` →
+```jsonc
+{
+  "generatedAt": "iso",
+  "overall": "ok|warn|critical",
+  "areas": [ { "key": "api|database|containers|pages|workers|security", "label": "API", "status": "ok|warn|critical|unknown", "summary": "texto curto" } ],
+  "issues": [ { "severity": "critical|high|medium|low", "area": "api", "title": "texto", "detail": "texto", "since": "iso", "link": { "tab": "endpoints|db|pages|errors|security|system", "query": {} } } ],
+  "errors": { "lastHour": { "api5xx": 0, "frontend": 0 }, "last24h": { "api5xx": 0, "frontend": 0 }, "top": [ { "source": "api|front", "signature": "", "count": 0 } ] },
+  "online": { "count": 0, "users": [ { "userId": "", "name": "", "page": "", "lastSeen": "iso", "tabs": 1 } ] },
+  "system": { "api": { "at": "iso", "goroutines": 0, "heapMB": 0, "poolUtilization": 0, "pgConnections": 0, "pgMaxConnections": 0 } | null,
+              "agent": { "at": "iso", "disk": [], "containers": 0, "running": 0 } | null },
+  "alerts": { "channel": "email", "configured": true, "recipients": 0, "whatsapp": "planned", "open": [ { "id": 0, "severity": "", "title": "", "since": "iso", "notifiedAt": "iso|null" } ] },
+  "security": { "checks": { "pass": 0, "fail": 0, "partial": 0, "not_tested": 0 }, "findings": { "open": { "critical": 0, "high": 0, "medium": 0, "low": 0 }, "fixed": 0 } }
+}
+```
+  `issues` = alertas abertos + achados críticos/altos abertos + checagens de segurança
+  `fail`, em ordem de severidade (máximo 15).
+- `GET /v1/admin/observability/security` → `{ checks: [ {key, category, title, standard, status, detail, checkedAt, source} ], findings: [ {id, severity, title, area, location, status, updatedAt} ] }`
+- `GET /v1/admin/observability/system?hours=6` → `{ api: [ {at, metrics} ], agent: [ {at, metrics} ], containers: [ {container, service, state, health, restartCount, cpuPct, memBytes, memLimitBytes, at} ] }` (containers = última amostra de cada).
+- `GET /v1/admin/observability/alerts?status=open|resolved|all` → `[ {id, rule, severity, area, title, detail, status, firstSeen, lastSeen, resolvedAt, notifiedAt, notifyCount, lastNotifyError} ]`
+- `POST /v1/admin/observability/alerts/test` → envia um e-mail de teste aos destinatários (204; 409 `alerts_not_configured` sem SMTP/destinatários).
+
+### Segurança
+
+`observability/config/security-catalog.json` lista os ataques/controles (OWASP Top 10,
+OWASP API Top 10 e outros), cada um com `key, category, title, standard, howTested`.
+`npm run obs:security -- --sync` grava o catálogo em `obs.security_checks` (sem
+sobrescrever resultado já testado) e importa os achados da AUDITORIA em `obs.findings`
+(sem sobrescrever `status` editado). A fase `security` do runner (`--only=security`)
+executa as checagens automáticas e atualiza `status/detail/evidence/checked_at`.
+Nunca roda ataque destrutivo; contra produção só checagens passivas (headers, TLS).
+
+### Deploys (fase 6)
+
+Tabela `obs.deploys` (migration 0330). Fonte: `.tmp/deploy/<id>/summary.json` gerado por
+`scripts/deploy/deploy-report.mjs` (duração de ponta a ponta pelo relógio monotônico da
+máquina que disparou: do início do launcher até os smoke tests na VPS; `stages[]` com
+`name, depth, status, durationMs`).
+
+- Gravação automática: ao terminar `run-deploy.mjs` (sucesso ou falha), o resumo é
+  inserido no banco do ambiente alvo (prod/staging pela mesma conexão SSH do deploy;
+  upsert por `id`). Falha ao gravar só gera aviso, nunca muda o exit code do deploy.
+- Importação: `npm run obs:deploys -- --sync [--target=local|prod|staging]` importa
+  todos os `summary.json` ainda não gravados (idempotente).
+- `GET /v1/admin/observability/deploys?limit=30` (platform_admin) →
+```jsonc
+{ "items": [ { "id": "", "command": "fast-prod", "environment": "prod", "startedAt": "iso", "finishedAt": "iso",
+               "durationMs": 0, "exitCode": 0, "status": "success|failed|interrupted|unknown",
+               "gitSha": "", "gitBranch": "", "imageTag": "", "verdict": "ok|slow|failed",
+               "stages": [ { "name": "", "depth": 0, "status": "", "durationMs": 0 } ] } ],
+  "stats": { "count": 0, "successRate": 0.0, "medianMs": 0, "p90Ms": 0, "slowThresholdMs": 0, "lastSuccessAt": "iso|null" } }
+```
+  `medianMs`/`p90Ms` sobre os últimos 10 com sucesso do mesmo `command`;
+  `slow` = duração > 1,5 × mediana (mínimo 3 deploys de referência).
+- `/health`: área `deploy` (último deploy: ok/lento/falhou e há quanto tempo) e issue
+  quando o último deploy falhou ou foi lento.

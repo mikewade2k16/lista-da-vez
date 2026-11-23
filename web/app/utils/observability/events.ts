@@ -1,6 +1,12 @@
 import { sanitizeText } from './sanitize'
 
-export type ObsEventKind = 'vital' | 'pageload' | 'js_error' | 'api_call' | 'api_failure'
+export type ObsEventKind =
+  | 'vital'
+  | 'pageload'
+  | 'js_error'
+  | 'api_call'
+  | 'api_failure'
+  | 'heartbeat'
 
 export interface ObsEvent {
   kind: ObsEventKind

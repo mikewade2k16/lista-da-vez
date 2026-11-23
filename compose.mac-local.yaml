@@ -46,6 +46,15 @@ services:
       PRIVATE_FILES_DIR: /app/data/private
     volumes:
       - api_private_files:/app/data/private
+  obs-agent:
+    build:
+      dockerfile: ../compose.mac-api.Dockerfile
+    # No Docker Desktop o "/" do container e o da VM (alguns MB); o disco real do
+    # Mac aparece pelo bind do repositorio (virtiofs), somente leitura.
+    environment:
+      OBS_AGENT_DISK_PATHS: /host-mac=mac
+    volumes:
+      - ./:/host-mac:ro
   web:
     ports: !reset []
   local-access:

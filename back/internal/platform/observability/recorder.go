@@ -163,6 +163,7 @@ type eventBatch struct {
 	nPlusOne  []nPlusOneEvent
 	externals []externalEvent
 	frontend  []frontendEvent
+	presence  map[string]presenceEvent
 }
 
 func newEventBatch() *eventBatch { return &eventBatch{} }
@@ -179,9 +180,11 @@ func (b *eventBatch) add(event any) {
 		b.externals = append(b.externals, typed)
 	case frontendEvent:
 		b.frontend = append(b.frontend, typed)
+	case presenceEvent:
+		b.addPresence(typed)
 	}
 }
 
 func (b *eventBatch) size() int {
-	return len(b.requests) + len(b.slow) + len(b.nPlusOne) + len(b.externals) + len(b.frontend)
+	return len(b.requests) + len(b.slow) + len(b.nPlusOne) + len(b.externals) + len(b.frontend) + len(b.presence)
 }

@@ -58,6 +58,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/mailer"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/observability"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/secretbox"
@@ -305,7 +306,17 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		mux.Handle("GET /uploads/", fileServer)
 	}
 	// Painel de observabilidade (platform_admin) + coletor do front (logado).
-	observabilitymodule.RegisterRoutes(mux, observabilitymodule.NewService(observabilitymodule.NewStore(pool), obs, cfg.Env), authMiddleware)
+	observabilityStore := observabilitymodule.NewStore(pool)
+	observabilityAlerts := observabilitymodule.NewAlerts(observabilityStore, mailer.New(mailer.Config{
+		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword,
+		FromEmail: cfg.SMTPFromEmail, FromName: cfg.SMTPFromName, TLSMode: mailer.TLSMode(cfg.SMTPTLSMode),
+		InsecureSkipVerify: cfg.SMTPInsecureSkipVerify, Timeout: cfg.SMTPTimeout,
+	}), observabilitymodule.AlertConfigFromEnv(cfg.WebAppURL), logger)
+	if obs.Enabled() {
+		// Vive até o processo encerrar (a API não tem desligamento gracioso).
+		observabilityAlerts.Start(context.Background())
+	}
+	observabilitymodule.RegisterRoutes(mux, observabilitymodule.NewService(observabilityStore, obs, cfg.Env).WithAlerts(observabilityAlerts), authMiddleware)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		// AC-16: ping real no banco (o pool pgx e lazy — sem isso a api responde 200
 		// mesmo com o Postgres morto). 503 = healthcheck do compose marca unhealthy e

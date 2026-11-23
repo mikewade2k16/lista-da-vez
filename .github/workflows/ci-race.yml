@@ -1,0 +1,38 @@
+name: CI Go (vet e race)
+
+# Os testes de back/ leem arquivos de ../automation e ../docs, por isso o
+# checkout é do repositório inteiro e os comandos rodam a partir de back/.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-race-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: back
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: back/go.mod
+          cache-dependency-path: back/go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test -race
+        run: go test -race ./...

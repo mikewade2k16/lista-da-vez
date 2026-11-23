@@ -50,5 +50,28 @@ func purgeRawData(ctx context.Context, pool *pgxpool.Pool, retentionDays int) (i
 			}
 		}
 	}
+	extra, err := purgeHealthData(ctx, pool, cutoff)
+	return total + extra, err
+}
+
+// purgeHealthData limpa amostras de sistema/containers (retenção padrão) e a
+// presença (last_seen com mais de 1 dia).
+func purgeHealthData(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time) (int64, error) {
+	statements := []struct {
+		sql string
+		arg time.Time
+	}{
+		{`delete from obs.system_samples where id in (select id from obs.system_samples where occurred_at < $1 limit 5000)`, cutoff},
+		{`delete from obs.container_samples where id in (select id from obs.container_samples where occurred_at < $1 limit 5000)`, cutoff},
+		{`delete from obs.presence where last_seen < $1`, time.Now().UTC().Add(-24 * time.Hour)},
+	}
+	var total int64
+	for _, item := range statements {
+		tag, err := pool.Exec(ctx, item.sql, item.arg)
+		if err != nil {
+			return total, fmt.Errorf("purge obs health: %w", err)
+		}
+		total += tag.RowsAffected()
+	}
 	return total, nil
 }

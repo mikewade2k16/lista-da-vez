@@ -38,6 +38,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 	mux.Handle("GET "+adminRoot+"/runs/{id}", admin(handler.run))
 	mux.Handle("GET "+adminRoot+"/run-requests", admin(handler.runRequests))
 	mux.Handle("POST "+adminRoot+"/run-requests", admin(handler.requestRun))
+	mux.Handle("GET "+adminRoot+"/health", admin(handler.health))
+	mux.Handle("GET "+adminRoot+"/security", admin(handler.security))
+	mux.Handle("GET "+adminRoot+"/system", admin(handler.system))
+	mux.Handle("GET "+adminRoot+"/alerts", admin(handler.alerts))
+	mux.Handle("GET "+adminRoot+"/deploys", admin(handler.deploys))
+	mux.Handle("POST "+adminRoot+"/alerts/test", admin(handler.testAlert))
 	mux.Handle("POST /v1/obs/collect", middleware.RequireAuth(http.HandlerFunc(handler.collect)))
 }
 
@@ -60,7 +66,7 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	case errors.Is(err, ErrNotFound):
 		httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Registro não encontrado.")
 	default:
-		httpapi.WriteError(w, r, http.StatusInternalServerError, "observability_error", "Não foi possível ler os dados de observabilidade. Confira se a migration 0329 foi aplicada.")
+		httpapi.WriteError(w, r, http.StatusInternalServerError, "observability_error", "Não foi possível ler os dados de observabilidade. Confira se as migrations 0329 e 0330 foram aplicadas.")
 	}
 }
 

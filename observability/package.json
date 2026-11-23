@@ -3,12 +3,17 @@
   "private": true,
   "type": "module",
   "description": "Inventário e runner de observabilidade do Omni",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "obs:inventory": "node scripts/build-inventory.mjs",
     "obs:run": "node runner/run.mjs",
     "obs:worker": "node runner/worker.mjs",
-    "obs:compare": "node runner/compare.mjs"
+    "obs:compare": "node runner/compare.mjs",
+    "obs:security": "node scripts/security-sync.mjs",
+    "obs:deploys": "node scripts/deploys-sync.mjs",
+    "test": "node --test runner/*.test.mjs"
   },
   "dependencies": {
     "pg": "^8.13.0",

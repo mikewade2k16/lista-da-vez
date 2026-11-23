@@ -279,3 +279,38 @@ unico para `deploy:prod`/staging.
 Validacao sem VPS: testes do launcher (trava), `bash -n` dos scripts remotos gerados por
 `ssh` falso, backup com `docker` simulado (sucesso/falhas), tunel e ControlMaster contra
 um sshd descartavel em container. O primeiro deploy real ainda precisa ser observado.
+
+## Servico obs-agent (observabilidade, fase 6)
+
+- `obs-agent` existe nos tres Composes (dev, mac-local, prod) com a MESMA imagem da API
+  (`command: ["obs-agent"]`; binario compilado no `back/Dockerfile` e `compose.mac-api.Dockerfile`).
+- Monta `/var/run/docker.sock` e `/` do host, ambos `:ro` (so leitura de metricas; ver
+  `back/internal/obsagent/AGENT.md` para o risco do socket). Sem portas publicas.
+- `rollout-app.sh` (deploy rapido/pull) e `deploy-ship.ps1` sobem o `obs-agent` DEPOIS dos
+  health checks de api/web, com `|| aviso`: falha do agente nunca bloqueia nem reverte o
+  deploy. O rollback continua restaurando so `api web`.
+- Grava com `DATABASE_APP_URL`; os grants da role `omni_app` no schema `obs` vem do
+  `SyncAppRoleGrants` no boot da API (que roda a migration 0330 antes).
+
+## Historico de deploys (observabilidade, fase 6)
+
+`deploy-record.mjs` converte o `summary.json` em uma linha de `obs.deploys` (migration
+0330) e grava por upsert (id = nome da pasta em `.tmp/deploy`). Status: exit code 0 =
+success, diferente = failed, sem `finishedAt` = interrupted. Ambiente vem do comando
+(`fast-prod`/`prod`/`promote` = prod; `fast-staging`/`staging` = staging). Git sha/branch
+sao lidos com `git rev-parse` no momento da gravacao; a tag vem da etapa
+"Gravando IMAGE_TAG=...".
+
+- Automatico: `run-deploy.mjs` grava depois de `report.finish`, no banco do ambiente alvo,
+  com timeout de 20 s (`OBS_DEPLOY_RECORD_TIMEOUT_MS`). Qualquer erro vira so
+  `[obs] histórico de deploy não gravado: <motivo>`; o exit code do deploy nunca muda.
+  `OBS_DEPLOY_RECORD=0` desliga.
+- Transporte: o SQL (upsert com `jsonb_populate_recordset`, JSON como literal
+  dollar-quoted, sem concatenar valores) vai pela stdin. Local: `docker exec -i
+  omni-postgres-1 psql`. Prod/staging: mesmo SSH do deploy (usuario/chave de
+  `OMNI_DEPLOY_USER`/`OMNI_DEPLOY_KEY_PATH`, sem criar ControlMaster), `docker compose
+  exec -T postgres psql` no diretorio remoto; `POSTGRES_USER/DB` vem do proprio container,
+  nenhum segredo passa pela maquina local nem e impresso.
+- Importacao dos deploys antigos: `npm run obs:deploys` (lista) e
+  `npm run obs:deploys -- --sync [--target=local|prod|staging]`.
+- Teste: `node --test scripts/deploy/deploy-record.test.mjs`.

@@ -215,6 +215,33 @@ services:
         aliases:
           - ${PROXY_API_ALIAS:-lista-api}
 
+  # Agente de host da observabilidade (SPEC fase 6). MESMA imagem da API; le o Docker
+  # pelo socket (:ro) e o disco do host (/host :ro); grava so em obs.* com a role de
+  # runtime (DATABASE_APP_URL). Sem portas publicas nem rede do proxy.
+  obs-agent:
+    image: ${API_IMAGE:-ghcr.io/mikewade2k16/omni-api}:${IMAGE_TAG:-latest}
+    command: ["obs-agent"]
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.25
+    logging: *default-logging
+    environment:
+      APP_NAME: omni-obs-agent
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATABASE_APP_URL: postgres://${APP_DB_ROLE:-omni_app}:${APP_DB_ROLE_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
+      OBS_AGENT_INTERVAL: ${OBS_AGENT_INTERVAL:-30s}
+      OBS_AGENT_HOST: ${OBS_AGENT_HOST:-}
+      OBS_AGENT_DISK_PATHS: /host=/
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/host:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app
+
   web:
     # Imagem do registry (GHCR). Mesmo IMAGE_TAG (SHA) que a api: prod e staging
     # promovem o MESMO artefato. `build:` abaixo so pra build local de emergencia/dev.

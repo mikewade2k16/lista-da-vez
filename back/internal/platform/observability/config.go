@@ -22,6 +22,7 @@ type Config struct {
 	BufferSize         int
 	FlushInterval      time.Duration
 	MaintenanceEvery   time.Duration
+	SystemInterval     time.Duration
 	Environment        string
 	MaxStatementLength int
 }
@@ -37,6 +38,7 @@ func ConfigFromEnv(environment string) Config {
 		BufferSize:         max(100, envInt("OBS_BUFFER_SIZE", 5000)),
 		FlushInterval:      5 * time.Second,
 		MaintenanceEvery:   time.Hour,
+		SystemInterval:     max(5*time.Second, envDuration("OBS_SYSTEM_INTERVAL", 15*time.Second)),
 		Environment:        strings.TrimSpace(environment),
 		MaxStatementLength: 2000,
 	}
@@ -80,4 +82,19 @@ func envFloat(key string, fallback float64) float64 {
 		return fallback
 	}
 	return value
+}
+
+// envDuration aceita "15s"/"1m" ou um inteiro em segundos.
+func envDuration(key string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		return time.Duration(seconds) * time.Second
+	}
+	if parsed, err := time.ParseDuration(raw); err == nil {
+		return parsed
+	}
+	return fallback
 }

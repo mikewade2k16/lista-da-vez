@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import AdminPageHeader from '../../../../layers/core/components/admin/AdminPageHeader.vue'
 import AppSegmentedFilter from '~/components/ui/AppSegmentedFilter.vue'
+import ObservabilityAlertsTab from '~/components/admin/observability/ObservabilityAlertsTab.vue'
 import ObservabilityDbTab from '~/components/admin/observability/ObservabilityDbTab.vue'
+import ObservabilityDeploysTab from '~/components/admin/observability/ObservabilityDeploysTab.vue'
 import ObservabilityEndpointsTab from '~/components/admin/observability/ObservabilityEndpointsTab.vue'
 import ObservabilityErrorsTab from '~/components/admin/observability/ObservabilityErrorsTab.vue'
+import ObservabilityHealthTab from '~/components/admin/observability/ObservabilityHealthTab.vue'
 import ObservabilityOverviewTab from '~/components/admin/observability/ObservabilityOverviewTab.vue'
 import ObservabilityPagesTab from '~/components/admin/observability/ObservabilityPagesTab.vue'
 import ObservabilityRunsTab from '~/components/admin/observability/ObservabilityRunsTab.vue'
+import ObservabilitySecurityTab from '~/components/admin/observability/ObservabilitySecurityTab.vue'
+import ObservabilitySystemTab from '~/components/admin/observability/ObservabilitySystemTab.vue'
 import ObservabilityTraceDrawer from '~/components/admin/observability/ObservabilityTraceDrawer.vue'
 import { useAuthStore } from '~/stores/auth'
 
@@ -14,11 +19,16 @@ const auth = useAuthStore()
 const isPlatformAdmin = computed(() => auth.role === 'platform_admin')
 
 const TABS = [
-  { value: 'overview', label: 'Visao geral' },
+  { value: 'health', label: 'Saúde' },
+  { value: 'overview', label: 'Notas' },
   { value: 'endpoints', label: 'Endpoints' },
   { value: 'db', label: 'Banco' },
   { value: 'pages', label: 'Paginas' },
   { value: 'errors', label: 'Erros' },
+  { value: 'system', label: 'Sistema' },
+  { value: 'security', label: 'Segurança' },
+  { value: 'alerts', label: 'Alertas' },
+  { value: 'deploys', label: 'Deploys' },
   { value: 'runs', label: 'Execucoes' },
 ]
 const PERIODS = [
@@ -27,10 +37,11 @@ const PERIODS = [
   { value: '30', label: '30 dias' },
 ]
 
-const tab = ref('overview')
+const tab = ref('health')
 const period = ref('7')
 const days = computed(() => Number(period.value))
-const usesPeriod = computed(() => tab.value !== 'runs')
+const PERIOD_TABS = ['overview', 'endpoints', 'db', 'pages', 'errors']
+const usesPeriod = computed(() => PERIOD_TABS.includes(tab.value))
 const traceId = ref('')
 </script>
 
@@ -39,7 +50,7 @@ const traceId = ref('')
     <AdminPageHeader
       eyebrow="Plataforma"
       title="Observabilidade"
-      description="Saude da API, do banco e das paginas, com notas por modulo e historico das execucoes do runner."
+      description="Saúde da API, do banco e das paginas, com notas por modulo e historico das execucoes do runner."
     />
 
     <UAlert
@@ -62,11 +73,16 @@ const traceId = ref('')
         />
       </div>
 
-      <ObservabilityOverviewTab v-if="tab === 'overview'" :days="days" />
+      <ObservabilityHealthTab v-if="tab === 'health'" @navigate="tab = $event" />
+      <ObservabilityOverviewTab v-else-if="tab === 'overview'" :days="days" />
       <ObservabilityEndpointsTab v-else-if="tab === 'endpoints'" :days="days" />
       <ObservabilityDbTab v-else-if="tab === 'db'" :days="days" @trace="traceId = $event" />
       <ObservabilityPagesTab v-else-if="tab === 'pages'" :days="days" />
       <ObservabilityErrorsTab v-else-if="tab === 'errors'" :days="days" @trace="traceId = $event" />
+      <ObservabilitySystemTab v-else-if="tab === 'system'" />
+      <ObservabilitySecurityTab v-else-if="tab === 'security'" />
+      <ObservabilityAlertsTab v-else-if="tab === 'alerts'" />
+      <ObservabilityDeploysTab v-else-if="tab === 'deploys'" />
       <ObservabilityRunsTab v-else />
 
       <ObservabilityTraceDrawer

@@ -9,6 +9,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/obs-agent ./cmd/obs-agent
 
 FROM debian:bookworm-slim
 
@@ -20,6 +21,7 @@ WORKDIR /app
 
 COPY --from=build /out/api /usr/local/bin/api
 COPY --from=build /out/migrate /usr/local/bin/migrate
+COPY --from=build /out/obs-agent /usr/local/bin/obs-agent
 
 EXPOSE 8080
 

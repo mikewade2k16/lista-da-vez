@@ -24,10 +24,17 @@ type Service struct {
 	store   *Store
 	runtime *platformobs.Runtime
 	env     string
+	alerts  *Alerts
 }
 
 func NewService(store *Store, runtime *platformobs.Runtime, env string) *Service {
 	return &Service{store: store, runtime: runtime, env: env}
+}
+
+// WithAlerts liga o canal de alertas (e-mail) usado por /health e /alerts/test.
+func (s *Service) WithAlerts(alerts *Alerts) *Service {
+	s.alerts = alerts
+	return s
 }
 
 func (s *Service) isProduction() bool {

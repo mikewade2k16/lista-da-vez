@@ -92,6 +92,7 @@ cd '$remotePath'
 grep -q '^IMAGE_TAG=' '$envFile' && sed -i 's|^IMAGE_TAG=.*|IMAGE_TAG=$Tag|' '$envFile' || printf 'IMAGE_TAG=%s\n' '$Tag' >> '$envFile'
 $backup
 docker compose --env-file '$envFile' -f docker-compose.prod.yml up -d --no-build api web
+docker compose --env-file '$envFile' -f docker-compose.prod.yml up -d --no-build --no-deps obs-agent || echo 'Aviso: obs-agent nao subiu; api/web seguem no ar.' >&2
 docker compose --env-file '$envFile' -f docker-compose.prod.yml ps --format '{{.Name}}  {{.State}}'
 "@
 Write-Host "==> up --no-build na VPS"

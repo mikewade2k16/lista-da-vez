@@ -19,13 +19,16 @@ import { runDb } from "./db.mjs";
 import { enrichQueryCounts } from "./db-captured.mjs";
 import { runLoad } from "./load.mjs";
 import { runHealth } from "./health.mjs";
+import { runSecurity } from "./security.mjs";
+import { storeOutcomes } from "./security-db.mjs";
 import { computeCoverage } from "./coverage.mjs";
 import { computeScores } from "./score.mjs";
 import { findBaseline, compareRuns } from "./compare.mjs";
 import { renderReport } from "./report.mjs";
 import { storeRun } from "./persist.mjs";
 
-const PHASES = ["health", "db", "api", "pages", "load"];
+// security vem por último: o teste de força bruta pode acionar 429 no IP do runner.
+const PHASES = ["health", "db", "api", "pages", "load", "security"];
 const log = (m) => console.log(m);
 
 function bool(v, d) {
@@ -147,7 +150,7 @@ export async function main(argv) {
     return r;
   };
 
-  if (args.only.some((p) => ["api", "pages", "load"].includes(p))) {
+  if (args.only.some((p) => ["api", "pages", "load", "security"].includes(p))) {
     const wanted = new Set([args.profile, ...Object.keys(config.profiles)]);
     ctx.sessions = await loginProfiles(
       ctx.client,
@@ -195,6 +198,26 @@ export async function main(argv) {
     results.push(
       ...(await timed("load", () => runLoad({ ...ctx, api: apiRes }))),
     );
+
+  if (args.only.includes("security")) {
+    const t0 = Date.now();
+    log("[security] ...");
+    const sec = await runSecurity(ctx);
+    results.push(...sec.results);
+    phaseTime.security = Date.now() - t0;
+    const n = (s) => sec.outcomes.filter((x) => x.status === s).length;
+    log(
+      `[security] ${sec.results.length} checagens em ${(phaseTime.security / 1000).toFixed(1)}s: pass ${n("pass")} | partial ${n("partial")} | fail ${n("fail")} | not_tested ${n("not_tested")}`,
+    );
+    if (!args.noDbStore) {
+      const s = await storeOutcomes(sec.outcomes);
+      log(
+        s.ok
+          ? `  obs.security_checks atualizado (${s.rows} checagens)`
+          : `  AVISO: obs.security_checks não atualizado: ${s.why}`,
+      );
+    }
+  }
 
   const phases = new Set(args.only);
   const coverage = computeCoverage({

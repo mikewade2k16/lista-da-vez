@@ -50,3 +50,22 @@ eventos do front, gravados de forma assíncrona no schema `obs` (migration
   Texto livre passa por `SanitizeText`.
 - O schema `obs` não é tenant-scoped: guarda ids opacos de usuário/conta. A leitura é
   restrita a `platform_admin`.
+
+## Saúde do sistema (fase 6)
+
+- `system.go`: coletor ligado por `Runtime.Start`, parado por `Stop`. A cada
+  `OBS_SYSTEM_INTERVAL` (padrão 15s; aceita `15s` ou inteiro em segundos, mínimo 5s)
+  grava uma linha `source='api'` em `obs.system_samples` (formato no `SPEC.md`).
+  Deltas são contra a amostra anterior em memória (primeira = 0). Contexto
+  `WithoutTracing`, timeout por ciclo, `recover` no loop; parte que falha some do JSON.
+- `system_runtime.go`: runtime Go (`MemStats`, p99 das pausas de GC) e `pgxpool.Stat`.
+- `system_pg.go`: `pg_stat_activity` (sem a conexão do coletor), `pg_stat_database`,
+  tamanho e `max_connections` (cache). `longestQuery` normalizada e sanitizada.
+- `system_jobs.go`: descobre via `information_schema` as tabelas com `status` e
+  `run_after`, redescobre a cada 10 min; identificadores só `[a-z0-9_]` e quotados;
+  uma consulta por tabela (3s), erro numa tabela não derruba as outras.
+- `presence.go`: heartbeat do front (`kind: "heartbeat"`, `name` = rota) vira upsert em
+  `obs.presence` no flush em lote (último por `page_view_id`); não vai para
+  `obs.frontend_events`. Sem usuário autenticado não grava.
+- `maintenance.go` também limpa `system_samples`/`container_samples` pela retenção e
+  `presence` com `last_seen` > 1 dia.

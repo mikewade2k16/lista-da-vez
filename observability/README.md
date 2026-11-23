@@ -2,12 +2,12 @@
 
 Mede o sistema hoje e a cada melhoria, sem IA. Tem quatro partes:
 
-| parte | onde | o que faz |
-|---|---|---|
-| Inventário | `scripts/build-inventory.mjs` → `inventory.json` | lista endpoints, páginas, tabelas, jobs e integrações lendo o código e o banco |
-| Instrumentação | `back/internal/platform/observability`, `web/app/plugins/observability.client.ts` | grava toda requisição, consulta, chamada externa e evento do navegador no schema `obs` |
-| Runner | `runner/` (`npm run obs:run`) | testa API, páginas, banco, carga e saúde; compara com a execução anterior e dá nota por módulo |
-| Painel | `/manage/observabilidade` (só `platform_admin`) | mostra os dados ao vivo e as execuções |
+| parte          | onde                                                                              | o que faz                                                                                      |
+| -------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Inventário     | `scripts/build-inventory.mjs` → `inventory.json`                                  | lista endpoints, páginas, tabelas, jobs e integrações lendo o código e o banco                 |
+| Instrumentação | `back/internal/platform/observability`, `web/app/plugins/observability.client.ts` | grava toda requisição, consulta, chamada externa e evento do navegador no schema `obs`         |
+| Runner         | `runner/` (`npm run obs:run`)                                                     | testa API, páginas, banco, carga e saúde; compara com a execução anterior e dá nota por módulo |
+| Painel         | `/manage/observabilidade` (só `platform_admin`)                                   | mostra os dados ao vivo e as execuções                                                         |
 
 Contratos entre as partes: [SPEC.md](SPEC.md). Fórmula da nota: [docs/SCORE.md](docs/SCORE.md).
 Auditoria técnica: [reports/AUDITORIA.md](reports/AUDITORIA.md).
@@ -81,6 +81,7 @@ Códigos de saída:
 
   Se o ambiente parecer produção, o runner recusa com exit 2. Sem essas condições, a
   escrita aparece como "não testado — requer banco de teste".
+
 - **O banco local do Mac é cópia de produção.** Não ligue escrita nele.
 - GETs que disparam efeito (export, sync, OAuth, stream, websocket) ficam em
   `config.mjs → neverCall`, com o motivo. GETs que dependem de integração externa
@@ -88,15 +89,15 @@ Códigos de saída:
 
 ## Instrumentação: ligar, desligar e ajustar
 
-| variável | padrão | efeito |
-|---|---|---|
-| `OBSERVABILITY_ENABLED` | `true` | `false` desliga tudo na API: sem middleware, tracer, coletor nem gravação |
-| `NUXT_PUBLIC_OBSERVABILITY_ENABLED` | `true` | `false` desliga o coletor do navegador |
-| `OBS_SAMPLE_RATE` | `1` | fração das linhas brutas gravadas. 5xx, lentas e as do runner sempre são gravadas; os agregados contam 100% |
-| `OBS_SLOW_QUERY_MS` / `OBS_SLOW_REQUEST_MS` | `200` / `1000` | limites de consulta lenta e de requisição lenta |
-| `OBS_NPLUSONE_THRESHOLD` | `10` | quantas vezes a mesma consulta numa requisição conta como suspeita de N+1 |
-| `OBS_RETENTION_DAYS` | `30` | apaga dado bruto mais velho; agregados e execuções ficam |
-| `LOG_FORMAT` | `json` | `text` volta ao log chave=valor |
+| variável                                    | padrão         | efeito                                                                                                      |
+| ------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `OBSERVABILITY_ENABLED`                     | `true`         | `false` desliga tudo na API: sem middleware, tracer, coletor nem gravação                                   |
+| `NUXT_PUBLIC_OBSERVABILITY_ENABLED`         | `true`         | `false` desliga o coletor do navegador                                                                      |
+| `OBS_SAMPLE_RATE`                           | `1`            | fração das linhas brutas gravadas. 5xx, lentas e as do runner sempre são gravadas; os agregados contam 100% |
+| `OBS_SLOW_QUERY_MS` / `OBS_SLOW_REQUEST_MS` | `200` / `1000` | limites de consulta lenta e de requisição lenta                                                             |
+| `OBS_NPLUSONE_THRESHOLD`                    | `10`           | quantas vezes a mesma consulta numa requisição conta como suspeita de N+1                                   |
+| `OBS_RETENTION_DAYS`                        | `30`           | apaga dado bruto mais velho; agregados e execuções ficam                                                    |
+| `LOG_FORMAT`                                | `json`         | `text` volta ao log chave=valor                                                                             |
 
 Nada sensível é gravado:
 
@@ -167,6 +168,71 @@ Ajustes que ainda são manuais:
 - limite de latência específico: `config.mjs → limits`.
 
 Use `npm run obs:inventory -- --check` no CI para barrar inventário desatualizado.
+
+## Segurança
+
+**A cobertura de segurança ainda é baixa.** O catálogo (`config/security-catalog.json`)
+lista 81 ataques e controles (OWASP Top 10 2021, OWASP API Top 10 2023 e outros), mas só
+22 têm teste automático. Os demais aparecem no painel como `not_tested`, e isso não
+significa que estejam seguros. Uma nota boa aqui não prova ausência de falhas.
+
+**Testado automaticamente** (fase `security`, só leitura, sem ataque destrutivo):
+
+- headers de segurança da API e do web, clickjacking, CORS com `Origin` malicioso;
+- flags do cookie de sessão e onde o front guarda o token;
+- JWT adulterado e com `alg none`; rotas protegidas sem token (reaproveita a fase `api`);
+- isolamento entre tenants em leitura (exige duas contas, veja abaixo);
+- enumeração de usuário no login e 403 x 404 para conta fora do escopo;
+- SQL injection básica (`' OR '1'='1` e `pg_sleep`) em cerca de 20 GETs e XSS refletido básico;
+- listagem de `/uploads` e path traversal; corpo de 5 MB; open redirect no servidor;
+- segredos nos arquivos versionados (`git ls-files`, só `arquivo:linha`, nunca o valor);
+- dependências (reaproveita `npm audit` e `govulncheck` da fase `health`); TLS com URL https.
+
+**Não testado automaticamente:** XSS armazenado, CSRF, IDOR em escrita, mass assignment,
+SSRF dinâmico, upload malicioso, webhooks sem assinatura, prompt injection nos assistentes
+de IA, logs com dados sensíveis, MFA, revogação de sessão, expiração de JWT, segredos no
+histórico do Git, infra da VPS e LGPD. O redirecionamento pós-login feito no front também
+não é verificado (`open-redirect` fica `partial`).
+
+**Como rodar:**
+
+```
+npm run obs:security                          # só imprime o que faria
+npm run obs:security -- --sync                # grava catálogo e achados da AUDITORIA no banco
+npm run obs:security -- --dry-run-db          # idem, numa transação com rollback
+npm run obs:run -- --only=security            # executa as checagens (grava em obs.security_checks)
+npm run obs:run -- --only=api,health,security # reaproveita authz, npm audit e govulncheck
+```
+
+O `--sync` não sobrescreve `status`, `detail`, `evidence` nem `checked_at` de checagem já
+testada, nem o `status` de um achado já editado. Sem `--only`, a fase `security` roda por
+último no padrão.
+
+**Cuidados:**
+
+- Em produção rodam só as passivas (headers, CORS, cookies, TLS, repositório e dependências).
+  As demais viram `not_tested` com o motivo.
+- Força bruta (`login-bruteforce`), corpo grande e enumeração de usuário rodam por último,
+  só fora de produção, para um eventual 429 no IP do runner não afetar as outras fases.
+  A força bruta usa e-mail gerado `obs-bruteforce-<aleatório>@example.invalid`, nunca e-mail real
+  (`OBS_BRUTEFORCE_ATTEMPTS`, padrão 30). A enumeração faz uma única tentativa com senha errada
+  no usuário ADMIN. Toda requisição respeita o `rateLimitPerMin` do runner.
+- Isolamento entre tenants: defina `OBS_USER_TENANT_A_EMAIL/PASSWORD` e
+  `OBS_USER_TENANT_B_EMAIL/PASSWORD` no `.env.local` (contas de tenants diferentes). Sem elas
+  a checagem fica `not_tested` ("faltam credenciais de duas contas diferentes").
+- O CI roda `go vet` e `go test -race` em `back/` (`.github/workflows/ci-race.yml`).
+
+## Deploys
+
+O histórico de deploys vive em `obs.deploys` e aparece na aba **Deploys** do painel (mediana,
+p90, taxa de sucesso, veredito ok/lento/falhou e etapas de cada deploy). A medição é o tempo
+de ponta a ponta: do início do comando na máquina até os smoke tests passarem na VPS.
+
+- Ao fim de cada `npm run deploy`, `scripts/deploy/run-deploy.mjs` grava a linha no banco do
+  ambiente alvo (mesma conexão SSH do deploy). Falha só gera aviso; `OBS_DEPLOY_RECORD=0` desliga.
+- Importar os já feitos (`.tmp/deploy/*/summary.json`): `npm run obs:deploys` lista;
+  `npm run obs:deploys -- --sync` grava no banco local (`--target=prod|staging` usa o SSH).
+  É idempotente por id. `--dry-run-db` testa tudo numa transação com rollback.
 
 ## Reverter
 

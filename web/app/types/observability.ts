@@ -164,3 +164,230 @@ export interface ObsRunRequests {
   workerOnline: boolean
   items: ObsRunRequest[]
 }
+
+// --- Saude do sistema (fase 6) -----------------------------------------------
+
+export type ObsHealthStatus = 'ok' | 'warn' | 'critical' | 'unknown'
+export type ObsSeverity = 'critical' | 'high' | 'medium' | 'low'
+export type ObsTabKey = 'endpoints' | 'db' | 'pages' | 'errors' | 'security' | 'system' | 'deploys'
+
+export interface ObsHealthArea {
+  key: string
+  label: string
+  status: ObsHealthStatus
+  summary: string
+}
+
+export interface ObsHealthIssue {
+  severity: ObsSeverity
+  area: string
+  title: string
+  detail: string
+  since: string
+  link?: { tab: ObsTabKey; query?: Record<string, unknown> } | null
+}
+
+export interface ObsHealthErrorCounts {
+  api5xx: number
+  frontend: number
+}
+
+export interface ObsHealthTopError {
+  source: 'api' | 'front'
+  signature: string
+  count: number
+}
+
+export interface ObsOnlineUser {
+  userId: string
+  name: string
+  page: string
+  lastSeen: string
+  tabs: number
+}
+
+export interface ObsHealthAlertSummary {
+  id: number
+  severity: string
+  title: string
+  since: string
+  notifiedAt: string | null
+}
+
+export interface ObsSecuritySummary {
+  checks: { pass: number; fail: number; partial: number; not_tested: number }
+  findings: { open: Record<ObsSeverity, number>; fixed: number }
+}
+
+export interface ObsDiskSample {
+  path: string
+  totalBytes: number
+  freeBytes: number
+  usedPct: number
+}
+
+export interface ObsHealth {
+  generatedAt: string
+  overall: 'ok' | 'warn' | 'critical'
+  areas: ObsHealthArea[]
+  issues: ObsHealthIssue[]
+  errors: {
+    lastHour: ObsHealthErrorCounts
+    last24h: ObsHealthErrorCounts
+    top: ObsHealthTopError[]
+  }
+  online: { count: number; users: ObsOnlineUser[] }
+  system: {
+    api: {
+      at: string
+      goroutines: number
+      heapMB: number
+      poolUtilization: number
+      pgConnections: number
+      pgMaxConnections: number
+    } | null
+    agent: { at: string; disk: ObsDiskSample[]; containers: number; running: number } | null
+  }
+  alerts: {
+    channel: string
+    configured: boolean
+    recipients: number
+    whatsapp: string
+    open: ObsHealthAlertSummary[]
+  }
+  security: ObsSecuritySummary
+}
+
+export type ObsCheckStatus = 'pass' | 'fail' | 'partial' | 'not_tested'
+
+export interface ObsSecurityCheck {
+  key: string
+  category: string
+  title: string
+  standard: string
+  status: ObsCheckStatus
+  detail: string
+  checkedAt: string | null
+  source: string
+}
+
+export interface ObsSecurityFinding {
+  id: string | number
+  severity: ObsSeverity
+  title: string
+  area: string
+  location: string
+  status: string
+  updatedAt: string
+}
+
+export interface ObsSecurity {
+  checks: ObsSecurityCheck[]
+  findings: ObsSecurityFinding[]
+}
+
+export interface ObsApiSystemMetrics {
+  go?: { goroutines: number; heapAllocBytes: number; heapSysBytes: number; numGC: number }
+  pool?: { max: number; acquired: number; idle: number; utilization: number }
+  pg?: {
+    connections: number
+    maxConnections: number
+    active: number
+    idleInTransaction: number
+    waitingOnLock: number
+    longestQuerySeconds: number
+    cacheHitRatio: number
+    dbSizeBytes: number
+  }
+  jobs?: Array<{
+    table: string
+    pending: number
+    due: number
+    oldestDueLagSeconds: number
+    stuckProcessing: number
+    dead: number
+  }>
+}
+
+export interface ObsAgentSystemMetrics {
+  disk?: ObsDiskSample[]
+  docker?: { containers: number; running: number }
+}
+
+export interface ObsSystemSample<T> {
+  at: string
+  metrics: T
+}
+
+export interface ObsContainerSample {
+  container: string
+  service: string
+  state: string
+  health: string
+  restartCount: number
+  cpuPct: number
+  memBytes: number
+  memLimitBytes: number
+  at: string
+}
+
+export interface ObsSystem {
+  api: Array<ObsSystemSample<ObsApiSystemMetrics>>
+  agent: Array<ObsSystemSample<ObsAgentSystemMetrics>>
+  containers: ObsContainerSample[]
+}
+
+export interface ObsAlert {
+  id: number
+  rule: string
+  severity: string
+  area: string
+  title: string
+  detail: string
+  status: 'open' | 'resolved'
+  firstSeen: string
+  lastSeen: string
+  resolvedAt: string | null
+  notifiedAt: string | null
+  notifyCount: number
+  lastNotifyError: string | null
+}
+
+export type ObsDeployVerdict = 'ok' | 'slow' | 'failed'
+
+export interface ObsDeployStage {
+  name: string
+  depth: number
+  status: string
+  durationMs: number | null
+}
+
+export interface ObsDeploy {
+  id: string
+  command: string
+  environment: string
+  startedAt: string
+  finishedAt: string | null
+  durationMs: number | null
+  exitCode: number | null
+  status: 'success' | 'failed' | 'interrupted' | 'unknown'
+  gitSha: string
+  gitBranch: string
+  imageTag: string
+  verdict: ObsDeployVerdict
+  stages: ObsDeployStage[]
+}
+
+export interface ObsDeployStats {
+  count: number
+  successRate: number
+  medianMs: number
+  p90Ms: number
+  slowThresholdMs: number
+  lastSuccessAt: string | null
+}
+
+export interface ObsDeploys {
+  items: ObsDeploy[]
+  stats: ObsDeployStats
+}

@@ -240,6 +240,31 @@ services:
   # COMO RODAR O DEV DO WEB:  docker compose watch web   (ou scripts/dev/watch-web.ps1)
   # `docker compose up -d web` sozinho SOBE o servidor mas NAO sincroniza
   # edicoes — a pagina fica "congelada" no codigo do ultimo build/sync.
+  # Agente de host da observabilidade (SPEC fase 6): le o Docker pelo socket
+  # (somente leitura) e o disco do host, e grava em obs.*. Mesma imagem da API.
+  obs-agent:
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    command: ["obs-agent"]
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.25
+    environment:
+      APP_NAME: omni-obs-agent
+      DATABASE_URL: postgres://${POSTGRES_USER:-omni}:${POSTGRES_PASSWORD:-omni_dev}@postgres:5432/${POSTGRES_DB:-omni}?sslmode=disable
+      DATABASE_APP_URL: postgres://${APP_DB_ROLE:-omni_app}:${APP_DB_ROLE_PASSWORD:-omni_app_dev}@postgres:5432/${POSTGRES_DB:-omni}?sslmode=disable
+      OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
+      OBS_AGENT_INTERVAL: ${OBS_AGENT_INTERVAL:-30s}
+      OBS_AGENT_HOST: ${OBS_AGENT_HOST:-}
+      OBS_AGENT_DISK_PATHS: /host=/
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/host:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   web:
     build:
       context: ./web

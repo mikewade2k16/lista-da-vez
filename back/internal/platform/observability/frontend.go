@@ -53,6 +53,12 @@ func (rt *Runtime) RecordFrontend(batch FrontendBatch, userID, userAgent string)
 	now := time.Now().UTC()
 	accepted := 0
 	for _, item := range batch.Events {
+		if strings.TrimSpace(item.Kind) == heartbeatKind {
+			if rt.recordHeartbeat(batch.PageViewID, page, item, userID, userAgent, now) {
+				accepted++
+			}
+			continue
+		}
 		event, ok := sanitizeFrontendEvent(item, now)
 		if !ok {
 			continue

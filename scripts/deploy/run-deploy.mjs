@@ -1,9 +1,16 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createDeployReport } from './deploy-report.mjs'
+import { recordDeployHistory } from './deploy-record.mjs'
 
 export async function runDeployment(
   executable,
@@ -185,6 +192,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const env = deploymentEnvironment(process.env, config)
     env.OMNI_DEPLOY_TIMING_FILE = report.eventsFile
     process.exitCode = await runDeployment(executable, args, env, report)
+    // Historico de deploys (observabilidade): so avisa em falha, nunca muda o exit code.
+    await recordDeployHistory({
+      directory,
+      env,
+    }).catch(() => false)
   } catch (error) {
     console.error(error.message)
     process.exitCode = 1

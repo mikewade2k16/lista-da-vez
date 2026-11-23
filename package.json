@@ -14,6 +14,8 @@
     "obs:inventory": "npm --prefix observability run obs:inventory --",
     "obs:run": "npm --prefix observability run obs:run --",
     "obs:worker": "npm --prefix observability run obs:worker --",
+    "obs:security": "npm --prefix observability run obs:security --",
+    "obs:deploys": "npm --prefix observability run obs:deploys --",
     "dev": "docker compose --profile \"*\" up -d --build && docker compose --profile \"*\" watch --no-up",
     "dev:detach": "docker compose up -d",
     "dev:watch": "powershell.exe -ExecutionPolicy Bypass -File scripts\\dev\\watch-web.ps1",

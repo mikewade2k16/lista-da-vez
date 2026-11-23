@@ -19,6 +19,10 @@ omni_timed_step remote.containers.health "${compose[@]}" up -d --no-deps --no-bu
 "${compose[@]}" ps api web
 omni_timed_step remote.http.health curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors --output /dev/null @PUBLIC_URL@/healthz
 omni_timed_step remote.http.web curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors --output /dev/null @PUBLIC_URL@/
+# Agente de observabilidade (mesma imagem da API): opcional, nunca bloqueia nem
+# reverte o deploy de api/web.
+"${compose[@]}" up -d --no-deps --no-build --pull never obs-agent \
+  || echo 'Aviso: obs-agent nao subiu; api/web seguem no ar.' >&2
 docker ps --format '{{.Names}} {{.Image}}' > "$release/images.after.txt"
 touch "$release/app.success"
 trap - ERR

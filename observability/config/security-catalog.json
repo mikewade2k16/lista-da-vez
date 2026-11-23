@@ -1,0 +1,653 @@
+{
+  "version": 1,
+  "checks": [
+    {
+      "key": "owasp-a01-broken-access-control",
+      "category": "Controle de acesso",
+      "title": "Controle de acesso quebrado (visão geral)",
+      "standard": "OWASP Top 10 2021 A01",
+      "howTested": "automático: rotas protegidas sem token (fase api, authz) + isolamento entre tenants; papéis por rota são manuais",
+      "automated": false
+    },
+    {
+      "key": "owasp-a02-cryptographic-failures",
+      "category": "Criptografia",
+      "title": "Falhas criptográficas (dados em trânsito e em repouso)",
+      "standard": "OWASP Top 10 2021 A02",
+      "howTested": "automático parcial: TLS/certificado (tls) e flags de cookie; criptografia em repouso (secretbox) é revisão manual",
+      "automated": false
+    },
+    {
+      "key": "owasp-a03-injection",
+      "category": "Injeção",
+      "title": "Injeção (SQL, comando, template)",
+      "standard": "OWASP Top 10 2021 A03",
+      "howTested": "automático parcial: sqli-basic e xss-reflected; revisão de SQL dinâmico e comandos é manual",
+      "automated": false
+    },
+    {
+      "key": "owasp-a04-insecure-design",
+      "category": "Design",
+      "title": "Design inseguro",
+      "standard": "OWASP Top 10 2021 A04",
+      "howTested": "manual: modelagem de ameaças e revisão de fluxos críticos (login, reset, pagamentos)",
+      "automated": false
+    },
+    {
+      "key": "owasp-a05-security-misconfiguration",
+      "category": "Configuração",
+      "title": "Configuração de segurança incorreta",
+      "standard": "OWASP Top 10 2021 A05",
+      "howTested": "automático parcial: headers, CORS, listagem de /uploads; defaults de produção e infra da VPS são manuais",
+      "automated": false
+    },
+    {
+      "key": "owasp-a06-vulnerable-components",
+      "category": "Dependências",
+      "title": "Componentes vulneráveis e desatualizados",
+      "standard": "OWASP Top 10 2021 A06",
+      "howTested": "automático: deps-go e deps-npm reaproveitam govulncheck e npm audit da fase health",
+      "automated": false
+    },
+    {
+      "key": "owasp-a07-auth-failures",
+      "category": "Autenticação",
+      "title": "Falhas de identificação e autenticação",
+      "standard": "OWASP Top 10 2021 A07",
+      "howTested": "automático parcial: login-bruteforce, user-enumeration, jwt-*, session-cookie; política de senha e MFA são manuais",
+      "automated": false
+    },
+    {
+      "key": "owasp-a08-integrity-failures",
+      "category": "Integridade",
+      "title": "Falhas de integridade de software e dados",
+      "standard": "OWASP Top 10 2021 A08",
+      "howTested": "manual: assinatura de artefatos/imagens, pipeline de deploy e desserialização",
+      "automated": false
+    },
+    {
+      "key": "owasp-a09-logging-failures",
+      "category": "Logging",
+      "title": "Falhas de log e monitoramento",
+      "standard": "OWASP Top 10 2021 A09",
+      "howTested": "manual: revisão de logs (veja log-sensitive-data) e alertas do painel de observabilidade",
+      "automated": false
+    },
+    {
+      "key": "owasp-a10-ssrf",
+      "category": "SSRF",
+      "title": "Server-Side Request Forgery",
+      "standard": "OWASP Top 10 2021 A10",
+      "howTested": "manual: guarda em omnichannel/ssrf.go e knowledge/ingestion_fetch.go revisada por leitura; sem teste dinâmico",
+      "automated": false
+    },
+    {
+      "key": "owasp-api1-bola",
+      "category": "Autorização",
+      "title": "BOLA: acesso a objeto de outro tenant por id",
+      "standard": "OWASP API Security 2023 API1",
+      "howTested": "automático parcial: tenant-isolation (GET com credenciais de duas contas); escrita não é testada",
+      "automated": false
+    },
+    {
+      "key": "owasp-api2-broken-auth",
+      "category": "Autenticação",
+      "title": "Autenticação quebrada na API",
+      "standard": "OWASP API Security 2023 API2",
+      "howTested": "automático parcial: jwt-tampered, jwt-alg-none, login-bruteforce, user-enumeration",
+      "automated": false
+    },
+    {
+      "key": "owasp-api3-bopla",
+      "category": "Autorização",
+      "title": "BOPLA: exposição/escrita de propriedades de objeto não autorizadas",
+      "standard": "OWASP API Security 2023 API3",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "owasp-api4-resource-consumption",
+      "category": "Disponibilidade",
+      "title": "Consumo irrestrito de recursos",
+      "standard": "OWASP API Security 2023 API4",
+      "howTested": "automático parcial: payload-large e login-bruteforce; paginação e limites por rota são manuais",
+      "automated": false
+    },
+    {
+      "key": "owasp-api5-bfla",
+      "category": "Autorização",
+      "title": "BFLA: função administrativa acessível a papel inferior",
+      "standard": "OWASP API Security 2023 API5",
+      "howTested": "automático parcial: fase api compara perfis quando há credencial de papel inferior; não cobre todas as rotas",
+      "automated": false
+    },
+    {
+      "key": "owasp-api6-sensitive-flows",
+      "category": "Fluxos",
+      "title": "Acesso irrestrito a fluxos de negócio sensíveis",
+      "standard": "OWASP API Security 2023 API6",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "owasp-api7-ssrf",
+      "category": "SSRF",
+      "title": "SSRF na API",
+      "standard": "OWASP API Security 2023 API7",
+      "howTested": "manual: veja owasp-a10-ssrf",
+      "automated": false
+    },
+    {
+      "key": "owasp-api8-misconfiguration",
+      "category": "Configuração",
+      "title": "Configuração incorreta de segurança da API",
+      "standard": "OWASP API Security 2023 API8",
+      "howTested": "automático parcial: headers-api, cors-reflection, tls",
+      "automated": false
+    },
+    {
+      "key": "owasp-api9-inventory",
+      "category": "Inventário",
+      "title": "Gestão inadequada de inventário (versões e rotas esquecidas)",
+      "standard": "OWASP API Security 2023 API9",
+      "howTested": "automático parcial: obs:inventory lista todas as rotas; rotas obsoletas exigem revisão",
+      "automated": false
+    },
+    {
+      "key": "owasp-api10-unsafe-consumption",
+      "category": "Integrações",
+      "title": "Consumo inseguro de APIs de terceiros",
+      "standard": "OWASP API Security 2023 API10",
+      "howTested": "manual: timeouts e validação de respostas de integrações (Meta, WAHA, Evolution, n8n)",
+      "automated": false
+    },
+    {
+      "key": "headers-api",
+      "category": "Headers",
+      "title": "Headers de segurança na API (CSP, nosniff, frame, referrer, HSTS)",
+      "standard": "OWASP Secure Headers; ASVS 14.4",
+      "howTested": "automático: GET /healthz na API e verificação dos headers",
+      "automated": true
+    },
+    {
+      "key": "headers-web",
+      "category": "Headers",
+      "title": "Headers de segurança no front (CSP, nosniff, frame, referrer, HSTS)",
+      "standard": "OWASP Secure Headers; ASVS 14.4",
+      "howTested": "automático: GET / no web e verificação dos headers (em dev o Nuxt não os envia; confirme em produção)",
+      "automated": true
+    },
+    {
+      "key": "clickjacking",
+      "category": "Clickjacking",
+      "title": "Proteção contra clickjacking (frame-ancestors / X-Frame-Options)",
+      "standard": "OWASP Clickjacking Defense",
+      "howTested": "automático: lê os headers da API e do front",
+      "automated": true
+    },
+    {
+      "key": "cors-reflection",
+      "category": "CORS",
+      "title": "CORS não reflete Origin malicioso com credenciais",
+      "standard": "OWASP A05; API8",
+      "howTested": "automático: GET e preflight com Origin https://evil.example e Origin null",
+      "automated": true
+    },
+    {
+      "key": "session-cookie",
+      "category": "Sessão",
+      "title": "Cookie de sessão com HttpOnly, Secure e SameSite",
+      "standard": "OWASP ASVS 3.4; A07",
+      "howTested": "automático: Set-Cookie do login e leitura estática de como o front guarda o token",
+      "automated": true
+    },
+    {
+      "key": "jwt-tampered",
+      "category": "JWT",
+      "title": "Token com assinatura ou payload adulterado é rejeitado (401)",
+      "standard": "OWASP API2; JWT BCP",
+      "howTested": "automático: GET autenticado com token alterado",
+      "automated": true
+    },
+    {
+      "key": "jwt-alg-none",
+      "category": "JWT",
+      "title": "Token com alg none é rejeitado (401)",
+      "standard": "OWASP API2; CVE-2015-9235",
+      "howTested": "automático: GET autenticado com token sem assinatura e alg none",
+      "automated": true
+    },
+    {
+      "key": "authz-no-token",
+      "category": "Autorização",
+      "title": "Rotas protegidas rejeitam requisição sem token",
+      "standard": "OWASP A01; API2",
+      "howTested": "automático: reaproveita os resultados authz da fase api no mesmo run",
+      "automated": true
+    },
+    {
+      "key": "tenant-isolation",
+      "category": "Multi-tenant",
+      "title": "Isolamento entre tenants em leitura (X-Account-Id e ids de path)",
+      "standard": "OWASP API1; A01",
+      "howTested": "automático: exige OBS_USER_TENANT_A_* e OBS_USER_TENANT_B_*; A lê recursos de B",
+      "automated": true
+    },
+    {
+      "key": "login-bruteforce",
+      "category": "Autenticação",
+      "title": "Força bruta no login é limitada (429)",
+      "standard": "OWASP A07; API4",
+      "howTested": "automático: só fora de produção; e-mail inexistente gerado, 30 tentativas, espera 429",
+      "automated": true
+    },
+    {
+      "key": "user-enumeration",
+      "category": "Autenticação",
+      "title": "Login não revela se o e-mail existe",
+      "standard": "OWASP A07",
+      "howTested": "automático: compara e-mail inexistente com senha errada de usuário existente (uma tentativa)",
+      "automated": true
+    },
+    {
+      "key": "enum-403-404",
+      "category": "Autorização",
+      "title": "Conta fora do escopo responde 404 e não 403",
+      "standard": "OWASP API1; achado B-01",
+      "howTested": "automático: X-Account-Id com UUID aleatório numa rota escopada",
+      "automated": true
+    },
+    {
+      "key": "sqli-basic",
+      "category": "Injeção",
+      "title": "SQL injection básica em parâmetros de query",
+      "standard": "OWASP A03",
+      "howTested": "automático: ~20 GETs com ' OR '1'='1 e pg_sleep; falha em 500 ou atraso maior que 1,5 s",
+      "automated": true
+    },
+    {
+      "key": "xss-reflected",
+      "category": "XSS",
+      "title": "XSS refletido básico em respostas HTML",
+      "standard": "OWASP A03; CWE-79",
+      "howTested": "automático: parâmetros e caminhos ecoados na API e no web; falha se voltar sem escape em HTML",
+      "automated": true
+    },
+    {
+      "key": "uploads-listing",
+      "category": "Arquivos",
+      "title": "Listagem de diretório em /uploads",
+      "standard": "OWASP A05; achado A-02",
+      "howTested": "automático: GET /uploads/, /uploads/avatars/ e /uploads/feedback/",
+      "automated": true
+    },
+    {
+      "key": "uploads-traversal",
+      "category": "Arquivos",
+      "title": "Path traversal em /uploads",
+      "standard": "OWASP A01; CWE-22",
+      "howTested": "automático: caminhos com ../ e %2e%2e enviados sem normalização",
+      "automated": true
+    },
+    {
+      "key": "payload-large",
+      "category": "Disponibilidade",
+      "title": "Corpo de 5 MB é rejeitado",
+      "standard": "OWASP API4; achado M-05",
+      "howTested": "automático: só fora de produção; POST de 5 MB no login; espera 413 ou 400",
+      "automated": true
+    },
+    {
+      "key": "open-redirect",
+      "category": "Redirecionamento",
+      "title": "Open redirect em rotas de autenticação",
+      "standard": "OWASP A01; CWE-601",
+      "howTested": "automático parcial: parâmetros redirect/next/return; o redirecionamento pós-login feito no front não é verificado",
+      "automated": true
+    },
+    {
+      "key": "secrets-repo",
+      "category": "Segredos",
+      "title": "Segredos versionados no repositório",
+      "standard": "OWASP A05; CWE-798",
+      "howTested": "automático: git ls-files com regex de chaves comuns; reporta só arquivo:linha",
+      "automated": true
+    },
+    {
+      "key": "deps-go",
+      "category": "Dependências",
+      "title": "Dependências Go sem vulnerabilidade alcançável",
+      "standard": "OWASP A06",
+      "howTested": "automático: reaproveita govulncheck da fase health do mesmo run",
+      "automated": true
+    },
+    {
+      "key": "deps-npm",
+      "category": "Dependências",
+      "title": "Dependências npm de produção sem vulnerabilidade alta/crítica",
+      "standard": "OWASP A06",
+      "howTested": "automático: reaproveita npm audit da fase health do mesmo run",
+      "automated": true
+    },
+    {
+      "key": "tls",
+      "category": "TLS",
+      "title": "Certificado TLS válido, protocolo moderno e HSTS",
+      "standard": "OWASP A02; ASVS 9",
+      "howTested": "automático: só com URL https; localhost fica como não testado",
+      "automated": true
+    },
+    {
+      "key": "xss-stored",
+      "category": "XSS",
+      "title": "XSS armazenado (comentários, nomes, campos livres)",
+      "standard": "OWASP A03; achado C-01",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "csrf",
+      "category": "CSRF",
+      "title": "CSRF em rotas com cookie",
+      "standard": "OWASP CSRF; CWE-352",
+      "howTested": "manual: a API usa Bearer no header, o que reduz o risco; cookies do gateway SSO não foram testados",
+      "automated": false
+    },
+    {
+      "key": "sqli-deep",
+      "category": "Injeção",
+      "title": "SQL injection em profundidade (ORDER BY, filtros dinâmicos, JSON)",
+      "standard": "OWASP A03",
+      "howTested": "manual: revisão de fmt.Sprintf com SQL (achado: parametrização ok na amostra)",
+      "automated": false
+    },
+    {
+      "key": "command-injection",
+      "category": "Injeção",
+      "title": "Injeção de comando e de template",
+      "standard": "CWE-78; CWE-1336",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "ssrf-dynamic",
+      "category": "SSRF",
+      "title": "SSRF dinâmico em download de imagens e ingestão de URLs",
+      "standard": "OWASP A10; achado B-02",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "idor-write",
+      "category": "Multi-tenant",
+      "title": "IDOR em escrita (PATCH/DELETE com id de outro tenant)",
+      "standard": "OWASP API1",
+      "howTested": "não automatizado ainda: exigiria escrita em banco de teste",
+      "automated": false
+    },
+    {
+      "key": "mass-assignment",
+      "category": "Autorização",
+      "title": "Mass assignment (campos extras aceitos no corpo)",
+      "standard": "OWASP API3; CWE-915",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "password-reset-flow",
+      "category": "Autenticação",
+      "title": "Fluxo de redefinição de senha (token, expiração, enumeração)",
+      "standard": "OWASP A07; achado M-01",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "password-policy",
+      "category": "Autenticação",
+      "title": "Política de senha e armazenamento do hash",
+      "standard": "OWASP ASVS 2.1",
+      "howTested": "manual: revisão do código de auth",
+      "automated": false
+    },
+    {
+      "key": "mfa",
+      "category": "Autenticação",
+      "title": "Autenticação multifator para administradores",
+      "standard": "OWASP ASVS 2.8",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "session-revocation",
+      "category": "Sessão",
+      "title": "Logout e revogação invalidam o token",
+      "standard": "OWASP A07; achado B-08",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "jwt-expiration",
+      "category": "JWT",
+      "title": "Token expirado é rejeitado",
+      "standard": "JWT BCP",
+      "howTested": "não automatizado ainda: exigiria emitir token expirado",
+      "automated": false
+    },
+    {
+      "key": "websocket-auth",
+      "category": "Realtime",
+      "title": "Autenticação de WebSocket sem token em query string",
+      "standard": "achado M-08",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "upload-malicious",
+      "category": "Arquivos",
+      "title": "Upload malicioso (tipo, tamanho, conteúdo executável)",
+      "standard": "OWASP A04; CWE-434",
+      "howTested": "não automatizado ainda: exigiria escrita",
+      "automated": false
+    },
+    {
+      "key": "uploads-authz",
+      "category": "Arquivos",
+      "title": "Anexos privados exigem sessão e escopo de conta",
+      "standard": "OWASP A01; achado A-02",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "rate-limit-global",
+      "category": "Disponibilidade",
+      "title": "Rate limit global não é contornável por token ou XFF forjado",
+      "standard": "achado A-01",
+      "howTested": "não automatizado ainda: cobre parcialmente o login-bruteforce",
+      "automated": false
+    },
+    {
+      "key": "dos-no-pagination",
+      "category": "Disponibilidade",
+      "title": "Listagens sem paginação ou limite",
+      "standard": "OWASP API4; achado A-05",
+      "howTested": "manual: varredura estática do AUDITORIA; sem teste de carga por rota",
+      "automated": false
+    },
+    {
+      "key": "dos-slowloris",
+      "category": "Disponibilidade",
+      "title": "Timeouts de servidor contra conexões lentas",
+      "standard": "achado A-04",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "webhook-signature",
+      "category": "Integrações",
+      "title": "Webhooks exigem assinatura válida",
+      "standard": "OWASP API10; CWE-345",
+      "howTested": "manual: revisão de hmac.Equal nos provedores; sem POST dinâmico",
+      "automated": false
+    },
+    {
+      "key": "log-sensitive-data",
+      "category": "Logging",
+      "title": "Dados sensíveis fora dos logs (senhas, tokens, códigos)",
+      "standard": "OWASP A09; achado M-01",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "prompt-injection",
+      "category": "IA",
+      "title": "Prompt injection nos assistentes de IA",
+      "standard": "OWASP LLM01",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "ai-output-handling",
+      "category": "IA",
+      "title": "Saída de IA tratada como não confiável (HTML, comandos)",
+      "standard": "OWASP LLM02",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "ai-tool-scope",
+      "category": "IA",
+      "title": "Ferramentas dos assistentes respeitam tenant e permissão do usuário",
+      "standard": "OWASP LLM06",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "secrets-at-rest",
+      "category": "Segredos",
+      "title": "Segredos de integração cifrados em repouso",
+      "standard": "OWASP A02",
+      "howTested": "manual: secretbox com fail-fast revisado por leitura",
+      "automated": false
+    },
+    {
+      "key": "secrets-history",
+      "category": "Segredos",
+      "title": "Segredos no histórico do Git",
+      "standard": "CWE-798",
+      "howTested": "não automatizado ainda: a varredura cobre só os arquivos atuais",
+      "automated": false
+    },
+    {
+      "key": "backup-encryption",
+      "category": "Dados",
+      "title": "Backup cifrado, off-site e com restauração testada",
+      "standard": "OWASP A02; achado M-15",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "prod-defaults",
+      "category": "Configuração",
+      "title": "Defaults inseguros bloqueados em produção (Validate)",
+      "standard": "achado B-06",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "healthz-info-leak",
+      "category": "Configuração",
+      "title": "healthz não expõe lista de módulos",
+      "standard": "OWASP A05; achado B-07",
+      "howTested": "manual: o healthz público lista os módulos (achado B-07)",
+      "automated": false
+    },
+    {
+      "key": "error-info-leak",
+      "category": "Configuração",
+      "title": "Erros sem stack trace ou detalhes internos",
+      "standard": "OWASP A05; CWE-209",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "http-methods",
+      "category": "Configuração",
+      "title": "Métodos HTTP desnecessários (TRACE) desabilitados",
+      "standard": "OWASP A05",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "subdomain-takeover",
+      "category": "Configuração",
+      "title": "Subdomínios e DNS sem apontamentos órfãos",
+      "standard": "OWASP A05",
+      "howTested": "manual: depende da migração de DNS pendente",
+      "automated": false
+    },
+    {
+      "key": "supply-chain-ci",
+      "category": "Integridade",
+      "title": "CI/CD com permissões mínimas e ações fixadas",
+      "standard": "OWASP A08; achado M-03",
+      "howTested": "manual: revisão dos workflows",
+      "automated": false
+    },
+    {
+      "key": "container-hardening",
+      "category": "Infra",
+      "title": "Containers sem root, imagens fixadas e superfície mínima",
+      "standard": "CIS Docker",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "infra-ports",
+      "category": "Infra",
+      "title": "Portas expostas na VPS (Postgres, n8n, WAHA)",
+      "standard": "OWASP A05",
+      "howTested": "não automatizado ainda: exige scan do host de produção",
+      "automated": false
+    },
+    {
+      "key": "tenant-cache-leak",
+      "category": "Multi-tenant",
+      "title": "Cache e CDN não servem dados de um tenant a outro",
+      "standard": "OWASP API1",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "lgpd-retention",
+      "category": "Privacidade",
+      "title": "Retenção, consentimento e exclusão de dados pessoais (LGPD)",
+      "standard": "LGPD art. 6 e 16",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "cookie-prefix",
+      "category": "Sessão",
+      "title": "Cookies com prefixo __Host- e escopo mínimo",
+      "standard": "OWASP ASVS 3.4",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "content-type-sniffing",
+      "category": "Headers",
+      "title": "Respostas de upload com Content-Type correto e nosniff",
+      "standard": "OWASP A05",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    },
+    {
+      "key": "permissions-policy",
+      "category": "Headers",
+      "title": "Permissions-Policy restringe recursos do navegador",
+      "standard": "OWASP Secure Headers",
+      "howTested": "não automatizado ainda",
+      "automated": false
+    }
+  ]
+}

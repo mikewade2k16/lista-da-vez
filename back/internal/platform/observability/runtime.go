@@ -22,6 +22,7 @@ type Runtime struct {
 	normalizer *sqlNormalizer
 	cancel     context.CancelFunc
 	done       chan struct{}
+	collector  chan struct{}
 }
 
 // New devolve nil quando OBSERVABILITY_ENABLED=false.
@@ -60,6 +61,7 @@ func (rt *Runtime) Start(pool *pgxpool.Pool) {
 		rt.recorder.run(ctx)
 	}()
 	go runMaintenance(ctx, pool, rt.cfg, rt.logger)
+	rt.startSystemCollector(ctx, pool)
 }
 
 // Stop grava o que estiver pendente (até o timeout do contexto).
@@ -71,6 +73,12 @@ func (rt *Runtime) Stop(ctx context.Context) {
 	select {
 	case <-rt.done:
 	case <-ctx.Done():
+	}
+	if rt.collector != nil {
+		select {
+		case <-rt.collector:
+		case <-ctx.Done():
+		}
 	}
 }
 

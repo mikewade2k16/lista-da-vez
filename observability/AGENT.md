@@ -64,10 +64,10 @@ Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vá
 
 ### Etapa 1 — rápidas (P)
 
-- [~] **1.1 Regra `container_down` sem falso alarme** (código pronto e testado, sem
+- [x] **1.1 Regra `container_down` sem falso alarme** (2026-11-24, ddd0c58; falta só deploy) (código pronto e testado, sem
   commit em 2026-11-24). Parada manual de container `always`/`unless-stopped` não
   alerta. Falta commit e deploy; em produção ainda há 6 alertas falsos abertos.
-- [ ] **1.2 Sincronizar o catálogo de segurança em produção.** Hoje a área aparece
+- [x] **1.2 Sincronizar o catálogo de segurança em produção.** (2026-11-24) 81 checagens e 32 achados gravados por túnel SSH; o sync lê o status da AUDITORIA (corrigido → fixed, sem sobrescrever edição manual). Hoje a área aparece
       como "desconhecida". Rodar `obs:security --sync` com `OBS_DATABASE_URL` da produção
       por túnel SSH, só upsert de catálogo e achados.
 - [ ] **1.3 Reconhecer e silenciar alertas.** Botões na aba Alertas: "reconhecer"

@@ -45,14 +45,19 @@ export async function upsertCatalog(c, checks) {
 export async function upsertFindings(c, list) {
   for (const f of list)
     await c.query(
-      `insert into obs.findings (id, severity, title, area, location)
-       values ($1,$2,$3,$4,$5)
+      `insert into obs.findings (id, severity, title, area, location, status)
+       values ($1,$2,$3,$4,$5,$6)
        on conflict (id) do update
          set severity = excluded.severity, title = excluded.title,
-             area = excluded.area, location = excluded.location, updated_at = now()
+             area = excluded.area, location = excluded.location,
+             -- status editado no painel vence; a AUDITORIA so promove open -> fixed
+             status = case when obs.findings.status = 'open' and excluded.status = 'fixed'
+                           then 'fixed' else obs.findings.status end,
+             updated_at = now()
        where (obs.findings.severity, obs.findings.title, obs.findings.area, obs.findings.location)
-             is distinct from (excluded.severity, excluded.title, excluded.area, excluded.location)`,
-      [f.id, f.severity, f.title, f.area, f.location],
+             is distinct from (excluded.severity, excluded.title, excluded.area, excluded.location)
+          or (obs.findings.status = 'open' and excluded.status = 'fixed')`,
+      [f.id, f.severity, f.title, f.area, f.location, f.status || "open"],
     );
   return list.length;
 }

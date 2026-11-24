@@ -140,3 +140,17 @@ test("redirectsExternal só acusa host diferente", () => {
   assert.ok(!redirectsExternal("", base));
   assert.ok(!redirectsExternal("http://localhost:3000/auth/login", base));
 });
+
+test("findingStatus le corrigido e parcial da AUDITORIA", async () => {
+  const { findingStatus } = await import("./security-lib.mjs");
+  assert.equal(
+    findingStatus("x\n- **Status: CORRIGIDO em 2026-11-23.** ok"),
+    "fixed",
+  );
+  assert.equal(findingStatus("- **Status 2026-11-23: corrigido.** x"), "fixed");
+  assert.equal(
+    findingStatus("- **Status 2026-11-23 (parcial):** listagem"),
+    "open",
+  );
+  assert.equal(findingStatus("sem linha de status"), "open");
+});

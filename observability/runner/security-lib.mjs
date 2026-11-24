@@ -205,6 +205,15 @@ export function areaOf(location) {
   if (/docker|compose|scripts\/|Caddy/i.test(f)) return "infra";
   return "geral";
 }
+// Linha "**Status ...**" da AUDITORIA: "corrigido" vira fixed, "parcial" segue open.
+export function findingStatus(body) {
+  const line = body.split("\n").find((l) => /^\s*-\s*\*\*Status\b/i.test(l));
+  if (!line) return "open";
+  const head = line.slice(0, 160);
+  if (/parcial/i.test(head)) return "open";
+  return /corrigido/i.test(head) ? "fixed" : "open";
+}
+
 export function parseFindings(md) {
   const out = [];
   let section = "";
@@ -230,6 +239,7 @@ export function parseFindings(md) {
         title,
         area: areaOf(location),
         location,
+        status: findingStatus(body),
       });
     }
   }

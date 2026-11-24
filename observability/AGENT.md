@@ -58,34 +58,36 @@ Regras de trabalho (aprendidas em 2026-11-23):
 - [x] **Contas de teste locais e isolamento entre contas (2026-11-24):** 6 trocas de
       conta, nenhum vazamento.
 
+Etapas 1 e 2 commitadas em 2026-11-24, ainda sem push nem deploy. O próximo deploy aplica as migrations 0332 e 0333 e fecha os 6 alertas falsos de container em produção.
+
 ## Backlog — do mais rápido ao mais complexo
 
 Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vários dias.
 
 ### Etapa 1 — rápidas (P)
 
-- [x] **1.1 Regra `container_down` sem falso alarme** (2026-11-24, ddd0c58; falta só deploy) (código pronto e testado, sem
+- [x] **1.1 Regra `container_down` sem falso alarme** (2026-11-24, ddd0c58) (código pronto e testado, sem
   commit em 2026-11-24). Parada manual de container `always`/`unless-stopped` não
   alerta. Falta commit e deploy; em produção ainda há 6 alertas falsos abertos.
 - [x] **1.2 Sincronizar o catálogo de segurança em produção.** (2026-11-24) 81 checagens e 32 achados gravados por túnel SSH; o sync lê o status da AUDITORIA (corrigido → fixed, sem sobrescrever edição manual). Hoje a área aparece
       como "desconhecida". Rodar `obs:security --sync` com `OBS_DATABASE_URL` da produção
       por túnel SSH, só upsert de catálogo e achados.
-- [x] **1.3 Reconhecer e silenciar alertas.** (2026-11-24, sem commit) Migration 0332 (4 colunas em `obs.alerts`), endpoints `ack`/`silence`/`unsilence`, motor respeita ack e silêncio, botões na aba Alertas e selo na Saúde; falta aplicar a 0332 e deploy. Original: Botões na aba Alertas: "reconhecer"
+- [x] **1.3 Reconhecer e silenciar alertas.** (2026-11-24, df45e83) Migration 0332 (4 colunas em `obs.alerts`), endpoints `ack`/`silence`/`unsilence`, motor respeita ack e silêncio, botões na aba Alertas e selo na Saúde; falta aplicar a 0332 e deploy. Original: Botões na aba Alertas: "reconhecer"
       (para de reavisar) e "silenciar por X h", com quem fez e quando. Precisa de uma
       coluna nova em `obs.alerts`.
-- [x] **1.4 Monitor externo de uptime.** (2026-11-24) `.github/workflows/uptime.yml`: cron de 5 min, `/healthz` e home com retry; falha abre/comenta issue `uptime`, volta fecha. Original: Workflow agendado no GitHub Actions (a cada
+- [x] **1.4 Monitor externo de uptime.** (2026-11-24, df45e83) `.github/workflows/uptime.yml`: cron de 5 min, `/healthz` e home com retry; falha abre/comenta issue `uptime`, volta fecha. Original: Workflow agendado no GitHub Actions (a cada
       5 min) que chama `/healthz` e a home, e abre uma issue ou manda e-mail se falhar.
       Cobre o caso de a VPS inteira cair junto com o próprio monitor.
-- [x] **1.5 Vencimento de TLS e domínios.** (2026-11-24) Coleta + regra: obs-agent lê o certificado de `OBS_AGENT_TLS_HOSTS` a cada 6 h (`tls` na amostra agent); regra `tls_expiring` no módulo observability. Original: O agente lê a validade dos certificados
+- [x] **1.5 Vencimento de TLS e domínios.** (2026-11-24, df45e83) Coleta + regra: obs-agent lê o certificado de `OBS_AGENT_TLS_HOSTS` a cada 6 h (`tls` na amostra agent); regra `tls_expiring` no módulo observability. Original: O agente lê a validade dos certificados
       dos domínios do Caddy; alerta com 14 dias de antecedência.
-- [x] **1.6 Aba Integrações.** (2026-11-24, sem commit) `GET /integrations` (p95 por `percentile_cont`, por integração de `obs.external_calls`) e aba "Integrações" no painel. Original: Os dados já estão em `obs.external_calls`: mostrar
+- [x] **1.6 Aba Integrações.** (2026-11-24, df45e83) `GET /integrations` (p95 por `percentile_cont`, por integração de `obs.external_calls`) e aba "Integrações" no painel. Original: Os dados já estão em `obs.external_calls`: mostrar
       tempo, erro e volume por host externo (Meta, Google, IA, WhatsApp, R2).
-- [x] **1.7 Métrica de panic.** (2026-11-24) Coleta + regra: `platform/panics` conta panics recuperados (HTTP, background, jobs); amostra `api` ganha `panics {total, delta}`; regra `panic_detected` no módulo observability. Original: Contar os panics (API e workers) em
+- [x] **1.7 Métrica de panic.** (2026-11-24, df45e83) Coleta + regra: `platform/panics` conta panics recuperados (HTTP, background, jobs); amostra `api` ganha `panics {total, delta}`; regra `panic_detected` no módulo observability. Original: Contar os panics (API e workers) em
       `obs.system_samples` e criar a regra de alerta `panic_detected`.
 
 ### Etapa 2 — governança pelo painel (M)
 
-- [x] **2.1 Configuração dos alertas no banco** (2026-11-24, sem commit): `obs.settings` +
+- [x] **2.1 Configuração dos alertas no banco** (2026-11-24, 779a526): `obs.settings` +
       `GET /settings`, `PUT /settings/{key}`; o motor relê a cada 60 s (destinatários, reaviso,
       horário de silêncio, liga/desliga, severidade e limite de 19 regras); aba Alertas > Configurações. Original: tabela `obs.settings`. Editável na
       aba Alertas:
@@ -96,11 +98,11 @@ Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vá
 
   As variáveis de ambiente passam a ser só o valor inicial.
 
-- [x] **2.2 Layout e conteúdo do e-mail** (2026-11-24, sem commit): chave `email` (prefixo, agrupar, seções, resolvidos, rodapé) aplicada ao montar o e-mail; `POST /settings/email/preview`. Original: Assunto, quais seções entram e se agrupa
+- [x] **2.2 Layout e conteúdo do e-mail** (2026-11-24, 779a526): chave `email` (prefixo, agrupar, seções, resolvidos, rodapé) aplicada ao montar o e-mail; `POST /settings/email/preview`. Original: Assunto, quais seções entram e se agrupa
       os alertas da rodada; pré-visualização no painel.
-- [x] **2.3 Relatório semanal por e-mail** (2026-11-24, sem commit): chave `weeklyReport` + estado; envio no dia/hora, uma vez por semana; `GET /reports/weekly/preview`, `POST /reports/weekly/send`. Original: O que piorou, o que melhorou, alertas da
+- [x] **2.3 Relatório semanal por e-mail** (2026-11-24, 779a526): chave `weeklyReport` + estado; envio no dia/hora, uma vez por semana; `GET /reports/weekly/preview`, `POST /reports/weekly/send`. Original: O que piorou, o que melhorou, alertas da
       semana, achados abertos e deploys.
-- [x] **2.4 Achados como fila de trabalho.** Status, responsável e prazo editáveis no
+- [x] **2.4 Achados como fila de trabalho.** (2026-11-24, 779a526) Status, responsável e prazo editáveis no
       painel (aba Segurança). (2026-11-24: `PATCH /findings/{id}`, edição inline, filtros e vencidos.)
 
 ### Etapa 3 — banco (M a G)

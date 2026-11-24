@@ -243,6 +243,8 @@ services:
       OBS_AGENT_INTERVAL: ${OBS_AGENT_INTERVAL:-30s}
       OBS_AGENT_HOST: ${OBS_AGENT_HOST:-}
       OBS_AGENT_DISK_PATHS: /host=/
+      # Dominios publicos do Caddy cujo certificado o agente confere a cada 6 h.
+      OBS_AGENT_TLS_HOSTS: ${OBS_AGENT_TLS_HOSTS:-omni.crowvisuals.com.br,mostarda.crowvisuals.com.br,bari.crowvisuals.com.br,cardapio.crowvisuals.com.br,aperolajoias.thecrow.com.br}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /:/host:ro

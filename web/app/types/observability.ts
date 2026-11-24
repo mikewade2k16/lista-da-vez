@@ -212,6 +212,10 @@ export interface ObsHealthAlertSummary {
   title: string
   since: string
   notifiedAt: string | null
+  acknowledgedAt?: string | null
+  acknowledgedBy?: string | null
+  silencedUntil?: string | null
+  silencedBy?: string | null
 }
 
 export interface ObsSecuritySummary {
@@ -343,7 +347,7 @@ export interface ObsAlert {
   severity: string
   area: string
   title: string
-  detail: string
+  detail: { measured?: string } & Record<string, unknown>
   status: 'open' | 'resolved'
   firstSeen: string
   lastSeen: string
@@ -351,6 +355,21 @@ export interface ObsAlert {
   notifiedAt: string | null
   notifyCount: number
   lastNotifyError: string | null
+  acknowledgedAt: string | null
+  acknowledgedBy: string | null
+  silencedUntil: string | null
+  silencedBy: string | null
+}
+
+export interface ObsIntegration {
+  host: string
+  calls: number
+  errors: number
+  errorRate: number
+  avgMs: number
+  p95Ms: number
+  lastErrorAt: string | null
+  lastError: string
 }
 
 export type ObsDeployVerdict = 'ok' | 'slow' | 'failed'

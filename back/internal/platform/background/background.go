@@ -6,6 +6,7 @@ package background
 import (
 	"context"
 	"fmt"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/panics"
 	"log/slog"
 	"runtime/debug"
 	"sync"
@@ -86,6 +87,7 @@ func (g *Group) safeRun(ctx context.Context, name string, fn func(ctx context.Co
 	defer func() {
 		if rec := recover(); rec != nil {
 			panicked = true
+			panics.Record("background")
 			g.logger.Error("background_panic",
 				"name", name,
 				"panic", fmt.Sprint(rec),
@@ -140,6 +142,7 @@ func (g *Group) Shutdown(ctx context.Context) bool {
 			defer close(done)
 			defer func() {
 				if rec := recover(); rec != nil {
+					panics.Record("background")
 					g.logger.Error("background_closer_panic", "name", c.name, "panic", fmt.Sprint(rec))
 				}
 			}()

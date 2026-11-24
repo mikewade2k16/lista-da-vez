@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/panics"
 )
 
 const collectTimeout = 8 * time.Second
@@ -19,20 +20,28 @@ type systemMetrics struct {
 	Pool *poolMetrics `json:"pool,omitempty"`
 	PG   *pgMetrics   `json:"pg,omitempty"`
 	Jobs []jobMetrics `json:"jobs"`
+	// Panics: recuperados desde o inicio do processo e variacao contra a amostra anterior.
+	Panics *panicMetrics `json:"panics,omitempty"`
+}
+
+type panicMetrics struct {
+	Total int64 `json:"total"`
+	Delta int64 `json:"delta"`
 }
 
 type systemCollector struct {
-	pool     *pgxpool.Pool
-	cfg      Config
-	logger   *slog.Logger
-	norm     *sqlNormalizer
-	host     string
-	prevPool poolCounters
-	prevPG   pgCounters
-	hasPrev  bool
-	maxConns int
-	jobs     *jobDiscovery
-	warns    warnLimiter
+	pool       *pgxpool.Pool
+	cfg        Config
+	logger     *slog.Logger
+	norm       *sqlNormalizer
+	host       string
+	prevPool   poolCounters
+	prevPG     pgCounters
+	prevPanics int64
+	hasPrev    bool
+	maxConns   int
+	jobs       *jobDiscovery
+	warns      warnLimiter
 }
 
 func (rt *Runtime) startSystemCollector(ctx context.Context, pool *pgxpool.Pool) {
@@ -98,6 +107,9 @@ func (c *systemCollector) collect(ctx context.Context) systemMetrics {
 		pgStats.DeadlocksDelta = counterDelta(pgCur.deadlocks, c.prevPG.deadlocks, c.hasPrev && c.prevPG.valid)
 		c.prevPG = pgCur
 	}
+	panicTotal := panics.Total()
+	out.Panics = buildPanicMetrics(panicTotal, c.prevPanics, c.hasPrev)
+	c.prevPanics = panicTotal
 	c.prevPool = poolCur
 	c.hasPrev = true
 	out.Jobs = c.readJobs(ctx)
@@ -128,4 +140,9 @@ func counterDelta(current, previous int64, hasPrev bool) int64 {
 		return 0
 	}
 	return current - previous
+}
+
+// buildPanicMetrics monta o bloco "panics"; o delta e 0 na primeira amostra.
+func buildPanicMetrics(total, previous int64, hasPrev bool) *panicMetrics {
+	return &panicMetrics{Total: total, Delta: counterDelta(total, previous, hasPrev)}
 }

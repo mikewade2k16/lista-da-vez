@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/panics"
 	"log/slog"
 	"runtime/debug"
 	"sync"
@@ -160,6 +161,7 @@ func (w *Worker) loop(ctx context.Context, interval time.Duration, fn func(conte
 func (w *Worker) safeCycle(ctx context.Context, fn func(context.Context)) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			panics.Record("jobs")
 			w.log("error", "panic no ciclo do worker", "panic", fmt.Sprint(rec), "stack", string(debug.Stack()))
 		}
 	}()
@@ -245,6 +247,7 @@ var errJobPanic = errors.New("jobs: panic no handler")
 func (w *Worker) safeHandle(ctx context.Context, handler Handler, job Job) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			panics.Record("jobs")
 			w.log("error", "panic no handler do job",
 				"account_id", job.AccountID, "job_id", job.ID, "kind", job.Kind,
 				"panic", fmt.Sprint(rec), "stack", string(debug.Stack()))

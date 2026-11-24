@@ -38,12 +38,25 @@ func notifyStateFrom(detail map[string]any) notifyState {
 	return state
 }
 
+// silencedAt: o alerta está silenciado em `now` (nenhum e-mail até silenced_until).
+func silencedAt(row alertRow, now time.Time) bool {
+	return row.SilencedUntil != nil && row.SilencedUntil.After(now)
+}
+
 // notifyReason decide se um alerta aberto deve ser notificado agora (anti-spam):
 // ao abrir, ao subir de severidade e, no máximo, a cada `renotify` enquanto aberto.
 // `row` é o estado anterior; `severity` é a severidade atual da condição.
+// Silenciado: nada até silenced_until. Reconhecido: não reavisa nem avisa a abertura
+// pendente, mas uma subida de severidade ainda avisa.
 func notifyReason(row alertRow, severity string, now time.Time, renotify time.Duration) string {
+	if silencedAt(row, now) {
+		return ""
+	}
 	state := notifyStateFrom(row.Detail)
 	if row.NotifiedAt == nil {
+		if row.AcknowledgedAt != nil {
+			return ""
+		}
 		if state.AttemptAt != nil && now.Sub(*state.AttemptAt) < retryAfterFailure {
 			return ""
 		}
@@ -56,10 +69,19 @@ func notifyReason(row alertRow, severity string, now time.Time, renotify time.Du
 	if severityRank(severity) > severityRank(notified) {
 		return reasonEscalated
 	}
+	if row.AcknowledgedAt != nil {
+		return ""
+	}
 	if now.Sub(*row.NotifiedAt) >= renotify {
 		return reasonRenotify
 	}
 	return ""
+}
+
+// notifyResolved: avisa a resolução só se o alerta chegou a ser notificado e não está
+// silenciado. Reconhecer não suprime a resolução.
+func notifyResolved(row alertRow, now time.Time) bool {
+	return row.NotifiedAt != nil && !silencedAt(row, now)
 }
 
 type notifyItem struct {

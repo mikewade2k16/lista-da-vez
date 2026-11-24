@@ -420,8 +420,14 @@ func buildAlertsSummary(in healthInputs) map[string]any {
 		if len(open) == 10 {
 			break
 		}
-		open = append(open, map[string]any{"id": alert.ID, "severity": alert.Severity, "title": alert.Title,
-			"since": alert.FirstSeen, "notifiedAt": alert.NotifiedAt})
+		item := map[string]any{"id": alert.ID, "severity": alert.Severity, "title": alert.Title,
+			"since": alert.FirstSeen, "notifiedAt": alert.NotifiedAt,
+			"acknowledgedAt": alert.AcknowledgedAt, "acknowledgedBy": alert.AcknowledgedBy,
+			"silencedUntil": nil, "silencedBy": nil}
+		if silencedAt(alert, in.Now) {
+			item["silencedUntil"], item["silencedBy"] = alert.SilencedUntil, alert.SilencedBy
+		}
+		open = append(open, item)
 	}
 	return map[string]any{"channel": "email", "configured": in.Configured, "recipients": in.Recipients, "whatsapp": "planned", "open": open}
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/panics"
 	"log/slog"
 	"net"
 	"net/http"
@@ -128,6 +129,8 @@ func Recover(logger *slog.Logger) Middleware {
 				if recovered == nil {
 					return
 				}
+
+				panics.Record("http")
 
 				// Stack só no log e no schema obs; a resposta continua genérica.
 				stack := debug.Stack()

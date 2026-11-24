@@ -40,7 +40,7 @@ func run() int {
 		log.Error("obs-agent: docker", "error", err.Error())
 		return 1
 	}
-	col := &obsagent.Collector{Docker: docker, DiskPaths: obsagent.ParseDiskPaths(cfg.DiskPaths), Host: cfg.Host, Logger: log}
+	col := &obsagent.Collector{Docker: docker, DiskPaths: obsagent.ParseDiskPaths(cfg.DiskPaths), Host: cfg.Host, Logger: log, TLSHosts: cfg.TLSHosts}
 
 	if *dryRun {
 		if err := dryRunOnce(ctx, col, *once, cfg); err != nil {

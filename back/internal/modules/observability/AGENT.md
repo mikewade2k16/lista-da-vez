@@ -31,7 +31,11 @@ Saúde do sistema (fase 6; migration 0330; contratos em `observability/SPEC.md`)
 | `GET /health` | status por área (api, database, containers, pages, workers, security, deploy), issues (máx. 15, com link de aba), erros 1 h/24 h, online (id e nome, sem e-mail), última amostra de sistema, resumo de alertas e segurança |
 | `GET /security` | `obs.security_checks` + `obs.findings` |
 | `GET /system?hours=` | séries `api`/`agent` de `obs.system_samples` (hours 1..72, padrão 6; até ~360 pontos) e última amostra de cada container |
-| `GET /alerts?status=open\|resolved\|all` | `obs.alerts` (padrão `open`) |
+| `GET /alerts?status=open\|resolved\|all` | `obs.alerts` (padrão `open`); inclui `acknowledgedAt/By` e `silencedUntil/By` (silêncio vencido vem `null`) |
+| `POST /alerts/{id}/ack` | reconhece o alerta aberto (204; 400 `invalid_alert_id`; 404; 409 `alert_resolved`) |
+| `POST /alerts/{id}/silence` `{hours: 1..168}` | silencia e-mails do alerta aberto até agora+hours (204; 400 `invalid_hours`) |
+| `POST /alerts/{id}/unsilence` | reativa os avisos (204) |
+| `GET /integrations?days=` | por integração de `obs.external_calls`: chamadas, erros, taxa, média, p95 (`percentile_cont`), último erro; mais chamadas primeiro (máx. 100). `host` é o nome da integração (waha, meta...), não o domínio. Erro = timeout, status 0, 5xx ou mensagem de erro; 4xx não conta |
 | `GET /deploys?limit=` | `obs.deploys` (limit 1..100, padrão 30; 400 `invalid_limit`): `items` com veredito `ok\|slow\|failed` e `stats` (mediana/p90 dos últimos 10 sucessos do mesmo comando do deploy mais recente; lento = > 1,5 × mediana com ao menos 3 referências) |
 | `POST /alerts/test` | e-mail de teste (204; 409 `alerts_not_configured` sem SMTP ou destinatários; 502 se o envio falhar) |
 
@@ -52,8 +56,9 @@ responde 202. Eventos inválidos são descartados um a um.
   ver `deploy-record.mjs`). Veredito, estatísticas, `deployArea` e `deployIssue` são puros
   (testados). Área `deploy`: sem registro = unknown; último ok = ok; lento = warn; falhou =
   critical nas primeiras 24 h (depois warn) e issue high (falhou) ou medium (lento).
-- `alerts.go` (laço e sincronização com `obs.alerts`), `alerts_rules.go` (regras puras da
+- `alerts.go` (laço e sincronização com `obs.alerts`), `alerts_rules.go` + `alerts_rules_extra.go` (regras puras da
   tabela do SPEC), `alerts_notify.go` (anti-spam e texto do e-mail).
+- `service_integrations.go` / `store_integrations.go`: aba Integrações.
 - `store.go` / `store_runs.go`: SQL somente no schema `obs`, sempre com
   `WithoutTracing`.
 
@@ -90,6 +95,30 @@ Limites conhecidos: assume uma única réplica da API (várias réplicas duplica
 `OBS_SAMPLE_RATE` (5xx e lentas sempre gravam; com taxa < 1 o total de requisições é
 subestimado e a taxa de 5xx, superestimada). `container_down` trata qualquer container
 fora de `running` como crítico, inclusive jobs one-shot que terminam em `exited`.
+
+## Reconhecer e silenciar (migration 0332)
+
+`obs.alerts` ganhou `acknowledged_at/by` e `silenced_until/by` (nome = `core.users.display_name`
+no momento da ação; reserva: nome do token). Só alertas abertos aceitam as ações.
+Regras em `notifyReason` (`alerts_notify.go`, testadas em `alerts_controls_test.go`):
+- silenciado (`silenced_until` no futuro): nenhum e-mail, nem escalada nem resolução
+  (`notifyResolved`); ao vencer, volta ao fluxo normal;
+- reconhecido: sem renotificação e sem aviso de abertura pendente; subida de severidade
+  ainda avisa; a resolução continua avisando;
+- alerta que resolve e reabre é outro registro, então avisa normalmente.
+`http_alert_controls.go` valida o id (`^[1-9][0-9]{0,17}$`) e as horas; ações em
+`store_alert_controls.go` (SQL só em obs, nome via `core.users`, leitura de nome só do
+próprio usuário logado).
+
+## Regras de TLS e panic (`alerts_rules_extra.go`)
+
+- `tls_expiring` (alvo = host; área `containers`): lê `metrics.tls` da última amostra
+  `source='agent'` de forma tolerante (`parseTLS`: ausente, tipo trocado ou item inválido =
+  sem condição). Usa `expiresAt` quando existe (o cache do agente envelhece), senão
+  `daysLeft`. `<= 14` dias high, `<= 3` ou vencido critical. `error` não vazio por 2
+  checagens (>= 6 h de amostras com erro na janela de 13 h, `latestTLS`) = medium.
+- `panic_detected` (área `api`): soma `metrics.panics.delta` das amostras `source='api'`
+  dos últimos 15 min (o alerta fecha sozinho depois); high, com `panicsRecent` e `panicsTotal`.
 
 ## Ajustes de alertas (containers, pool, tráfego real)
 - `container_down` só para restart_policy always|unless-stopped|on-failure parado, ou health unhealthy; policy `no`/vazia parada não alerta e não conta como "fora" na área containers (aparece como "parados de propósito"). `latestContainers` traz `restart_policy`/`exit_code` e só considera amostras dos últimos 10 min.

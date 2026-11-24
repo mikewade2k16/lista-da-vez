@@ -40,6 +40,9 @@ func (s *Store) AlertMetrics(ctx context.Context, now time.Time) (alertMetrics, 
 	if m.Disks, err = s.latestDisks(ctx); err != nil {
 		return m, err
 	}
+	if m.TLS, m.TLSErrorSince, err = s.latestTLS(ctx, now); err != nil {
+		return m, err
+	}
 	if err = s.pool.QueryRow(quiet(ctx), `
 		select count(*) from obs.frontend_events where kind = 'js_error' and occurred_at >= $1`,
 		now.Add(-15*time.Minute)).Scan(&m.FrontendJSErr15); err != nil {
@@ -155,16 +158,22 @@ type alertRow struct {
 	NotifiedAt      *time.Time     `json:"notifiedAt"`
 	NotifyCount     int            `json:"notifyCount"`
 	LastNotifyError *string        `json:"lastNotifyError"`
+	AcknowledgedAt  *time.Time     `json:"acknowledgedAt"`
+	AcknowledgedBy  *string        `json:"acknowledgedBy"`
+	SilencedUntil   *time.Time     `json:"silencedUntil"`
+	SilencedBy      *string        `json:"silencedBy"`
 }
 
 const alertColumns = `id, rule, fingerprint, severity, area, title, detail, status, first_seen, last_seen,
-	resolved_at, notified_at, notify_count, last_notify_error`
+	resolved_at, notified_at, notify_count, last_notify_error,
+	acknowledged_at, acknowledged_by, silenced_until, silenced_by`
 
 func scanAlert(row pgx.CollectableRow) (alertRow, error) {
 	var a alertRow
 	var raw []byte
 	err := row.Scan(&a.ID, &a.Rule, &a.Fingerprint, &a.Severity, &a.Area, &a.Title, &raw, &a.Status, &a.FirstSeen,
-		&a.LastSeen, &a.ResolvedAt, &a.NotifiedAt, &a.NotifyCount, &a.LastNotifyError)
+		&a.LastSeen, &a.ResolvedAt, &a.NotifiedAt, &a.NotifyCount, &a.LastNotifyError,
+		&a.AcknowledgedAt, &a.AcknowledgedBy, &a.SilencedUntil, &a.SilencedBy)
 	a.Detail = map[string]any{}
 	_ = json.Unmarshal(raw, &a.Detail)
 	if a.Detail == nil {
@@ -249,4 +258,52 @@ func (s *Store) MarkNotifyError(ctx context.Context, row alertRow, message strin
 		return fmt.Errorf("mark notify error: %w", err)
 	}
 	return nil
+}
+
+// latestTLS lê metrics.tls da última amostra source='agent'. Ausente = sem condição.
+// Quando algum host tem erro, busca desde quando o erro aparece nas amostras
+// contínuas (janela de 13 h) para a regra exigir duas checagens (a cada 6 h).
+func (s *Store) latestTLS(ctx context.Context, now time.Time) ([]tlsMetric, map[string]time.Time, error) {
+	var raw []byte
+	err := s.pool.QueryRow(quiet(ctx), `
+		select metrics->'tls' from obs.system_samples
+		where source = 'agent' order by occurred_at desc limit 1`).Scan(&raw)
+	if err == pgx.ErrNoRows {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("alert metrics tls: %w", err)
+	}
+	items := parseTLS(raw)
+	hasError := false
+	for _, item := range items {
+		hasError = hasError || item.Error != ""
+	}
+	if !hasError {
+		return items, nil, nil
+	}
+	rows, err := s.pool.Query(quiet(ctx), `
+		select e->>'host', min(s.occurred_at)
+		from obs.system_samples s,
+		     jsonb_array_elements(case when jsonb_typeof(s.metrics->'tls') = 'array' then s.metrics->'tls' else '[]'::jsonb end) e
+		where s.source = 'agent' and s.occurred_at >= $1 and coalesce(e->>'error', '') <> ''
+		group by 1`, now.Add(-13*time.Hour))
+	if err != nil {
+		return nil, nil, fmt.Errorf("alert metrics tls errors: %w", err)
+	}
+	since := map[string]time.Time{}
+	for rows.Next() {
+		var host string
+		var at time.Time
+		if err := rows.Scan(&host, &at); err != nil {
+			rows.Close()
+			return nil, nil, fmt.Errorf("alert metrics tls errors: %w", err)
+		}
+		since[host] = at
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("alert metrics tls errors: %w", err)
+	}
+	return items, since, nil
 }

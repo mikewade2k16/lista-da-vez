@@ -70,17 +70,17 @@ Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vá
 - [x] **1.2 Sincronizar o catálogo de segurança em produção.** (2026-11-24) 81 checagens e 32 achados gravados por túnel SSH; o sync lê o status da AUDITORIA (corrigido → fixed, sem sobrescrever edição manual). Hoje a área aparece
       como "desconhecida". Rodar `obs:security --sync` com `OBS_DATABASE_URL` da produção
       por túnel SSH, só upsert de catálogo e achados.
-- [ ] **1.3 Reconhecer e silenciar alertas.** Botões na aba Alertas: "reconhecer"
+- [x] **1.3 Reconhecer e silenciar alertas.** (2026-11-24, sem commit) Migration 0332 (4 colunas em `obs.alerts`), endpoints `ack`/`silence`/`unsilence`, motor respeita ack e silêncio, botões na aba Alertas e selo na Saúde; falta aplicar a 0332 e deploy. Original: Botões na aba Alertas: "reconhecer"
       (para de reavisar) e "silenciar por X h", com quem fez e quando. Precisa de uma
       coluna nova em `obs.alerts`.
-- [ ] **1.4 Monitor externo de uptime.** Workflow agendado no GitHub Actions (a cada
+- [x] **1.4 Monitor externo de uptime.** (2026-11-24) `.github/workflows/uptime.yml`: cron de 5 min, `/healthz` e home com retry; falha abre/comenta issue `uptime`, volta fecha. Original: Workflow agendado no GitHub Actions (a cada
       5 min) que chama `/healthz` e a home, e abre uma issue ou manda e-mail se falhar.
       Cobre o caso de a VPS inteira cair junto com o próprio monitor.
-- [ ] **1.5 Vencimento de TLS e domínios.** O agente lê a validade dos certificados
+- [x] **1.5 Vencimento de TLS e domínios.** (2026-11-24) Coleta + regra: obs-agent lê o certificado de `OBS_AGENT_TLS_HOSTS` a cada 6 h (`tls` na amostra agent); regra `tls_expiring` no módulo observability. Original: O agente lê a validade dos certificados
       dos domínios do Caddy; alerta com 14 dias de antecedência.
-- [ ] **1.6 Aba Integrações.** Os dados já estão em `obs.external_calls`: mostrar
+- [x] **1.6 Aba Integrações.** (2026-11-24, sem commit) `GET /integrations` (p95 por `percentile_cont`, por integração de `obs.external_calls`) e aba "Integrações" no painel. Original: Os dados já estão em `obs.external_calls`: mostrar
       tempo, erro e volume por host externo (Meta, Google, IA, WhatsApp, R2).
-- [ ] **1.7 Métrica de panic.** Contar os panics (API e workers) em
+- [x] **1.7 Métrica de panic.** (2026-11-24) Coleta + regra: `platform/panics` conta panics recuperados (HTTP, background, jobs); amostra `api` ganha `panics {total, delta}`; regra `panic_detected` no módulo observability. Original: Contar os panics (API e workers) em
       `obs.system_samples` e criar a regra de alerta `panic_detected`.
 
 ### Etapa 2 — governança pelo painel (M)

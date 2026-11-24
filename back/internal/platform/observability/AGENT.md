@@ -71,3 +71,11 @@ eventos do front, gravados de forma assíncrona no schema `obs` (migration
   `obs.frontend_events`. Sem usuário autenticado não grava.
 - `maintenance.go` também limpa `system_samples`/`container_samples` pela retenção e
   `presence` com `last_seen` > 1 dia.
+- Panics (task 1.7): `internal/platform/panics` e um pacote folha com o contador atomico
+  `Record(source)`/`Total()`. Quem recupera panic chama `panics.Record`: `httpapi.Recover`
+  ("http"), `background.safeRun` e o closer ("background"), `jobs.safeCycle` e
+  `jobs.safeHandle` ("jobs"). O coletor de sistema (`system.go`) grava
+  `"panics": {"total", "delta"}` na amostra `source='api'`; o delta e contra a amostra
+  anterior (0 na primeira amostra ou se o processo reiniciou). A regra `panic_detected`
+  fica em `modules/observability`. Pacote separado porque httpapi/jobs/background nao
+  devem importar `platform/observability` (risco de ciclo).

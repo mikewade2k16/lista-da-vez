@@ -44,6 +44,10 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 	mux.Handle("GET "+adminRoot+"/alerts", admin(handler.alerts))
 	mux.Handle("GET "+adminRoot+"/deploys", admin(handler.deploys))
 	mux.Handle("POST "+adminRoot+"/alerts/test", admin(handler.testAlert))
+	mux.Handle("POST "+adminRoot+"/alerts/{id}/ack", admin(handler.ackAlert))
+	mux.Handle("POST "+adminRoot+"/alerts/{id}/silence", admin(handler.silenceAlert))
+	mux.Handle("POST "+adminRoot+"/alerts/{id}/unsilence", admin(handler.unsilenceAlert))
+	mux.Handle("GET "+adminRoot+"/integrations", admin(handler.integrations))
 	mux.Handle("POST /v1/obs/collect", middleware.RequireAuth(http.HandlerFunc(handler.collect)))
 }
 

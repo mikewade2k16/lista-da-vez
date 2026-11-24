@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -81,5 +82,21 @@ func TestHeartbeatNotStoredAsFrontendEvent(t *testing.T) {
 	batch.add(<-rt.recorder.events)
 	if len(batch.frontend) != 0 || len(batch.presence) != 1 {
 		t.Fatalf("batch: %+v", batch)
+	}
+}
+
+func TestBuildPanicMetrics(t *testing.T) {
+	if m := buildPanicMetrics(5, 0, false); m.Total != 5 || m.Delta != 0 {
+		t.Fatalf("primeira amostra: %+v", m)
+	}
+	if m := buildPanicMetrics(7, 5, true); m.Total != 7 || m.Delta != 2 {
+		t.Fatalf("delta: %+v", m)
+	}
+	if m := buildPanicMetrics(1, 7, true); m.Delta != 0 {
+		t.Fatalf("contador reiniciado: %+v", m)
+	}
+	raw, err := json.Marshal(systemMetrics{Panics: buildPanicMetrics(3, 1, true), Jobs: []jobMetrics{}})
+	if err != nil || !strings.Contains(string(raw), `"panics":{"total":3,"delta":2}`) {
+		t.Fatalf("json: %s %v", raw, err)
 	}
 }

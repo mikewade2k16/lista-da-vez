@@ -55,7 +55,11 @@ type apiMetrics struct {
 		DeadlocksDelta           int64   `json:"deadlocksDelta"`
 		LongestQuerySeconds      float64 `json:"longestQuerySeconds"`
 	} `json:"pg"`
-	Jobs []jobMetrics `json:"jobs"`
+	Jobs   []jobMetrics `json:"jobs"`
+	Panics struct {
+		Total int64 `json:"total"`
+		Delta int64 `json:"delta"`
+	} `json:"panics"`
 }
 
 type jobMetrics struct {
@@ -143,6 +147,9 @@ type alertMetrics struct {
 	Containers      []containerState
 	Disks           []diskMetric
 	FrontendJSErr15 int64
+
+	TLS           []tlsMetric          // última amostra do agente (vazio = coletor sem TLS)
+	TLSErrorSince map[string]time.Time // host -> primeira amostra com erro na janela de 13 h
 }
 
 // condition é uma condição de alerta ativa. Fingerprint = regra + alvo.
@@ -172,6 +179,8 @@ func evaluateRules(m alertMetrics) []condition {
 	out = append(out, ruleJobs(m)...)
 	out = append(out, ruleSilence(m)...)
 	out = append(out, ruleContainers(m)...)
+	out = append(out, ruleTLS(m)...)
+	out = append(out, rulePanics(m)...)
 	if m.FrontendJSErr15 >= 20 {
 		out = append(out, condition{Rule: "frontend_errors", Severity: sevMedium, Area: "pages",
 			Title:    "Erros de JavaScript no front",

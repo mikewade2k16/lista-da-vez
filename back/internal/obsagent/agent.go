@@ -19,6 +19,7 @@ type Config struct {
 	Host        string
 	DiskPaths   string
 	DatabaseURL string
+	TLSHosts    []string
 }
 
 // ConfigFromEnv reaproveita as variaveis da API: OBSERVABILITY_ENABLED e a URL de
@@ -30,6 +31,7 @@ func ConfigFromEnv() Config {
 		Host:      strings.TrimSpace(os.Getenv("OBS_AGENT_HOST")),
 		DiskPaths: os.Getenv("OBS_AGENT_DISK_PATHS"),
 	}
+	cfg.TLSHosts = ParseTLSHosts(os.Getenv("OBS_AGENT_TLS_HOSTS"))
 	if d, err := time.ParseDuration(strings.TrimSpace(os.Getenv("OBS_AGENT_INTERVAL"))); err == nil && d >= 5*time.Second {
 		cfg.Interval = d
 	}

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ObsHealth } from '~/types/observability'
+import { alertControlBadge } from '~/utils/observability/alerts'
 import {
   alertChannelText,
   formatAge,
@@ -34,6 +35,17 @@ defineEmits<{ open: [] }>()
           {{ SEVERITY_LABEL[alert.severity] || alert.severity }}
         </span>
         <span class="obs-clip">{{ alert.title }}</span>
+        <span
+          v-if="alertControlBadge(alert, now)"
+          :class="[
+            'obs-band',
+            alertControlBadge(alert, now)?.kind === 'silenced'
+              ? 'obs-band--warn'
+              : 'obs-band--good',
+          ]"
+        >
+          {{ alertControlBadge(alert, now)?.text }}
+        </span>
         <span class="obs-muted">{{ formatAge(alert.since, now) }}</span>
       </li>
       <li v-if="alerts.open.length > 5" class="obs-muted">+{{ alerts.open.length - 5 }} alertas</li>

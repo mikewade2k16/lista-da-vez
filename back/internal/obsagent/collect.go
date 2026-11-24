@@ -38,6 +38,8 @@ type SystemMetrics struct {
 		Containers int `json:"containers"`
 		Running    int `json:"running"`
 	} `json:"docker"`
+	// TLS so aparece com OBS_AGENT_TLS_HOSTS configurado.
+	TLS []TLSCheck `json:"tls,omitempty"`
 }
 
 // DockerAPI e o que o coletor precisa do cliente Docker (facilita teste).
@@ -54,12 +56,28 @@ type Collector struct {
 	DiskPaths [][2]string
 	Host      string
 	Logger    *slog.Logger
+	// TLSHosts: host[:porta] a checar (vazio = nao checa).
+	TLSHosts []string
 
+	tls     *tlsChecker
 	mu      sync.Mutex
 	prevCPU map[string]CPUUsage
 }
 
 const statsParallelism = 4
+
+func (c *Collector) tlsResults(ctx context.Context) []TLSCheck {
+	if len(c.TLSHosts) == 0 {
+		return nil
+	}
+	c.mu.Lock()
+	if c.tls == nil {
+		c.tls = newTLSChecker(c.TLSHosts)
+	}
+	checker := c.tls
+	c.mu.Unlock()
+	return checker.Results(ctx)
+}
 
 // Collect nunca falha por causa de um container: o erro vira log e campos nulos.
 // So devolve erro se a listagem de containers falhar.
@@ -75,6 +93,8 @@ func (c *Collector) Collect(ctx context.Context) (Snapshot, error) {
 		}
 		snap.System.Disk = append(snap.System.Disk, d)
 	}
+
+	snap.System.TLS = c.tlsResults(ctx)
 
 	list, err := c.Docker.ListContainers(ctx)
 	if err != nil {

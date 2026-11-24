@@ -292,6 +292,11 @@ um sshd descartavel em container. O primeiro deploy real ainda precisa ser obser
 - Grava com `DATABASE_APP_URL`; os grants da role `omni_app` no schema `obs` vem do
   `SyncAppRoleGrants` no boot da API (que roda a migration 0330 antes).
 
+- `OBS_AGENT_TLS_HOSTS` (producao): lista de dominios cujo certificado o agente confere a
+  cada 6 h. Padrao no `docker-compose.prod.yml`: omni, n8n, waha, mostarda, bari, cardapio
+  e aperolajoias.thecrow. Dominio novo no Caddy: incluir aqui (ou sobrescrever a variavel
+  no `.env.production`). Mudar a variavel exige recriar so o `obs-agent`.
+
 ## Historico de deploys (observabilidade, fase 6)
 
 `deploy-record.mjs` converte o `summary.json` em uma linha de `obs.deploys` (migration
@@ -314,3 +319,4 @@ sao lidos com `git rev-parse` no momento da gravacao; a tag vem da etapa
 - Importacao dos deploys antigos: `npm run obs:deploys` (lista) e
   `npm run obs:deploys -- --sync [--target=local|prod|staging]`.
 - Teste: `node --test scripts/deploy/deploy-record.test.mjs`.
+- `OBS_AGENT_TLS_HOSTS` (2026-11-24): n8n./waha. fora da lista padrão: `n8n.crowvisuals.com.br` e `waha.crowvisuals.com.br` respondem erro TLS (`tlsv1 alert internal error`), ou seja, o Caddy não serve certificado para eles. Reincluir quando estiverem publicados.

@@ -235,3 +235,81 @@ máquina que disparou: do início do launcher até os smoke tests na VPS; `stage
   `slow` = duração > 1,5 × mediana (mínimo 3 deploys de referência).
 - `/health`: área `deploy` (último deploy: ok/lento/falhou e há quanto tempo) e issue
   quando o último deploy falhou ou foi lento.
+
+## Etapa 1 do backlog (tasks 1.3–1.7) — contratos
+
+Migration `0332_obs_alert_controls.sql` (aditiva): `obs.alerts` ganha
+`acknowledged_at timestamptz`, `acknowledged_by text`, `silenced_until timestamptz`,
+`silenced_by text`. Reversão em `observability/migrations/0332_obs_alert_controls.down.sql`.
+
+**1.3 Reconhecer/silenciar** (platform_admin):
+- `POST /v1/admin/observability/alerts/{id}/ack` → 204 (grava quem/quando; alerta
+  reconhecido não é reavisado; o e-mail de resolução continua saindo).
+- `POST /v1/admin/observability/alerts/{id}/silence` `{ "hours": 1..168 }` → 204
+  (nenhum e-mail do alerta até `silenced_until`).
+- `POST /v1/admin/observability/alerts/{id}/unsilence` → 204.
+- Respostas de `/alerts` e `/health.alerts.open` incluem `acknowledgedAt`,
+  `acknowledgedBy` (nome), `silencedUntil`.
+- Alerta que resolve e reabre (novo registro) volta a avisar normalmente.
+
+**1.5 TLS** (obs-agent): `OBS_AGENT_TLS_HOSTS` (lista `host[:porta]`, vírgula; vazio =
+não checa). A amostra `source='agent'` ganha
+`"tls": [{ "host": "", "expiresAt": "iso", "daysLeft": 0, "error": "" }]` (checagem a
+cada 6 h, cache entre ciclos). Regra `tls_expiring` (alvo host): `daysLeft <= 14`
+high, `<= 3` critical; `error` não vazio por 2 checagens → medium.
+
+**1.7 Panic**: a amostra `source='api'` ganha `"panics": { "total": 0, "delta": 0 }`,
+somando panics recuperados no middleware HTTP (Recover), em `platform/background`
+e em `platform/jobs`. Regra `panic_detected`: `delta > 0` → high (detail com total).
+
+**1.6 Integrações**: `GET /v1/admin/observability/integrations?days=7` →
+`[{ "host": "", "calls": 0, "errors": 0, "errorRate": 0.0, "avgMs": 0, "p95Ms": 0, "lastErrorAt": "iso|null", "lastError": "" }]`
+de `obs.external_calls` (ordenado por calls desc). Aba "Integrações" no painel.
+
+**1.4 Uptime externo**: `.github/workflows/uptime.yml`, cron a cada 5 min, checa
+`https://omni.crowvisuals.com.br/healthz` e a home; em falha abre (ou comenta) uma issue
+com label `uptime`; na volta, fecha a issue. Sem segredos (usa `GITHUB_TOKEN`).
+
+## Etapa 2 do backlog (governança, tasks 2.1–2.4) — contratos
+
+Migration `0333_obs_governance.sql`: tabela `obs.settings (key, value jsonb, updated_by,
+updated_at)` e colunas `owner`, `due_date`, `note`, `updated_by` em `obs.findings`.
+
+**2.1 Configuração dos alertas** — chave `alerts` em `obs.settings`:
+```jsonc
+{ "recipients": ["a@b.com"],            // vazio = OBS_ALERT_EMAILS
+  "renotifyMinutes": 60,                // 15..1440
+  "quietHours": { "enabled": false, "start": "22:00", "end": "07:00", "timezone": "America/Sao_Paulo", "allowCritical": true },
+  "rules": { "<rule>": { "enabled": true, "severity": "auto|critical|high|medium|low", "threshold": 0 } } }
+```
+`threshold` só para regras com limite numérico (ex.: `api_5xx_rate` %, `slow_route` ms,
+`disk_low` %, `job_backlog` s, `tls_expiring` dias); o padrão é o do código. Horário de
+silêncio segura e-mails (exceto critical se `allowCritical`) e manda o acumulado ao fim.
+- `GET /v1/admin/observability/settings` → `{ alerts, email, weeklyReport, rulesCatalog: [{rule, label, area, hasThreshold, defaultThreshold, unit}] }` (valores efetivos = banco ou padrão).
+- `PUT /v1/admin/observability/settings/{key}` (`alerts|email|weeklyReport`) → valida e grava; 400 com mensagem por campo.
+O motor relê as configurações a cada rodada (cache de 60 s).
+
+**2.2 Layout do e-mail** — chave `email`:
+```jsonc
+{ "subjectPrefix": "[Omni]", "group": true, "sections": ["summary","details","link"], "includeResolved": true, "footer": "" }
+```
+`POST /v1/admin/observability/settings/email/preview` (corpo = valor proposto) →
+`{ "subject": "", "text": "" }` com alertas de exemplo. Texto simples (sem HTML).
+
+**2.3 Relatório semanal** — chave `weeklyReport`:
+```jsonc
+{ "enabled": false, "weekday": 1, "hour": 8, "timezone": "America/Sao_Paulo", "recipients": [] }   // vazio = mesmos dos alertas
+```
+O motor envia quando chega o dia/hora e ainda não enviou na semana (marca em
+`obs.settings` chave `weeklyReport.state` `{lastSentAt}`). Conteúdo: p95 e taxa de 5xx da
+semana × semana anterior, top 5 rotas que pioraram, alertas abertos/abertos na semana,
+achados abertos por severidade e vencidos, deploys (quantidade, mediana, falhas),
+notas do último run completo. Endpoints: `GET /reports/weekly/preview` → `{subject,text}`,
+`POST /reports/weekly/send` → 204 (envio imediato).
+
+**2.4 Achados como fila** — `PATCH /v1/admin/observability/findings/{id}`
+`{ "status": "open|fixed|accepted", "owner": "", "dueDate": "YYYY-MM-DD|null", "note": "" }`
+(campos opcionais; grava `updated_by` = usuário). `/security` devolve `owner`, `dueDate`,
+`note`, `updatedAt`, `updatedBy`, `overdue` (dueDate < hoje e status open). O sync da
+AUDITORIA nunca sobrescreve esses campos. Aba Segurança: edição inline e filtro
+"abertos / vencidos / meus".

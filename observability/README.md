@@ -234,6 +234,16 @@ de ponta a ponta: do início do comando na máquina até os smoke tests passarem
   `npm run obs:deploys -- --sync` grava no banco local (`--target=prod|staging` usa o SSH).
   É idempotente por id. `--dry-run-db` testa tudo numa transação com rollback.
 
+## Uptime externo
+
+`.github/workflows/uptime.yml` roda a cada 5 minutos no GitHub Actions (fora da VPS, por
+isso pega o caso de a maquina inteira cair com o monitor interno). Chama
+`https://omni.crowvisuals.com.br/healthz` e a home, com retry curto. Se falhar, abre uma
+issue com a label `uptime` (ou comenta na que ja esta aberta, sem duplicar); quando volta,
+fecha a issue com o comentário "voltou". Usa só o `GITHUB_TOKEN`, sem segredos; também
+pode ser disparado à mão (`workflow_dispatch`). Ative as notificações de issues do
+repositório para receber o aviso.
+
 ## Reverter
 
 A migration é aditiva: só cria o schema `obs`. Para remover:

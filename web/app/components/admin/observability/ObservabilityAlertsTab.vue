@@ -4,6 +4,12 @@ import ObservabilityState from '~/components/admin/observability/ObservabilitySt
 import { useObsQuery, useObservabilityApi } from '~/composables/useObservability'
 import type { ObsAlert } from '~/types/observability'
 import { getApiErrorMessage } from '~/utils/api-client'
+import {
+  alertControlBadge,
+  alertControlDetail,
+  isSilenced,
+  SILENCE_OPTIONS,
+} from '~/utils/observability/alerts'
 import { formatAge, SEVERITY_LABEL, severityBand } from '~/utils/observability/health'
 import { formatDate } from '~/utils/observability/format'
 
@@ -31,6 +37,31 @@ function isNotConfigured(cause: unknown): boolean {
   return (
     err?.data?.error?.code === 'alerts_not_configured' || (err?.statusCode ?? err?.status) === 409
   )
+}
+
+// Reconhecer / silenciar / reativar avisos (so alertas abertos). Recarrega a lista
+// depois de cada acao; o erro aparece na barra de ferramentas.
+const busyId = ref<number | null>(null)
+const actionError = ref('')
+
+async function control(alert: ObsAlert, action: 'ack' | 'silence' | 'unsilence', hours?: number) {
+  busyId.value = alert.id
+  actionError.value = ''
+  try {
+    await api.post(`/alerts/${alert.id}/${action}`, action === 'silence' ? { hours } : {})
+    await reload()
+  } catch (cause) {
+    actionError.value = getApiErrorMessage(cause, 'Não foi possível atualizar o alerta.')
+  } finally {
+    busyId.value = null
+  }
+}
+
+function silenceItems(alert: ObsAlert) {
+  return SILENCE_OPTIONS.map((option) => ({
+    label: option.label,
+    onSelect: () => void control(alert, 'silence', option.hours),
+  }))
 }
 
 async function sendTest() {
@@ -64,6 +95,7 @@ async function sendTest() {
         :loading="sending"
         @click="sendTest"
       />
+      <span v-if="actionError" class="obs-muted obs-text--bad">{{ actionError }}</span>
       <span
         v-if="testMessage"
         :class="['obs-muted', testFailed ? 'obs-text--bad' : 'obs-text--good']"
@@ -92,6 +124,7 @@ async function sendTest() {
               <th>Último sinal</th>
               <th>Resolvido</th>
               <th class="obs-num">Avisos</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -103,17 +136,65 @@ async function sendTest() {
               </td>
               <td>
                 <strong>{{ alert.title }}</strong>
-                <div class="obs-muted">{{ alert.detail }}</div>
+                <div class="obs-muted">{{ alert.detail?.measured }}</div>
+                <div v-if="alertControlDetail(alert)" class="obs-muted">
+                  {{ alertControlDetail(alert) }}
+                </div>
                 <div v-if="alert.lastNotifyError" class="obs-text--bad obs-muted">
                   Falha no aviso: {{ alert.lastNotifyError }}
                 </div>
               </td>
               <td>{{ alert.area }}</td>
-              <td>{{ alert.status === 'open' ? 'Aberto' : 'Resolvido' }}</td>
+              <td>
+                {{ alert.status === 'open' ? 'Aberto' : 'Resolvido' }}
+                <span
+                  v-if="alertControlBadge(alert)"
+                  :class="[
+                    'obs-band',
+                    alertControlBadge(alert)?.kind === 'silenced'
+                      ? 'obs-band--warn'
+                      : 'obs-band--good',
+                  ]"
+                >
+                  {{ alertControlBadge(alert)?.text }}
+                </span>
+              </td>
               <td :title="formatDate(alert.firstSeen)">{{ formatAge(alert.firstSeen) }}</td>
               <td>{{ formatAge(alert.lastSeen) }}</td>
               <td>{{ formatDate(alert.resolvedAt) }}</td>
               <td class="obs-num">{{ alert.notifyCount }}</td>
+              <td>
+                <div v-if="alert.status === 'open'" class="obs-toolbar">
+                  <UButton
+                    v-if="!alert.acknowledgedAt"
+                    label="Reconhecer"
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    :loading="busyId === alert.id"
+                    @click="control(alert, 'ack')"
+                  />
+                  <UButton
+                    v-if="isSilenced(alert)"
+                    label="Reativar avisos"
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    :loading="busyId === alert.id"
+                    @click="control(alert, 'unsilence')"
+                  />
+                  <UDropdownMenu v-else :items="silenceItems(alert)" :content="{ align: 'end' }">
+                    <UButton
+                      label="Silenciar"
+                      icon="i-lucide-bell-off"
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      :loading="busyId === alert.id"
+                    />
+                  </UDropdownMenu>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>

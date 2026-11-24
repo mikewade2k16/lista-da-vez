@@ -253,7 +253,7 @@ func (a *Alerts) applyPlan(ctx context.Context, plan syncPlan, now time.Time) ([
 		if err := a.store.ResolveAlert(ctx, row.ID, now); err != nil {
 			return nil, err
 		}
-		if row.NotifiedAt != nil {
+		if notifyResolved(row, now) {
 			resolvedAt := now
 			row.ResolvedAt = &resolvedAt
 			items = append(items, notifyItem{Alert: row, Reason: reasonResolved})

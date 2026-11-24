@@ -10,6 +10,15 @@ A cada `OBS_AGENT_INTERVAL` (padrao 30s, minimo 5s) le o Docker e o disco e grav
 um unico batch, uma linha por container em `obs.container_samples` e uma linha
 `source='agent'` em `obs.system_samples` (`{disk:[...], docker:{containers,running}}`).
 
+## TLS (task 1.5)
+`OBS_AGENT_TLS_HOSTS` (`host[:porta]`, virgula; porta padrao 443; vazio = nao checa).
+A cada 6 h (cache entre ciclos, `tls.go`) faz `tls.Dial` com timeout de 5 s e
+`ServerName`, le o `NotAfter` do certificado folha e grava na amostra `source='agent'`
+`"tls": [{host, expiresAt, daysLeft, error}]`. Falha (DNS, timeout, certificado
+invalido) vira `error` daquele host e nao derruba o ciclo. A regra `tls_expiring` fica
+em `modules/observability`. No Compose de producao o padrao lista os dominios publicos
+do Caddy (omni, n8n, waha e cardapios); no dev e vazio.
+
 ## Arquivos
 - `docker.go`: cliente HTTP sobre socket unix, somente `GET` (`/containers/json?all=1`,
   `/containers/{id}/json`, `/containers/{id}/stats?stream=false&one-shot=true`).

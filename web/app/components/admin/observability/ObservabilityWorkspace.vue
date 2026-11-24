@@ -7,6 +7,7 @@ import ObservabilityDeploysTab from '~/components/admin/observability/Observabil
 import ObservabilityEndpointsTab from '~/components/admin/observability/ObservabilityEndpointsTab.vue'
 import ObservabilityErrorsTab from '~/components/admin/observability/ObservabilityErrorsTab.vue'
 import ObservabilityHealthTab from '~/components/admin/observability/ObservabilityHealthTab.vue'
+import ObservabilityIntegrationsTab from '~/components/admin/observability/ObservabilityIntegrationsTab.vue'
 import ObservabilityOverviewTab from '~/components/admin/observability/ObservabilityOverviewTab.vue'
 import ObservabilityPagesTab from '~/components/admin/observability/ObservabilityPagesTab.vue'
 import ObservabilityRunsTab from '~/components/admin/observability/ObservabilityRunsTab.vue'
@@ -23,6 +24,7 @@ const TABS = [
   { value: 'overview', label: 'Notas' },
   { value: 'endpoints', label: 'Endpoints' },
   { value: 'db', label: 'Banco' },
+  { value: 'integrations', label: 'Integrações' },
   { value: 'pages', label: 'Paginas' },
   { value: 'errors', label: 'Erros' },
   { value: 'system', label: 'Sistema' },
@@ -40,7 +42,7 @@ const PERIODS = [
 const tab = ref('health')
 const period = ref('7')
 const days = computed(() => Number(period.value))
-const PERIOD_TABS = ['overview', 'endpoints', 'db', 'pages', 'errors']
+const PERIOD_TABS = ['overview', 'endpoints', 'db', 'integrations', 'pages', 'errors']
 const usesPeriod = computed(() => PERIOD_TABS.includes(tab.value))
 const traceId = ref('')
 </script>
@@ -77,6 +79,7 @@ const traceId = ref('')
       <ObservabilityOverviewTab v-else-if="tab === 'overview'" :days="days" />
       <ObservabilityEndpointsTab v-else-if="tab === 'endpoints'" :days="days" />
       <ObservabilityDbTab v-else-if="tab === 'db'" :days="days" @trace="traceId = $event" />
+      <ObservabilityIntegrationsTab v-else-if="tab === 'integrations'" :days="days" />
       <ObservabilityPagesTab v-else-if="tab === 'pages'" :days="days" />
       <ObservabilityErrorsTab v-else-if="tab === 'errors'" :days="days" @trace="traceId = $event" />
       <ObservabilitySystemTab v-else-if="tab === 'system'" />

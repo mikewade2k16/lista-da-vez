@@ -191,16 +191,6 @@ type securityCheck struct {
 	UpdatedAt time.Time  `json:"-"`
 }
 
-type securityFinding struct {
-	ID        string    `json:"id"`
-	Severity  string    `json:"severity"`
-	Title     string    `json:"title"`
-	Area      string    `json:"area"`
-	Location  string    `json:"location"`
-	Status    string    `json:"status"`
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
 func (s *Store) SecurityChecks(ctx context.Context) ([]securityCheck, error) {
 	rows, err := s.pool.Query(quiet(ctx), `
 		select key, category, title, standard, status, detail, checked_at, source, updated_at
@@ -214,24 +204,6 @@ func (s *Store) SecurityChecks(ctx context.Context) ([]securityCheck, error) {
 	})
 	if items == nil {
 		items = []securityCheck{}
-	}
-	return items, err
-}
-
-func (s *Store) SecurityFindings(ctx context.Context) ([]securityFinding, error) {
-	rows, err := s.pool.Query(quiet(ctx), `
-		select id, severity, title, area, location, status, updated_at from obs.findings
-		order by (status = 'open') desc,
-		         case severity when 'critical' then 4 when 'high' then 3 when 'medium' then 2 else 1 end desc, id`)
-	if err != nil {
-		return nil, fmt.Errorf("security findings: %w", err)
-	}
-	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (securityFinding, error) {
-		var f securityFinding
-		return f, row.Scan(&f.ID, &f.Severity, &f.Title, &f.Area, &f.Location, &f.Status, &f.UpdatedAt)
-	})
-	if items == nil {
-		items = []securityFinding{}
 	}
 	return items, err
 }

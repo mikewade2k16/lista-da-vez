@@ -41,7 +41,9 @@ export async function upsertCatalog(c, checks) {
   return checks.length;
 }
 
-// Achados: status editado (fixed/accepted) nunca é sobrescrito.
+// Achados: o sync só toca severidade/título/área/local (e promove open -> fixed).
+// status editado (fixed/accepted), owner, due_date, note e updated_by (fila de
+// trabalho do painel, task 2.4) nunca entram no SET: o painel é a fonte desses campos.
 export async function upsertFindings(c, list) {
   for (const f of list)
     await c.query(

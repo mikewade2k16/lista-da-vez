@@ -35,7 +35,25 @@ export function useObservabilityApi() {
     return ((response as { data?: T })?.data ?? response) as T
   }
 
-  return { get, post }
+  async function patch<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    const response = (await apiRequest(`${BASE}${path}`, {
+      method: 'PATCH',
+      body,
+      skipLoadingIndicator: true,
+    })) as { data?: T } | T
+    return ((response as { data?: T })?.data ?? response) as T
+  }
+
+  async function put<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    const response = (await apiRequest(`${BASE}${path}`, {
+      method: 'PUT',
+      body,
+      skipLoadingIndicator: true,
+    })) as { data?: T } | T
+    return ((response as { data?: T })?.data ?? response) as T
+  }
+
+  return { get, post, patch, put }
 }
 
 export function useObsQuery<T>(path: string, params: () => Params = () => ({})) {

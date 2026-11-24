@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppSegmentedFilter from '~/components/ui/AppSegmentedFilter.vue'
+import ObservabilitySettingsPanel from '~/components/admin/observability/ObservabilitySettingsPanel.vue'
 import ObservabilityState from '~/components/admin/observability/ObservabilityState.vue'
 import { useObsQuery, useObservabilityApi } from '~/composables/useObservability'
 import type { ObsAlert } from '~/types/observability'
@@ -12,6 +13,12 @@ import {
 } from '~/utils/observability/alerts'
 import { formatAge, SEVERITY_LABEL, severityBand } from '~/utils/observability/health'
 import { formatDate } from '~/utils/observability/format'
+
+const VIEWS = [
+  { value: 'alerts', label: 'Alertas' },
+  { value: 'settings', label: 'Configurações' },
+]
+const view = ref('alerts')
 
 const STATUSES = [
   { value: 'open', label: 'Abertos' },
@@ -84,7 +91,11 @@ async function sendTest() {
 
 <template>
   <div class="obs-stack">
-    <div class="obs-toolbar">
+    <AppSegmentedFilter v-model="view" :options="VIEWS" aria-label="Seção de alertas" />
+
+    <ObservabilitySettingsPanel v-if="view === 'settings'" />
+
+    <div v-if="view === 'alerts'" class="obs-toolbar">
       <AppSegmentedFilter v-model="status" :options="STATUSES" aria-label="Status do alerta" />
       <UButton
         label="Enviar e-mail de teste"
@@ -105,6 +116,7 @@ async function sendTest() {
     </div>
 
     <ObservabilityState
+      v-if="view === 'alerts'"
       :loading="loading"
       :error="error"
       :empty="!data || data.length === 0"

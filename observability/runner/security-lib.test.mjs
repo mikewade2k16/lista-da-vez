@@ -154,3 +154,12 @@ test("findingStatus le corrigido e parcial da AUDITORIA", async () => {
   );
   assert.equal(findingStatus("sem linha de status"), "open");
 });
+
+test("upsertFindings nunca sobrescreve owner/due_date/note/updated_by (fila 2.4)", () => {
+  const src = readFileSync(new URL("./security-db.mjs", import.meta.url), "utf8");
+  const start = src.indexOf("export async function upsertFindings");
+  const body = src.slice(start, src.indexOf("export async function recordOutcomes"));
+  const setClause = body.slice(body.indexOf("do update"), body.indexOf("where (obs.findings"));
+  for (const col of ["owner", "due_date", "note", "updated_by"])
+    assert.ok(!setClause.includes(col), `SET nao pode tocar ${col}`);
+});

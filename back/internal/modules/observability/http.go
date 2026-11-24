@@ -40,6 +40,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 	mux.Handle("POST "+adminRoot+"/run-requests", admin(handler.requestRun))
 	mux.Handle("GET "+adminRoot+"/health", admin(handler.health))
 	mux.Handle("GET "+adminRoot+"/security", admin(handler.security))
+	mux.Handle("PATCH "+adminRoot+"/findings/{id}", admin(handler.updateFinding))
 	mux.Handle("GET "+adminRoot+"/system", admin(handler.system))
 	mux.Handle("GET "+adminRoot+"/alerts", admin(handler.alerts))
 	mux.Handle("GET "+adminRoot+"/deploys", admin(handler.deploys))
@@ -48,6 +49,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 	mux.Handle("POST "+adminRoot+"/alerts/{id}/silence", admin(handler.silenceAlert))
 	mux.Handle("POST "+adminRoot+"/alerts/{id}/unsilence", admin(handler.unsilenceAlert))
 	mux.Handle("GET "+adminRoot+"/integrations", admin(handler.integrations))
+	registerSettingsRoutes(mux, handler, admin) // 2.1 a 2.3: settings e relatório semanal
 	mux.Handle("POST /v1/obs/collect", middleware.RequireAuth(http.HandlerFunc(handler.collect)))
 }
 

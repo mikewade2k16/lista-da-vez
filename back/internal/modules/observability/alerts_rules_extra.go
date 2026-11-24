@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	tlsWarnDays     = 14
 	tlsCriticalDays = 3
 	tlsErrorMinSpan = 6 * time.Hour // duas checagens (o agente checa a cada 6 h)
 	panicRecentSpan = 15 * time.Minute
@@ -75,12 +74,13 @@ func (t tlsMetric) daysLeftAt(now time.Time) (float64, bool) {
 // checagem persistente (>= 6 h, duas checagens) é medium.
 func ruleTLS(m alertMetrics) []condition {
 	var out []condition
+	warnDays := m.threshold("tls_expiring")
 	for _, item := range m.TLS {
 		days, known := item.daysLeftAt(m.Now)
-		if known && days <= tlsWarnDays {
+		if known && days <= warnDays {
 			severity, title := sevHigh, "Certificado TLS perto de vencer: "+item.Host
 			measured := fmt.Sprintf("vence em %.0f dia(s)", days)
-			if days <= tlsCriticalDays {
+			if days <= min(float64(tlsCriticalDays), warnDays) {
 				severity = sevCritical
 			}
 			if days < 0 {

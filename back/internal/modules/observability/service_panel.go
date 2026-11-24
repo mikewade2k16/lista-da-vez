@@ -12,7 +12,7 @@ func (s *Service) Security(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	findings, err := s.store.SecurityFindings(ctx)
+	findings, err := s.store.SecurityFindings(ctx, todayLocal(time.Now()))
 	if err != nil {
 		return nil, err
 	}

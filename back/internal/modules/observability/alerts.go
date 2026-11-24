@@ -71,6 +71,12 @@ type Alerts struct {
 	cfg    AlertConfig
 	logger *slog.Logger
 
+	settings *settingsProvider // configurações do painel (cache de 60 s)
+
+	// heldResolved: resoluções ocorridas no horário de silêncio, enviadas ao fim dele
+	// (só em memória: um reinício da API as perde).
+	heldResolved []notifyItem
+
 	mu     sync.Mutex
 	cancel context.CancelFunc
 }
@@ -79,19 +85,48 @@ func NewAlerts(store *Store, sender Sender, cfg AlertConfig, logger *slog.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Alerts{store: store, sender: sender, cfg: cfg, logger: logger}
+	alerts := &Alerts{store: store, sender: sender, cfg: cfg, logger: logger}
+	if store != nil {
+		alerts.settings = newSettingsProvider(store, cfg)
+	}
+	return alerts
+}
+
+// current devolve as configurações em vigor (cache de 60 s). Falha de leitura mantém
+// a última leitura (ou o padrão) e só registra o aviso.
+func (a *Alerts) current(ctx context.Context, now time.Time) effectiveSettings {
+	if a.settings == nil {
+		return a.settings.Peek()
+	}
+	st, err := a.settings.Get(ctx, now)
+	if err != nil {
+		a.logger.Warn("obs_alert_settings_read_failed", slog.Any("error", err))
+	}
+	return st
+}
+
+// recipients: destinatários dos alertas (banco; vazio = OBS_ALERT_EMAILS).
+func (a *Alerts) recipients(st effectiveSettings) []string {
+	return recipientsFor(st.Alerts.Recipients, a.cfg.Recipients)
 }
 
 // Configured: canal de e-mail utilizável (SMTP + ao menos um destinatário).
 func (a *Alerts) Configured() bool {
-	return a != nil && a.sender != nil && a.sender.Configured() && len(a.cfg.Recipients) > 0
+	return a != nil && a.sender != nil && a.sender.Configured() && a.RecipientCount() > 0
 }
 
 func (a *Alerts) RecipientCount() int {
 	if a == nil {
 		return 0
 	}
-	return len(a.cfg.Recipients)
+	return len(a.recipients(a.settings.Peek()))
+}
+
+// InvalidateSettings força a releitura das configurações (depois de um PUT).
+func (a *Alerts) InvalidateSettings() {
+	if a != nil && a.settings != nil {
+		a.settings.Invalidate()
+	}
 }
 
 // Start liga o laço em segundo plano. Sem efeito se desabilitado ou já iniciado.
@@ -151,6 +186,7 @@ func (a *Alerts) safeTick(ctx context.Context) {
 	if err := a.Tick(tickCtx, time.Now().UTC()); err != nil && ctx.Err() == nil {
 		a.logger.Warn("obs_alerts_tick_failed", slog.Any("error", err))
 	}
+	a.weeklyTick(ctx, time.Now().UTC())
 }
 
 // syncPlan é o resultado puro da comparação entre condições ativas e alertas abertos.
@@ -208,20 +244,21 @@ func (a *Alerts) Tick(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	conds := evaluateRules(metrics)
+	st := a.current(ctx, now)
+	conds := evaluateRulesWith(metrics, st.Alerts.Rules)
 	open, err := a.store.ListAlerts(ctx, "open", 500)
 	if err != nil {
 		return err
 	}
 	plan := planSync(conds, open)
-	items, err := a.applyPlan(ctx, plan, now)
+	items, err := a.applyPlan(ctx, plan, now, time.Duration(st.Alerts.RenotifyMinutes)*time.Minute)
 	if err != nil {
 		return err
 	}
-	return a.dispatch(ctx, items, now)
+	return a.dispatch(ctx, items, now, st)
 }
 
-func (a *Alerts) applyPlan(ctx context.Context, plan syncPlan, now time.Time) ([]notifyItem, error) {
+func (a *Alerts) applyPlan(ctx context.Context, plan syncPlan, now time.Time, renotify time.Duration) ([]notifyItem, error) {
 	var items []notifyItem
 	for _, c := range plan.Insert {
 		c = withMeasured(c)
@@ -235,7 +272,7 @@ func (a *Alerts) applyPlan(ctx context.Context, plan syncPlan, now time.Time) ([
 	}
 	for _, update := range plan.Update {
 		c := withMeasured(update.Cond)
-		reason := notifyReason(update.Row, c.Severity, now, a.cfg.Renotify)
+		reason := notifyReason(update.Row, c.Severity, now, renotify)
 		if err := a.store.UpdateAlert(ctx, update.Row.ID, c, now); err != nil {
 			return nil, err
 		}
@@ -262,8 +299,11 @@ func (a *Alerts) applyPlan(ctx context.Context, plan syncPlan, now time.Time) ([
 	return items, nil
 }
 
-// dispatch envia um único e-mail com todos os itens da rodada.
-func (a *Alerts) dispatch(ctx context.Context, items []notifyItem, now time.Time) error {
+// dispatch envia os itens da rodada no layout configurado. Horário de silêncio: o que
+// não passa fica retido sem ser marcado como notificado (o motor o reavalia a cada
+// rodada e o acumulado sai ao fim do silêncio); resoluções ficam em heldResolved.
+func (a *Alerts) dispatch(ctx context.Context, items []notifyItem, now time.Time, st effectiveSettings) error {
+	items = a.withHeldResolved(items, st.Alerts.QuietHours, now)
 	if len(items) == 0 {
 		return nil
 	}
@@ -281,9 +321,25 @@ func (a *Alerts) dispatch(ctx context.Context, items []notifyItem, now time.Time
 		}
 		return nil
 	}
-	subject, body := buildDigest(items, a.cfg.panelLink())
-	sendErr := a.sender.Send(ctx, a.cfg.Recipients, subject, body)
-	for _, item := range items {
+	send, held := splitQuiet(items, st.Alerts.QuietHours, now)
+	for _, item := range held {
+		if item.Reason == reasonResolved {
+			a.holdResolved(item)
+		}
+	}
+	if len(send) == 0 {
+		return nil
+	}
+	emails := buildEmails(send, a.cfg.panelLink(), st.Email)
+	var sendErr error
+	to := a.recipients(st)
+	for _, email := range emails {
+		if err := a.sender.Send(ctx, to, email.Subject, email.Body); err != nil {
+			sendErr = err
+			break
+		}
+	}
+	for _, item := range send {
 		if err := a.record(ctx, item, sendErr, now); err != nil {
 			return err
 		}
@@ -292,6 +348,29 @@ func (a *Alerts) dispatch(ctx context.Context, items []notifyItem, now time.Time
 		return fmt.Errorf("send alert email: %w", sendErr)
 	}
 	return nil
+}
+
+const maxHeldResolved = 100
+
+func (a *Alerts) holdResolved(item notifyItem) {
+	for _, held := range a.heldResolved {
+		if held.Alert.ID == item.Alert.ID {
+			return
+		}
+	}
+	if len(a.heldResolved) < maxHeldResolved {
+		a.heldResolved = append(a.heldResolved, item)
+	}
+}
+
+// withHeldResolved junta as resoluções retidas quando o silêncio acabou.
+func (a *Alerts) withHeldResolved(items []notifyItem, q QuietHours, now time.Time) []notifyItem {
+	if len(a.heldResolved) == 0 || inQuietHours(q, now) {
+		return items
+	}
+	merged := append(append([]notifyItem{}, a.heldResolved...), items...)
+	a.heldResolved = nil
+	return merged
 }
 
 func (a *Alerts) record(ctx context.Context, item notifyItem, sendErr error, now time.Time) error {
@@ -317,6 +396,8 @@ func (a *Alerts) SendTest(ctx context.Context) error {
 	if !a.Configured() {
 		return ErrAlertsNotConfigured
 	}
-	subject, body := testDigest(a.cfg.panelLink(), time.Now())
-	return a.sender.Send(ctx, a.cfg.Recipients, subject, body)
+	now := time.Now()
+	st := a.current(ctx, now)
+	subject, body := testDigest(a.cfg.panelLink(), now)
+	return a.sender.Send(ctx, a.recipients(st), subjectWithPrefix(st.Email.SubjectPrefix, strings.TrimPrefix(subject, defaultSubjectPrefix+" ")), body)
 }

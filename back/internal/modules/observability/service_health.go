@@ -88,7 +88,7 @@ func (s *Service) gatherHealth(ctx context.Context) (healthInputs, error) {
 		func() (e error) { in.Containers, e = s.store.latestContainers(ctx, now.Add(-10*time.Minute)); return },
 		func() (e error) { in.Pages, e = s.store.PageStats(ctx, now); return },
 		func() (e error) { in.Checks, e = s.store.SecurityChecks(ctx); return },
-		func() (e error) { in.Findings, e = s.store.SecurityFindings(ctx); return },
+		func() (e error) { in.Findings, e = s.store.SecurityFindings(ctx, todayLocal(time.Now())); return },
 		func() (e error) { in.Alerts, e = s.store.ListAlerts(ctx, "open", 100); return },
 		func() (e error) { in.Deploys, e = s.store.RecentDeploys(ctx, deployFetchMin); return },
 	}

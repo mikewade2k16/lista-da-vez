@@ -29,7 +29,8 @@ Saúde do sistema (fase 6; migration 0330; contratos em `observability/SPEC.md`)
 | rota | uso |
 |---|---|
 | `GET /health` | status por área (api, database, containers, pages, workers, security, deploy), issues (máx. 15, com link de aba), erros 1 h/24 h, online (id e nome, sem e-mail), última amostra de sistema, resumo de alertas e segurança |
-| `GET /security` | `obs.security_checks` + `obs.findings` |
+| `GET /security` | `obs.security_checks` + `obs.findings` (achados com `owner`, `dueDate`, `note`, `updatedBy`, `updatedAt`, `overdue` = aberto com prazo anterior a hoje no fuso America/Sao_Paulo) |
+| `PATCH /findings/{id}` | edita `{status?: open\|fixed\|accepted, owner? (até 120), dueDate? (YYYY-MM-DD ou null), note? (até 2000)}`; id `[A-Z]-\d+`; grava `updated_by` (core.users.display_name) e `updated_at`; 400 `invalid_finding`, 404 se não existir; devolve o achado. O sync da AUDITORIA (`security-db.mjs`) nunca sobrescreve esses campos |
 | `GET /system?hours=` | séries `api`/`agent` de `obs.system_samples` (hours 1..72, padrão 6; até ~360 pontos) e última amostra de cada container |
 | `GET /alerts?status=open\|resolved\|all` | `obs.alerts` (padrão `open`); inclui `acknowledgedAt/By` e `silencedUntil/By` (silêncio vencido vem `null`) |
 | `POST /alerts/{id}/ack` | reconhece o alerta aberto (204; 400 `invalid_alert_id`; 404; 409 `alert_resolved`) |
@@ -95,6 +96,29 @@ Limites conhecidos: assume uma única réplica da API (várias réplicas duplica
 `OBS_SAMPLE_RATE` (5xx e lentas sempre gravam; com taxa < 1 o total de requisições é
 subestimado e a taxa de 5xx, superestimada). `container_down` trata qualquer container
 fora de `running` como crítico, inclusive jobs one-shot que terminam em `exited`.
+
+## Configurações pelo painel (2.1 a 2.3; migration 0333)
+
+`obs.settings (key, value jsonb, updated_by, updated_at)`: chaves `alerts`, `email`,
+`weeklyReport` (editáveis) e `weeklyReport.state` (interna). As variáveis `OBS_ALERT_*` valem só
+quando a chave não existe ou os destinatários estão vazios. Contratos em `observability/SPEC.md`.
+
+| rota | uso |
+|---|---|
+| `GET /settings` | valores efetivos (banco sobre o padrão), `rulesCatalog`, `channel`, `weeklyState` |
+| `PUT /settings/{key}` (`alerts\|email\|weeklyReport`) | valida, grava e devolve o GET; 400 `invalid_settings` com `details.fields` |
+| `POST /settings/email/preview` | `{subject,text}` do layout proposto com alertas de exemplo (não grava) |
+| `GET /reports/weekly/preview` | `{subject,text}` do relatório com os dados de agora |
+| `POST /reports/weekly/send` | envia agora (204; 409 `alerts_not_configured`; 502) |
+
+Arquivos: `settings.go` (tipos, catálogo de 19 regras, validação, silêncio, aplicação de regra),
+`settings_provider.go` (cache de 60 s, `Invalidate` após PUT, valor gravado inválido = padrão da
+chave), `store_settings.go`, `service_settings.go`, `http_settings.go` (rotas em
+`registerSettingsRoutes`), `alerts_email.go` (layout e prévia), `report_weekly.go` +
+`store_report.go` + `alerts_weekly.go` (relatório). `evaluateRulesWith` aplica limites e
+liga/desliga; `evaluateRules` continua sendo o padrão do código. As consultas `routeErrors` e
+`slowRoutes` não filtram mais pelo limite em SQL (o filtro é em Go, para limites abaixo do padrão
+funcionarem). Assume uma réplica da API (como o resto do motor). `time/tzdata` é embutido.
 
 ## Reconhecer e silenciar (migration 0332)
 

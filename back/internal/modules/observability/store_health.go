@@ -55,7 +55,7 @@ func (s *Store) routeErrors(ctx context.Context, from time.Time) ([]routeCount, 
 	rows, err := s.pool.Query(quiet(ctx), `
 		select route, count(*) from obs.http_requests
 		where source = 'live' and status >= 500 and occurred_at >= $1
-		group by route having count(*) >= 5 order by count(*) desc limit 50`, from)
+		group by route order by count(*) desc limit 50`, from)
 	if err != nil {
 		return nil, fmt.Errorf("alert metrics route errors: %w", err)
 	}
@@ -71,7 +71,7 @@ func (s *Store) slowRoutes(ctx context.Context, from time.Time) ([]routeLatency,
 		from obs.http_requests
 		where source = 'live' and occurred_at >= $1 and route <> 'UNMATCHED'
 		group by route
-		having count(*) >= 10 and percentile_cont(0.95) within group (order by duration_ms) > 2000
+		having count(*) >= 10
 		order by 2 desc limit 50`, from)
 	if err != nil {
 		return nil, fmt.Errorf("alert metrics slow routes: %w", err)

@@ -150,6 +150,17 @@ type alertMetrics struct {
 
 	TLS           []tlsMetric          // última amostra do agente (vazio = coletor sem TLS)
 	TLSErrorSince map[string]time.Time // host -> primeira amostra com erro na janela de 13 h
+
+	// Thresholds são os limites personalizados no painel (regra -> valor); ausente = padrão do código.
+	Thresholds map[string]float64
+}
+
+// threshold devolve o limite da regra: o do painel ou, na falta, o padrão do código.
+func (m alertMetrics) threshold(rule string) float64 {
+	if value, ok := m.Thresholds[rule]; ok {
+		return value
+	}
+	return defaultThreshold(rule)
 }
 
 // condition é uma condição de alerta ativa. Fingerprint = regra + alvo.
@@ -181,7 +192,7 @@ func evaluateRules(m alertMetrics) []condition {
 	out = append(out, ruleContainers(m)...)
 	out = append(out, ruleTLS(m)...)
 	out = append(out, rulePanics(m)...)
-	if m.FrontendJSErr15 >= 20 {
+	if m.FrontendJSErr15 >= int64(m.threshold("frontend_errors")) {
 		out = append(out, condition{Rule: "frontend_errors", Severity: sevMedium, Area: "pages",
 			Title:    "Erros de JavaScript no front",
 			Measured: fmt.Sprintf("%d erros em 15 min", m.FrontendJSErr15),
@@ -191,13 +202,23 @@ func evaluateRules(m alertMetrics) []condition {
 	return out
 }
 
+// evaluateRulesWith aplica os limites (m.Thresholds) e, depois, liga/desliga e severidade
+// fixa de cada regra (configurações do painel).
+func evaluateRulesWith(m alertMetrics, rules map[string]RuleSetting) []condition {
+	m.Thresholds = ruleThresholds(rules)
+	out := applyRuleSettings(evaluateRules(m), rules)
+	sort.SliceStable(out, func(i, j int) bool { return severityRank(out[i].Severity) > severityRank(out[j].Severity) })
+	return out
+}
+
 func ruleHTTP(m alertMetrics) []condition {
 	var out []condition
 	if m.HTTPTotal5m >= 20 {
 		rate := float64(m.HTTP5xx5m) / float64(m.HTTPTotal5m)
-		if rate > 0.05 {
+		limit := m.threshold("api_5xx_rate")
+		if rate > limit/100 {
 			severity := sevHigh
-			if rate > 0.20 {
+			if rate > limit*4/100 {
 				severity = sevCritical
 			}
 			out = append(out, condition{Rule: "api_5xx_rate", Severity: severity, Area: "api",
@@ -207,7 +228,7 @@ func ruleHTTP(m alertMetrics) []condition {
 		}
 	}
 	for _, item := range m.RouteErrors5m {
-		if item.Count >= 5 {
+		if item.Count >= int64(m.threshold("route_errors")) {
 			out = append(out, condition{Rule: "route_errors", Target: item.Route, Severity: sevMedium, Area: "api",
 				Title:    "Rota com erros 5xx: " + item.Route,
 				Measured: fmt.Sprintf("%d respostas 5xx em 5 min", item.Count),
@@ -215,7 +236,7 @@ func ruleHTTP(m alertMetrics) []condition {
 		}
 	}
 	for _, item := range m.SlowRoutes15m {
-		if item.Calls >= 10 && item.P95Ms > 2000 {
+		if item.Calls >= 10 && item.P95Ms > m.threshold("slow_route") {
 			out = append(out, condition{Rule: "slow_route", Target: item.Route, Severity: sevMedium, Area: "api",
 				Title:    "Rota lenta: " + item.Route,
 				Measured: fmt.Sprintf("p95 de %.0f ms em %d requisições (15 min)", item.P95Ms, item.Calls),
@@ -260,7 +281,7 @@ func rulePoolAndPG(m alertMetrics) []condition {
 			Measured: fmt.Sprintf("%d deadlocks desde a última amostra", pg.DeadlocksDelta),
 			Detail:   map[string]any{"deadlocksDelta": pg.DeadlocksDelta}})
 	}
-	if pg.MaxConnections > 0 && float64(pg.Connections)/float64(pg.MaxConnections) >= 0.85 {
+	if pg.MaxConnections > 0 && float64(pg.Connections)/float64(pg.MaxConnections) >= m.threshold("pg_connections")/100 {
 		out = append(out, condition{Rule: "pg_connections", Severity: sevHigh, Area: "database",
 			Title:    "Conexões do Postgres perto do limite",
 			Measured: fmt.Sprintf("%d de %d conexões", pg.Connections, pg.MaxConnections),
@@ -277,7 +298,7 @@ func ruleGoroutines(m alertMetrics) []condition {
 	}
 	latest := m.APISamples[0]
 	current := latest.Metrics.Go.Goroutines
-	if current > 10000 {
+	if current > int64(m.threshold("goroutine_growth")) {
 		return []condition{{Rule: "goroutine_growth", Severity: sevMedium, Area: "api",
 			Title:    "Goroutines acima do limite",
 			Measured: fmt.Sprintf("%d goroutines", current),
@@ -311,9 +332,10 @@ func ruleJobs(m alertMetrics) []condition {
 	}
 	var out []condition
 	for _, job := range m.APISamples[0].Metrics.Jobs {
-		if job.OldestDueLagSeconds > 300 {
+		limit := m.threshold("job_backlog")
+		if float64(job.OldestDueLagSeconds) > limit {
 			severity := sevMedium
-			if job.OldestDueLagSeconds > 1800 {
+			if float64(job.OldestDueLagSeconds) > limit*6 {
 				severity = sevHigh
 			}
 			out = append(out, condition{Rule: "job_backlog", Target: job.Table, Severity: severity, Area: "workers",
@@ -370,9 +392,10 @@ func ruleContainers(m alertMetrics) []condition {
 		}
 	}
 	for _, disk := range m.Disks {
-		if disk.UsedPct >= 85 {
+		limit := m.threshold("disk_low")
+		if disk.UsedPct >= limit {
 			severity := sevHigh
-			if disk.UsedPct >= 95 {
+			if disk.UsedPct >= min(limit+10, 99) {
 				severity = sevCritical
 			}
 			out = append(out, condition{Rule: "disk_low", Target: disk.Path, Severity: severity, Area: "containers",

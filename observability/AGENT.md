@@ -85,7 +85,9 @@ Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vá
 
 ### Etapa 2 — governança pelo painel (M)
 
-- [ ] **2.1 Configuração dos alertas no banco** (tabela `obs.settings`). Editável na
+- [x] **2.1 Configuração dos alertas no banco** (2026-11-24, sem commit): `obs.settings` +
+      `GET /settings`, `PUT /settings/{key}`; o motor relê a cada 60 s (destinatários, reaviso,
+      horário de silêncio, liga/desliga, severidade e limite de 19 regras); aba Alertas > Configurações. Original: tabela `obs.settings`. Editável na
       aba Alertas:
   - destinatários;
   - liga e desliga e limite de cada regra;
@@ -94,12 +96,12 @@ Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vá
 
   As variáveis de ambiente passam a ser só o valor inicial.
 
-- [ ] **2.2 Layout e conteúdo do e-mail.** Assunto, quais seções entram e se agrupa
+- [x] **2.2 Layout e conteúdo do e-mail** (2026-11-24, sem commit): chave `email` (prefixo, agrupar, seções, resolvidos, rodapé) aplicada ao montar o e-mail; `POST /settings/email/preview`. Original: Assunto, quais seções entram e se agrupa
       os alertas da rodada; pré-visualização no painel.
-- [ ] **2.3 Relatório semanal por e-mail.** O que piorou, o que melhorou, alertas da
+- [x] **2.3 Relatório semanal por e-mail** (2026-11-24, sem commit): chave `weeklyReport` + estado; envio no dia/hora, uma vez por semana; `GET /reports/weekly/preview`, `POST /reports/weekly/send`. Original: O que piorou, o que melhorou, alertas da
       semana, achados abertos e deploys.
-- [ ] **2.4 Achados como fila de trabalho.** Status, responsável e prazo editáveis no
-      painel (aba Segurança).
+- [x] **2.4 Achados como fila de trabalho.** Status, responsável e prazo editáveis no
+      painel (aba Segurança). (2026-11-24: `PATCH /findings/{id}`, edição inline, filtros e vencidos.)
 
 ### Etapa 3 — banco (M a G)
 

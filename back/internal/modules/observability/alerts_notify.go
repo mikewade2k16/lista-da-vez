@@ -1,9 +1,6 @@
 package observability
 
 import (
-	"fmt"
-	"sort"
-	"strings"
 	"time"
 )
 
@@ -103,49 +100,6 @@ func severityLabel(severity string) string {
 	return "BAIXO"
 }
 
-// buildDigest monta assunto e corpo (texto simples, pt-BR) de uma rodada. Só ids,
-// rotas e contagens: nenhum dado de negócio.
-func buildDigest(items []notifyItem, link string) (subject, body string) {
-	var active, resolved []notifyItem
-	for _, item := range items {
-		if item.Reason == reasonResolved {
-			resolved = append(resolved, item)
-		} else {
-			active = append(active, item)
-		}
-	}
-	sort.SliceStable(active, func(i, j int) bool {
-		return severityRank(active[i].Alert.Severity) > severityRank(active[j].Alert.Severity)
-	})
-
-	switch {
-	case len(active) > 0:
-		subject = fmt.Sprintf("[Omni] %d alerta(s) ativo(s) - %s", len(active), severityLabel(active[0].Alert.Severity))
-	default:
-		subject = fmt.Sprintf("[Omni] %d alerta(s) resolvido(s)", len(resolved))
-	}
-
-	var b strings.Builder
-	b.WriteString("Resumo do monitoramento do Omni.\n")
-	writeSection := func(title string, list []notifyItem) {
-		if len(list) == 0 {
-			return
-		}
-		fmt.Fprintf(&b, "\n%s\n", title)
-		for _, item := range list {
-			writeAlert(&b, item)
-		}
-	}
-	writeSection("NOVOS", filterReason(active, reasonOpened))
-	writeSection("AGRAVADOS", filterReason(active, reasonEscalated))
-	writeSection("CONTINUAM ABERTOS", filterReason(active, reasonRenotify))
-	writeSection("RESOLVIDOS", resolved)
-	if link != "" {
-		fmt.Fprintf(&b, "\nPainel: %s\n", link)
-	}
-	return subject, b.String()
-}
-
 func filterReason(items []notifyItem, reason string) []notifyItem {
 	var out []notifyItem
 	for _, item := range items {
@@ -154,19 +108,6 @@ func filterReason(items []notifyItem, reason string) []notifyItem {
 		}
 	}
 	return out
-}
-
-func writeAlert(b *strings.Builder, item notifyItem) {
-	alert := item.Alert
-	fmt.Fprintf(b, "\n- [%s] %s\n", severityLabel(alert.Severity), alert.Title)
-	fmt.Fprintf(b, "  Onde: %s\n", alert.Area)
-	fmt.Fprintf(b, "  Desde: %s\n", alert.FirstSeen.In(brt).Format("02/01/2006 15:04"))
-	if measured, _ := alert.Detail["measured"].(string); measured != "" {
-		fmt.Fprintf(b, "  Medido: %s\n", measured)
-	}
-	if item.Reason == reasonResolved && alert.ResolvedAt != nil {
-		fmt.Fprintf(b, "  Resolvido em: %s\n", alert.ResolvedAt.In(brt).Format("02/01/2006 15:04"))
-	}
 }
 
 func testDigest(link string, now time.Time) (subject, body string) {

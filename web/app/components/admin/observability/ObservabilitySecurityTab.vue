@@ -1,16 +1,20 @@
 <script setup lang="ts">
+import ObservabilityFindingsQueue from '~/components/admin/observability/ObservabilityFindingsQueue.vue'
 import ObservabilitySecurityNotice from '~/components/admin/observability/ObservabilitySecurityNotice.vue'
 import ObservabilityState from '~/components/admin/observability/ObservabilityState.vue'
 import { useObsQuery } from '~/composables/useObservability'
-import type { ObsSecurity, ObsSecuritySummary, ObsSeverity } from '~/types/observability'
+import type {
+  ObsSecurity,
+  ObsSecurityFinding,
+  ObsSecuritySummary,
+  ObsSeverity,
+} from '~/types/observability'
 import { formatDate } from '~/utils/observability/format'
 import {
   CHECK_STATUS_LABEL,
   checkStatusBand,
   groupChecksByCategory,
-  SEVERITY_LABEL,
   SEVERITY_ORDER,
-  severityBand,
 } from '~/utils/observability/health'
 
 const { data, loading, error, reload } = useObsQuery<ObsSecurity>('/security')
@@ -25,11 +29,21 @@ const summary = computed<ObsSecuritySummary>(() => {
   const open = { critical: 0, high: 0, medium: 0, low: 0 } as Record<ObsSeverity, number>
   let fixed = 0
   for (const finding of findings.value) {
-    if (/^(fixed|closed|resolved)/i.test(finding.status)) fixed += 1
-    else if (SEVERITY_ORDER.includes(finding.severity)) open[finding.severity] += 1
+    if (finding.status === 'fixed') fixed += 1
+    else if (finding.status === 'open' && SEVERITY_ORDER.includes(finding.severity))
+      open[finding.severity] += 1
   }
   return { checks, findings: { open, fixed } }
 })
+
+// Troca so a linha salva (o servidor devolve o achado ja com `overdue` calculado).
+function onFindingSaved(updated: ObsSecurityFinding) {
+  if (!data.value) return
+  data.value = {
+    ...data.value,
+    findings: data.value.findings.map((f) => (f.id === updated.id ? updated : f)),
+  }
+}
 </script>
 
 <template>
@@ -74,38 +88,7 @@ const summary = computed<ObsSecuritySummary>(() => {
         </div>
       </section>
 
-      <section class="obs-section">
-        <h3 class="obs-section__title">Achados da auditoria</h3>
-        <p v-if="findings.length === 0" class="obs-hint">Nenhum achado importado.</p>
-        <div v-else class="obs-tablewrap">
-          <table class="obs-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Severidade</th>
-                <th>Título</th>
-                <th>Área</th>
-                <th>Local</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="finding in findings" :key="finding.id">
-                <td class="obs-mono">{{ finding.id }}</td>
-                <td>
-                  <span :class="['obs-band', `obs-band--${severityBand(finding.severity)}`]">
-                    {{ SEVERITY_LABEL[finding.severity] || finding.severity }}
-                  </span>
-                </td>
-                <td>{{ finding.title }}</td>
-                <td>{{ finding.area }}</td>
-                <td class="obs-mono">{{ finding.location }}</td>
-                <td>{{ finding.status }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <ObservabilityFindingsQueue :findings="findings" @saved="onFindingSaved" />
     </div>
   </ObservabilityState>
 </template>

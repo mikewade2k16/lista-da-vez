@@ -275,14 +275,28 @@ export interface ObsSecurityCheck {
   source: string
 }
 
+export type ObsFindingStatus = 'open' | 'fixed' | 'accepted'
+
 export interface ObsSecurityFinding {
-  id: string | number
+  id: string
   severity: ObsSeverity
   title: string
   area: string
   location: string
-  status: string
+  status: ObsFindingStatus | string
+  owner: string
+  dueDate: string | null
+  note: string
+  updatedBy: string
   updatedAt: string
+  overdue: boolean
+}
+
+export interface ObsFindingPatch {
+  status?: ObsFindingStatus
+  owner?: string
+  dueDate?: string | null
+  note?: string
 }
 
 export interface ObsSecurity {

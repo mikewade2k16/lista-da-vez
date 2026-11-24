@@ -307,6 +307,35 @@ achados abertos por severidade e vencidos, deploys (quantidade, mediana, falhas)
 notas do último run completo. Endpoints: `GET /reports/weekly/preview` → `{subject,text}`,
 `POST /reports/weekly/send` → 204 (envio imediato).
 
+**Detalhes implementados (2.1 a 2.3)**
+- `GET /settings` devolve também `channel` (`smtpConfigured`, `envRecipientCount`,
+  `alertRecipientCount`, `weeklyRecipientCount`, `cacheSeconds`) e `weeklyState`
+  (`lastSentAt`, `lastError`). `recipients` volta como gravado (vazio = ambiente); `alerts.rules`
+  volta completo (19 regras, padrão do código quando não gravado); `rulesCatalog` traz também
+  `min`/`max` do limite. `PUT /settings/{key}` grava e devolve o mesmo corpo do GET.
+- Erros: 400 `invalid_settings` com `error.details.fields` = `{ "<caminho>": "mensagem" }`
+  (`recipients`, `renotifyMinutes`, `quietHours.start`, `rules.<regra>.threshold`...; `_` = JSON
+  inválido ou campo desconhecido); 404 chave desconhecida; 503 `settings_unavailable`.
+- Limites aplicados pelo motor: `api_5xx_rate` (crítico em 4x o limite), `route_errors`,
+  `slow_route`, `pg_connections`, `goroutine_growth` (limite absoluto), `job_backlog` (alto em 6x),
+  `disk_low` (crítico em limite+10, máx. 99), `tls_expiring` (crítico em min(3, limite) dias),
+  `frontend_errors`. Regra desligada some das condições (os alertas abertos dela resolvem).
+  Severidade diferente de `auto` substitui a do código.
+- Horário de silêncio: e-mails não críticos (ou todos, sem `allowCritical`) ficam retidos sem
+  marcar o alerta como avisado; o motor os reavalia a cada rodada e eles saem juntos no fim.
+  Resoluções ocorridas durante o silêncio ficam em memória e saem no fim (um reinício da API as perde).
+- `email`: `sections` = `summary` (frase de abertura), `details` (onde/desde/medido por alerta; sem
+  ele só o título), `link` (painel). `group=false` envia um e-mail por alerta (assunto
+  `<prefixo> <SEVERIDADE> - <título>`). `includeResolved=false` não avisa resoluções.
+- `weeklyReport.weekday` segue `time.Weekday` (0 = domingo ... 6 = sábado). O envio ocorre entre o
+  horário marcado e 24 h depois (recuperação se a API estava fora), uma vez por semana; falha
+  grava `lastAttemptAt`/`lastError` e tenta de novo após 15 min. `POST /reports/weekly/send` conta
+  como o envio da semana; 409 `alerts_not_configured` sem SMTP/destinatários; 502 se o SMTP falhar.
+- Relatório: p95 do histograma de `obs.http_route_hourly` (inclui tráfego do runner) e taxa de 5xx de
+  `obs.http_requests` `source='live'`, semana × semana anterior; rotas que pioraram/melhoraram
+  (mín. 50 chamadas nas duas semanas, variação >= 20% e >= 50 ms); alertas, achados abertos e
+  vencidos (`due_date` < hoje no fuso do relatório), deploys e notas do último run completo.
+
 **2.4 Achados como fila** — `PATCH /v1/admin/observability/findings/{id}`
 `{ "status": "open|fixed|accepted", "owner": "", "dueDate": "YYYY-MM-DD|null", "note": "" }`
 (campos opcionais; grava `updated_by` = usuário). `/security` devolve `owner`, `dueDate`,

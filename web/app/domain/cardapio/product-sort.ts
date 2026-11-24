@@ -2,8 +2,10 @@ import { normalizeProductSearch } from './product-search'
 import type { OmniTableSort } from '~/types/omni/collection'
 
 // Ordenacao client-side da lista de produtos (a lista lean ja vem completa).
-// Sem ordenacao ativa a tabela mantem a ordem do site (categoria -> produto).
+// Sem ordenacao escolhida vale o padrao: ultimo produto adicionado primeiro.
 export type ProductSort = OmniTableSort
+
+export const DEFAULT_PRODUCT_SORT: ProductSort = { key: 'createdAt', dir: 'desc' }
 
 export interface SortableProductRow {
   name: string
@@ -76,13 +78,15 @@ function comparator<Row extends SortableProductRow>(
 }
 
 // Ordenacao estavel: empates mantem a ordem do site (categoria -> produto).
+// `null` (nenhuma escolha ou ordenacao limpa no cabecalho) usa DEFAULT_PRODUCT_SORT.
 export function sortProductRows<Row extends SortableProductRow>(
   rows: Row[],
   sort: ProductSort | null,
   categoryName: (id: string) => string,
 ): Row[] {
-  const compare = sort ? comparator<Row>(sort.key, categoryName) : null
-  if (!sort || !compare) return rows
-  const direction = sort.dir === 'desc' ? -1 : 1
+  const active = sort ?? DEFAULT_PRODUCT_SORT
+  const compare = comparator<Row>(active.key, categoryName)
+  if (!compare) return rows
+  const direction = active.dir === 'desc' ? -1 : 1
   return rows.slice().sort((a, b) => compare(a, b) * direction)
 }

@@ -48,7 +48,7 @@ const emit = defineEmits<{ create: []; photo: [value: string] }>()
 const sortItems = computed(() => [
   [
     {
-      label: 'Ordem do site',
+      label: 'Padrão (mais recentes)',
       icon: sort.value ? undefined : 'i-lucide-check',
       onSelect: () => {
         sort.value = null

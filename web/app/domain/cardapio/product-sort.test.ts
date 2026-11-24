@@ -28,8 +28,16 @@ const rows = [
 const names = (list: SortableProductRow[]) => list.map((item) => item.name)
 
 describe('sortProductRows', () => {
-  it('mantem a ordem original sem ordenacao ou com chave desconhecida', () => {
-    expect(sortProductRows(rows, null, categoryName)).toBe(rows)
+  it('sem ordenacao escolhida mostra o ultimo adicionado primeiro', () => {
+    expect(names(sortProductRows(rows, null, categoryName))).toEqual([
+      'Brigadeiro 10',
+      'Água',
+      'pudim',
+      'Brigadeiro 2',
+    ])
+  })
+
+  it('mantem a ordem original com chave desconhecida', () => {
     expect(sortProductRows(rows, { key: 'tags', dir: 'asc' }, categoryName)).toBe(rows)
   })
 

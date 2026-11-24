@@ -190,10 +190,14 @@ func TestContainerAndDiskRules(t *testing.T) {
 	m.Containers = []containerState{
 		{Container: "web", State: "running", Health: "healthy", RestartPolicy: "always"},
 		{Container: "api", State: "running", Health: "unhealthy"},
-		{Container: "db", State: "exited", RestartPolicy: "unless-stopped"},
+		{Container: "db", State: "restarting", RestartPolicy: "unless-stopped"},
+		{Container: "dead", State: "dead", RestartPolicy: "always"},
+		{Container: "stopped", State: "exited", RestartPolicy: "unless-stopped", ExitCode: iptr(0)},
+		{Container: "staging", State: "exited", RestartPolicy: "always", ExitCode: iptr(137)},
 		{Container: "old", State: "exited", RestartPolicy: "no"},
 		{Container: "old2", State: "exited"},
-		{Container: "oc", State: "exited", RestartPolicy: "on-failure"},
+		{Container: "oc", State: "exited", RestartPolicy: "on-failure", ExitCode: iptr(1)},
+		{Container: "ocok", State: "exited", RestartPolicy: "on-failure", ExitCode: iptr(0)},
 		{Container: "w", State: "running", RestartDelta: 2},
 	}
 	m.Disks = []diskMetric{{Path: "/", UsedPct: 96}, {Path: "/data", UsedPct: 86}, {Path: "/x", UsedPct: 50}}
@@ -201,13 +205,18 @@ func TestContainerAndDiskRules(t *testing.T) {
 	if findRule(conds, "container_down", "web") != nil || findRule(conds, "container_down", "api") == nil || findRule(conds, "container_down", "db") == nil {
 		t.Error("container_down")
 	}
-	for _, name := range []string{"old", "old2"} {
+	if findRule(conds, "container_down", "dead") == nil {
+		t.Error("container dead alerta")
+	}
+	// Parada manual (docker stop / stack desligada): always/unless-stopped exited
+	// nao reinicia sozinho, entao foi de proposito.
+	for _, name := range []string{"old", "old2", "stopped", "staging", "ocok"} {
 		if findRule(conds, "container_down", name) != nil {
 			t.Errorf("%s parado de proposito nao alerta", name)
 		}
 	}
 	if findRule(conds, "container_down", "oc") == nil {
-		t.Error("on-failure parado alerta")
+		t.Error("on-failure saiu com erro alerta")
 	}
 	if findRule(conds, "container_restarts", "w") == nil {
 		t.Error("container_restarts")
@@ -252,3 +261,5 @@ func TestOrderedBySeverityAndFingerprint(t *testing.T) {
 		t.Errorf("fingerprint %q", got)
 	}
 }
+
+func iptr(v int) *int { return &v }

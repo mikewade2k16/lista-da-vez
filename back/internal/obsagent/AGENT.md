@@ -1,5 +1,7 @@
 # obsagent — agente de host da observabilidade
 
+> Backlog e estado da observabilidade (o que foi feito e o que falta): `observability/AGENT.md`.
+
 Contrato: `observability/SPEC.md`, secao "Agente de host". Binario: `back/cmd/obs-agent`
 (servico `obs-agent` nos Composes, mesma imagem da API, `command: ["obs-agent"]`).
 

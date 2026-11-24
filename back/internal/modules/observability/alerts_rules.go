@@ -93,24 +93,27 @@ type containerState struct {
 
 // ShouldBeUp: o container deveria estar no ar (parar é anomalia). Só vale para
 // restart policy always|unless-stopped|on-failure, ou para quem está unhealthy.
+// ShouldBeUp: o Docker mantém no ar. Com always/unless-stopped uma queda vira
+// "restarting"; ficar "exited"/"created" significa parada manual (docker stop,
+// stack desligada de propósito) e não conta como esperado no ar.
 func (c containerState) ShouldBeUp() bool {
-	switch c.RestartPolicy {
-	case "always", "unless-stopped", "on-failure":
-		return true
-	}
-	return c.Health == "unhealthy"
-}
-
-// IsDown: container esperado no ar que está parado ou unhealthy.
-func (c containerState) IsDown() bool {
 	if c.Health == "unhealthy" {
 		return true
 	}
 	switch c.RestartPolicy {
-	case "always", "unless-stopped", "on-failure":
-		return c.State != "running"
+	case "always", "unless-stopped":
+		return c.State == "running" || c.State == "restarting" || c.State == "dead"
+	case "on-failure":
+		return c.State == "running" || c.State == "restarting" || c.State == "dead" ||
+			(c.State == "exited" && c.ExitCode != nil && *c.ExitCode != 0)
 	}
 	return false
+}
+
+// IsDown: container esperado no ar que está em loop de restart, morto, saiu com
+// erro (on-failure) ou unhealthy. Parada manual não alerta.
+func (c containerState) IsDown() bool {
+	return c.ShouldBeUp() && (c.Health == "unhealthy" || c.State != "running")
 }
 
 type routeCount struct {

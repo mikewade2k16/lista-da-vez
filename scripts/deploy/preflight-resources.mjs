@@ -76,7 +76,12 @@ export async function checkResources({
 
   // 2. Memoria do host. Pico medido do build nativo: ~4,3 GB de RSS.
   const available = availableMemoryBytes()
-  const requiredGb = webBuild === 'native' ? Math.max(4.5, heapMb / 1024 * 0.75) : 1
+  // Override consciente (como OMNI_WEB_BUILD_MIN_FREE_MB do disco): abaixo do pico
+  // de ~4,3 GB o build usa swap e fica mais lento, mas conclui.
+  const memOverrideGb = Number(process.env.OMNI_WEB_BUILD_MIN_FREE_MEM_GB || '')
+  const defaultRequiredGb = webBuild === 'native' ? Math.max(4.5, heapMb / 1024 * 0.75) : 1
+  const requiredGb = memOverrideGb > 0 ? memOverrideGb : defaultRequiredGb
+  if (memOverrideGb > 0) warnings.push(`Minimo de memoria reduzido por OMNI_WEB_BUILD_MIN_FREE_MEM_GB=${memOverrideGb} (padrao ${defaultRequiredGb.toFixed(1)} GB): o build pode usar swap.`)
   info.push(`Memoria disponivel no host: ${(available / GB).toFixed(1)} de ${(totalmem() / GB).toFixed(1)} GB`)
   if (available < requiredGb * GB) {
     failures.push(`Memoria livre insuficiente: ${(available / GB).toFixed(1)} GB (minimo ${requiredGb.toFixed(1)} GB para o build web). Feche aplicativos pesados ou pare servicos locais que nao estejam em uso.`)

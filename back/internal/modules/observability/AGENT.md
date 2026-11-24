@@ -1,5 +1,7 @@
 # Módulo `observability` — painel de observabilidade e coletor do front
 
+> Backlog e estado da observabilidade (o que foi feito e o que falta): `observability/AGENT.md`.
+
 Leitura do schema `obs` para a página `/manage/observabilidade` e ingestão dos eventos
 do navegador. A instrumentação fica em `internal/platform/observability`. O runner
 (`npm run obs:run`) e o inventário ficam em `observability/` na raiz. Contratos:

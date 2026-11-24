@@ -1,5 +1,7 @@
 # AGENT — platform/observability
 
+> Backlog e estado da observabilidade (o que foi feito e o que falta): `observability/AGENT.md`.
+
 Instrumentação de toda a API: requisições, consultas ao banco, chamadas externas e
 eventos do front, gravados de forma assíncrona no schema `obs` (migration
 `0329_observability.sql`). Contratos: `observability/SPEC.md`. Painel e coletor:

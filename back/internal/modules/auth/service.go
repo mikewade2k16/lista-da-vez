@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,11 @@ type Service struct {
 	consultantProfiles ConsultantProfileSync
 	sessions           SessionRepository   // opcional; nil = nao persiste sessoes
 	principalCache     PrincipalCacheStore // opcional; nil = sem cache
+
+	// dummyHash e' um hash do mesmo custo do hasher real, usado para igualar o tempo do login
+	// quando o e-mail nao existe (anti enumeracao por tempo).
+	dummyOnce sync.Once
+	dummyHash string
 }
 
 type ContextPublisher interface {
@@ -73,6 +79,7 @@ func (service *Service) Login(ctx context.Context, input LoginInput) (LoginResul
 	user, err := service.users.FindByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
+			service.verifyAgainstDummyHash(password)
 			return LoginResult{}, ErrInvalidCredentials
 		}
 
@@ -109,6 +116,22 @@ func (service *Service) Login(ctx context.Context, input LoginInput) (LoginResul
 		User:    user.View(),
 		Session: session,
 	}, nil
+}
+
+// verifyAgainstDummyHash gasta o mesmo custo de bcrypt de uma senha errada quando o usuario nao
+// existe, para que e-mail inexistente e senha errada tenham latencia equivalente.
+func (service *Service) verifyAgainstDummyHash(password string) {
+	if service.password == nil {
+		return
+	}
+	service.dummyOnce.Do(func() {
+		if hash, err := service.password.Hash("omni-dummy-password-for-timing"); err == nil {
+			service.dummyHash = hash
+		}
+	})
+	if service.dummyHash != "" {
+		_ = service.password.Verify(service.dummyHash, password)
+	}
 }
 
 // Logout revoga a sessao do principal em core.user_sessions, invalidando o token

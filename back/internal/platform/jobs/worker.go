@@ -2,7 +2,10 @@ package jobs
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -148,9 +151,19 @@ func (w *Worker) loop(ctx context.Context, interval time.Duration, fn func(conte
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			fn(ctx)
+			w.safeCycle(ctx, fn)
 		}
 	}
+}
+
+// safeCycle roda um ciclo do loop sem deixar um panic matar a goroutine (e o processo).
+func (w *Worker) safeCycle(ctx context.Context, fn func(context.Context)) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			w.log("error", "panic no ciclo do worker", "panic", fmt.Sprint(rec), "stack", string(debug.Stack()))
+		}
+	}()
+	fn(ctx)
 }
 
 // Close para as goroutines e espera o job em voo terminar. Idempotente.
@@ -173,6 +186,10 @@ func (w *Worker) Close() error {
 // RunOnce faz UM ciclo de claim e processa o lote em serie. Devolve quantos jobs
 // rodaram. Exportado para teste e para quem quiser drenar a fila sem ticker.
 func (w *Worker) RunOnce(ctx context.Context) (int, error) {
+	if ctx.Err() != nil {
+		// Shutdown: nao pega job novo.
+		return 0, nil
+	}
 	claimed, err := w.store.Claim(ctx, w.cfg.WorkerID, w.cfg.Batch)
 	if err != nil {
 		return 0, err
@@ -189,7 +206,12 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 }
 
 // process executa um job e resolve o desfecho: done, backoff ou dead-letter.
-func (w *Worker) process(ctx context.Context, job Job) {
+//
+// O job em andamento NAO herda o cancelamento do shutdown (WithoutCancel): ele termina
+// dentro do JobTimeout e o desfecho e gravado; quem limita a espera e o timeout do
+// shutdown do chamador (Close/Group.Shutdown).
+func (w *Worker) process(parent context.Context, job Job) {
+	ctx := context.WithoutCancel(parent)
 	err := w.execute(ctx, job)
 	if err == nil {
 		if markErr := w.store.MarkDone(ctx, job.AccountID, job.ID); markErr != nil {
@@ -210,7 +232,26 @@ func (w *Worker) execute(ctx context.Context, job Job) error {
 	}
 	jobCtx, cancel := context.WithTimeout(ctx, w.cfg.JobTimeout)
 	defer cancel()
-	return handler.Handle(jobCtx, job)
+	return w.safeHandle(jobCtx, handler, job)
+}
+
+// errJobPanic marca falha por panic no handler. Nao e unrecoverable: segue a politica
+// de retry/dead-letter de qualquer erro desconhecido.
+var errJobPanic = errors.New("jobs: panic no handler")
+
+// safeHandle converte panic do handler em erro (job vira falha com retry/dead conforme
+// a politica), sem derrubar o worker. Stack so no log; o erro persistido nao leva o valor
+// do panic (pode carregar dados do payload).
+func (w *Worker) safeHandle(ctx context.Context, handler Handler, job Job) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			w.log("error", "panic no handler do job",
+				"account_id", job.AccountID, "job_id", job.ID, "kind", job.Kind,
+				"panic", fmt.Sprint(rec), "stack", string(debug.Stack()))
+			err = errJobPanic
+		}
+	}()
+	return handler.Handle(ctx, job)
 }
 
 // settleFailure aplica a classificacao: unrecoverable ou tentativas esgotadas =>

@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/users"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/background"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
@@ -16,6 +18,8 @@ import (
 // Invalidacao e direta/sincrona (nao via bus): logout, access e users derrubam a
 // entrada na hora; o TTL e so o teto de exposicao dos caminhos sem invalidacao.
 func wirePrincipalCache(
+	ctx context.Context,
+	bg *background.Group,
 	cfg config.Config,
 	logger *slog.Logger,
 	authService *auth.Service,
@@ -34,12 +38,17 @@ func wirePrincipalCache(
 	logger.Info("principal_cache_enabled", "ttl", cfg.AuthPrincipalCacheTTL.String())
 
 	// Manutencao: Cleanup a cada 60s; hit rate logado a cada 5 min quando houve trafego.
-	go func() {
+	bg.Loop(ctx, "principal_cache_maintenance", func(ctx context.Context) {
 		const statsEvery = 5
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		tick := 0
-		for range ticker.C {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 			cache.Cleanup()
 			tick++
 			if tick%statsEvery != 0 {
@@ -55,7 +64,7 @@ func wirePrincipalCache(
 				)
 			}
 		}
-	}()
+	})
 
 	return cache
 }

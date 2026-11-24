@@ -36,3 +36,6 @@ jobs:
 
       - name: go test -race
         run: go test -race ./...
+
+      - name: govulncheck (vulnerabilidades alcançáveis)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...

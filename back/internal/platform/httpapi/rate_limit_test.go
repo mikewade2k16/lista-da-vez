@@ -127,68 +127,89 @@ func TestRateLimit_ResolverEmptyFallsBackToIP(t *testing.T) {
 	}
 }
 
-func TestRateLimit_BearerTokenPrecedesIPFallback(t *testing.T) {
+func TestRateLimit_UnvalidatedTokenDoesNotOpenNewBuckets(t *testing.T) {
+	// Sem Resolver (token nao validado), trocar o bearer a cada request NAO escapa do limite:
+	// a chave e' o IP de origem.
 	middleware := RateLimit(RateLimitOptions{Limit: 1, Window: time.Minute})
 	handler := middleware(newOkHandler())
 
-	for _, token := range []string{"token-a", "token-b"} {
-		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
-		req.RemoteAddr = "10.0.0.1:0"
+	codes := []int{}
+	for _, token := range []string{"token-a", "token-b", "token-c"} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x?access_token="+token, nil)
+		req.RemoteAddr = "203.0.113.5:1234"
 		req.Header.Set("Authorization", "Bearer "+token)
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("token %q deveria ter bucket proprio; got %d", token, rr.Code)
-		}
+		codes = append(codes, rr.Code)
 	}
-
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
-	req.RemoteAddr = "10.0.0.1:0"
-	req.Header.Set("Authorization", "Bearer token-a")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-	if rr.Code != http.StatusTooManyRequests {
-		t.Errorf("segunda req do mesmo token deveria bloquear; got %d", rr.Code)
+	if codes[0] != http.StatusOK || codes[1] != http.StatusTooManyRequests || codes[2] != http.StatusTooManyRequests {
+		t.Errorf("trocar token nao deve abrir bucket novo; got %v", codes)
 	}
 }
 
-func TestRateLimit_QueryAccessTokenPrecedesIPFallback(t *testing.T) {
+func TestRateLimit_XForwardedForIgnoredFromUntrustedOrigin(t *testing.T) {
 	middleware := RateLimit(RateLimitOptions{Limit: 1, Window: time.Minute})
 	handler := middleware(newOkHandler())
 
-	for _, token := range []string{"ws-a", "ws-b"} {
-		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/socket?access_token="+token, nil)
-		req.RemoteAddr = "10.0.0.1:0"
+	codes := []int{}
+	for _, forged := range []string{"1.1.1.1", "2.2.2.2", "3.3.3.3"} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
+		req.RemoteAddr = "203.0.113.5:1234" // origem publica: nao e' proxy confiavel
+		req.Header.Set("X-Forwarded-For", forged)
+		req.Header.Set("X-Real-IP", forged)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		codes = append(codes, rr.Code)
+	}
+	if codes[0] != http.StatusOK || codes[1] != http.StatusTooManyRequests || codes[2] != http.StatusTooManyRequests {
+		t.Errorf("XFF forjado de origem nao confiavel deve ser ignorado; got %v", codes)
+	}
+}
+
+func TestRateLimit_XForwardedForHonoredFromTrustedProxy(t *testing.T) {
+	middleware := RateLimit(RateLimitOptions{Limit: 1, Window: time.Minute})
+	handler := middleware(newOkHandler())
+
+	send := func(xff string) int {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
+		req.RemoteAddr = "172.18.0.5:1234" // Caddy na rede Docker
+		req.Header.Set("X-Forwarded-For", xff)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	if code := send("198.51.100.7"); code != http.StatusOK {
+		t.Fatalf("primeira req deveria passar; got %d", code)
+	}
+	// Cliente tenta forjar o primeiro hop; o ultimo hop nao confiavel (anexado pelo proxy) vale.
+	if code := send("9.9.9.9, 198.51.100.7"); code != http.StatusTooManyRequests {
+		t.Errorf("mesmo IP real deve compartilhar bucket mesmo com hop forjado; got %d", code)
+	}
+	if code := send("198.51.100.8"); code != http.StatusOK {
+		t.Errorf("IP real diferente tem bucket proprio; got %d", code)
+	}
+}
+
+func TestRateLimit_AnonymousAccountHeaderDoesNotConsumeTenantQuota(t *testing.T) {
+	// AccountResolver que so devolve tenant de token validado: anonimo (resolver vazio) nao conta.
+	middleware := RateLimit(RateLimitOptions{
+		Limit:           100,
+		Window:          time.Minute,
+		AccountLimit:    1,
+		AccountResolver: func(*http.Request) string { return "" },
+	})
+	handler := middleware(newOkHandler())
+
+	for index := 0; index < 5; index++ {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
+		req.RemoteAddr = "203.0.113.5:1"
+		req.Header.Set("X-Account-Id", "vitima")
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 		if rr.Code != http.StatusOK {
-			t.Fatalf("access_token %q deveria ter bucket proprio; got %d", token, rr.Code)
+			t.Fatalf("req %d anonima nao deve gastar cota de tenant; got %d", index+1, rr.Code)
 		}
-	}
-}
-
-func TestRateLimit_XForwardedForFirstHopWins(t *testing.T) {
-	middleware := RateLimit(RateLimitOptions{Limit: 1, Window: time.Minute})
-	handler := middleware(newOkHandler())
-
-	// Primeira req com X-Forwarded-For="9.9.9.9".
-	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
-	req1.RemoteAddr = "proxy:0"
-	req1.Header.Set("X-Forwarded-For", "9.9.9.9, 10.0.0.1")
-	rr1 := httptest.NewRecorder()
-	handler.ServeHTTP(rr1, req1)
-	if rr1.Code != http.StatusOK {
-		t.Fatalf("preparacao: deveria passar; got %d", rr1.Code)
-	}
-
-	// Mesma IP do header, mesmo bucket — bloqueia.
-	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
-	req2.RemoteAddr = "outroproxy:0"
-	req2.Header.Set("X-Forwarded-For", "9.9.9.9, outroProxy")
-	rr2 := httptest.NewRecorder()
-	handler.ServeHTTP(rr2, req2)
-	if rr2.Code != http.StatusTooManyRequests {
-		t.Errorf("mesma IP via X-Forwarded-For deve compartilhar bucket; got %d", rr2.Code)
 	}
 }
 

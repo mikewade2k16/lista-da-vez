@@ -78,7 +78,8 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 // Erros retornados:
 //   - 401 unauthorized: token ausente ou invalido.
 //   - 400 missing_account_id: header X-Account-Id ausente.
-//   - 403 account_not_member: user nao e membro ativo da account.
+//   - 404 not_found: user nao e membro ativo da account (nao confirma que o
+//     UUID existe; o 403 fica so para falta de permissao dentro da propria conta).
 //   - 500 internal_error: falha de banco ou checker nao configurado.
 func (middleware *Middleware) RequireAuthWithAccount(next http.Handler) http.Handler {
 	return middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +106,7 @@ func (middleware *Middleware) RequireAuthWithAccount(next http.Handler) http.Han
 			return
 		}
 		if !member {
-			httpapi.WriteError(w, r, http.StatusForbidden, "account_not_member", "Sem acesso a esta account.")
+			httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Recurso nao encontrado.")
 			return
 		}
 

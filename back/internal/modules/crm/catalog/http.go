@@ -3,7 +3,6 @@ package catalog
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -22,6 +21,9 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 		input, err := parseSearchProductsInput(r)
 		if err != nil {
+			if httpapi.WriteInvalidQuery(w, r, err) {
+				return
+			}
 			writeServiceError(w, r, err)
 			return
 		}
@@ -39,25 +41,21 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 func parseSearchProductsInput(r *http.Request) (SearchProductsInput, error) {
 	query := r.URL.Query()
 
-	limit, err := parseOptionalInt(query.Get("limit"))
+	limit, err := httpapi.QueryInt(r, "limit", 0, 200)
+	if err != nil {
+		return SearchProductsInput{}, err
+	}
+	storeID, err := httpapi.QueryUUID(r, "storeId")
 	if err != nil {
 		return SearchProductsInput{}, err
 	}
 
 	return SearchProductsInput{
-		StoreID:   strings.TrimSpace(query.Get("storeId")),
+		StoreID:   storeID,
 		SourceKey: ProductSourceKey(strings.TrimSpace(query.Get("sourceKey"))),
 		Term:      strings.TrimSpace(stringsx.FirstNonEmpty(query.Get("term"), query.Get("search"))),
 		Limit:     limit,
 	}, nil
-}
-
-func parseOptionalInt(raw string) (int, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return 0, nil
-	}
-	return strconv.Atoi(trimmed)
 }
 
 func accessContextFromPrincipal(principal auth.Principal) AccessContext {

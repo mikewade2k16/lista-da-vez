@@ -6,6 +6,7 @@ import { useAuthStore } from '~/stores/auth'
 // recarregar ao mudar parametros e cancelar a requisicao anterior.
 
 const BASE = '/v1/admin/observability'
+const OBS_REQUEST_TIMEOUT_MS = 20_000
 
 type Params = Record<string, string | number | undefined>
 
@@ -48,6 +49,13 @@ export function useObsQuery<T>(path: string, params: () => Params = () => ({})) 
     controller?.abort()
     controller = new AbortController()
     const current = controller
+    // Limite de tempo: sem ele, uma requisicao presa (proxy/dev server reiniciando)
+    // deixava a aba em "Carregando..." para sempre.
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      current.abort()
+    }, OBS_REQUEST_TIMEOUT_MS)
     loading.value = true
     error.value = ''
     try {
@@ -55,12 +63,17 @@ export function useObsQuery<T>(path: string, params: () => Params = () => ({})) 
       if (current.signal.aborted) return
       data.value = result
     } catch (cause) {
+      if (timedOut) {
+        error.value = 'O servidor demorou demais para responder. Tente de novo.'
+        return
+      }
       if (current.signal.aborted) return
       error.value = getApiErrorMessage(
         cause,
         'Nao foi possivel carregar os dados de observabilidade.',
       )
     } finally {
+      clearTimeout(timeout)
       if (controller === current) loading.value = false
     }
   }

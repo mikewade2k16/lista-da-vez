@@ -81,3 +81,7 @@ Direcao arquitetural:
 
 - alinhar o service ao mesmo contrato `AccessContext + StoreScopeProvider` do modulo `operations`
 - manter a leitura analitica desacoplada do modulo concreto de auth do projeto host
+
+## Validacao de entrada (2026-11-23)
+
+- `storeId`/`tenantId` de `/v1/analytics/ranking`, `/data` e `/intelligence` sao validados como UUID na borda (`httpapi.QueryUUIDs`); invalido responde 400 `validation_error`.

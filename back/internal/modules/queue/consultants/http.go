@@ -58,7 +58,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		consultants, err := service.ListByStore(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("storeId")))
+		storeID, err := httpapi.QueryUUID(r, "storeId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
+		consultants, err := service.ListByStore(r.Context(), principal, storeID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -76,7 +81,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		members, err := service.ListStoreStaff(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("storeId")))
+		storeID, err := httpapi.QueryUUID(r, "storeId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
+		members, err := service.ListStoreStaff(r.Context(), principal, storeID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -94,7 +104,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		consultants, err := service.ListOrphans(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("tenantId")))
+		tenantID, err := httpapi.QueryUUID(r, "tenantId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
+		consultants, err := service.ListOrphans(r.Context(), principal, tenantID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

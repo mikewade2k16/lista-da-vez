@@ -37,8 +37,20 @@ func NewWorker(repository Repository, storage AudioStorage, transcriber Transcri
 }
 
 func (worker *Worker) Run(ctx context.Context) {
-	go worker.runLive(ctx)
+	// runLive roda numa goroutine propria, mas Run so volta quando as duas terminam
+	// (shutdown espera o grupo) e um panic nela e logado em vez de derrubar a API.
+	liveDone := make(chan struct{})
+	go func() {
+		defer close(liveDone)
+		defer func() {
+			if rec := recover(); rec != nil {
+				worker.logger.Error("attendance_live_transcription_worker_panic", "panic", fmt.Sprint(rec))
+			}
+		}()
+		worker.runLive(ctx)
+	}()
 	worker.runFinal(ctx)
+	<-liveDone
 }
 
 func (worker *Worker) runFinal(ctx context.Context) {

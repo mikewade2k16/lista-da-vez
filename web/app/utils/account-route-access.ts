@@ -1,7 +1,6 @@
-export interface ModulePathGuard {
-  prefix: string
-  moduleId: string
-}
+// Tipo unico em module-path-guards: declarar de novo aqui duplicava o auto-import
+// do Nuxt (aviso "Duplicated imports" a cada regeneracao no dev).
+import type { ModulePathGuard } from './module-path-guards'
 
 // Politicas novas mantidas em um modulo puro para que o contrato menu x URL
 // direta tenha cobertura sem carregar o runtime Nuxt.

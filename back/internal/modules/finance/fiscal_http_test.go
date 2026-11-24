@@ -39,7 +39,8 @@ func TestFiscalHTTPUsesActorAndRejectsInjectedIdentity(t *testing.T) {
 		want                        int
 	}{
 		{"GET", "/v1/finance/fiscal/profile", "", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 200},
-		{"GET", "/v1/finance/fiscal/profile", "", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 403},
+		// Conta da qual o usuario nao e membro: 404 (achado B-01, nao confirma que existe).
+		{"GET", "/v1/finance/fiscal/profile", "", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 404},
 		{"PUT", "/v1/finance/fiscal/profile", `{"userId":"someone-else","profile":{}}`, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 400},
 		{"PUT", "/v1/finance/fiscal/profile", `{"profile":{"password":"secret"}}`, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 400},
 		{"PUT", "/v1/finance/fiscal/profile", `{"profile":{}} {"profile":{}}`, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 400},

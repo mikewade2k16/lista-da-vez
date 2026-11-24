@@ -19,6 +19,7 @@ type Config struct {
 	HTTPAddr                            string
 	HTTPRateLimitRequests               int
 	HTTPRateLimitWindow                 time.Duration
+	TrustedProxies                      []string
 	WebAppURL                           string
 	UploadsDir                          string
 	PrivateFilesDir                     string
@@ -96,11 +97,15 @@ type Config struct {
 func Load() Config {
 	env := getEnv("APP_ENV", "development")
 	return Config{
-		AppName:                             getEnv("APP_NAME", "omni-api"),
-		Env:                                 env,
-		HTTPAddr:                            getEnv("APP_ADDR", ":8080"),
-		HTTPRateLimitRequests:               getEnvInt("HTTP_RATE_LIMIT_REQUESTS", defaultHTTPRateLimitRequests(env)),
-		HTTPRateLimitWindow:                 getEnvDuration("HTTP_RATE_LIMIT_WINDOW", time.Minute),
+		AppName:               getEnv("APP_NAME", "omni-api"),
+		Env:                   env,
+		HTTPAddr:              getEnv("APP_ADDR", ":8080"),
+		HTTPRateLimitRequests: getEnvInt("HTTP_RATE_LIMIT_REQUESTS", defaultHTTPRateLimitRequests(env)),
+		HTTPRateLimitWindow:   getEnvDuration("HTTP_RATE_LIMIT_WINDOW", time.Minute),
+		// CIDRs/IPs dos proxies cujo X-Forwarded-For/X-Real-IP sao confiaveis. Vazio = padrao
+		// (httpapi.DefaultTrustedProxies: loopback e redes privadas, ex.: Caddy na rede Docker);
+		// "none" = nenhum proxy confiavel (sempre RemoteAddr).
+		TrustedProxies:                      getEnvCSV("TRUSTED_PROXIES", nil),
 		WebAppURL:                           getEnv("WEB_APP_URL", "http://localhost:3003"),
 		UploadsDir:                          getEnv("UPLOADS_DIR", "data/uploads"),
 		PrivateFilesDir:                     getEnv("PRIVATE_FILES_DIR", ""),

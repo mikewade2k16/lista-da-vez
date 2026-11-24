@@ -127,3 +127,7 @@ Regras:
 - toda nova fonte deve entrar por adapter pequeno e testavel
 - a Operacao deve depender do contrato deste modulo, nao do schema ERP
 - no source `erp_current`, o codigo canonico da Operacao deve ser `sku`
+
+## Validacao de entrada (2026-11-23)
+
+- `GET /v1/catalog/products/search` valida `storeId` (UUID) e `limit` (0..200) via `httpapi.Query*`; invalido responde 400 `validation_error`, nunca 500.

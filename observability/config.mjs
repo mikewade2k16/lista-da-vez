@@ -130,7 +130,7 @@ export const config = {
 
   health: {
     govulncheck: env.OBS_GOVULNCHECK !== "0",
-    govulncheckImage: "golang:1.26.5-bookworm",
+    govulncheckImage: "golang:1.26.11-bookworm",
     externals: [
       {
         name: "whisper",

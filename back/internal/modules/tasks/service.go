@@ -10,6 +10,7 @@ import (
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/htmlsanitize"
 	platformmodules "github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
 )
 
@@ -708,7 +709,8 @@ func (service *Service) AddComment(ctx context.Context, access AccessContext, in
 		return Comment{}, ErrForbidden
 	}
 	input.TaskID = strings.TrimSpace(input.TaskID)
-	input.BodyHTML = strings.TrimSpace(input.BodyHTML)
+	// Comentario e renderizado com v-html no front: sanitiza antes de gravar (C-01).
+	input.BodyHTML = strings.TrimSpace(htmlsanitize.RichText(strings.TrimSpace(input.BodyHTML)))
 	if input.TaskID == "" || input.BodyHTML == "" {
 		return Comment{}, ErrValidation
 	}
@@ -730,6 +732,7 @@ func (service *Service) AddComment(ctx context.Context, access AccessContext, in
 	}
 	service.audit(ctx, access, "task.comment_added", "task", input.TaskID, nil, comment)
 	service.publisher.PublishTaskEvent(ctx, TaskEvent{Type: "task.comment_added", AccountID: access.AccountID, BoardID: task.BoardID, TaskID: task.ID, Version: task.Version})
+	comment.BodyHTML = htmlsanitize.RichText(comment.BodyHTML)
 	return comment, nil
 }
 
@@ -737,7 +740,15 @@ func (service *Service) ListComments(ctx context.Context, access AccessContext, 
 	if !access.Has(PermTasksView) {
 		return nil, ErrForbidden
 	}
-	return service.repository.ListComments(ctx, access, strings.TrimSpace(taskID))
+	comments, err := service.repository.ListComments(ctx, access, strings.TrimSpace(taskID))
+	if err != nil {
+		return nil, err
+	}
+	// Neutraliza o que ja estava gravado antes da sanitizacao na escrita (C-01).
+	for index := range comments {
+		comments[index].BodyHTML = htmlsanitize.RichText(comments[index].BodyHTML)
+	}
+	return comments, nil
 }
 
 func (service *Service) AddShare(ctx context.Context, access AccessContext, input AddShareInput) (Share, error) {

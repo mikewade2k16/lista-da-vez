@@ -80,6 +80,8 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 	// Gate SSO consumido pelo Caddy (forward_auth) para liberar n8n./waha. com o
 	// login do Omni. Publico no roteamento: a validacao (cookie + papel) e feita
 	// dentro do handler. Ver docs/automation/SSO_GATEWAY_PLAN.md.
+	guards := newAuthAttemptGuards()
+
 	mux.HandleFunc("GET /v1/auth/gateway/verify", handleGatewayVerify(service, gateway))
 
 	mux.HandleFunc("GET /v1/auth/roles", func(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +102,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Recuperacao de senha indisponivel.")
 			return
 		}
+
+		// Todo pedido conta (evita e-mail bombing e nao diferencia conta existente).
+		if guards.resetRequest.blocked(w, r, request.Email) {
+			return
+		}
+		guards.resetRequest.fail(r, request.Email)
 
 		if err := passwordResets.Request(r.Context(), PasswordResetRequestInput(request)); err != nil {
 			writePasswordResetError(w, r, err)
@@ -123,11 +131,17 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
+		if guards.resetConfirm.blocked(w, r, request.Email) {
+			return
+		}
+
 		user, err := passwordResets.Confirm(r.Context(), PasswordResetConfirmInput(request))
 		if err != nil {
+			guards.resetConfirm.fail(r, request.Email)
 			writePasswordResetError(w, r, err)
 			return
 		}
+		guards.resetConfirm.succeed(request.Email)
 
 		httpapi.WriteJSON(w, http.StatusOK, map[string]any{
 			"ok":   true,
@@ -142,8 +156,16 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
+		// Anti brute-force (A-01): bloqueia por e-mail e por IP antes de gastar bcrypt.
+		if guards.login.blocked(w, r, request.Email) {
+			return
+		}
+
 		result, err := service.Login(r.Context(), LoginInput(request))
 		if err != nil {
+			if errors.Is(err, ErrInvalidCredentials) || errors.Is(err, ErrUserInactive) || errors.Is(err, ErrOnboardingRequired) {
+				guards.login.fail(r, request.Email)
+			}
 			switch {
 			case errors.Is(err, ErrInvalidCredentials):
 				httpapi.WriteError(w, r, http.StatusUnauthorized, "invalid_credentials", "Email ou senha invalidos.")
@@ -164,6 +186,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
+		guards.login.succeed(request.Email)
 		SetGatewayCookie(w, gateway, result.Session.AccessToken, result.Session.ExpiresAt)
 		httpapi.WriteJSON(w, http.StatusOK, loginResponse{
 			User: result.User,
@@ -325,9 +348,13 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 	})))
 
 	mux.HandleFunc("GET /v1/auth/invitations/{token}", func(w http.ResponseWriter, r *http.Request) {
+		if blockedByIP(w, r, guards.invitation) {
+			return
+		}
 		token := r.PathValue("token")
 		result, err := invitations.Inspect(r.Context(), token)
 		if err != nil {
+			failOnInvitationNotFound(r, guards.invitation, err)
 			writeInvitationError(w, r, err)
 			return
 		}
@@ -342,8 +369,13 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
+		if blockedByIP(w, r, guards.invitation) {
+			return
+		}
+
 		result, err := invitations.Accept(r.Context(), InvitationAcceptInput(request))
 		if err != nil {
+			failOnInvitationNotFound(r, guards.invitation, err)
 			writeInvitationError(w, r, err)
 			return
 		}

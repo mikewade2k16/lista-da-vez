@@ -58,7 +58,7 @@ Gateados: `queue` (`/v1/operations,/v1/alerts,/v1/reports,/v1/analytics,/v1/feed
 
 ## PrincipalCache wiring (AC-01)
 
-- `principal_cache_wiring.go` — `wirePrincipalCache(cfg, logger, authService, accessService, usersService)` cria o `httpapi.PrincipalCache[auth.Principal]` quando `AUTH_PRINCIPAL_CACHE_TTL > 0` (default `30s`; `0s` retorna `nil` e loga `principal_cache_disabled`). Liga os setters de `auth`/`access`/`users` e dispara a goroutine de manutencao (`Cleanup()` a cada 60s + log `principal_cache_stats` a cada 5 min quando houve trafego).
+- `principal_cache_wiring.go` — `wirePrincipalCache(ctx, bg, cfg, logger, authService, accessService, usersService)` cria o `httpapi.PrincipalCache[auth.Principal]` quando `AUTH_PRINCIPAL_CACHE_TTL > 0` (default `30s`; `0s` retorna `nil` e loga `principal_cache_disabled`). Liga os setters de `auth`/`access`/`users` e dispara a goroutine de manutencao (`Cleanup()` a cada 60s + log `principal_cache_stats` a cada 5 min quando houve trafego).
 - `app.go` (2 pontos): chama `wirePrincipalCache` logo apos criar `usersService`; injeta o cache retornado em `modules.Dependencies{PrincipalCache: principalCache}` (nil-safe — `core` faz nil-check no Build). Invalidacao e direta/sincrona, NAO via bus. Fora do bloco `CoreV2Enabled` o cache ja funciona para auth/access/users; os setters do `core` so ligam quando o Registry roda.
 
 ## Referências
@@ -175,3 +175,26 @@ Frontend reutiliza AccountingEvidence e cartões/mensagens do Crow; mostra títu
 trecho, fonte HTTPS e versão. Roteiro manual em docs/finance/ROTEIRO_TESTES.md.
 Testes PostgreSQL sintéticos, corpus público inicial e regressões de conversa
 passaram. Comparação visual, microfone real e aceite do usuário não executados.
+
+## /uploads/ (A-02, 2026-11-23)
+
+`uploads_handler.go` (`newUploadsHandler`) serve `GET /uploads/*` sem listagem:
+diretório (`/uploads/`, `/uploads/avatars/`) e arquivo oculto (`.x`) respondem
+404; arquivos continuam servidos como antes (o front usa `<img src>` sem header
+de auth); traversal segue barrado (`http.Dir` + `path.Clean`). Rotas mais
+específicas registradas por módulos (ex.: `tasks` em
+`/uploads/tasks/{account}/{id}/{file}`) têm precedência no mux. Mapa por pasta:
+`avatars/` (público, `<userID>-<rand48bits>`), `site/products/<account>/` e
+`cardapio/<account>/` (públicos por natureza: vitrine), `bio/<account>/` (páginas
+públicas), `calendar/<account>/` e `tasks/` (via módulo storage/handler próprio),
+`feedback/` (SENSÍVEL: prints de telas internas; segue público por URL
+`<owner>-<rand48bits>`, consumida por `<img>/<a href>` em
+`FeedbackDetailPanel.vue`/`UserFeedbackWorkspace.vue`). PENDENTE: tornar
+`feedback/` autenticado exige o front buscar a imagem via `fetch` com Bearer e
+`blob:` URL (2 componentes + store) e o back validar autoria/conta da mensagem.
+
+Background/shutdown (A-03): `BuildHTTPHandler(ctx, bg, ...)` recebe o contexto raiz dos
+workers e o `background.Group`; workers (transcrição, alertas operacionais, limpeza de
+feedback, scheduler ERP, manutenção do cache de principals) usam `bg.Go`/`bg.Loop` e os
+`Handle.Close` dos módulos são registrados com `bg.AddCloser`. Não usar
+`context.Background()` em goroutine nova aqui.

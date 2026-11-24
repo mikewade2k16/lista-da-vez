@@ -189,3 +189,4 @@ Filtro server-side (base toda, com paginacao), so para `order`/`ordercanceled`. 
   CPF, e-mail, telefone, endereco de rua nem payload bruto.
 - Customer Intelligence nao pode consultar SQL/tabelas de ERP diretamente.
   Falha ou evidencia ausente degrada somente a fonte e nao bloqueia o chat.
+- A CTE `known_orders` de `listCRMDominantEmployeeStoreKeys` (usada por `operations/snapshot` e `erp/crm`) repete `order_id <> ''` e `store_id_raw <> ''` crus ao lado dos filtros com `trim`; isso casa com o indice parcial `erp_order_raw_store_id_raw_idx` e evita seq scan de `erp_order_raw` (medido: ~1,7-3 s para ~0,2-0,4 s). Nao remover.

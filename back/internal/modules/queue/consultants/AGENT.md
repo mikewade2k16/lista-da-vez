@@ -142,3 +142,7 @@ Retorna as **lojas afetadas** (origem + destino numa troca) para o `users` publi
 ## Seguranca (2026-06-30)
 
 - `Repository.CanAccessTenant(principal, tenantID)` recheca a membership real no banco (`core.account_users` OU `core.organization_users`), org-aware (platform_admin acessa qualquer account ativa). `ListOrphans` e `Update` (consultor orfao) usam isso em vez de confiar no `principal.TenantID` — fecha vazamento cross-tenant e a janela pos-revogacao (token ainda valido apos o usuario sair da account nao pode ler/escrever). Espelha `queue/settings` e `crm/erp`.
+
+## Validacao de entrada (2026-11-23)
+
+- `storeId`/`tenantId` das listagens (`/v1/consultants`, `/v1/store-staff`, `/v1/consultants/orphans`) sao validados como UUID na borda (`httpapi.QueryUUID`); invalido responde 400 `validation_error`, nao 500.

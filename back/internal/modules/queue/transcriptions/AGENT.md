@@ -106,3 +106,6 @@ consulta e entrega privada do audio ligado a um atendimento.
 - O workflow monta `requestBody` sem `temperature` para modelos OpenAI `gpt-5*`,
   pois esses modelos rejeitam valores diferentes do default. Os demais modelos
   continuam recebendo a temperatura configurada.
+
+`Worker.Run` só volta quando `runLive` e `runFinal` terminam (shutdown espera) e panic em
+`runLive` é logado; ambos são iniciados via `background.Group` em `platform/app`.

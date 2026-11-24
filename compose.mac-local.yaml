@@ -1,6 +1,7 @@
 # Compatibilidade local com Apple Silicon.
 services:
   postgres:
+    cpu_shares: 2048
     ports: !override
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
   # O front publico fica em outro repositorio; subir explicitamente quando clonado.
@@ -30,6 +31,7 @@ services:
       - "127.0.0.1:${META_ADS_ASSISTANT_PORT:-8765}:8765"
   api:
     ports: !reset []
+    cpu_shares: 2048
     build:
       dockerfile: ../compose.mac-api.Dockerfile
     # A copia de producao nao executa seeds demo nem bootstrap ERP local.
@@ -57,12 +59,17 @@ services:
       - ./:/host-mac:ro
   web:
     ports: !reset []
+    # Prioridade de CPU no Docker Desktop: com o Mac carregado (builds Go, rebuild
+    # de imagem, runner/Chrome), o nuxt dev precisa continuar servindo modulos; sem
+    # isso ele ficava sem CPU, o proxy respondia 502 e as paginas travavam.
+    cpu_shares: 4096
   local-access:
     image: omni-web
     pull_policy: never
     entrypoint: ["node", "/local-access-proxy.cjs"]
     restart: unless-stopped
     mem_limit: 128m
+    cpu_shares: 2048
     ports:
       - "127.0.0.1:3003:3003"
       - "127.0.0.1:8080:8080"

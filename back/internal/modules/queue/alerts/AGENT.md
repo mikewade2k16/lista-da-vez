@@ -652,3 +652,7 @@ Quando um sinal operacional (de qualquer trigger) chega ao alerts:
 5. Retorna `{ appliedCount: N }`
 
 Usado para feedback imediato após salvar/editar uma regra; não substitui o scheduler de 15s que continua como fonte primária.
+
+## Validacao de entrada (2026-11-23)
+
+- `tenantId`/`storeId` de `/v1/alerts`, `/v1/alerts/overview` e `/v1/alerts/rules` e os `{id}` de rota (alertas e regras) sao validados como UUID na borda (`httpapi.QueryUUID`, `pathUUID`); invalido responde 400 `validation_error` em vez de 500 por `invalid input syntax for type uuid`.

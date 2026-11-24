@@ -235,7 +235,7 @@ Observacao sobre entrega de email:
 - toolchain Go: `1.26.5`
 - PostgreSQL alvo: `16`
 - imagem Docker do banco: `postgres:16-alpine`
-- imagem Docker do backend: `golang:1.26.5-bookworm`
+- imagem Docker do backend: `golang:1.26.11-bookworm`
 
 ## Fluxo oficial com Docker
 

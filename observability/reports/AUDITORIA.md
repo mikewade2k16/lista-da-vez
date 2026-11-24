@@ -49,6 +49,8 @@ Formato: **ID — título** · `arquivo:linha` · Problema · Risco · Correçã
 - **Risco:** qualquer membro com `tasks.comment` envia via API `<img src=x onerror=...>`; o script roda no navegador de colegas e de admins que abrirem a task, lê o cookie `ldv_access_token` (não é HttpOnly) e assume a conta. Contra um `platform_admin` isso é comprometimento cross-tenant.
 - **Correção:** (1) sanitizar no servidor com allowlist (ex.: `bluemonday` com `<p><br><a><strong><em><ul><ol><li>` e `rel="noopener nofollow"`) em `AddComment` e na edição; (2) sanitizar também no cliente antes do `v-html` (DOMPurify) por defesa em profundidade; (3) sanear os registros já gravados (migration de limpeza ou re-sanitização na leitura); (4) cookie de sessão HttpOnly/Secure (ver M-08); (5) adicionar CSP no front (hoje o CSP restritivo só existe na API, `httpapi/security_headers.go:18`).
 
+- **Status: CORRIGIDO em 2026-11-23 (itens 1 e 3).** `tasks.Service.AddComment` sanitiza `bodyHtml` com `htmlsanitize.RichText` (bluemonday) antes de gravar e `ListComments` re-sanitiza na leitura, cobrindo linhas antigas; testes em `tasks/comment_sanitize_test.go`. Varredura de `v-html`: único outro uso (chat omnichannel) escapa o texto antes de montar o HTML. Pendentes: DOMPurify no cliente (item 2), cookie HttpOnly e CSP no front (itens 4 e 5, ver M-08).
+
 ### 3.2 Alto
 
 #### A-01 — Rate limit global contornável, usável como DoS por tenant, e sem limite específico de login
@@ -58,7 +60,11 @@ Formato: **ID — título** · `arquivo:linha` · Problema · Risco · Correçã
 - **Risco:** brute-force de senha/código de reset sem freio efetivo; negação de serviço seletiva contra um tenant; crescimento de memória.
 - **Correção:** rodar a cota por tenant/usuário **depois** da autenticação (ou validar assinatura do token antes de usá-lo como chave); usar o último hop (ou `trusted proxies` configurável) em todo lugar; limiter específico e persistente (por e-mail + IP) em `/v1/auth/login` e `/v1/auth/password-reset/*` com backoff; limite no tamanho do mapa de buckets.
 
+- **Status: CORRIGIDO em 2026-11-23.** (1) `httpapi/attempt_limiter.go` + `auth/attempt_guards.go`: login por e-mail normalizado (5 falhas/15 min) e por IP (20/15 min), bloqueio de 1 min dobrando a cada falha extra até 15 min, 429 genérico com `Retry-After` idêntico para e-mail existente ou não; sucesso zera só o e-mail; mesmo tratamento em `password-reset/request` (conta todo pedido), `password-reset/confirm` e convites (IP, token inexistente). (2) `httpapi/client_ip.go`: `X-Forwarded-For`/`X-Real-IP` só valem se a conexão TCP vier de proxy confiável (`TRUSTED_PROXIES`, padrão loopback e redes privadas), lendo o XFF da direita para a esquerda. (3) Rate limit global chaveia por usuário/tenant do token com **assinatura validada** (`Service.RateLimitIdentity`, sem banco); token inválido cai para IP; `X-Account-Id` deixou de ser usado, então requisição anônima não consome cota de tenant; teto de 100 mil buckets. (4) `Service.Login` roda o bcrypt contra hash fictício quando o e-mail não existe (igualar tempo). Testes: `httpapi/{client_ip,attempt_limiter,rate_limit}_test.go`, `auth/login_attempts_test.go`. Pendentes: estado em memória (reinicia com a API e não é compartilhado entre instâncias); o bloqueio por e-mail permite que terceiro trave temporariamente a conta-alvo (até 15 min); tempo de `password-reset/request` ainda difere entre e-mail existente e inexistente.
+
 #### A-02 — `/uploads/` público, sem autenticação e com listagem de diretório
+
+- **Status 2026-11-23 (parcial):** listagem desligada (diretório/arquivo oculto -> 404, `platform/app/uploads_handler.go`, testes de arquivo servido e traversal). `feedback/` (anexos sensíveis) segue acessível por URL com sufixo aleatório de 48 bits: autenticar exige o front buscar a imagem com Bearer (blob URL) em `FeedbackDetailPanel.vue`, `UserFeedbackWorkspace.vue` e `stores/feedback.ts` + checagem de autoria/conta no back; pendente.
 
 - **Local:** `back/internal/platform/app/app.go:304-305` (`http.FileServer(http.Dir(cfg.UploadsDir))` em `GET /uploads/`); nomes: `auth/avatar_storage.go:47` (`<userID>-<rand>`), `queue/feedback/image_storage.go:67` (`<nome>-<rand>`).
 - **Problema:** `http.FileServer` lista diretórios sem `index.html` (`/uploads/avatars/`, `/uploads/feedback/`) e serve qualquer arquivo sem checar sessão/tenant.
@@ -71,6 +77,7 @@ Formato: **ID — título** · `arquivo:linha` · Problema · Risco · Correçã
 - **Problema:** `SIGTERM` (deploy/`docker stop`) mata o processo no meio de requisições e de jobs (OCR, ERP sync, envio); um `panic` em qualquer goroutine de background derruba o processo inteiro (o `Recover` HTTP não cobre). O contexto `Background()` impede cancelar workers e fechar o pool de forma ordenada (`defer pool.Close()` em `main.go:39` nunca roda porque o programa termina por `os.Exit`/sinal).
 - **Risco:** requisições 5xx a cada deploy; sync ERP e jobs interrompidos no meio (há `RecoverOrphanedSyncRuns`, `app.go:241`, que mascara o problema); queda total por um panic num worker.
 - **Correção:** `ctx, stop := signal.NotifyContext(...)`; passar `ctx` aos workers; `httpServer.Shutdown(ctx)` com timeout (~25 s) e depois `wg.Wait()` dos workers; helper `safego.Go(ctx, name, fn)` com `recover` + log + métrica para todos os `go func`.
+- **Status 2026-11-23 (corrigido nos pontos centrais):** `main.go` usa `signal.NotifyContext` (SIGTERM/SIGINT), `server.Serve` faz `Shutdown` com `SHUTDOWN_TIMEOUT` (padrão 20 s) e depois cancela o contexto raiz dos workers, roda os `Close` dos módulos e espera o `background.Group`, para `obs.Stop` e fecha o pool por último (logs `shutdown_started`/`shutdown_completed`). `platform/background` (`Go`/`Loop` com recover, stack no log e reinício com backoff) cobre transcrição (final e análise), monitor de alertas operacionais, limpeza de anexos de feedback, scheduler ERP, manutenção do cache de principals e alertas de observabilidade (por contexto). `platform/jobs` recupera panic por job (vira retry/dead pela política) e por ciclo, não pega job novo após cancelar e deixa o job em andamento terminar. Pendentes: goroutines internas de módulos que ainda não usam o grupo (calendar `ai_dispatch`, `storage` `staged_delivery`/`analytics_client`, `cardapio` retenção/backfill, `site/image_cache`, `bi`, `httpapi/rate_limit` cleanup, `realtime/presence`) — param pelos `Close` dos módulos ou morrem com o processo; sem métrica de panic ainda (só log `background_panic`).
 
 #### A-04 — Timeouts do servidor incompatíveis com operações síncronas longas
 
@@ -206,6 +213,8 @@ Formato: **ID — título** · `arquivo:linha` · Problema · Risco · Correçã
 ### 3.4 Baixo
 
 #### B-01 — `403 account_not_member` em vez de 404
+
+- **Status 2026-11-23: corrigido.** `RequireAuthWithAccount` agora responde `404 not_found` para conta alheia; testes em `auth/middleware_account_test.go` e `finance/http_access_test.go`.
 
 - `back/internal/modules/auth/middleware.go:108`. A regra da casa é 404 fora do escopo; 403 confirma que o UUID de account existe. Risco baixo (UUID não adivinhável). Trocar por 404 ou resposta neutra.
 
@@ -367,9 +376,9 @@ Correções feitas a partir desta execução:
 | #   | melhoria                                                                                                                                            | impacto | esforço | base         |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- | ------------ |
 | 1   | Sanitizar `bodyHtml` de comentários no servidor e no `v-html`; token em cookie HttpOnly                                                             | Crítico | Baixo   | C-01         |
-| 2   | Zerar as 29 vulnerabilidades Go alcançáveis; `govulncheck` bloqueante no CI                                                                         | Alto    | Baixo   | medido       |
-| 3   | Zerar as 6 críticas e 16 altas do `npm audit` do web                                                                                                | Alto    | Médio   | medido, A-06 |
-| 4   | Reescrever a CTE `known_orders` (`operations/snapshot` 1,2–2,5 s, `erp/crm` até 1 s): índice em `order_id`/`store_id_raw` ou agregado materializado | Alto    | Médio   | medido       |
+| 2   | Zerar as 29 vulnerabilidades Go alcançáveis; `govulncheck` bloqueante no CI                                                                         | Alto    | Baixo   | medido. 2026-11-23: 29 de 29 corrigidas (re-medido: 22 alcançáveis na data, 0 após toolchain go1.26.11 + x/net 0.60.0, x/crypto 0.57.0, x/text 0.42.0, aws s3 1.97.3); sem pendências; `govulncheck` bloqueante em `ci-race.yml` |
+| 3   | Zerar as 6 críticas e 16 altas do `npm audit` do web (feito em 2026-11-23: 6 críticas e 16 altas para 0 críticas e 0 altas; restam 10 moderadas e 1 baixa que exigem major de vue-tsc/quill ou dependem do Nitro/Nuxt; nuxt 4.6.4, @nuxt/ui 4.13.1, Tiptap 3.35)                                                                                                | Alto    | Médio   | medido, A-06 |
+| 4   | Reescrever a CTE `known_orders` (`operations/snapshot` 1,2–2,5 s, `erp/crm` até 1 s): índice em `order_id`/`store_id_raw` ou agregado materializado | Alto    | Médio   | medido Feito: predicados crus no filtro da CTE usam o índice parcial existente (sem migration); 1,7–3,0 s para 0,19–0,42 s (EXPLAIN ANALYZE, tenant/loja reais, 777 mil linhas), resultado idêntico |
 | 5   | Proteger `/uploads/` (sem listagem; anexos autenticados e escopados)                                                                                | Alto    | Baixo   | A-02         |
 | 6   | Rate limit por identidade autenticada e limiter de login                                                                                            | Alto    | Médio   | A-01         |
 | 7   | `/tasks`: medir no build de produção; se o INP > 200 ms e o LCP > 2,5 s se confirmarem, virtualizar o quadro e adiar o carregamento dos vídeos      | Médio   | Médio   | medido (dev) |

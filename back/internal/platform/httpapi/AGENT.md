@@ -98,11 +98,26 @@ Padrão atual: 60 req/min por identidade + **300 req/min por tenant** (P1·11).
 Configurável via env (`HTTPRateLimitRequests`/`HTTPRateLimitWindow`). Aplicado
 **antes** do logging para que 429 também apareça nos logs.
 
-`RateLimitOptions.AccountResolver` extrai `X-Account-Id` do header e aplica uma
-segunda cota de `AccountLimit` (padrão `Limit×5`) por account. Impede
-noisy-neighbor: um tenant com muitos usuários não degrada vizinhos. As duas cotas
-(user + account) compartilham a mesma `Window`; qualquer estouro retorna 429.
-Testes: `rate_limit_test.go` — `TestRateLimit_AccountQuota*`.
+Identidade do bucket (A-01): usuário do token com assinatura **validada** (`Resolver`, injetado em
+`platform/app`; `auth.Service.RateLimitIdentity`, sem banco); sem token válido, o IP de origem
+(`ClientIP`). Token inválido nunca vira chave. A segunda cota (`AccountResolver`, padrão
+`Limit×5` por tenant, mesma `Window`) usa o `TenantID` do **token validado**, nunca `X-Account-Id`:
+requisição anônima não consome cota de tenant. Qualquer estouro retorna 429. Limite padrão por
+identidade e por tenant mantidos (env `HTTP_RATE_LIMIT_REQUESTS`/`HTTP_RATE_LIMIT_WINDOW`). Mapa de
+buckets limitado a 100 mil entradas.
+
+`client_ip.go`: `ClientIP(r)` só honra `X-Forwarded-For`/`X-Real-IP` se `RemoteAddr` estiver em
+`TRUSTED_PROXIES` (CIDRs/IPs separados por vírgula; vazio = `DefaultTrustedProxies`: loopback e redes
+privadas, ou seja, o Caddy na rede Docker, que envia `X-Real-IP {remote_host}` e anexa o IP ao XFF;
+`none` = nenhum). O XFF é lido da direita para a esquerda, pulando proxies confiáveis. Configurado no
+boot por `platform/app/trusted_proxies.go`. Atenção: se a porta da API for exposta direto na internet
+sem proxy, a origem não é privada e o XFF é ignorado (correto); se um proxy confiável não for
+privado, listá-lo em `TRUSTED_PROXIES`.
+
+`attempt_limiter.go`: `AttemptLimiter` (falhas por chave, bloqueio progressivo, limpeza preguiçosa,
+teto de entradas) usado pelo `auth` em login/reset/convite. Política em `auth/attempt_guards.go`
+(e-mail 5 falhas/15 min, IP 20/15 min, bloqueio 1 min dobrando até 15 min). Testes:
+`rate_limit_test.go`, `client_ip_test.go`, `attempt_limiter_test.go`.
 
 ## PrincipalCache (AC-01)
 
@@ -123,3 +138,10 @@ Testes: `rate_limit_test.go` — `TestRateLimit_AccountQuota*`.
 - [docs/ROADMAP.md → "Estado real em 2026-05-28"](../../../../docs/ROADMAP.md)
 - [docs/MULTITENANT_COMPLETION_PLAN.md](../../../../docs/MULTITENANT_COMPLETION_PLAN.md)
 - [docs/CONTRACT_FREEZE.md](../../../../docs/CONTRACT_FREEZE.md)
+
+## Validacao de query (query.go)
+
+- `QueryUUID`, `QueryUUIDs` e `QueryInt` validam parametros opcionais da query na borda; vazio retorna zero value sem erro.
+- `WriteInvalidQuery(w, r, err)` responde 400 `validation_error` com mensagem em portugues quando o erro vem desses helpers (`ErrInvalidQuery`) e retorna true.
+- `IsUUID` e o predicado reutilizavel para parametros de rota.
+- Todo handler que repassa `tenantId`/`storeId`/ids para SQL com `::uuid` deve validar aqui antes; UUID invalido nao pode virar 500 `internal_error`.

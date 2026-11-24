@@ -46,7 +46,7 @@ func TestFinanceRouteAuthorization(t *testing.T) {
 	}{
 		{"reader can read", "GET", "/v1/finance/config", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", []string{"finance.config.view"}, auth.RoleDirector, 200},
 		{"reader cannot write", "PUT", "/v1/finance/config", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", []string{"finance.config.view"}, auth.RoleDirector, 403},
-		{"forged account rejected", "GET", "/v1/finance/config", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", []string{"finance.config.view"}, auth.RoleDirector, 403},
+		{"forged account rejected (404, nao confirma existencia)", "GET", "/v1/finance/config", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", []string{"finance.config.view"}, auth.RoleDirector, 404},
 		{"missing account rejected", "GET", "/v1/finance/config", "", []string{"finance.config.view"}, auth.RoleDirector, 400},
 		{"empty permissions rejected", "GET", "/v1/finance/config", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", nil, auth.RoleDirector, 403},
 		{"owner preserves access", "GET", "/v1/finance/config", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", []string{"core.account.manage"}, auth.RoleOwner, 200},

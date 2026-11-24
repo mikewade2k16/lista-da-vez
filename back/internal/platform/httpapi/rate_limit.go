@@ -1,9 +1,6 @@
 package httpapi
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,8 +9,7 @@ import (
 )
 
 // IdentityResolver extrai um identificador estavel do request para o bucket de rate limit.
-// Quando retorna string vazia, o middleware tenta identificar o bearer token antes de cair
-// para IP. Caller injeta a funcao para evitar import cycle com o pacote `auth` (httpapi nao
+// Quando retorna string vazia, o middleware cai para o IP de origem confiavel (ClientIP). Caller injeta a funcao para evitar import cycle com o pacote `auth` (httpapi nao
 // pode importar auth, pois auth ja importa httpapi para escrever erros).
 type IdentityResolver func(r *http.Request) string
 
@@ -73,6 +69,9 @@ func (store *rateLimiterStore) allow(identity string, options RateLimitOptions, 
 
 	bucket, ok := store.buckets[identity]
 	if !ok || now.After(bucket.resetAt) {
+		if !ok && len(store.buckets) >= maxRateLimitBuckets {
+			store.evictLocked(now)
+		}
 		bucket = &rateLimitBucket{resetAt: now.Add(options.Window)}
 		store.buckets[identity] = bucket
 	}
@@ -83,6 +82,27 @@ func (store *rateLimiterStore) allow(identity string, options RateLimitOptions, 
 		return false, time.Until(bucket.resetAt)
 	}
 	return true, 0
+}
+
+// maxRateLimitBuckets limita a memoria do store. Ao atingir o teto, buckets expirados saem; se
+// ainda assim estiver cheio, o mais antigo e' descartado.
+const maxRateLimitBuckets = 100000
+
+func (store *rateLimiterStore) evictLocked(now time.Time) {
+	var oldestKey string
+	var oldest time.Time
+	for key, bucket := range store.buckets {
+		if now.After(bucket.resetAt) {
+			delete(store.buckets, key)
+			continue
+		}
+		if oldestKey == "" || bucket.lastSeenAt.Before(oldest) {
+			oldestKey, oldest = key, bucket.lastSeenAt
+		}
+	}
+	if len(store.buckets) >= maxRateLimitBuckets && oldestKey != "" {
+		delete(store.buckets, oldestKey)
+	}
 }
 
 func (store *rateLimiterStore) cleanupLoop() {
@@ -101,13 +121,14 @@ func (store *rateLimiterStore) cleanupLoop() {
 	}
 }
 
-// RateLimit retorna um middleware que limita requisicoes por identidade. A identidade prefere
-// `principal.UserID` (quando autenticado via RequireAuth), depois bearer/access_token, e por
-// ultimo cai para o IP do client. Isso importa porque este middleware roda antes dos handlers
-// autenticados injetarem o principal no contexto.
+// RateLimit retorna um middleware que limita requisicoes por identidade. Requisicao autenticada
+// e' chaveada pelo usuario (Resolver, que deve validar a assinatura do token: este middleware
+// roda antes do RequireAuth); sem identidade valida, pelo IP de origem confiavel (ClientIP).
+// X-Forwarded-For so conta quando a conexao vem de proxy confiavel (TRUSTED_PROXIES).
 //
-// Quando AccountResolver estiver configurado, aplica uma segunda cota por account_id (tenant):
-// ambas as cotas precisam passar; qualquer estouro retorna 429.
+// Quando AccountResolver estiver configurado, aplica uma segunda cota por tenant. O resolver
+// deve devolver o tenant do TOKEN VALIDADO, nunca de header do client: requisicao anonima nao
+// consome a cota de nenhum tenant. Ambas as cotas precisam passar; estouro retorna 429.
 //
 // Quando o limite e' excedido, responde 429 com header `Retry-After` em segundos.
 func RateLimit(options RateLimitOptions) Middleware {
@@ -166,44 +187,14 @@ func writeRateLimitError(w http.ResponseWriter, r *http.Request, retryAfter time
 }
 
 func resolveRateLimitIdentity(r *http.Request, resolver IdentityResolver) string {
+	// Identidade autenticada: o Resolver deve devolver o usuario somente de token com assinatura
+	// valida. Token invalido/ausente NUNCA vira chave (o atacante trocaria o token a cada request
+	// para abrir buckets novos): cai para o IP de origem confiavel.
 	if resolver != nil {
 		if identity := strings.TrimSpace(resolver(r)); identity != "" {
 			return "user:" + identity
 		}
 	}
 
-	if token := bearerTokenFromRequest(r); token != "" {
-		return "token:" + shortTokenHash(token)
-	}
-
-	// Fallback: IP do client. Honra X-Forwarded-For quando presente (esperado em proxy/CDN);
-	// senao usa o RemoteAddr direto.
-	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
-	if forwarded != "" {
-		// X-Forwarded-For: "client, proxy1, proxy2" — primeiro IP e' o cliente original.
-		if commaIndex := strings.Index(forwarded, ","); commaIndex > 0 {
-			forwarded = forwarded[:commaIndex]
-		}
-		return "ip:" + strings.TrimSpace(forwarded)
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return "ip:" + r.RemoteAddr
-	}
-	return "ip:" + host
-}
-
-func bearerTokenFromRequest(r *http.Request) string {
-	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
-		return strings.TrimSpace(authHeader[len("Bearer "):])
-	}
-
-	return strings.TrimSpace(r.URL.Query().Get("access_token"))
-}
-
-func shortTokenHash(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:8])
+	return "ip:" + ClientIP(r)
 }

@@ -19,11 +19,16 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
+		scope, err := httpapi.QueryUUIDs(r, "storeId", "tenantId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
 		response, err := service.Ranking(
 			r.Context(),
 			principal,
-			strings.TrimSpace(r.URL.Query().Get("storeId")),
-			strings.TrimSpace(r.URL.Query().Get("tenantId")),
+			scope[0],
+			scope[1],
 			strings.TrimSpace(r.URL.Query().Get("dateFrom")),
 			strings.TrimSpace(r.URL.Query().Get("dateTo")),
 		)
@@ -42,12 +47,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		response, err := service.Data(
-			r.Context(),
-			principal,
-			strings.TrimSpace(r.URL.Query().Get("storeId")),
-			strings.TrimSpace(r.URL.Query().Get("tenantId")),
-		)
+		scope, err := httpapi.QueryUUIDs(r, "storeId", "tenantId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
+		response, err := service.Data(r.Context(), principal, scope[0], scope[1])
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -63,12 +68,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		response, err := service.Intelligence(
-			r.Context(),
-			principal,
-			strings.TrimSpace(r.URL.Query().Get("storeId")),
-			strings.TrimSpace(r.URL.Query().Get("tenantId")),
-		)
+		scope, err := httpapi.QueryUUIDs(r, "storeId", "tenantId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
+		response, err := service.Intelligence(r.Context(), principal, scope[0], scope[1])
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

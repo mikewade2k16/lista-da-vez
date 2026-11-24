@@ -55,6 +55,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tools"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/users"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/background"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
@@ -65,9 +66,18 @@ import (
 )
 
 // obs pode ser nil (OBSERVABILITY_ENABLED=false): middleware e coletor viram no-op.
-func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, obs *observability.Runtime) (http.Handler, error) {
+//
+// ctx e o contexto raiz dos workers de background (cancelado no shutdown) e bg rastreia as
+// goroutines e os Close dos modulos para o shutdown esperar (A-03).
+func BuildHTTPHandler(ctx context.Context, bg *background.Group, cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, obs *observability.Runtime) (http.Handler, error) {
 	const operationsAlertMonitorInterval = 3 * time.Second
 	const feedbackAttachmentCleanupInterval = 6 * time.Hour
+
+	// Proxies confiaveis para X-Forwarded-For/X-Real-IP (A-01). Env invalido falha o boot em vez
+	// de cair em padrao silencioso.
+	if err := configureTrustedProxies(cfg.TrustedProxies); err != nil {
+		return nil, err
+	}
 
 	omnichannelSecretBox, err := secretbox.FromEnv()
 	if err != nil {
@@ -159,7 +169,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		transcriptions.NewWhisperClient(transcriptions.WhisperConfigFromEnv()),
 		logger,
 	)
-	go transcriptionsWorker.Run(context.Background())
+	bg.Go(ctx, "transcriptions_worker", transcriptionsWorker.Run)
 	transcriptionsAnalysisWorker := transcriptions.NewAnalysisWorker(
 		transcriptionsRepository,
 		transcriptions.NewN8nAnalyzer(transcriptions.N8nAnalyzerConfigFromEnv()),
@@ -168,17 +178,21 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	)
 	operationsService.SetAlertCoordinator(alertsService)
 	alertsService.SetOperationsScanner(operationsService)
-	go func() {
+	bg.Loop(ctx, "operations_alert_monitor", func(ctx context.Context) {
 		ticker := time.NewTicker(operationsAlertMonitorInterval)
 		defer ticker.Stop()
 
 		for {
-			if err := operationsService.ProcessTimedAlerts(context.Background()); err != nil {
+			if err := operationsService.ProcessTimedAlerts(ctx); err != nil && ctx.Err() == nil {
 				logger.Warn("operations_alert_monitor_failed", "error", err)
 			}
-			<-ticker.C
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
-	}()
+	})
 	reportsRepository := reports.NewPostgresRepository(pool)
 	reportsService := reports.NewService(reportsRepository, storeService)
 	analyticsRepository := analytics.NewPostgresRepository(pool)
@@ -191,20 +205,26 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	)
 	feedbackRepository := feedback.NewPostgresRepository(pool)
 	feedbackService := feedback.NewService(feedbackRepository, feedbackImageStorage)
-	go func() {
+	bg.Loop(ctx, "feedback_attachment_cleanup", func(ctx context.Context) {
 		ticker := time.NewTicker(feedbackAttachmentCleanupInterval)
 		defer ticker.Stop()
 
 		for {
-			deletedCount, err := feedbackService.CleanupExpiredAttachments(context.Background())
+			deletedCount, err := feedbackService.CleanupExpiredAttachments(ctx)
 			if err != nil {
-				logger.Warn("feedback_attachment_cleanup_failed", "error", err)
+				if ctx.Err() == nil {
+					logger.Warn("feedback_attachment_cleanup_failed", "error", err)
+				}
 			} else if deletedCount > 0 {
 				logger.Info("feedback_attachment_cleanup_completed", "deleted_count", deletedCount)
 			}
-			<-ticker.C
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
-	}()
+	})
 	erpRepository := erp.NewPostgresRepository(pool)
 	erpService := erp.NewService(erpRepository, erp.Options{
 		Env:                        cfg.Env,
@@ -239,7 +259,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	// via o service do erp (adapter na composition root => sem ciclo de import).
 	// Injecao opcional/nil-safe: se falhar, o snapshot degrada com GoalStats=nil.
 	operationsService.SetGoalProgressProvider(newOperationsGoalProgressAdapter(erpService))
-	if recovered, err := erpRepository.RecoverOrphanedSyncRuns(context.Background(), 2*time.Hour); err != nil {
+	if recovered, err := erpRepository.RecoverOrphanedSyncRuns(ctx, 2*time.Hour); err != nil {
 		logger.Warn("erp_orphan_recovery_failed", "error", err)
 	} else if recovered > 0 {
 		logger.Info("erp_orphaned_runs_recovered", "count", recovered)
@@ -252,9 +272,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 			"hour_utc", cfg.ERPSyncHourUTC,
 			"dry_run", cfg.ERPSyncDryRunDefault,
 		)
-		go func() {
+		bg.Loop(ctx, "erp_sync_scheduler", func(ctx context.Context) {
 			if missedFor, ok := missedERPScheduledRun(time.Now().UTC(), cfg.ERPSyncInterval, cfg.ERPSyncHourUTC); ok {
-				alreadyRan, err := erpRepository.HasAutomaticCSVSyncRunSince(context.Background(), missedFor)
+				alreadyRan, err := erpRepository.HasAutomaticCSVSyncRunSince(ctx, missedFor)
 				if err != nil {
 					logger.Warn("erp_automatic_sync_catchup_check_failed",
 						"scheduled_for", missedFor,
@@ -265,7 +285,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 						"scheduled_for", missedFor,
 						"dry_run", cfg.ERPSyncDryRunDefault,
 					)
-					runERPAutomaticSync(context.Background(), logger, erpService, cfg.ERPSyncDryRunDefault, missedFor, "catchup")
+					runERPAutomaticSync(ctx, logger, erpService, cfg.ERPSyncDryRunDefault, missedFor, "catchup")
 				}
 			}
 
@@ -274,12 +294,20 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				wait := time.Until(scheduledFor)
 				if wait > 0 {
 					timer := time.NewTimer(wait)
-					<-timer.C
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						return
+					case <-timer.C:
+					}
+				}
+				if ctx.Err() != nil {
+					return
 				}
 
-				runERPAutomaticSync(context.Background(), logger, erpService, cfg.ERPSyncDryRunDefault, scheduledFor, "scheduled")
+				runERPAutomaticSync(ctx, logger, erpService, cfg.ERPSyncDryRunDefault, scheduledFor, "scheduled")
 			}
-		}()
+		})
 	}
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
 	// Atalho unificado: editar/criar consultor pela grade de Usuarios sincroniza o
@@ -287,7 +315,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	usersService.SetOperationPublisher(realtimeService)
 	// AC-01: cache de Principals com TTL curto + invalidacao sincrona. nil quando
 	// AUTH_PRINCIPAL_CACHE_TTL=0s (comportamento legado preservado).
-	principalCache := wirePrincipalCache(cfg, logger, authService, accessService, usersService)
+	principalCache := wirePrincipalCache(ctx, bg, cfg, logger, authService, accessService, usersService)
 	biService := bi.NewService(bi.Options{
 		CompanyKey:         cfg.PerolaBICompanyKey,
 		Login:              cfg.PerolaBILogin,
@@ -302,8 +330,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 
 	mux := http.NewServeMux()
 	if strings.TrimSpace(cfg.UploadsDir) != "" {
-		fileServer := http.StripPrefix("/uploads/", http.FileServer(http.Dir(cfg.UploadsDir)))
-		mux.Handle("GET /uploads/", fileServer)
+		mux.Handle("GET /uploads/", newUploadsHandler(cfg.UploadsDir))
 	}
 	// Painel de observabilidade (platform_admin) + coletor do front (logado).
 	observabilityStore := observabilitymodule.NewStore(pool)
@@ -313,8 +340,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		InsecureSkipVerify: cfg.SMTPInsecureSkipVerify, Timeout: cfg.SMTPTimeout,
 	}), observabilitymodule.AlertConfigFromEnv(cfg.WebAppURL), logger)
 	if obs.Enabled() {
-		// Vive até o processo encerrar (a API não tem desligamento gracioso).
-		observabilityAlerts.Start(context.Background())
+		// Para com o contexto raiz (shutdown).
+		observabilityAlerts.Start(ctx)
 	}
 	observabilitymodule.RegisterRoutes(mux, observabilitymodule.NewService(observabilityStore, obs, cfg.Env).WithAlerts(observabilityAlerts), authMiddleware)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -419,8 +446,6 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	var modulesGuard *httpapi.AccountModulesGuard
 
 	if cfg.CoreV2Enabled {
-		ctx := context.Background()
-
 		bus := events.NewInMemoryBus(logger)
 		notificationService := notifications.NewService(
 			notifications.NewPostgresRepository(pool),
@@ -868,6 +893,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		})
 
 		for _, h := range moduleHandles {
+			bg.AddCloser("module_"+h.ID(), h.Close)
 			h.RegisterRoutes(mux)
 			h.RegisterEventHandlers(bus)
 		}
@@ -875,7 +901,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		knowledge.RegisterPublicCurationRoutes(mux, knowledge.NewService(knowledge.NewStore(pool), knowledge.Ports{ExtractPublicPDF: finance.ExtractPublicPDF}), authMiddleware)
 	}
 	if omnichannelModule != nil {
-		go transcriptionsAnalysisWorker.Run(context.Background())
+		bg.Go(ctx, "transcriptions_analysis_worker", transcriptionsAnalysisWorker.Run)
 	}
 
 	middlewares := []httpapi.Middleware{
@@ -893,17 +919,17 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		httpapi.RateLimit(httpapi.RateLimitOptions{
 			Limit:  cfg.HTTPRateLimitRequests,
 			Window: cfg.HTTPRateLimitWindow,
+			// Identidade = usuario do token com assinatura valida (sem banco); sem token valido
+			// cai para o IP de origem confiavel (TRUSTED_PROXIES). Ver httpapi/rate_limit.go (A-01).
 			Resolver: func(r *http.Request) string {
-				principal, ok := auth.PrincipalFromContext(r.Context())
-				if !ok {
-					return ""
-				}
-				return principal.UserID
+				userID, _ := authService.RateLimitIdentity(r)
+				return userID
 			},
-			// Cota por tenant: impede noisy-neighbor (muitos users de um tenant degradando vizinhos).
-			// AccountResolver usa X-Account-Id (enviado pelo front em todas as rotas autenticadas).
+			// Cota por tenant: tenant do TOKEN validado (nunca de X-Account-Id), logo requisicao
+			// anonima nao consome a cota de nenhum tenant.
 			AccountResolver: func(r *http.Request) string {
-				return strings.TrimSpace(r.Header.Get("X-Account-Id"))
+				_, tenantID := authService.RateLimitIdentity(r)
+				return tenantID
 			},
 		}),
 		httpapi.Logging(logger),

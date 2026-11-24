@@ -189,3 +189,26 @@ rodam o mesmo script no host: `.husky/pre-push` antes do build (fora do
 `NODE_ENV=production`, para manter as devDependencies) e `.husky/post-merge` depois de
 `git pull`. Ele so executa `npm ci` quando o hash de `package.json` + `package-lock.json`
 muda; nos demais casos leva milissegundos. Em caso de erro manual: `npm ci` em `web/`.
+
+## Dev lento ou travando com o Mac carregado (2026-11-23)
+
+Sintoma: páginas presas em "Carregando...", 502 em `/_nuxt/*` e
+`Failed to fetch dynamically imported module` enquanto rodam builds Go, rebuild de
+imagem, o runner de observabilidade ou outra frente sincronizando arquivos. Causa
+medida: carga média do Mac em 52 (8 núcleos); o `nuxt dev` ficava sem CPU, o proxy
+`local-access` respondia 502 e a importação dinâmica do Nuxt falhava.
+
+Correção:
+
+- `compose.mac-local.yaml` dá prioridade de CPU ao dev server: `web` com
+  `cpu_shares: 4096`; `api`, `postgres` e `local-access` com 2048; o resto fica no
+  padrão (1024). Para aplicar sem recriar o container (o código sincronizado
+  continua lá): `docker update --cpu-shares 4096 omni-web-1`.
+- Builds e testes Go descartáveis rodam com prioridade baixa e cache persistente:
+  `docker run --rm --cpus=2 --cpu-shares=256 -v omni_gocache:/root/.cache/go-build ...`.
+- Sincronize pelo Compose Watch (`npm run dev:mac:watch`), que copia em lote, em vez
+  de um `docker cp` por arquivo: cada cópia isolada dispara um HMR, e mudança no CSS
+  global (`omni-design-system.css`) recompila o `ui.css` inteiro (~1 s) a cada vez.
+- O tipo `ModulePathGuard` existe só em `utils/module-path-guards.ts`; declarar o
+  mesmo nome em outro arquivo de `utils` duplica o auto-import e o Nuxt reclama a
+  cada regeneração.

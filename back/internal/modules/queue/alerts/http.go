@@ -113,7 +113,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		alert, err := service.FindByID(r.Context(), principal, strings.TrimSpace(r.PathValue("id")))
+		alertID, ok := pathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+
+		alert, err := service.FindByID(r.Context(), principal, alertID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -129,9 +134,14 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
+		scope, err := httpapi.QueryUUIDs(r, "tenantId", "storeId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
 		alerts, err := service.List(r.Context(), principal, ListInput{
-			TenantID: strings.TrimSpace(r.URL.Query().Get("tenantId")),
-			StoreID:  strings.TrimSpace(r.URL.Query().Get("storeId")),
+			TenantID: scope[0],
+			StoreID:  scope[1],
 			Status:   strings.TrimSpace(r.URL.Query().Get("status")),
 			Type:     strings.TrimSpace(r.URL.Query().Get("type")),
 			Category: strings.TrimSpace(r.URL.Query().Get("category")),
@@ -151,9 +161,14 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
+		scope, err := httpapi.QueryUUIDs(r, "tenantId", "storeId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
 		overview, err := service.Overview(r.Context(), principal, OverviewInput{
-			TenantID: strings.TrimSpace(r.URL.Query().Get("tenantId")),
-			StoreID:  strings.TrimSpace(r.URL.Query().Get("storeId")),
+			TenantID: scope[0],
+			StoreID:  scope[1],
 		})
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -170,9 +185,14 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
+		tenantID, err := httpapi.QueryUUID(r, "tenantId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
 		if r.URL.Query().Get("format") == "definitions" {
 			rules, err := service.ListRules(r.Context(), principal, ListRulesInput{
-				TenantID:    strings.TrimSpace(r.URL.Query().Get("tenantId")),
+				TenantID:    tenantID,
 				TriggerType: strings.TrimSpace(r.URL.Query().Get("triggerType")),
 				OnlyActive:  r.URL.Query().Get("onlyActive") == "true",
 			})
@@ -184,7 +204,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		rules, err := service.Rules(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("tenantId")))
+		rules, err := service.Rules(r.Context(), principal, tenantID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -206,7 +226,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		rules, err := service.UpdateRules(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("tenantId")), UpdateRulesInput(request))
+		tenantID, err := httpapi.QueryUUID(r, "tenantId")
+		if httpapi.WriteInvalidQuery(w, r, err) {
+			return
+		}
+
+		rules, err := service.UpdateRules(r.Context(), principal, tenantID, UpdateRulesInput(request))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -228,7 +253,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		alert, err := service.Acknowledge(r.Context(), principal, strings.TrimSpace(r.PathValue("id")), request.Note)
+		alertID, ok := pathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+
+		alert, err := service.Acknowledge(r.Context(), principal, alertID, request.Note)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -250,7 +280,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		result, err := service.RespondToAlert(r.Context(), principal, strings.TrimSpace(r.PathValue("id")), request.Response)
+		alertID, ok := pathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+
+		result, err := service.RespondToAlert(r.Context(), principal, alertID, request.Response)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -277,7 +312,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		alert, err := service.Resolve(r.Context(), principal, strings.TrimSpace(r.PathValue("id")), request.Note)
+		alertID, ok := pathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+
+		alert, err := service.Resolve(r.Context(), principal, alertID, request.Note)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -344,7 +384,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		rule, err := service.GetRule(r.Context(), principal, strings.TrimSpace(r.PathValue("id")))
+		alertID, ok := pathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+
+		rule, err := service.GetRule(r.Context(), principal, alertID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -366,7 +411,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		rule, err := service.UpdateRule(r.Context(), principal, strings.TrimSpace(r.PathValue("id")), UpdateRuleInput(request))
+		alertID, ok := pathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+
+		rule, err := service.UpdateRule(r.Context(), principal, alertID, UpdateRuleInput(request))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -382,7 +432,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		err := service.DeleteRule(r.Context(), principal, strings.TrimSpace(r.PathValue("id")))
+		ruleID, ok := pathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+
+		err := service.DeleteRule(r.Context(), principal, ruleID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -398,7 +453,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		count, err := service.ApplyRuleNow(r.Context(), principal, strings.TrimSpace(r.PathValue("id")))
+		alertID, ok := pathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+
+		count, err := service.ApplyRuleNow(r.Context(), principal, alertID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -421,4 +481,14 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao processar alertas.")
 	}
+}
+
+// pathUUID valida um parametro de rota UUID; responde 400 e retorna false se invalido.
+func pathUUID(w http.ResponseWriter, r *http.Request, name string) (string, bool) {
+	value := strings.TrimSpace(r.PathValue(name))
+	if !httpapi.IsUUID(value) {
+		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "O identificador informado na rota deve ser um UUID valido.")
+		return "", false
+	}
+	return value, true
 }

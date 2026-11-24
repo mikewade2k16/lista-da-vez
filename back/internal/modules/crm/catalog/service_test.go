@@ -3,7 +3,11 @@ package catalog
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
 
 type serviceTestRepository struct {
@@ -106,5 +110,27 @@ func TestSearchProductsRequiresStoreID(t *testing.T) {
 	})
 	if !errors.Is(err, ErrStoreRequired) {
 		t.Fatalf("expected ErrStoreRequired, got %v", err)
+	}
+}
+
+func TestParseSearchProductsInputValidatesQuery(t *testing.T) {
+	const storeID = "0b8f4a8e-3c1d-4d6a-9f0e-5a1b2c3d4e5f"
+
+	valid := httptest.NewRequest(http.MethodGet, "/v1/catalog/products/search?storeId="+storeID+"&term=camisa&limit=10", nil)
+	input, err := parseSearchProductsInput(valid)
+	if err != nil || input.StoreID != storeID || input.Limit != 10 || input.Term != "camisa" {
+		t.Fatalf("entrada valida rejeitada: %+v err=%v", input, err)
+	}
+
+	for _, rawQuery := range []string{"storeId=a", "storeId=%27%22", "storeId=" + storeID + "&limit=abc", "storeId=" + storeID + "&limit=-5"} {
+		request := httptest.NewRequest(http.MethodGet, "/v1/catalog/products/search?"+rawQuery, nil)
+		_, err := parseSearchProductsInput(request)
+		if err == nil {
+			t.Fatalf("%q deveria falhar", rawQuery)
+		}
+		recorder := httptest.NewRecorder()
+		if !httpapi.WriteInvalidQuery(recorder, request, err) || recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%q deveria responder 400, got %d", rawQuery, recorder.Code)
+		}
 	}
 }

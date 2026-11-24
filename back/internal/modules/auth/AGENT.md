@@ -37,6 +37,19 @@ Ele nao deve cuidar de:
 - CRUD de tenant
 - websocket de fila
 
+## Anti brute-force (A-01)
+
+- `attempt_guards.go`: limitadores em memória por fluxo. Login: por e-mail normalizado (5 falhas em
+  15 min) e por IP (20 em 15 min); bloqueio de 1 min dobrando a cada falha extra, até 15 min. 429
+  genérico (`too_many_attempts`) com `Retry-After`, idêntico para e-mail existente ou não. Sucesso
+  zera só o contador do e-mail. `password-reset/request` conta todo pedido; `password-reset/confirm`
+  conta falhas; convites contam token inexistente por IP.
+- IP de origem vem de `httpapi.ClientIP` (XFF só de proxy confiável, env `TRUSTED_PROXIES`).
+- `Service.Login` roda o bcrypt contra hash fictício (mesmo custo) quando o e-mail não existe, para
+  igualar a latência; teste `login_attempts_test.go`.
+- `Service.RateLimitIdentity` valida a assinatura do token (sem banco) para o rate limit global.
+- Limitação: estado em memória (zera ao reiniciar; por instância).
+
 ## Como o auth funciona hoje
 
 ### Persistencia
@@ -246,3 +259,5 @@ revalidado no serviço; não muda a conta global da página.
 ## Observabilidade
 
 `RequireAuth` e `RequireAuthWithAccount` chamam `observability.SetPrincipal` (só ids de usuário e conta) para que a requisição medida seja atribuída. Isso não altera a autorização.
+
+- **Conta alheia = 404 (B-01, 2026-11-23):** `RequireAuthWithAccount` responde `404 not_found` ("Recurso nao encontrado.") quando o usuario nao e membro da conta em `X-Account-Id` (antes `403 account_not_member`, que confirmava a existencia do UUID). O `403` fica apenas para falta de permissao dentro de conta a que o usuario pertence. Teste: `middleware_account_test.go`.

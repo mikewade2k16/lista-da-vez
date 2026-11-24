@@ -169,6 +169,8 @@ func (repository *PostgresRepository) listCRMEmployeeStoreFallbacks(ctx context.
 
 func (repository *PostgresRepository) listCRMDominantEmployeeStoreKeys(ctx context.Context, store StoreScope) (map[string]string, error) {
 	rows, err := repository.pool.Query(ctx, `
+		-- Os predicados cruos (order_id/store_id_raw <> '') sao implicados pelos de trim
+		-- e permitem usar o indice parcial erp_order_raw_store_id_raw_idx em vez de seq scan.
 		with known_orders as (
 			select
 				order_id,
@@ -181,6 +183,8 @@ func (repository *PostgresRepository) listCRMDominantEmployeeStoreKeys(ctx conte
 			from erp_order_raw
 			where tenant_id = $1::uuid
 			  and store_id = $2::uuid
+			  and order_id <> ''
+			  and store_id_raw <> ''
 			  and nullif(trim(order_id), '') is not null
 			  and coalesce(nullif(trim(store_id_raw), ''), '') <> ''
 			group by order_id

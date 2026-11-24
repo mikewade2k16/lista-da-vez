@@ -26,7 +26,7 @@ Sem precisar redesenhar a base quando o produto virar multi-tenant de verdade.
 - Driver PostgreSQL no backend: `pgx/v5 5.7.6`
 - PostgreSQL alvo do backend: `16`
 - Imagem oficial do banco: `postgres:16-alpine`
-- Imagem oficial do backend: `golang:1.26.5-bookworm`
+- Imagem oficial do backend: `golang:1.26.11-bookworm`
 
 ## Workflow
 

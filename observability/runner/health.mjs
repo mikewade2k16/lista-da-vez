@@ -93,10 +93,16 @@ async function govuln() {
     [
       "run",
       "--rm",
+      // Prioridade baixa e cache de build: sem isso o go install recompila tudo
+      // a cada execucao e disputa CPU com o dev server (Mac travou em 2026-11-23).
+      "--cpus=2",
+      "--cpu-shares=256",
       "-v",
       `${join(REPO, "back")}:/src:ro`,
       "-v",
       "omni_gomodcache:/go/pkg/mod",
+      "-v",
+      "omni_gocache:/root/.cache/go-build",
       "-w",
       "/src",
       img,
@@ -107,11 +113,7 @@ async function govuln() {
     { timeout: 300000 },
   );
   if (r.killed) return mk("govulncheck", "skip", "govulncheck excedeu 5 min");
-  const found = new Set();
-  for (const m of r.stdout.matchAll(
-    /"finding":\s*\{[^]*?"osv":\s*"(GO-[\d-]+)"/g,
-  ))
-    found.add(m[1]);
+  const found = reachableOsv(r.stdout);
   if (!r.stdout.includes('"config"') && !found.size)
     return mk(
       "govulncheck",
@@ -126,6 +128,49 @@ async function govuln() {
       : "",
     { osv: [...found] },
   );
+}
+
+// govulncheck -format json emite um fluxo de objetos. Um "finding" só é
+// alcançável (o que o próprio govulncheck reporta como "affected") quando o
+// primeiro frame do trace tem "function"; findings só de módulo/pacote existem
+// nas dependências mas o código não chama.
+export function reachableOsv(stream) {
+  const found = new Set();
+  for (const chunk of splitJsonStream(stream)) {
+    let obj;
+    try {
+      obj = JSON.parse(chunk);
+    } catch {
+      continue;
+    }
+    const f = obj?.finding;
+    if (f?.osv && f.trace?.[0]?.function) found.add(f.osv);
+  }
+  return found;
+}
+
+function splitJsonStream(text) {
+  const out = [];
+  let depth = 0,
+    start = -1,
+    inStr = false,
+    esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") {
+      if (depth++ === 0) start = i;
+    } else if (c === "}" && depth > 0 && --depth === 0) {
+      out.push(text.slice(start, i + 1));
+    }
+  }
+  return out;
 }
 
 export async function runHealth() {

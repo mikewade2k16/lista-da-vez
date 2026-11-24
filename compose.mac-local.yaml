@@ -38,7 +38,16 @@ services:
     command: ["sh", "-c", "APP_ENV=production migrate up && exec api"]
     environment:
       R2_ENABLED: "false"
-      SMTP_HOST: ""
+      # E-mail local vai para o Mailpit (captura tudo, nao entrega para fora):
+      # caixa em http://localhost:8025. Banco local e copia de producao, entao
+      # reset de senha e alertas NUNCA podem sair para e-mails reais daqui.
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_TLS_MODE: none
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM_EMAIL: alertas@omni.local
+      SMTP_FROM_NAME: Omni local
       ERP_SYNC_AUTOMATIC_ENABLED: "false"
       META_ADS_WRITES_ENABLED: "false"
       OMNI_AI_EXECUTOR: native
@@ -63,6 +72,15 @@ services:
     # de imagem, runner/Chrome), o nuxt dev precisa continuar servindo modulos; sem
     # isso ele ficava sem CPU, o proxy respondia 502 e as paginas travavam.
     cpu_shares: 4096
+  mailpit:
+    # SMTP de teste so do Mac: SMTP em mailpit:1025, caixa web em :8025.
+    image: axllent/mailpit:v1.27.4
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "127.0.0.1:8025:8025"
+    environment:
+      MP_MAX_MESSAGES: "2000"
   local-access:
     image: omni-web
     pull_policy: never

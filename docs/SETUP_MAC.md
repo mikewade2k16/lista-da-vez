@@ -212,3 +212,12 @@ Correção:
 - O tipo `ModulePathGuard` existe só em `utils/module-path-guards.ts`; declarar o
   mesmo nome em outro arquivo de `utils` duplica o auto-import e o Nuxt reclama a
   cada regeneração.
+
+## E-mail local (Mailpit)
+
+O `compose.mac-local.yaml` sobe o `mailpit` e aponta o SMTP da API para ele
+(`mailpit:1025`, sem TLS). Nada sai para a internet: todo e-mail (reset de senha,
+alertas da observabilidade) fica na caixa em http://localhost:8025. Isso é
+obrigatório aqui porque o banco local é cópia de produção, com e-mails reais.
+Destinatário dos alertas: `OBS_ALERT_EMAILS` no `.env` da raiz (ignorado pelo Git).
+Teste: aba Alertas do painel, "Enviar e-mail de teste".

@@ -13,7 +13,7 @@ set -euo pipefail
 KEY="$HOME/.ssh/gh_actions_omnichannel_vps"
 SSH="/c/Windows/System32/OpenSSH/ssh.exe -i $KEY -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30"
 TARGET="deploy@85.31.62.33"
-REMOTE_PSQL="cd /home/deploy/lista-atendimento && docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres sh -lc 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB --single-transaction -v ON_ERROR_STOP=1 -tA'"
+REMOTE_PSQL="cd /home/deploy/omni && docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres sh -lc 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB --single-transaction -v ON_ERROR_STOP=1 -tA'"
 
 [ -f "$KEY" ] || { echo "ERRO: chave SSH nao encontrada em $KEY"; exit 1; }
 

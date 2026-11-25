@@ -13,10 +13,10 @@ substitui) o backup on-demand dos deploys (`-BackupDatabase` / input
 ## Regras
 
 - o script `backup-db.sh` roda **NA VPS** (host `85.31.62.33`, user `deploy`,
-  prod em `/home/deploy/lista-atendimento`), nunca na maquina local.
+  prod em `/home/deploy/omni`), nunca na maquina local.
 - **o repo e' a fonte de verdade**: o `backup-check.yml` sincroniza
   `scripts/backup/backup-db.sh` do repo para
-  `/home/deploy/lista-atendimento/scripts/backup-db.sh` a cada execucao. Editar
+  `/home/deploy/omni/scripts/backup-db.sh` a cada execucao. Editar
   aqui, nunca so na VPS.
 - **nunca colocar credencial no script.** Postgres via env do proprio container
   (`$POSTGRES_USER`/`$POSTGRES_DB`); off-site S3 via config do rclone na VPS

@@ -537,22 +537,59 @@ services:
     networks:
       - app
 
+  # Caddy central da VPS: TLS de omni, site (crow-web) e cardapios (tavola-web).
+  # Configuracao versionada em deploy/caddy/Caddyfile; certificados em omni_caddy_data.
+  caddy:
+    image: caddy:2.11.2-alpine
+    # Profile proprio: so sobe com --profile edge (producao), nunca junto do staging.
+    profiles: ["edge"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *default-logging
+    networks:
+      - proxy
+
 volumes:
+  # Prefixo dos volumes: COMPOSE_VOLUME_PREFIX (producao = listaatendimento, nome antigo
+  # do projeto, renomeado para omni em 2026-11-25; o Docker nao renomeia volume e assim
+  # nada e copiado). Sem a variavel vale o nome do projeto (staging, instalacao nova),
+  # o que impede o staging de usar os volumes de producao.
   postgres_data:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_postgres_data
   api_uploads:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_api_uploads
   api_omnichannel_media:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_api_omnichannel_media
   api_attendance_audio:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_api_attendance_audio
   api_erp_storage:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_api_erp_storage
   automation_redis:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_automation_redis
   automation_waha_sessions:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_automation_waha_sessions
   automation_waha_media:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_automation_waha_media
   automation_n8n_data:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_automation_n8n_data
   automation_whisper_cache:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_automation_whisper_cache
   evolution_db_data:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_evolution_db_data
   evolution_instances:
+    name: ${COMPOSE_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-omni}}_evolution_instances
+  caddy_data:
+  caddy_config:
 
 networks:
   app:
   proxy:
     external: true
-    name: ${PROXY_NETWORK_NAME:-omnichannel-mvp_default}
+    name: ${PROXY_NETWORK_NAME:-edge}

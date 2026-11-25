@@ -27,7 +27,7 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 
 - host: `85.31.62.33`
 - usuario SSH: `deploy`
-- caminho remoto prod: `/home/deploy/lista-atendimento`
+- caminho remoto prod: `/home/deploy/omni`
 - caminho remoto staging: `/home/deploy/lista-atendimento-staging`
 - dominio publico prod: `https://omni.crowvisuals.com.br`
 - dominio publico staging: `https://preview.whenthelightsdie.com`
@@ -320,3 +320,12 @@ sao lidos com `git rev-parse` no momento da gravacao; a tag vem da etapa
   `npm run obs:deploys -- --sync [--target=local|prod|staging]`.
 - Teste: `node --test scripts/deploy/deploy-record.test.mjs`.
 - `OBS_AGENT_TLS_HOSTS` (2026-11-24): n8n./waha. fora da lista padrão: `n8n.crowvisuals.com.br` e `waha.crowvisuals.com.br` respondem erro TLS (`tlsv1 alert internal error`), ou seja, o Caddy não serve certificado para eles. Reincluir quando estiverem publicados.
+
+## Caddy central e projeto `omni` na VPS (2026-11-25)
+
+- O Caddy e o servico `caddy` (profile `edge`) do `docker-compose.prod.yml`; configuracao em
+  `deploy/caddy/Caddyfile`. O `deploy-pull.ps1` envia o Caddyfile com o compose e faz `caddy reload`
+  quando ele muda (falha no reload so gera aviso).
+- Projeto Docker de producao: `omni` (`COMPOSE_PROJECT_NAME`), pasta `/home/deploy/omni`
+  (`lista-atendimento` virou link). Volumes de dados com prefixo `COMPOSE_VOLUME_PREFIX=listaatendimento`.
+- Rede publica `edge`: omni (api/web/caddy), `crow-web` e `tavola-web`.

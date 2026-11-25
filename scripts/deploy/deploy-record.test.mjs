@@ -126,7 +126,7 @@ test('destinos: local por docker exec e remoto por ssh sem segredos', () => {
   assert.ok(remote.args.includes('ana@85.31.62.33'))
   assert.ok(remote.args.includes('/k'))
   const command = remote.args.at(-1)
-  assert.match(command, /cd '\/home\/deploy\/lista-atendimento'/)
+  assert.match(command, /cd '\/home\/deploy\/omni'/)
   assert.match(command, /--env-file '\.env\.production'/)
   assert.match(command, /exec -T postgres sh -c/)
   assert.match(command, /\$POSTGRES_USER/)

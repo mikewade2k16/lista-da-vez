@@ -3,7 +3,7 @@ param(
   [int]$Port = 22,
   [string]$User = "deploy",
   [string]$KeyPath = (Join-Path $HOME ".ssh\gh_actions_omnichannel_vps"),
-  [string]$RemotePath = "/home/deploy/lista-atendimento",
+  [string]$RemotePath = "/home/deploy/omni",
   [string[]]$Services = @("api", "web"),
   [switch]$NoBackup,       # pula o backup remoto do PostgreSQL
   [switch]$DeleteRemoved,  # remove na VPS os arquivos que nao existem mais localmente

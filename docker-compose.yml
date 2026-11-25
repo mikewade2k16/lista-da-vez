@@ -639,6 +639,15 @@ services:
       retries: 10
       start_period: 10s
 
+  # Caddy central so existe em producao (TLS dos dominios). No dev fica no profile
+  # "edge" apenas para a paridade local x prod; nao sobe no dev:mac:up.
+  caddy:
+    image: caddy:2.11.2-alpine
+    profiles: ["edge"]
+    restart: "no"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+
 volumes:
   postgres_data:
   api_uploads:

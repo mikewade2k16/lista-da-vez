@@ -23,7 +23,7 @@ quebra o cron. 8 checks:
    `WAHA_SESSION`, `WAHA_PORT` e `WAHA_EXPECT_WORKING=0|1` permitem ajustar/desativar a
    expectativa de sessao conectada sem editar o script.
 8. **Saude do n8n** (OBS-07): container do profile automation no ar + workflows criticos
-   `active=true`. NO-OP se `N8N_COMPOSE_DIR` (default `/home/deploy/lista-atendimento`) nao
+   `active=true`. NO-OP se `N8N_COMPOSE_DIR` (default `/home/deploy/omni`) nao
    existir — nao quebra a sonda em hosts sem automation.
    - `critical`: container n8n fora (`ps -q n8n` vazio) ou `unhealthy` — Calendario/Omni Chat parados.
    - `warning`: container no ar mas >=1 workflow critico despausado (degradacao parcial), ou o

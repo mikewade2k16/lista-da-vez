@@ -1,0 +1,91 @@
+# Caddy central da VPS (servico `caddy` do docker-compose.prod.yml do omni).
+# Termina o TLS de todos os dominios publicos e repassa pela rede `edge`:
+#   - omni (api/web deste repositorio): aliases lista-api / lista-web;
+#   - site da agencia: container crow-web (projeto crowvisuals);
+#   - cardapios publicos: container tavola-web (repo TAVOLA).
+# Migrado de /opt/omnichannel/Caddyfile (projeto omnichannel-mvp) em 2026-11-25.
+# Removidos: app./api./evo./db./preview.whenthelightsdie.com (backends parados
+# desde 2026-06) e o adminer.
+# Certificados ficam no volume omni_caddy_data (copiado do antigo).
+
+(secure_headers) {
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(self), microphone=(self), geolocation=(), payment=(), usb=()"
+        -Server
+    }
+}
+
+(omni_routes) {
+    handle /v1/* {
+        reverse_proxy lista-api:8080
+    }
+    handle /v2/* {
+        reverse_proxy lista-api:8080
+    }
+    handle /uploads/* {
+        reverse_proxy lista-api:8080
+    }
+    handle /s/* {
+        reverse_proxy lista-api:8080
+    }
+    handle /q/* {
+        reverse_proxy lista-api:8080
+    }
+    handle /healthz {
+        reverse_proxy lista-api:8080
+    }
+    handle {
+        reverse_proxy lista-web:3003
+    }
+}
+
+omni.crowvisuals.com.br, www.omni.crowvisuals.com.br {
+    import secure_headers
+    encode zstd gzip
+    import omni_routes
+}
+
+# Endereco antigo do omni, ainda apontando para a VPS.
+lista.whenthelightsdie.com {
+    import secure_headers
+    encode zstd gzip
+    import omni_routes
+}
+
+crowvisuals.com.br, www.crowvisuals.com.br {
+    import secure_headers
+    encode zstd gzip
+
+    # Encurtador/QR do Omni (modulo tools) na raiz: crowvisuals.com.br/s/{slug}.
+    handle /s/* {
+        reverse_proxy lista-api:8080
+    }
+    handle /q/* {
+        reverse_proxy lista-api:8080
+    }
+
+    handle {
+        reverse_proxy crow-web:80 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+}
+
+# TAVOLA (cardapio publico). Sem secure_headers: o X-Frame-Options SAMEORIGIN
+# quebraria o Studio embutido no painel; o tavola-web envia CSP frame-ancestors.
+mostarda.crowvisuals.com.br, bari.crowvisuals.com.br, cardapio.crowvisuals.com.br, aperolajoias.thecrow.com.br {
+    encode zstd gzip
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy tavola-web:80 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

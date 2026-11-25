@@ -87,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ inputs.environment }}" == "prod" ]]; then
-            echo "REMOTE_PATH=/home/deploy/lista-atendimento" >> "$GITHUB_ENV"
+            echo "REMOTE_PATH=/home/deploy/omni" >> "$GITHUB_ENV"
             echo "ENV_FILE=.env.production" >> "$GITHUB_ENV"
             echo "PUBLIC_BASE_URL=https://omni.crowvisuals.com.br" >> "$GITHUB_ENV"
           else

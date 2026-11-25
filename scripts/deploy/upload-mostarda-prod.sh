@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sobe os dados + imagens do Mostarda Bar Bistro para a PRODUCAO (VPS lista-atendimento,
+# Sobe os dados + imagens do Mostarda Bar Bistro para a PRODUCAO (VPS omni,
 # conta Crow em prod) e liga o front TAVOLA (https://mostarda.crowvisuals.com.br).
 #
 # Rode da maquina LOCAL no Git Bash:   bash scripts/deploy/upload-mostarda-prod.sh
@@ -25,7 +25,7 @@ DUMP="/c/tmp/mostarda_prod.sql"
 
 VPS="85.31.62.33"; SSH_USER="deploy"; PORT="22"
 KEY="$HOME/.ssh/gh_actions_omnichannel_vps"
-REMOTE_PATH="/home/deploy/lista-atendimento"
+REMOTE_PATH="/home/deploy/omni"
 ENV_FILE=".env.production"
 
 SSH_EXE="/c/Windows/System32/OpenSSH/ssh.exe"

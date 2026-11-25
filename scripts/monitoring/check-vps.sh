@@ -7,7 +7,7 @@
 #   ALERT_TELEGRAM_CHAT_ID=123456789
 #   DISK_USAGE_MAX=85  MEM_AVAILABLE_MIN_PCT=10  LOAD_PER_CORE_MAX=2
 #   ALERT_COOLDOWN_SECONDS=3600  OMNI_API_PORT=18080
-#   N8N_COMPOSE_DIR=/home/deploy/lista-atendimento         (onde vive o docker-compose.prod.yml + .env.production)
+#   N8N_COMPOSE_DIR=/home/deploy/omni         (onde vive o docker-compose.prod.yml + .env.production)
 #   N8N_ENV_FILE=.env.production                            (para `docker compose --env-file`)
 #   N8N_CRITICAL_IDS="calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001"  (default; = deploy-pull.ps1)
 #   WAHA_SESSION=default  WAHA_PORT=13010  WAHA_EXPECT_WORKING=1
@@ -59,7 +59,7 @@ send_alert() {
 # 1) Disco (particao raiz)
 disk_pct=$(df -P / | awk 'NR==2 {gsub("%","",$5); print $5}')
 if [ "${disk_pct:-0}" -ge "$DISK_USAGE_MAX" ]; then
-  send_alert disk "Disco em ${disk_pct}% (limite ${DISK_USAGE_MAX}%). Checar: docker system df; backups antigos em /home/deploy/lista-atendimento/backups."
+  send_alert disk "Disco em ${disk_pct}% (limite ${DISK_USAGE_MAX}%). Checar: docker system df; backups antigos em /home/deploy/omni/backups."
 fi
 
 # 2) RAM disponivel (% de MemAvailable sobre MemTotal)
@@ -96,7 +96,7 @@ if [ "$api_code" != "200" ]; then
 fi
 
 # Config comum do profile automation (WAHA + n8n).
-N8N_COMPOSE_DIR="${N8N_COMPOSE_DIR:-/home/deploy/lista-atendimento}"
+N8N_COMPOSE_DIR="${N8N_COMPOSE_DIR:-/home/deploy/omni}"
 N8N_ENV_FILE="${N8N_ENV_FILE:-.env.production}"
 automation_compose="docker compose --env-file $N8N_ENV_FILE -f docker-compose.prod.yml --profile automation"
 

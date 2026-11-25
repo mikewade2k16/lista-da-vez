@@ -22,7 +22,7 @@ const ENVIRONMENT_BY_COMMAND = {
 // Destinos remotos: mesmos host, usuario, caminho e env file de deploy-pull.ps1.
 const REMOTE_TARGETS = {
   prod: {
-    path: '/home/deploy/lista-atendimento',
+    path: '/home/deploy/omni',
     envFile: '.env.production',
   },
   staging: {

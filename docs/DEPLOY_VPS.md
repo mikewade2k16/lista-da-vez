@@ -446,31 +446,36 @@ Check externo opcional: `https://securityheaders.com/` apontando pra `https://om
 ## Arquitetura da VPS (contexto auditado)
 
 VPS `85.31.62.33` (host `srv1507028`, Ubuntu 24.04 LTS, user de deploy `deploy`, ~6GB RAM).
-Esta stack sobe isolada da outra que ja roda na VPS (`omnichannel-mvp`):
+**Desde 2026-11-25 a VPS tem so tres projetos Docker:** `omni` (este repositorio, inclusive o
+Caddy central), `crowvisuals` (site) e `tavola` (cardapios). O antigo `omnichannel-mvp` e o
+`omni-staging` foram removidos; backups fisicos dos bancos antigos em
+`/home/deploy/backups/legacy/` e volumes antigos mantidos ate confirmacao.
+
 
 - `COMPOSE_PROJECT_NAME=omni` separa containers/rede/volumes; banco, volume de uploads e segredos
   (JWT, SMTP) sao proprios — **nao compartilhar** com a outra stack.
-- caminho remoto prod: `/home/deploy/lista-atendimento`; staging: `/home/deploy/lista-atendimento-staging`.
+- caminho remoto prod: `/home/deploy/omni` (`/home/deploy/lista-atendimento` e um link para ele, por
+  compatibilidade); staging: `/home/deploy/lista-atendimento-staging`.
+- `.env.production`: `COMPOSE_PROJECT_NAME=omni`, `COMPOSE_VOLUME_PREFIX=listaatendimento` (os volumes
+  de dados mantem o nome antigo; nada foi copiado na renomeacao) e `PROXY_NETWORK_NAME=edge`.
 - portas locais (so 127.0.0.1, pra debug): web `13003`, api `18080`; postgres nao e' publicado.
   Staging usa `13005`/`18082`. (A stack `omni-crow` usa `13004`/`18081` — conferir colisao com `docker ps`.)
 - servicos desta stack: `postgres`, `api`, `web` (o compose tambem traz redis/waha/n8n da automacao).
 
-### Proxy reverso (Caddy compartilhado)
+### Proxy reverso (Caddy central do omni)
 
-Esta stack **nao** sobe proxy. O Caddy central da stack `omnichannel-mvp`
-(`/opt/omnichannel/Caddyfile`, container **`omnichannel-mvp-caddy-1`**) roteia o dominio publico
-**`omni.crowvisuals.com.br`** pros aliases `lista-web`/`lista-api` (a stack conecta na rede externa
-`omnichannel-mvp_default` com esses aliases).
+O Caddy e o servico `caddy` do `docker-compose.prod.yml` (profile `edge`, container `omni-caddy-1`),
+com a configuracao **versionada em `deploy/caddy/Caddyfile`** e certificados no volume
+`omni_caddy_data`. Ele atende omni (`lista-api`/`lista-web`), o site (`crow-web`) e os cardapios
+(`tavola-web`) pela rede externa `edge`; os composes do `crowvisuals` e do `tavola` declaram essa
+rede.
 
-> **Um `npm run deploy:*` NAO apaga estas mudancas.** O Caddyfile pertence a outra stack
-> (`omnichannel-mvp`) e e' editado direto no disco da VPS; os scripts de deploy so mexem na stack
-> `lista-atendimento` (api/web) e nunca tocam nele nem no `.env.production` (so atualizam `IMAGE_TAG`).
-> O `TOOLS_PUBLIC_BASE_URL` tambem persiste. So somem se alguem restaurar um `Caddyfile.bak-*` antigo.
-
-> **O arquivo REAL na VPS diverge do exemplo idealizado que estava aqui.** Bloco real auditado em
-> 2026-07-13 (usa `import secure_headers` em vez de `header {...}` inline, cobre `omni.` **e**
-> `www.omni.`, e ha um segundo host `lista.{$DOMAIN}` servindo o MESMO painel). Sempre confira o
-> arquivo com `ssh ... "awk '/omni.crowvisuals/,/^}/' /opt/omnichannel/Caddyfile"` antes de editar.
+- Mudanca de rota: editar `deploy/caddy/Caddyfile` no repositorio e fazer deploy. O
+  `deploy-pull.ps1` envia o arquivo, sobrescreve o do servidor preservando o inode e roda
+  `caddy reload` (sem derrubar conexoes). Nao edite o arquivo direto na VPS.
+- Validar antes: `docker run --rm -v "$PWD/deploy/caddy/Caddyfile":/etc/caddy/Caddyfile:ro caddy:2.11.2-alpine caddy validate --config /etc/caddy/Caddyfile`.
+- Subir o Caddy do zero: `docker compose --env-file .env.production -f docker-compose.prod.yml --profile edge up -d caddy`.
+- O conteudo abaixo e o historico do Caddy antigo (`/opt/omnichannel`), mantido como referencia.
 
 ```caddy
 omni.crowvisuals.com.br, www.omni.crowvisuals.com.br {

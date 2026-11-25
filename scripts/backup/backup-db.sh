@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # backup-db.sh — backup diario do Postgres do Omni (roda NA VPS, user deploy).
 # Fonte de verdade: repo scripts/backup/backup-db.sh; instalado em
-# /home/deploy/lista-atendimento/scripts/backup-db.sh (sincronizado pelo
+# /home/deploy/omni/scripts/backup-db.sh (sincronizado pelo
 # workflow backup-check.yml a cada execucao). Runbook: docs/BACKUP_RESTORE.md.
 #
 # `set -o pipefail` (via -euo pipefail) e' ESSENCIAL: sem ele o gzip mascara um
 # pg_dump que falhou e o "backup" sai vazio (mesma licao do deploy-ship.ps1).
 set -euo pipefail
 
-COMPOSE_DIR="${BACKUP_COMPOSE_DIR:-/home/deploy/lista-atendimento}"
+COMPOSE_DIR="${BACKUP_COMPOSE_DIR:-/home/deploy/omni}"
 ENV_FILE="${BACKUP_ENV_FILE:-.env.production}"
 BACKUP_DIR="${BACKUP_DIR:-$COMPOSE_DIR/backups}"
 KEEP_DAILY_DAYS="${BACKUP_KEEP_DAILY_DAYS:-7}"    # 7 diarios

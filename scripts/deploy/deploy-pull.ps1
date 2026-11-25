@@ -68,7 +68,7 @@ if ($DeployAutomation) {
 switch ($Environment) {
   "prod" {
     $envFile = ".env.production"
-    $remotePath = "/home/deploy/lista-atendimento"
+    $remotePath = "/home/deploy/omni"
     $publicBaseUrl = "https://omni.crowvisuals.com.br"
   }
   "staging" {
@@ -369,6 +369,14 @@ $scpArgs = $scpBaseArgs + @($composeLocal, "${remoteTarget}:${remotePath}/.deplo
 Invoke-DeployStep 'Envio do Compose por SCP' {
   & $ScpExe @scpArgs
   if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o docker-compose.prod.yml (scp)." }
+  # Caddy central (servico caddy): o Caddyfile versionado vai junto e e aplicado
+  # com reload abaixo, sem derrubar conexoes.
+  $caddyLocal = Join-Path $repoDir 'deploy/caddy/Caddyfile'
+  if (Test-Path -LiteralPath $caddyLocal -PathType Leaf) {
+    $caddyArgs = $scpBaseArgs + @($caddyLocal, "${remoteTarget}:${remotePath}/.deploy/$Tag/Caddyfile")
+    & $ScpExe @caddyArgs
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o deploy/caddy/Caddyfile (scp)." }
+  }
 }
 
 # 3. Valida o compose novo contra o env real e so entao grava o IMAGE_TAG escolhido.
@@ -378,6 +386,14 @@ set -euo pipefail
 cd $remotePathQ
 docker compose --env-file $envFileQ -f $releaseDirQ/docker-compose.next.yml config --quiet
 cp $releaseDirQ/docker-compose.next.yml docker-compose.prod.yml
+if [ -f $releaseDirQ/Caddyfile ]; then
+  mkdir -p deploy/caddy
+  if ! cmp -s $releaseDirQ/Caddyfile deploy/caddy/Caddyfile; then
+    # cat preserva o inode do bind mount de arquivo unico (cp/mv quebraria o mount).
+    if [ -f deploy/caddy/Caddyfile ]; then cat $releaseDirQ/Caddyfile > deploy/caddy/Caddyfile; else cp $releaseDirQ/Caddyfile deploy/caddy/Caddyfile; fi
+    docker compose --env-file $envFileQ -f docker-compose.prod.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || echo 'Aviso: caddy reload falhou; Caddyfile anterior segue ativo.' >&2
+  fi
+fi
 if grep -q '^IMAGE_TAG=' $envFileQ; then
   sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=$Tag|" $envFileQ
 else

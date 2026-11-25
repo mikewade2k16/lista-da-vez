@@ -33,7 +33,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "docker nao
 
 switch ($Environment) {
   "prod" {
-    $envFile = ".env.production"; $remotePath = "/home/deploy/lista-atendimento"
+    $envFile = ".env.production"; $remotePath = "/home/deploy/omni"
     $publicBaseUrl = "https://lista.whenthelightsdie.com"; $defaultTag = "prod"
   }
   "staging" {

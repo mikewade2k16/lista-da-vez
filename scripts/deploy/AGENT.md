@@ -257,6 +257,10 @@ Docker API >= 1.44, Compose, disco, memoria, carga, Postgres rodando) -> validac
 transporte -> `deploy-pull -Phase publish`. `-Phase all` (padrao) mantem o fluxo
 unico para `deploy:prod`/staging.
 
+- Memoria do host (decisao do usuario em 2026-11-25): o build web nativo so e bloqueado
+  abaixo de 2,5 GB livres. Entre 2,5 GB e o pico (~4,5 GB) o preflight apenas avisa que
+  havera swap. `OMNI_WEB_BUILD_MIN_FREE_MEM_GB` continua sobrescrevendo o minimo.
+
 - Trava: `run-deploy.mjs` cria `.tmp/deploy/deploy.lock` com o PID; PID morto = trava
   abandonada substituida. Nao existe trava remota entre maquinas diferentes.
 - Tunel (`image-tunnel.ps1`): container `omni-deploy-registry` (registry:2.8.3, so em

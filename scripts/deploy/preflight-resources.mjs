@@ -79,12 +79,17 @@ export async function checkResources({
   // Override consciente (como OMNI_WEB_BUILD_MIN_FREE_MB do disco): abaixo do pico
   // de ~4,3 GB o build usa swap e fica mais lento, mas conclui.
   const memOverrideGb = Number(process.env.OMNI_WEB_BUILD_MIN_FREE_MEM_GB || '')
-  const defaultRequiredGb = webBuild === 'native' ? Math.max(4.5, heapMb / 1024 * 0.75) : 1
+  // Decisao do usuario (2026-11-25): o Mac de 16 GB em uso nunca tem 4,5 GB livres.
+  // O build nativo so e bloqueado abaixo de 2,5 GB; entre isso e o pico ele avisa e segue.
+  const nativePeakGb = Math.max(4.5, heapMb / 1024 * 0.75)
+  const defaultRequiredGb = webBuild === 'native' ? 2.5 : 1
   const requiredGb = memOverrideGb > 0 ? memOverrideGb : defaultRequiredGb
-  if (memOverrideGb > 0) warnings.push(`Minimo de memoria reduzido por OMNI_WEB_BUILD_MIN_FREE_MEM_GB=${memOverrideGb} (padrao ${defaultRequiredGb.toFixed(1)} GB): o build pode usar swap.`)
+  if (memOverrideGb > 0) warnings.push(`Minimo de memoria alterado por OMNI_WEB_BUILD_MIN_FREE_MEM_GB=${memOverrideGb} (padrao ${defaultRequiredGb.toFixed(1)} GB).`)
   info.push(`Memoria disponivel no host: ${(available / GB).toFixed(1)} de ${(totalmem() / GB).toFixed(1)} GB`)
   if (available < requiredGb * GB) {
     failures.push(`Memoria livre insuficiente: ${(available / GB).toFixed(1)} GB (minimo ${requiredGb.toFixed(1)} GB para o build web). Feche aplicativos pesados ou pare servicos locais que nao estejam em uso.`)
+  } else if (webBuild === 'native' && available < nativePeakGb * GB) {
+    warnings.push(`Memoria abaixo do pico do build nativo (${(available / GB).toFixed(1)} de ~${nativePeakGb.toFixed(1)} GB): o build segue, mais lento por swap.`)
   } else if (available < (requiredGb + 1.5) * GB) {
     warnings.push(`Memoria apertada (${(available / GB).toFixed(1)} GB livres): o build pode ficar lento por swap.`)
   }

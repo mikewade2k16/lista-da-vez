@@ -152,6 +152,13 @@ Ele nao deve cuidar de:
 - Existe **so** para o gate SSO: o navegador, ao abrir direto `n8n.`/`waha.`, nao manda o Bearer (esse vive no localStorage do SPA), mas manda o cookie do dominio pai. O SPA segue usando o Bearer do JSON — o cookie e aditivo, nao quebra nada.
 - `AUTH_GATEWAY_COOKIE_DOMAIN`: vazio em dev (host-only), `.crowvisuals.com.br` em prod (vale em omni./n8n./waha.).
 
+## Ultimo acesso da sessao (2026-11-24)
+
+- `AuthenticateToken` chama `sessions.Touch` (atualiza `core.user_sessions.last_seen_at`) apos
+  confirmar que a sessao nao foi revogada, so no cache miss do Principal: no maximo uma escrita
+  por sessao a cada `AUTH_PRINCIPAL_CACHE_TTL`. Melhor esforco — erro nao bloqueia o login.
+  Alimenta "ultimo acesso"/"online" em `/v1/admin/users` (modulo core).
+
 ## Invariantes
 
 - senha, hash, `must_change_password`, estado da conta e sessoes existentes nunca podem ser alterados

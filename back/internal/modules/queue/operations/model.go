@@ -473,6 +473,8 @@ type Repository interface {
 	// CancelAutoClose marca a pendencia como cancelled (fora da metrica, preservada
 	// para auditoria) com motivo. ErrPendingNotFound quando nao ha linha pendente.
 	CancelAutoClose(ctx context.Context, storeID string, serviceID string, cancelReason string, validatedBy string, validatedAt int64) error
+	// ListRecentServices pagina o historico encerrado das lojas (mais recente primeiro).
+	ListRecentServices(ctx context.Context, storeIDs []string, limit, offset int) ([]RecentServiceItem, int, error)
 }
 
 type PublishedEvent struct {

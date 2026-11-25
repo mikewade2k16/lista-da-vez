@@ -21,6 +21,11 @@ export interface AdminUserItem {
   isAgencyMember: boolean
   createdAt: string
   updatedAt: string
+  // Presenca: o backend so envia para platform_admin (null = nao disponivel).
+  // lastLoginAt = sessao mais recente; lastSeenAt = ultimo uso/heartbeat.
+  lastLoginAt: string | null
+  lastSeenAt: string | null
+  isOnline: boolean | null
 }
 
 export interface AccountMembershipItem {

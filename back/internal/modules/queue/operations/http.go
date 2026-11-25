@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -47,6 +48,29 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		}
 
 		httpapi.WriteJSON(w, http.StatusOK, snapshot)
+	})))
+
+	mux.Handle("GET /v1/operations/recent-services", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		query := r.URL.Query()
+		page, _ := strconv.Atoi(query.Get("page"))
+		perPage, _ := strconv.Atoi(query.Get("perPage"))
+
+		result, err := service.RecentServices(r.Context(), AccessContextFromPrincipal(principal), RecentServicesInput{
+			StoreID: strings.TrimSpace(query.Get("storeId")),
+			Page:    page,
+			PerPage: perPage,
+		})
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, result)
 	})))
 
 	mux.Handle("POST /v1/operations/queue", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

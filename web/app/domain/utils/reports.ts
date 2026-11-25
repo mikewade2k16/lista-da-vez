@@ -7,13 +7,13 @@ type BuildReportDataInput = {
   filters?: LooseRecord
 }
 
-const OUTCOME_LABELS = {
+export const OUTCOME_LABELS = {
   compra: 'Compra',
   reserva: 'Reserva',
   'nao-compra': 'Nao compra',
 }
 
-const START_MODE_LABELS = {
+export const START_MODE_LABELS = {
   queue: 'Na vez',
   'queue-jump': 'Fora da vez',
 }

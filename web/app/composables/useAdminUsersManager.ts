@@ -35,7 +35,14 @@ const FIELD_TO_PATCH: Record<AdminUserFieldKey, string> = {
   isPlatformAdmin: 'isPlatformAdmin',
 }
 
-function normalizeUser(raw: Record<string, unknown>): AdminUserItem {
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null
+}
+
+// O PATCH devolve o usuario sem presenca (so a listagem agrega). Ao aplicar a
+// resposta, a presenca ja lida da listagem e mantida em vez de zerada.
+function normalizeUser(raw: Record<string, unknown>, previous?: AdminUserItem): AdminUserItem {
+  const hasPresence = 'isOnline' in raw || 'lastSeenAt' in raw || 'lastLoginAt' in raw
   return {
     id: String(raw.id ?? ''),
     email: String(raw.email ?? ''),
@@ -51,6 +58,13 @@ function normalizeUser(raw: Record<string, unknown>): AdminUserItem {
     isAgencyMember: Boolean(raw.isAgencyMember),
     createdAt: String(raw.createdAt ?? ''),
     updatedAt: String(raw.updatedAt ?? ''),
+    lastLoginAt: hasPresence ? optionalString(raw.lastLoginAt) : (previous?.lastLoginAt ?? null),
+    lastSeenAt: hasPresence ? optionalString(raw.lastSeenAt) : (previous?.lastSeenAt ?? null),
+    isOnline: hasPresence
+      ? typeof raw.isOnline === 'boolean'
+        ? raw.isOnline
+        : null
+      : (previous?.isOnline ?? null),
   }
 }
 
@@ -105,7 +119,7 @@ function createAdminUsersManager() {
 
   function applyPatch(id: string, raw: Record<string, unknown>) {
     const idx = users.value.findIndex((u) => u.id === id)
-    if (idx >= 0) users.value[idx] = normalizeUser(raw)
+    if (idx >= 0) users.value[idx] = normalizeUser(raw, users.value[idx])
   }
 
   function patchLocal(id: string, field: AdminUserFieldKey, value: unknown) {
@@ -134,7 +148,7 @@ function createAdminUsersManager() {
       // que o backend devolve (sem filtro client-side sobre o conjunto inteiro).
       const resp = await apiRequest(`/v1/admin/users?${buildListQuery()}`)
       const batch = (resp.users as Record<string, unknown>[]) ?? []
-      users.value = batch.map(normalizeUser)
+      users.value = batch.map((raw) => normalizeUser(raw))
       total.value = Number(resp.total ?? batch.length)
       page.value = Number(resp.page ?? page.value) || 1
       perPage.value = Number(resp.perPage ?? perPage.value) || perPage.value

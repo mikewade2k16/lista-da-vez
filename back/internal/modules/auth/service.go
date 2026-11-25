@@ -187,6 +187,10 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 		if revoked {
 			return Principal{}, ErrUnauthorized
 		}
+		// Ultimo acesso: atualiza last_seen_at so no cache miss (no maximo uma escrita
+		// por sessao a cada TTL do cache). Melhor esforco: falha aqui nao derruba a
+		// autenticacao, so deixa o "ultimo acesso" do admin um pouco defasado.
+		_ = service.sessions.Touch(ctx, principal.SessionID)
 	}
 
 	// Hot-path: LoadUserForAuth centraliza user + role + escopo usando a fonte configurada

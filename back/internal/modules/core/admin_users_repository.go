@@ -159,18 +159,20 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 	// popover de detalhes/acoes) renderiza esses campos. O detalhe (FindAdminUser)
 	// continua selecionando o conjunto completo. As colunas abaixo seguem a ordem
 	// lida por scanAdminUserListRow.
+	presenceSelect, presenceJoin := adminUserPresenceSQL(filter.IncludePresence)
 	dataSQL := fmt.Sprintf(`
 		select
 			u.id, u.email, u.display_name, u.nick,
 			u.is_active, u.is_platform_admin, u.must_change_password,
 			%s,
 			%s,
+			%s,
 			%s
-		from core.users u%s
+		from core.users u%s%s
 		where %s
 		order by lower(u.display_name) asc
 		limit $%d offset $%d
-	`, accountSelect, clientAccountIDSelect, isAgencyMemberSelect, accountJoin, where, n, n+1)
+	`, accountSelect, clientAccountIDSelect, isAgencyMemberSelect, presenceSelect, accountJoin, presenceJoin, where, n, n+1)
 
 	rows, err := r.pool.Query(ctx, dataSQL, args...)
 	if err != nil {
@@ -438,6 +440,7 @@ func scanAdminUserListRow(row scannable) (AdminUserListItem, error) {
 		&u.IsActive, &u.IsPlatformAdmin, &u.MustChangePassword,
 		&u.AccountCount, &u.AccountNames, &u.ClientAccountID,
 		&u.IsAgencyMember,
+		&u.LastLoginAt, &u.LastSeenAt, &u.IsOnline,
 	); err != nil {
 		return AdminUserListItem{}, err
 	}

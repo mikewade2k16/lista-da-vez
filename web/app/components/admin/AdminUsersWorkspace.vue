@@ -4,6 +4,7 @@ import OmniDataTable from '../../../layers/tasks/components/omni/table/OmniDataT
 import AdminUserCreateDialog from './users/AdminUserCreateDialog.vue'
 import AdminUserPasswordDialog from './users/AdminUserPasswordDialog.vue'
 import AdminUsersActionsCell from './users/AdminUsersActionsCell.vue'
+import AdminUserPresenceCell from './users/AdminUserPresenceCell.vue'
 import { provideAdminUsersContext } from '~/composables/useAdminUsersManager'
 import type { AdminUserFieldKey, AdminUserItem } from '~/types/admin-users'
 import type {
@@ -124,6 +125,15 @@ const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
   },
 ])
 
+const presenceColumn: OmniTableColumn = {
+  key: 'presence',
+  label: 'Ultimo acesso',
+  type: 'custom',
+  editable: false,
+  minWidth: 160,
+  defaultOrder: 80,
+}
+
 const allTableColumns = computed<OmniTableColumn[]>(() => [
   {
     key: 'email',
@@ -181,6 +191,8 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
     minWidth: 260,
     defaultOrder: 70,
   },
+  // Online/ultimo acesso: so platform_admin (o backend so envia para ele).
+  ...(isPlatformAdmin.value ? [presenceColumn] : []),
   {
     key: 'actions',
     label: 'Opcoes',
@@ -442,6 +454,10 @@ onMounted(() => {
             </UBadge>
             <span class="line-clamp-1">{{ toUser(row).accountNames || '-' }}</span>
           </span>
+        </template>
+
+        <template #cell-presence="{ row }">
+          <AdminUserPresenceCell :user="toUser(row)" />
         </template>
 
         <template #cell-actions="{ row }">

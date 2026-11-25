@@ -39,6 +39,16 @@ func NewAdminUserService(
 
 // ListUsers passa filtros para o repositorio e devolve a resposta paginada.
 func (s *AdminUserService) ListUsers(ctx context.Context, filter AdminUserListFilter) (AdminUserListResponse, error) {
+	// Presenca (online/ultimo acesso) e exclusiva de platform_admin: o flag nunca
+	// vem da query, e decidido aqui pelo ator do Principal.
+	filter.IncludePresence = false
+	if s.scope != nil && strings.TrimSpace(filter.ActorUserID) != "" {
+		isPlatformAdmin, err := s.scope.IsPlatformAdmin(ctx, filter.ActorUserID)
+		if err != nil {
+			return AdminUserListResponse{}, err
+		}
+		filter.IncludePresence = isPlatformAdmin
+	}
 	users, total, err := s.repo.ListUsers(ctx, filter)
 	if err != nil {
 		return AdminUserListResponse{}, err

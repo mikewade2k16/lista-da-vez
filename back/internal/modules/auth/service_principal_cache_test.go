@@ -27,6 +27,12 @@ type fakeSessionRepo struct {
 	SessionRepository
 	revoked      map[string]bool
 	revokedCalls int
+	touchCalls   int
+}
+
+func (f *fakeSessionRepo) Touch(context.Context, string) error {
+	f.touchCalls++
+	return nil
 }
 
 func (f *fakeSessionRepo) IsRevoked(_ context.Context, sessionID string) (bool, error) {
@@ -90,6 +96,9 @@ func TestAuthenticateToken_SecondCallHitsCache(t *testing.T) {
 	}
 	if sessions.revokedCalls != 1 {
 		t.Fatalf("esperado 1 IsRevoked (segunda foi hit), veio %d", sessions.revokedCalls)
+	}
+	if sessions.touchCalls != 1 {
+		t.Fatalf("esperado 1 Touch (ultimo acesso so no cache miss), veio %d", sessions.touchCalls)
 	}
 	if first.UserID != second.UserID || first.Role != second.Role {
 		t.Fatalf("principal divergente entre as chamadas: %+v vs %+v", first, second)

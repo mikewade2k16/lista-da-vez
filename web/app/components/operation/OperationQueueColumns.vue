@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { buildNickname } from '~/domain/utils/person-display'
 import OperationActiveServiceCard from '~/components/operation/OperationActiveServiceCard.vue'
+import OperationLastServiceBanner from '~/components/operation/OperationLastServiceBanner.vue'
 import OperationAudioRecordingStatus from '~/components/operation/OperationAudioRecordingStatus.vue'
 import OperationConsultantAvatarRing from '~/components/operation/OperationConsultantAvatarRing.vue'
 import OperationSidePanel from '~/components/operation/OperationSidePanel.vue'
@@ -51,6 +52,17 @@ const RECORDING_REFRESH_MS = 5_000
 const waitingList = computed(() => props.state.waitingList || [])
 const activeServices = computed(() => props.state.activeServices || [])
 const serviceHistory = computed(() => props.state.serviceHistory || [])
+// "Ultimo atendimento" (so platform_admin): loja operada/ativa; vazio no agregado
+// "Todas as lojas" (backend usa as lojas da conta ativa). A chave muda quando um
+// atendimento sai da coluna, para o banner reler o mais recente.
+const showLastServiceBanner = computed(() => auth.role === 'platform_admin')
+const lastServiceStoreId = computed(() =>
+  String(props.operatingStoreId || (props.integratedMode ? '' : props.state?.activeStoreId) || ''),
+)
+const lastServiceRefreshKey = computed(
+  () =>
+    `${activeServices.value.map((service) => service?.serviceId || '').join(',')}|${serviceHistory.value.length}`,
+)
 const serverClockOffsetMs = computed(() => Number(props.state?.serverClockOffsetMs || 0) || 0)
 // Relogio monotonico local (imune a skew/ajuste do relogio de parede).
 function monotonicNow() {
@@ -790,6 +802,11 @@ onBeforeUnmount(() => {
 
     <section class="queue-column queue-column--service" data-testid="operation-service-column">
       <header class="queue-column__header">Em atendimento</header>
+      <OperationLastServiceBanner
+        v-if="showLastServiceBanner"
+        :store-id="lastServiceStoreId"
+        :refresh-key="lastServiceRefreshKey"
+      />
       <div class="queue-column__body queue-column__body--service">
         <template v-if="activeServices.length > 0">
           <div

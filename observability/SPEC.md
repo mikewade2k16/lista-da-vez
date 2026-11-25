@@ -342,3 +342,49 @@ notas do último run completo. Endpoints: `GET /reports/weekly/preview` → `{su
 `note`, `updatedAt`, `updatedBy`, `overdue` (dueDate < hoje e status open). O sync da
 AUDITORIA nunca sobrescreve esses campos. Aba Segurança: edição inline e filtro
 "abertos / vencidos / meus".
+
+## Etapa 3 do backlog (banco, tasks 3.1, 3.2, 3.3, 3.5) — contratos
+
+Migration `0334_obs_db_insights.sql`: `obs.table_stats` (uma linha por tabela por hora)
+e `obs.query_plans` (plano genérico por fingerprint lento).
+
+**3.1 Crescimento e manutenção.** Coletor na API (pacote `platform/observability`,
+de hora em hora, `OBS_TABLE_STATS_INTERVAL` padrão 1h, primeira coleta 2 min após o boot)
+grava em `obs.table_stats` a partir de `pg_stat_user_tables` + `pg_total_relation_size`
+/`pg_relation_size`/`pg_indexes_size` (exclui schema `obs` e `pg_toast`). Retenção:
+90 dias (independente de `OBS_RETENTION_DAYS`).
+`GET /v1/admin/observability/db/tables?sort=size|growth|dead|seqscan` →
+`[{ schema, table, totalBytes, tableBytes, indexBytes, liveTuples, deadTuples, deadRatio, growthBytes7d, growthPct7d, seqScanDelta24h, idxScanDelta24h, lastVacuumAt, lastAnalyzeAt, needsVacuum, needsAnalyze }]`
+(máx 100). `needsVacuum` = deadTuples > 50 000 e deadRatio > 0,2; `needsAnalyze` =
+modsSinceAnalyze > 10% das linhas e > 10 000. Regra de alerta `table_needs_vacuum`
+(alvo schema.tabela, medium) e `db_growth` (banco cresceu > 20% em 7 dias, medium).
+
+**3.2 Índices de FK que pesam.** `GET /v1/admin/observability/db/index-advice` →
+`[{ schema, table, constraint, columns: [], tableBytes, seqScanDelta24h, matchingQueries, slowQueries, score, suggestion }]`
+— FKs sem índice cobrindo as colunas (pg_constraint × pg_index), cruzadas com
+`obs.db_query_stats`/`obs.db_slow_queries` (statement cita a tabela e a coluna) e
+com `seq_scan` de `obs.table_stats`. `suggestion` = DDL sugerido
+(`create index concurrently if not exists ... on schema.tabela (cols);`), só texto,
+nunca executado. Ordenado por score; só itens com score > 0 por padrão (`all=1` lista tudo).
+
+**3.3 EXPLAIN automático.** A cada hora, para os fingerprints lentos (top 20 por tempo
+total em `obs.db_query_stats` nos últimos 7 dias, mais todos de `db_slow_queries`) sem
+plano nas últimas 24 h: converte `?` do statement normalizado em `$n` e roda
+`EXPLAIN (GENERIC_PLAN, FORMAT JSON)` (Postgres ≥ 16; não executa a consulta) com
+`WithoutTracing`, timeout 5 s, `SET LOCAL statement_timeout`, numa transação
+`READ ONLY` com rollback; só `select`/`with ... select` (nunca escrita). Achados do plano
+em `findings`: `seq_scan_large` (Seq Scan em tabela > 10 000 linhas com Filter → sugere
+índice nas colunas do filtro), `sort_without_index`, `nested_loop_large`,
+`hash_join_large`, `function_on_column` (filtro com função na coluna impede índice).
+Erro de plano vai em `error` (sem derrubar o ciclo).
+`GET /v1/admin/observability/db/plans` → `[{ fingerprint, statement, totalCost, findings: [{kind, relation, detail, suggestion}], error, capturedAt, avgMs, calls }]`;
+`POST /v1/admin/observability/db/plans/{fingerprint}/refresh` → 202 (recaptura agora).
+
+**3.5 Ganho medido.** `GET /v1/admin/observability/db/optimizations?days=7` →
+`{ deployAt, items: [{ fingerprint, statement, route, beforeAvgMs, afterAvgMs, beforeCalls, afterCalls, deltaPct, verdict: "melhorou|piorou|igual" }] }`
+comparando `obs.db_query_stats` na janela antes × depois do último deploy com sucesso
+(`obs.deploys`), mínimo 20 chamadas em cada lado e variação ≥ 20% e ≥ 5 ms para não ser
+"igual". Sem deploy registrado: compara a última semana com a anterior.
+
+Front (aba Banco): seções "Tabelas" (3.1), "Índices sugeridos" (3.2), "Planos das
+consultas lentas" (3.3) e "Antes × depois do último deploy" (3.5).

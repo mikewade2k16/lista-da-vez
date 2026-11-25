@@ -81,6 +81,9 @@ type AdminUserListFilter struct {
 	// (sem o agregado) — usado pela tela acima-da-dobra, que carrega o detalhe de
 	// contas sob interacao (popover de memberships). Espelha "pedir so o necessario".
 	IncludeAccounts bool
+	// IncludePresence: preenchido pelo service (nunca pela query) so quando o ator
+	// e platform_admin. Agrega ultimo login/acesso e "online agora" por user.
+	IncludePresence bool
 }
 
 // AdminUserListItem e a projecao LEAN de um user na LISTAGEM /v1/admin/users.
@@ -105,6 +108,13 @@ type AdminUserListItem struct {
 	// IsAgencyMember: membro ativo de ao menos uma conta-agencia. Gateia a celula
 	// "Cliente" e o badge "Agencia" na grade. Mesma semantica do AdminUserView.
 	IsAgencyMember bool `json:"isAgencyMember"`
+	// Presenca (so para platform_admin; omitida para os demais atores).
+	// LastLoginAt: criacao da sessao mais recente (core.user_sessions).
+	// LastSeenAt: maior entre o uso da sessao (last_seen_at) e o heartbeat do front
+	// (obs.presence). IsOnline: LastSeenAt dentro da janela de presenca.
+	LastLoginAt *time.Time `json:"lastLoginAt,omitempty"`
+	LastSeenAt  *time.Time `json:"lastSeenAt,omitempty"`
+	IsOnline    *bool      `json:"isOnline,omitempty"`
 }
 
 // AdminUserListResponse e o body de GET /v1/admin/users.

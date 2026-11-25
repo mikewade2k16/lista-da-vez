@@ -139,6 +139,18 @@ Em ambos: ERRO NUNCA e cacheado (mantem a degradacao graciosa — na proxima cha
 - `POST /v1/operations/keep-open` (auto-encerramento 2h — "Continuar", operador)
 - `POST /v1/operations/validate` (auto-encerramento 2h — validar pendencia, gerente)
 - `POST /v1/operations/cancel-metric` (auto-encerramento 2h — cancelar metrica, gerente)
+- `GET /v1/operations/recent-services?storeId=&page=&perPage=` (so `platform_admin`; 403 aos demais)
+
+## Ultimos atendimentos (auditoria platform_admin, 2026-11-24)
+
+- `service_recent.go` + `store_postgres_recent.go`: pagina `queue.operation_service_history`
+  por `finished_at desc` (indice `store_id, finished_at desc`), `perPage` 1..50 (padrao 10).
+- Lojas vem de `StoreScopeProvider.ListAccessible` filtrado pela account ativa
+  (`ScopeTenantID`); `storeId` fora desse conjunto = 404. `storeId` vazio = todas as lojas.
+- Retorna funcionario (`personName`), loja (`storeName`), inicio/fim, duracao, desfecho,
+  modo de inicio, espera, valor, cliente e status de validacao. Retroativo: le o historico ja gravado.
+- Front: `OperationLastServiceBanner` na coluna "Em atendimento" (so `platform_admin`) abre
+  `OperationRecentServicesModal` (detalhe + paginacao), via `useRecentServices`.
 
 ## Auto-encerramento de atendimento (2h)
 

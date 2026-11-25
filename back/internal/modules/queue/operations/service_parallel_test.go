@@ -20,6 +20,8 @@ type testOperationsRepository struct {
 	cancelledServiceIDs                []string
 	validateErr                        error
 	cancelErr                          error
+	recentItems                        []RecentServiceItem
+	recentStoreIDs                     []string
 }
 
 type testStoreScopeProvider struct {
@@ -115,6 +117,11 @@ func (repository *testOperationsRepository) ValidateAutoClose(_ context.Context,
 	}
 	repository.validatedEntries = append(repository.validatedEntries, entry)
 	return nil
+}
+
+func (repository *testOperationsRepository) ListRecentServices(_ context.Context, storeIDs []string, _ int, _ int) ([]RecentServiceItem, int, error) {
+	repository.recentStoreIDs = append([]string{}, storeIDs...)
+	return append([]RecentServiceItem{}, repository.recentItems...), len(repository.recentItems), nil
 }
 
 func (repository *testOperationsRepository) CancelAutoClose(_ context.Context, _ string, serviceID string, _ string, _ string, _ int64) error {

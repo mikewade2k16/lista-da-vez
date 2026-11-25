@@ -326,6 +326,18 @@ Teste de contrato + traducao de erro em `store_postgres_test.go`.
 > `WHERE account_id = ANY($1::uuid[])`, agrupando em memoria. Fallback N+1 preservado
 > para repositorios que so satisfazem `Repository` (ex.: fakes de teste).
 
+## Presenca na listagem de usuarios (2026-11-24)
+
+- `GET /v1/admin/users` devolve `lastLoginAt`, `lastSeenAt` e `isOnline` **so** quando o ator e
+  `platform_admin` (`AdminUserService.ListUsers` decide `IncludePresence`; nunca vem da query).
+  Para os demais os campos sao omitidos.
+- Fontes (`admin_users_presence.go`): `core.user_sessions` (`created_at` = login, `last_seen_at`
+  = ultimo uso, tocado pelo auth a cada cache miss do Principal) e `obs.presence` (heartbeat do
+  front a cada 30s, retido 24h; indice `presence_user_last_seen_idx`, migration 0331).
+- Online = ultimo sinal nos ultimos 2 minutos. Retroativo: ultimo login de todas as sessoes ja
+  gravadas; antes de 2026-11-24 `last_seen_at` == login (o `Touch` nao era chamado).
+- Front: coluna "Ultimo acesso" (`AdminUserPresenceCell`) em `/manage/users`, so para platform_admin.
+
 ## Invalidacao do PrincipalCache (AC-01)
 
 - `RBACService` e `AdminUserService` recebem um `PrincipalCacheInvalidator` opcional (interface local `{InvalidateUser, InvalidateAll}` definida UMA vez em `rbac_service.go`, reusada pelo `admin_users_service.go`; local para nao importar `httpapi`). `module.go` `Build` liga os setters com `deps.PrincipalCache` (nil-check — `nil` quando o cache esta desligado).

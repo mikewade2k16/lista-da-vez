@@ -38,6 +38,10 @@ type scriptInput struct {
 	Description     string      `json:"description"`
 	ClientAccountID string      `json:"clientAccountId"`
 	ClientVisible   *bool       `json:"clientVisible"`
+	// UpdatedAt: aceito e ignorado. O front envia o documento inteiro (com updatedAt) e o
+	// decoder recusa campos desconhecidos; a concorrência agora é por trava de célula.
+	// Remover este campo quebra "+ Linha" e a troca de cliente com "Dados invalidos".
+	UpdatedAt string `json:"updatedAt,omitempty"`
 }
 type scriptListFilter struct {
 	Search string

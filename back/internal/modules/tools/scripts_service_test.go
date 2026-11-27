@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
 
 type scriptRepositoryFake struct {
@@ -259,5 +261,20 @@ func TestScriptDeleteAndRowRemovalBlockedWhileSomeoneEdits(t *testing.T) {
 	var locked scriptLockedError
 	if !errors.As(err, &locked) || locked.holder != "Ana" {
 		t.Fatalf("removing a locked row: %v", err)
+	}
+}
+
+// Regressão: o front envia o ScriptDraft inteiro (inclui updatedAt). O decoder recusa campos
+// desconhecidos, então tirar um campo do scriptInput quebra "+ Linha" e a troca de cliente.
+func TestScriptInputAcceptsFrontendDraft(t *testing.T) {
+	body := `{"title":"Novo roteiro","rows":[{"id":"r1","audio":"","video":""}],"description":"",` +
+		`"updatedAt":"2026-11-27T12:00:00.123456Z","clientAccountId":"","clientVisible":false}`
+	request := httptest.NewRequestWithContext(context.Background(), "PUT", "/v1/tools/scripts/id", strings.NewReader(body))
+	var in scriptInput
+	if err := httpapi.ReadJSON(request, &in); err != nil {
+		t.Fatalf("payload do front recusado: %v", err)
+	}
+	if len(in.Rows) != 1 || in.Rows[0].ID != "r1" {
+		t.Fatalf("rows: %+v", in.Rows)
 	}
 }

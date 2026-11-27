@@ -48,7 +48,94 @@ func (s *Store) AlertMetrics(ctx context.Context, now time.Time) (alertMetrics, 
 		now.Add(-15*time.Minute)).Scan(&m.FrontendJSErr15); err != nil {
 		return m, fmt.Errorf("alert metrics front: %w", err)
 	}
+	if m.ContractErrors15m, err = s.contractErrors(ctx, now.Add(-15*time.Minute)); err != nil {
+		return m, err
+	}
+	if m.Route4xx15m, err = s.routeClientErrors(ctx, now.Add(-15*time.Minute)); err != nil {
+		return m, err
+	}
+	if m.LastDeploy, err = s.lastDeployWindow(ctx, now); err != nil {
+		return m, err
+	}
 	return m, nil
+}
+
+// contractErrors: 400/422 de corpo que não decodifica, por rota (só tráfego real).
+func (s *Store) contractErrors(ctx context.Context, from time.Time) ([]routeContractErrors, error) {
+	rows, err := s.pool.Query(quiet(ctx), `
+		select route, count(*), max(error_code),
+		       coalesce((array_agg(error_message order by occurred_at desc))[1], '')
+		from obs.http_requests
+		where source = 'live' and occurred_at >= $1 and status in (400, 422)
+		  and error_code in ('invalid_body', 'invalid_json') and route <> 'UNMATCHED'
+		group by route order by count(*) desc limit 50`, from)
+	if err != nil {
+		return nil, fmt.Errorf("alert metrics contract errors: %w", err)
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (routeContractErrors, error) {
+		var item routeContractErrors
+		return item, row.Scan(&item.Route, &item.Count, &item.Code, &item.Message)
+	})
+}
+
+// routeClientErrors: 400/422 e total de chamadas por rota que teve ao menos um 400/422.
+func (s *Store) routeClientErrors(ctx context.Context, from time.Time) ([]routeClientErrors, error) {
+	rows, err := s.pool.Query(quiet(ctx), `
+		select route, count(*) filter (where status in (400, 422)), count(*)
+		from obs.http_requests
+		where source = 'live' and occurred_at >= $1 and route <> 'UNMATCHED'
+		group by route
+		having count(*) filter (where status in (400, 422)) > 0
+		order by 2 desc limit 50`, from)
+	if err != nil {
+		return nil, fmt.Errorf("alert metrics route 4xx: %w", err)
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (routeClientErrors, error) {
+		var item routeClientErrors
+		return item, row.Scan(&item.Route, &item.Errors, &item.Calls)
+	})
+}
+
+// lastDeployWindow: último deploy com sucesso terminado nas últimas 2 h, com os erros
+// (5xx e 400/422) de cada rota 30 min antes do início e nos últimos 15 min após o fim.
+func (s *Store) lastDeployWindow(ctx context.Context, now time.Time) (*deployWindow, error) {
+	var d deployWindow
+	err := s.pool.QueryRow(quiet(ctx), `
+		select id, git_sha, started_at, finished_at from obs.deploys
+		where status = 'success' and finished_at >= $1 and finished_at <= $2
+		order by finished_at desc limit 1`, now.Add(-2*time.Hour), now).Scan(&d.ID, &d.GitSHA, &d.StartedAt, &d.FinishedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("alert metrics last deploy: %w", err)
+	}
+	afterFrom := d.FinishedAt
+	if recent := now.Add(-15 * time.Minute); recent.After(afterFrom) {
+		afterFrom = recent
+	}
+	rows, err := s.pool.Query(quiet(ctx), `
+		select route,
+		       count(*) filter (where occurred_at < $2),
+		       count(*) filter (where occurred_at >= $3)
+		from obs.http_requests
+		where source = 'live' and occurred_at >= $1 and route <> 'UNMATCHED'
+		  and (status >= 500 or status in (400, 422))
+		  and (occurred_at < $2 or occurred_at >= $3)
+		group by route
+		having count(*) filter (where occurred_at >= $3) > 0
+		order by 3 desc limit 50`, d.StartedAt.Add(-30*time.Minute), d.StartedAt, afterFrom)
+	if err != nil {
+		return nil, fmt.Errorf("alert metrics deploy routes: %w", err)
+	}
+	d.Routes, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (deployRouteErrors, error) {
+		var item deployRouteErrors
+		return item, row.Scan(&item.Route, &item.Before, &item.After)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("alert metrics deploy routes: %w", err)
+	}
+	return &d, nil
 }
 
 func (s *Store) routeErrors(ctx context.Context, from time.Time) ([]routeCount, error) {

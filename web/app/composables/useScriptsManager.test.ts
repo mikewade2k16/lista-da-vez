@@ -1,6 +1,16 @@
 import { reactive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useScriptsManager } from './useScriptsManager'
+import { readFileSync } from 'node:fs'
+import { useScriptsManager, type ScriptDraft } from './useScriptsManager'
+
+// Contrato front↔back: o back decodifica com DisallowUnknownFields, então toda chave que o
+// front envia no save precisa existir no scriptInput (o teste Go lê este mesmo arquivo).
+const draftFixture = JSON.parse(
+  readFileSync(
+    new URL('../../../back/internal/modules/tools/testdata/script_draft.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, unknown>
 
 const mocks = vi.hoisted(() => ({
   api: vi.fn(),
@@ -80,5 +90,17 @@ describe('documentos de roteiros por conta', () => {
         headers: { 'X-Account-Id': 'account-a' },
       }),
     )
+  })
+  it('envia no save exatamente as chaves que o back aceita (contrato com o Go)', () => {
+    // Required<> faz o typecheck falhar se o ScriptDraft ganhar um campo sem atualizar aqui.
+    const draft: Required<ScriptDraft> = {
+      title: '',
+      rows: [],
+      description: '',
+      updatedAt: '',
+      clientAccountId: '',
+      clientVisible: false,
+    }
+    expect(Object.keys(draft).sort()).toEqual(Object.keys(draftFixture).sort())
   })
 })

@@ -167,7 +167,7 @@ Regras (alvo entre parênteses compõe o fingerprint). As regras e contagens de 
 | `pg_lock_wait` | waitingOnLock > 0 por 2 amostras | medium |
 | `pg_deadlock` | deadlocksDelta > 0 | high |
 | `pg_connections` | connections / maxConnections >= 0.85 | high |
-| `goroutine_growth` | goroutines > 10000, ou crescimento > 50% em 30 min sem queda | medium |
+| `goroutine_growth` | goroutines > 10000, ou crescimento > 50% **e** >= +300 em 30 min sem queda | medium |
 | `job_backlog` (tabela) | oldestDueLagSeconds > 300 | medium (high > 1800) |
 | `job_dead` (tabela) | deadLastHour > 0 | medium |
 | `collector_silent` | sem amostra `api` há 2 min | high |
@@ -176,6 +176,9 @@ Regras (alvo entre parênteses compõe o fingerprint). As regras e contagens de 
 | `container_restarts` (container) | restart_count subiu em 1 h | high |
 | `disk_low` (path) | usedPct >= 85 (critical >= 95) | high |
 | `frontend_errors` | >= 20 erros de JS em 15 min | medium |
+| `contract_errors` (rota) | >= 2 respostas 400/422 `invalid_body`/`invalid_json` em 15 min (tráfego `live`): front e back fora de contrato | high |
+| `route_4xx_spike` (rota) | >= 50% de 400/422 em 15 min, com >= 10 chamadas (rota já em `contract_errors` não duplica) | medium |
+| `deploy_regression` (rota) | último deploy `success` terminado há <= 2 h: erros (5xx + 400/422) nos últimos 15 min após o fim >= 3 e > 2x a média de 15 min dos 30 min antes do início; resolve quando os erros param | high |
 
 ### Endpoints novos (todos `RequireRoles(platform_admin)`, envelope `{ data }`)
 
@@ -311,7 +314,7 @@ notas do último run completo. Endpoints: `GET /reports/weekly/preview` → `{su
 - `GET /settings` devolve também `channel` (`smtpConfigured`, `envRecipientCount`,
   `alertRecipientCount`, `weeklyRecipientCount`, `cacheSeconds`) e `weeklyState`
   (`lastSentAt`, `lastError`). `recipients` volta como gravado (vazio = ambiente); `alerts.rules`
-  volta completo (19 regras, padrão do código quando não gravado); `rulesCatalog` traz também
+  volta completo (22 regras, padrão do código quando não gravado); `rulesCatalog` traz também
   `min`/`max` do limite. `PUT /settings/{key}` grava e devolve o mesmo corpo do GET.
 - Erros: 400 `invalid_settings` com `error.details.fields` = `{ "<caminho>": "mensagem" }`
   (`recipients`, `renotifyMinutes`, `quietHours.start`, `rules.<regra>.threshold`...; `_` = JSON
@@ -319,7 +322,7 @@ notas do último run completo. Endpoints: `GET /reports/weekly/preview` → `{su
 - Limites aplicados pelo motor: `api_5xx_rate` (crítico em 4x o limite), `route_errors`,
   `slow_route`, `pg_connections`, `goroutine_growth` (limite absoluto), `job_backlog` (alto em 6x),
   `disk_low` (crítico em limite+10, máx. 99), `tls_expiring` (crítico em min(3, limite) dias),
-  `frontend_errors`. Regra desligada some das condições (os alertas abertos dela resolvem).
+  `frontend_errors`, `contract_errors`, `route_4xx_spike` (%), `deploy_regression`. Regra desligada some das condições (os alertas abertos dela resolvem).
   Severidade diferente de `auto` substitui a do código.
 - Horário de silêncio: e-mails não críticos (ou todos, sem `allowCritical`) ficam retidos sem
   marcar o alerta como avisado; o motor os reavalia a cada rodada e eles saem juntos no fim.

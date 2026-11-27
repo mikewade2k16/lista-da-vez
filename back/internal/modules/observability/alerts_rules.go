@@ -148,6 +148,10 @@ type alertMetrics struct {
 	Disks           []diskMetric
 	FrontendJSErr15 int64
 
+	ContractErrors15m []routeContractErrors // 400/422 com invalid_body/invalid_json, por rota
+	Route4xx15m       []routeClientErrors   // 400/422 e total de chamadas, por rota
+	LastDeploy        *deployWindow         // último deploy com sucesso nas últimas 2 h
+
 	TLS           []tlsMetric          // última amostra do agente (vazio = coletor sem TLS)
 	TLSErrorSince map[string]time.Time // host -> primeira amostra com erro na janela de 13 h
 
@@ -192,6 +196,8 @@ func evaluateRules(m alertMetrics) []condition {
 	out = append(out, ruleContainers(m)...)
 	out = append(out, ruleTLS(m)...)
 	out = append(out, rulePanics(m)...)
+	out = append(out, ruleContract(m)...)
+	out = append(out, ruleDeployRegression(m)...)
 	if m.FrontendJSErr15 >= int64(m.threshold("frontend_errors")) {
 		out = append(out, condition{Rule: "frontend_errors", Severity: sevMedium, Area: "pages",
 			Title:    "Erros de JavaScript no front",
@@ -290,7 +296,10 @@ func rulePoolAndPG(m alertMetrics) []condition {
 	return out
 }
 
-// ruleGoroutines: > 10000, ou crescimento > 50% em 30 min sem nenhuma queda
+// goroutineGrowthMinDelta é o crescimento absoluto mínimo para suspeitar de vazamento.
+const goroutineGrowthMinDelta = 300
+
+// ruleGoroutines: > 10000, ou crescimento > 50% (e >= +300) em 30 min sem nenhuma queda
 // relevante (queda > 20% sobre o pico anterior zera a suspeita de vazamento).
 func ruleGoroutines(m alertMetrics) []condition {
 	if len(m.APISamples) == 0 {
@@ -317,7 +326,9 @@ func ruleGoroutines(m alertMetrics) []condition {
 		peak = max(peak, value)
 	}
 	growth := float64(current)/float64(oldest.Metrics.Go.Goroutines) - 1
-	if growth <= 0.5 {
+	// Piso absoluto: com poucas goroutines (ex.: 46 -> 75, alguns websockets abertos) os
+	// 50% não indicam vazamento; só alerta com +300 ou mais além do percentual.
+	if growth <= 0.5 || current-oldest.Metrics.Go.Goroutines < goroutineGrowthMinDelta {
 		return nil
 	}
 	return []condition{{Rule: "goroutine_growth", Severity: sevMedium, Area: "api",

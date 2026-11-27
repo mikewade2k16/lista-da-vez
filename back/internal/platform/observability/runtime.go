@@ -150,7 +150,10 @@ func pathModule(path string) string {
 }
 
 func (rt *Runtime) shouldSample(status int, duration time.Duration, source string) bool {
-	if status >= 500 || duration >= rt.cfg.SlowRequest || source == "runner" {
+	// 400/422 entram sempre: são a evidência de contrato quebrado entre front e back
+	// (regra contract_errors), e perder uma por amostragem esconde a regressão.
+	if status >= 500 || status == http.StatusBadRequest || status == http.StatusUnprocessableEntity ||
+		duration >= rt.cfg.SlowRequest || source == "runner" {
 		return true
 	}
 	return rt.cfg.SampleRate >= 1 || rand.Float64() < rt.cfg.SampleRate

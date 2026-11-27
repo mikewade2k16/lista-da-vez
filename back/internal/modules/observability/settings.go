@@ -48,7 +48,7 @@ type ruleCatalogItem struct {
 	Max              float64 `json:"max"`
 }
 
-// rulesCatalog lista as 19 regras do motor, com os limites atuais do código.
+// rulesCatalog lista as 22 regras do motor, com os limites atuais do código.
 var rulesCatalog = []ruleCatalogItem{
 	{Rule: "api_5xx_rate", Label: "Taxa de erros 5xx da API", Area: "api", HasThreshold: true, DefaultThreshold: 5, Unit: "% de 5xx em 5 min", Min: 1, Max: 100},
 	{Rule: "route_errors", Label: "Rota com erros 5xx", Area: "api", HasThreshold: true, DefaultThreshold: 5, Unit: "respostas 5xx em 5 min", Min: 1, Max: 1000},
@@ -69,6 +69,9 @@ var rulesCatalog = []ruleCatalogItem{
 	{Rule: "disk_low", Label: "Pouco espaço em disco", Area: "containers", HasThreshold: true, DefaultThreshold: 85, Unit: "% usado", Min: 50, Max: 99},
 	{Rule: "tls_expiring", Label: "Certificado TLS perto de vencer", Area: "containers", HasThreshold: true, DefaultThreshold: 14, Unit: "dias", Min: 1, Max: 90},
 	{Rule: "frontend_errors", Label: "Erros de JavaScript no front", Area: "pages", HasThreshold: true, DefaultThreshold: 20, Unit: "erros em 15 min", Min: 1, Max: 10000},
+	{Rule: "contract_errors", Label: "Recurso quebrado (front e back fora de contrato)", Area: "api", HasThreshold: true, DefaultThreshold: 2, Unit: "respostas invalid_body em 15 min", Min: 1, Max: 1000},
+	{Rule: "route_4xx_spike", Label: "Rota recusando a maioria das requisições (400/422)", Area: "api", HasThreshold: true, DefaultThreshold: 50, Unit: "% de 400/422 em 15 min", Min: 5, Max: 100},
+	{Rule: "deploy_regression", Label: "Erros novos depois do deploy", Area: "api", HasThreshold: true, DefaultThreshold: 3, Unit: "erros por rota em 15 min após o deploy", Min: 1, Max: 1000},
 }
 
 func catalogItem(rule string) (ruleCatalogItem, bool) {

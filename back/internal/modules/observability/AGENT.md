@@ -93,8 +93,12 @@ SMTP: mesmos `SMTP_*` do auth, via `platform/mailer`. Link do e-mail: `WEB_APP_U
 
 Limites conhecidos: assume uma única réplica da API (várias réplicas duplicariam e-mails);
 `api_5xx_rate`, `route_errors` e `slow_route` leem `obs.http_requests`, que respeita
-`OBS_SAMPLE_RATE` (5xx e lentas sempre gravam; com taxa < 1 o total de requisições é
-subestimado e a taxa de 5xx, superestimada). `container_down` trata qualquer container
+`OBS_SAMPLE_RATE` (5xx, 400, 422 e lentas sempre gravam; com taxa < 1 o total de requisições é
+subestimado e as taxas de 5xx e de 400/422, superestimadas).
+`contract_errors`, `route_4xx_spike` e `deploy_regression` (`alerts_rules_contract.go`) pegam
+recurso quebrado que não derruba a API: em 2026-11-27 o save de roteiros devolveu 400
+`invalid_body` a todo "+ Linha" e só o cliente percebeu. `deploy_regression` lê `obs.deploys`
+(gravado pelo `run-deploy`) e compara erros por rota antes e depois do último deploy. `container_down` trata qualquer container
 fora de `running` como crítico, inclusive jobs one-shot que terminam em `exited`.
 
 ## Configurações pelo painel (2.1 a 2.3; migration 0333)
@@ -111,7 +115,7 @@ quando a chave não existe ou os destinatários estão vazios. Contratos em `obs
 | `GET /reports/weekly/preview` | `{subject,text}` do relatório com os dados de agora |
 | `POST /reports/weekly/send` | envia agora (204; 409 `alerts_not_configured`; 502) |
 
-Arquivos: `settings.go` (tipos, catálogo de 19 regras, validação, silêncio, aplicação de regra),
+Arquivos: `settings.go` (tipos, catálogo de 22 regras, validação, silêncio, aplicação de regra),
 `settings_provider.go` (cache de 60 s, `Invalidate` após PUT, valor gravado inválido = padrão da
 chave), `store_settings.go`, `service_settings.go`, `http_settings.go` (rotas em
 `registerSettingsRoutes`), `alerts_email.go` (layout e prévia), `report_weekly.go` +

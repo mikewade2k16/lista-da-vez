@@ -57,6 +57,12 @@ Regras de trabalho (aprendidas em 2026-11-23):
   - e-mail de teste entregue.
 - [x] **Contas de teste locais e isolamento entre contas (2026-11-24):** 6 trocas de
       conta, nenhum vazamento.
+- [x] **Regressão funcional (2026-11-27):** depois do 400 nos roteiros que só o cliente notou:
+  - regras `contract_errors` (alta), `route_4xx_spike` e `deploy_regression` (alta);
+  - 400 e 422 sempre gravados em `obs.http_requests`, mesmo com amostragem;
+  - piso de +300 no `goroutine_growth`;
+  - contrato do save de roteiros com JSON de exemplo compartilhado
+    (`back/internal/modules/tools/testdata/script_draft.json`), testado no Go e no vitest.
 
 Etapas 1 e 2 commitadas em 2026-11-24, ainda sem push nem deploy. O próximo deploy aplica as migrations 0332 e 0333 e fecha os 6 alertas falsos de container em produção.
 
@@ -140,6 +146,8 @@ Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vá
       `platform_admin`, com top de funções.
 - [ ] **5.2 Custo de IA.** Tokens e valor por conta, por recurso e por modelo.
 - [ ] **5.3 Vazamento de goroutine.** Tendência e alerta de crescimento contínuo.
+      (2026-11-27: a regra exige também +300 goroutines, pois 46 -> 75 com websockets
+      gerava falso alarme.)
 - [ ] **5.4 Carga real** nas rotas críticas, com limite de aceitação (precisa da 4.4).
 - [ ] **5.5 Goroutines sem desligamento gracioso:** calendar, storage, cardápio,
       realtime, bi e site.
@@ -151,7 +159,9 @@ Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vá
 - [ ] **6.2 Uso por funcionalidade.** Eventos de uso (tela, ação, conta) e ranking do
       que é usado e do que não é.
 - [ ] **6.3 Jornadas automáticas.** Login, criar task, emitir nota e cardápio, com
-      passo a passo e verificação.
+      passo a passo e verificação. Incluir roteiros: criar, "+ Linha", marcar cliente.
+      Estender o contrato por JSON de exemplo (como `tools/testdata/script_draft.json`)
+      aos outros saves que mandam o documento inteiro.
 - [ ] **6.4 Erros de JS com stack legível.** Source maps privados no deploy.
 - [ ] **6.5 Tamanho do bundle por página**, com alerta quando crescer.
 - [ ] **6.6 Configuração de layout do painel.** Quais cards e seções aparecem na
@@ -162,8 +172,8 @@ Estimativa entre colchetes: P = até 1 h, M = meio dia, G = 1 a 2 dias, GG = vá
 - [ ] **7.1 CPU, memória e load da VPS inteira**, não só dos containers.
 - [ ] **7.2 Tendência de disco.** Estimar "enche em X dias" e alertar.
 - [ ] **7.3 Logs centralizados e pesquisáveis** pelo painel (por correlation ID).
-- [ ] **7.4 Alerta de deploy que piorou.** Comparar p95 e erros 30 min antes e
-      depois do deploy.
+- [~] **7.4 Alerta de deploy que piorou.** (2026-11-27) Erros feitos: regra `deploy_regression`
+      (5xx + 400/422 por rota, 15 min após o deploy contra os 30 min antes). Falta o p95.
 - [ ] **7.5 Rollback com um clique** (pelo painel ou por comando).
 - [ ] **7.6 DNS:** nameservers ainda na HostGator, com prazo até 2026-12-19.
 

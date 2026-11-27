@@ -141,6 +141,10 @@ func TestGoroutineGrowth(t *testing.T) {
 	if findRule(evaluateRules(m), "goroutine_growth", "") != nil {
 		t.Fatal("queda no meio da janela descarta o vazamento")
 	}
+	m.APISamples = []apiSample{sampleAt(0, g(75)), sampleAt(15*time.Minute, g(60)), sampleAt(30*time.Minute, g(46))}
+	if findRule(evaluateRules(m), "goroutine_growth", "") != nil {
+		t.Fatal("46 -> 75 (+63%, só +29) é ruído de websocket, não vazamento")
+	}
 	m.APISamples = []apiSample{sampleAt(0, g(900)), sampleAt(5*time.Minute, g(500))}
 	if findRule(evaluateRules(m), "goroutine_growth", "") != nil {
 		t.Fatal("janela curta nao conclui")

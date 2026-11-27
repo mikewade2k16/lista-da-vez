@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -264,17 +266,20 @@ func TestScriptDeleteAndRowRemovalBlockedWhileSomeoneEdits(t *testing.T) {
 	}
 }
 
-// Regressão: o front envia o ScriptDraft inteiro (inclui updatedAt). O decoder recusa campos
-// desconhecidos, então tirar um campo do scriptInput quebra "+ Linha" e a troca de cliente.
+// Regressão (contrato front↔back): testdata/script_draft.json é o ScriptDraft que o front
+// envia em POST/PUT (o teste web useScriptsManager.test.ts confere as mesmas chaves). O decoder
+// recusa campos desconhecidos: tirar um campo do scriptInput quebra "+ Linha" e a troca de cliente.
 func TestScriptInputAcceptsFrontendDraft(t *testing.T) {
-	body := `{"title":"Novo roteiro","rows":[{"id":"r1","audio":"","video":""}],"description":"",` +
-		`"updatedAt":"2026-11-27T12:00:00.123456Z","clientAccountId":"","clientVisible":false}`
-	request := httptest.NewRequestWithContext(context.Background(), "PUT", "/v1/tools/scripts/id", strings.NewReader(body))
+	body, err := os.ReadFile("testdata/script_draft.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequestWithContext(context.Background(), "PUT", "/v1/tools/scripts/id", bytes.NewReader(body))
 	var in scriptInput
 	if err := httpapi.ReadJSON(request, &in); err != nil {
 		t.Fatalf("payload do front recusado: %v", err)
 	}
-	if len(in.Rows) != 1 || in.Rows[0].ID != "r1" {
+	if len(in.Rows) != 1 || in.Rows[0].ID != "row-1" {
 		t.Fatalf("rows: %+v", in.Rows)
 	}
 }

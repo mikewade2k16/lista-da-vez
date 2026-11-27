@@ -9,12 +9,13 @@ import (
 )
 
 func TestRulesCatalogMatchesCode(t *testing.T) {
-	if len(rulesCatalog) != 19 {
-		t.Fatalf("catálogo com %d regras, esperava 19", len(rulesCatalog))
+	if len(rulesCatalog) != 22 {
+		t.Fatalf("catálogo com %d regras, esperava 22", len(rulesCatalog))
 	}
 	want := map[string]float64{
 		"api_5xx_rate": 5, "route_errors": 5, "slow_route": 2000, "goroutine_growth": 10000,
 		"pg_connections": 85, "job_backlog": 300, "disk_low": 85, "tls_expiring": 14, "frontend_errors": 20,
+		"contract_errors": 2, "route_4xx_spike": 50, "deploy_regression": 3,
 	}
 	seen := map[string]bool{}
 	for _, item := range rulesCatalog {
